@@ -10,12 +10,23 @@ public static class FormatHelpers {
   /// Prevents path traversal attacks.
   /// </summary>
   public static void WriteFile(string baseDir, string entryName, byte[] data) {
+    using var target = CreateEntryFile(baseDir, entryName);
+    target.Write(data, 0, data.Length);
+  }
+
+  /// <summary>
+  /// Opens the destination file for <paramref name="entryName"/> under
+  /// <paramref name="baseDir"/>, applying the same traversal sanitising as
+  /// <see cref="WriteFile" />. Lets a caller stream an entry straight to disk
+  /// instead of materialising it, which an entry larger than a byte[] requires.
+  /// </summary>
+  public static FileStream CreateEntryFile(string baseDir, string entryName) {
     var safeName = entryName.Replace('\\', '/').TrimStart('/');
     if (safeName.Contains("..")) safeName = Path.GetFileName(safeName);
     var fullPath = Path.Combine(baseDir, safeName);
     var dir = Path.GetDirectoryName(fullPath);
     if (dir != null) Directory.CreateDirectory(dir);
-    File.WriteAllBytes(fullPath, data);
+    return File.Create(fullPath);
   }
 
   /// <summary>

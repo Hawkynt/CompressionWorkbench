@@ -157,7 +157,15 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.FileName)); continue; }
-      WriteFile(outputDir, e.FileName, r.ExtractEntry(e));
+
+      // Stored entries stream straight to disk; an entry past the array limit
+      // cannot be materialised at all. Compressed ones still go through the
+      // buffered decoder.
+      using (var target = CreateEntryFile(outputDir, e.FileName)) {
+        if (r.TryCopyEntryTo(e, target)) continue;
+        var bytes = r.ExtractEntry(e);
+        target.Write(bytes, 0, bytes.Length);
+      }
     }
   }
 
@@ -292,12 +300,44 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       && target.CanSeek;
 
     if (!canStream) {
+      var materialised = inputs as IReadOnlyList<StreamingArchiveInput> ?? inputs.ToList();
+
+      // An entry past the array limit cannot be buffered, and DEFLATE here has no
+      // streaming compressor (DeflateCompressor takes the whole input at once).
+      // ZIP records a method per entry, so such an entry is streamed as STORE
+      // while everything else still compresses normally. Storing is lossless and
+      // universally readable; failing outright would not be.
+      if (materialised.Any(i => !i.IsDirectory && i.Size > Array.MaxLength)) {
+        if (!target.CanSeek)
+          throw new NotSupportedException(
+            "A ZIP entry larger than 2 GB needs a seekable target so its header can be patched after streaming.");
+        if (!string.IsNullOrEmpty(password))
+          throw new NotSupportedException(
+            "A ZIP entry larger than 2 GB cannot be encrypted: encryption requires buffering the entry.");
+
+        using var mixed = new ZipWriter(target, leaveOpen: true,
+          compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Default);
+        foreach (var input in materialised) {
+          if (input.IsDirectory) { mixed.AddDirectory(input.Name); continue; }
+          using var src = input.OpenStream();
+          if (input.Size > Array.MaxLength) {
+            mixed.AddStreamingStoredEntry(input.Name, input.Size, src);
+          } else {
+            using var ms = new MemoryStream();
+            src.CopyTo(ms);
+            mixed.AddEntry(input.Name, ms.ToArray(), zipMethod);
+          }
+        }
+        mixed.Finish();
+        return;
+      }
+
       // Buffering fallback: identical to the IArchiveCreatable default —
       // materialize each entry then dispatch to the classic Create. Honest
       // because compressing/encrypted entries can't stream a Create-identical
       // header without a data descriptor.
       var buffered = new List<ArchiveInputInfo>();
-      foreach (var input in inputs) {
+      foreach (var input in materialised) {
         if (input.IsDirectory) {
           buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true));
           continue;

@@ -54,6 +54,34 @@ public sealed class ZipReader : IDisposable {
   /// </summary>
   /// <param name="entry">The entry to extract.</param>
   /// <returns>The decompressed data.</returns>
+  /// <summary>
+  /// Copies <paramref name="entry" /> to <paramref name="destination" /> without
+  /// materialising it, when the entry is stored and unencrypted. Returns false when
+  /// the entry needs the buffered <see cref="ExtractEntry" /> path (compressed or
+  /// encrypted), which is bounded by what a byte[] can hold.
+  /// </summary>
+  public bool TryCopyEntryTo(ZipEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.CompressionMethod != ZipCompressionMethod.Store || entry.IsEncrypted)
+      return false;
+
+    this._stream.Position = entry.LocalHeaderOffset;
+    var reader = new BinaryReader(this._stream, System.Text.Encoding.Latin1, leaveOpen: true);
+    _ = ZipLocalFileHeader.Read(reader); // advances past the header to the data
+
+    var remaining = entry.CompressedSize;
+    var buffer = new byte[64 * 1024];
+    while (remaining > 0) {
+      var want = (int)Math.Min(buffer.Length, remaining);
+      var read = this._stream.Read(buffer, 0, want);
+      if (read <= 0) throw new EndOfStreamException("Unexpected end of ZIP data.");
+      destination.Write(buffer, 0, read);
+      remaining -= read;
+    }
+    return true;
+  }
+
   public byte[] ExtractEntry(ZipEntry entry) {
     this._stream.Position = entry.LocalHeaderOffset;
     var reader = new BinaryReader(this._stream, System.Text.Encoding.Latin1, leaveOpen: true);

@@ -191,6 +191,34 @@ public sealed class TarReader : IDisposable {
     return Encoding.UTF8.GetString(data, 0, end);
   }
 
+  /// <summary>
+  /// Copies the current entry's data straight to <paramref name="destination" />
+  /// without materialising it, then consumes the block padding. Required for
+  /// entries larger than a byte[] can hold.
+  /// </summary>
+  public void CopyEntryDataTo(Stream destination) {
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (this._currentEntry == null)
+      throw new InvalidOperationException("No current entry. Call GetNextEntry() first.");
+
+    var remaining = this._remainingEntryBytes;
+    var buffer = new byte[64 * 1024];
+    while (remaining > 0) {
+      var want = (int)Math.Min(buffer.Length, remaining);
+      var read = this._stream.Read(buffer, 0, want);
+      if (read <= 0) throw new EndOfStreamException("Unexpected end of TAR data.");
+      destination.Write(buffer, 0, read);
+      remaining -= read;
+    }
+    this._remainingEntryBytes = 0;
+
+    if (this._needsSkipPadding) {
+      SkipPadding(this._entryDataSize);
+      this._needsSkipPadding = false;
+    }
+  }
+
   private byte[] ReadEntryDataBytes(long size) {
     if (size == 0)
       return [];

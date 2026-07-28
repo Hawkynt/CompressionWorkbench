@@ -199,10 +199,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     while (r.GetNextEntry() is { } e) {
       if (files != null && !MatchesFilter(e.Name, files)) { r.Skip(); continue; }
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Name)); r.Skip(); continue; }
-      using var es = r.GetEntryStream();
-      var data = new byte[e.Size];
-      es.ReadExactly(data);
-      WriteFile(outputDir, e.Name, data);
+      // Stream the entry straight to disk: an entry past the array limit cannot
+      // be materialised, and there is no reason to buffer the smaller ones either.
+      using (var target = CreateEntryFile(outputDir, e.Name))
+        r.CopyEntryDataTo(target);
     }
   }
 

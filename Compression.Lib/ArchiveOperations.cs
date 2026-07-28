@@ -165,7 +165,39 @@ public static class ArchiveOperations {
       FormatSpecific = formatSpecific ?? opts.FormatSpecific,
     };
 
+    // An entry larger than a byte[] can hold cannot go through Create(), whose
+    // inputs surface their bytes via ArchiveInputInfo.ReadContent(). Route those
+    // through CreateFromStreams instead, which hands the writer a stream factory
+    // per entry. Formats that override it (zip, tar, 7z, ar, cpio) then stream
+    // genuinely; the rest fall back to its buffering default, which is no worse
+    // than what Create() would have done.
+    if (registryInputs.Any(IsTooLargeToBuffer)) {
+      var streamingInputs = registryInputs.Select(i => new Compression.Registry.Streaming.StreamingArchiveInput(
+        Name: i.ArchiveName,
+        Size: i.IsDirectory ? 0
+              : i.InMemoryContent?.LongLength ?? (File.Exists(i.FullPath) ? new FileInfo(i.FullPath).Length : 0),
+        IsDirectory: i.IsDirectory,
+        OpenStream: i.InMemoryContent is { } bytes
+          ? () => new MemoryStream(bytes, writable: false)
+          : () => File.OpenRead(i.FullPath))).ToList();
+
+      AtomicFileWriter.WriteAtomic(outputPath,
+        fs => creator.CreateFromStreams(fs, streamingInputs, registryOpts));
+      return;
+    }
+
     AtomicFileWriter.WriteAtomic(outputPath, fs => creator.Create(fs, registryInputs, registryOpts));
+  }
+
+  /// <summary>
+  /// True when the input's bytes will not fit in a single array, so the buffered
+  /// creation path cannot carry it.
+  /// </summary>
+  private static bool IsTooLargeToBuffer(Compression.Registry.ArchiveInputInfo input) {
+    if (input.IsDirectory) return false;
+    if (input.InMemoryContent != null) return false;
+    if (string.IsNullOrEmpty(input.FullPath) || !File.Exists(input.FullPath)) return false;
+    return new FileInfo(input.FullPath).Length > Array.MaxLength;
   }
 
   /// <summary>
