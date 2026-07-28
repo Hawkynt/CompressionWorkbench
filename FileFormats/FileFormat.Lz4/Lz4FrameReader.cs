@@ -42,6 +42,39 @@ public sealed class Lz4FrameReader {
     return output.ToArray();
   }
 
+  /// <summary>
+  /// Decodes the next LZ4 frame into <paramref name="destination" />, returning false
+  /// at end of input. A .lz4 file may hold a sequence of frames -- that is how a large
+  /// payload is written without buffering all of it -- so callers should loop.
+  /// </summary>
+  public bool TryReadFrameTo(Stream destination) {
+    ArgumentNullException.ThrowIfNull(destination);
+
+    Span<byte> magicBuf = stackalloc byte[4];
+    var read = 0;
+    while (read < 4) {
+      var n = this._input.Read(magicBuf[read..]);
+      if (n <= 0) return read == 0 ? false : throw new EndOfStreamException("Truncated LZ4 frame magic.");
+      read += n;
+    }
+    var magic = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(magicBuf);
+    if (magic != Lz4Constants.FrameMagic)
+      return false;
+
+    var header = ReadFrameHeaderAfterMagic();
+    using var output = new MemoryStream();
+    while (ReadBlock(output, header) != 0) { }
+
+    var data = output.ToArray();
+    if (header.ContentChecksum) {
+      var expected = ReadUInt32();
+      if (expected != XxHash32.Compute(data))
+        throw new InvalidDataException("LZ4 frame content checksum mismatch.");
+    }
+    destination.Write(data, 0, data.Length);
+    return true;
+  }
+
   private FrameHeader ReadFrameHeader() {
     var magic = ReadUInt32();
     if (magic != Lz4Constants.FrameMagic && magic != Lz4Constants.LegacyMagic)
@@ -50,6 +83,11 @@ public sealed class Lz4FrameReader {
     if (magic == Lz4Constants.LegacyMagic)
       throw new NotSupportedException("LZ4 legacy frame format is not supported.");
 
+    return this.ReadFrameHeaderAfterMagic();
+  }
+
+  /// <summary>Parses the frame descriptor that follows an already-consumed magic.</summary>
+  private FrameHeader ReadFrameHeaderAfterMagic() {
     var flg = this._input.ReadByte();
     var bd = this._input.ReadByte();
     if (flg < 0 || bd < 0)

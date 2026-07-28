@@ -102,8 +102,10 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   internal static bool ParseBlockChecksum(FormatCreateOptions options) => ParseBool(options, "BlockChecksum", false);
 
   public void Decompress(Stream input, Stream output) {
+    // Loop the frames: a .lz4 file may hold several back to back, and the payload
+    // as a whole may be far larger than a single byte[].
     var r = new Lz4FrameReader(input);
-    output.Write(r.Read());
+    while (r.TryReadFrameTo(output)) { }
   }
 
   public void Compress(Stream input, Stream output) =>
@@ -116,11 +118,32 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   public void CompressOptimal(Stream input, Stream output) =>
     CompressFrame(input, output, Lz4CompressionLevel.Hc, Lz4Constants.MaxBlockSize, contentChecksum: true, blockChecksum: false);
 
+  /// <summary>
+  /// Input accumulated before a frame is emitted. Lz4FrameWriter writes a whole frame
+  /// per call and takes its content size as an int, so a large payload is written as a
+  /// sequence of frames -- valid LZ4, and what keeps memory bounded.
+  /// </summary>
+  private const int FrameChunkBytes = 64 * 1024 * 1024;
+
   private static void CompressFrame(Stream input, Stream output, Lz4CompressionLevel level,
       int blockMaxSize, bool contentChecksum, bool blockChecksum) {
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var w = new Lz4FrameWriter(output, blockMaxSize, contentChecksum, blockChecksum, level);
-    w.Write(ms.ToArray());
+    var chunk = new byte[FrameChunkBytes];
+    var any = false;
+    while (true) {
+      var filled = 0;
+      int n;
+      while (filled < chunk.Length && (n = input.Read(chunk, filled, chunk.Length - filled)) > 0)
+        filled += n;
+      if (filled == 0) break;
+
+      var w = new Lz4FrameWriter(output, blockMaxSize, contentChecksum, blockChecksum, level);
+      w.Write(chunk.AsSpan(0, filled));
+      any = true;
+      if (filled < chunk.Length) break;
+    }
+
+    // Empty input still needs a well-formed (empty) frame.
+    if (!any)
+      new Lz4FrameWriter(output, blockMaxSize, contentChecksum, blockChecksum, level).Write([]);
   }
 }
