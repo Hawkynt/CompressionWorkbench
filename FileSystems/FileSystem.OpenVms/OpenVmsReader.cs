@@ -56,13 +56,18 @@ public sealed class OpenVmsReader {
   /// <summary>Reads a File Header from INDEXF.SYS by File-ID number (1-based).</summary>
   public static OpenVmsFileHeader? ReadFileHeader(byte[] image, int fileId) {
     if (fileId < 1 || fileId > OpenVmsLayout.MaxFiles) return null;
-    var off = OpenVmsLayout.FileHeaderByteOffset(fileId);
+    var off = (int)OpenVmsLayout.FileHeaderByteOffset(fileId);
     if (off + OpenVmsLayout.BlockSize > image.Length) return null;
     return OpenVmsFileHeader.Deserialize(image.AsSpan(off, OpenVmsLayout.BlockSize));
   }
 
   /// <summary>Reassembles file bytes from <paramref name="fh"/>'s retrieval pointers.</summary>
   public static byte[] AssembleFileBytes(byte[] image, OpenVmsFileHeader fh) {
+    ArgumentNullException.ThrowIfNull(fh);
+    if (fh.Size > Array.MaxLength)
+      throw new IOException(
+        $"OpenVMS: '{fh.Name}' is {fh.Size:N0} bytes, past the array limit; use OpenVmsVolume.ExtractTo.");
+
     var bytes = new byte[fh.Size];
     long bytesWritten = 0;
     foreach (var ext in fh.Extents) {
@@ -70,28 +75,28 @@ public sealed class OpenVmsReader {
       var copy = (int)Math.Min(extentBytes, fh.Size - bytesWritten);
       if (copy <= 0) break;
       var srcOff = OpenVmsLayout.LbnToByteOffset(ext.StartLbn);
-      if (srcOff + copy > image.Length) copy = Math.Max(0, image.Length - srcOff);
+      if (srcOff + copy > image.Length) copy = (int)Math.Max(0, image.Length - srcOff);
       if (copy > 0)
-        image.AsSpan(srcOff, copy).CopyTo(bytes.AsSpan((int)bytesWritten));
+        image.AsSpan((int)srcOff, copy).CopyTo(bytes.AsSpan((int)bytesWritten));
       bytesWritten += copy;
       if (bytesWritten >= fh.Size) break;
     }
     return bytes;
   }
 
-  private static bool HasLayoutMarker(byte[] image) {
-    var off = OpenVmsLayout.LbnToByteOffset(OpenVmsLayout.HomeBlockLbn) + OpenVmsLayout.LayoutMarkerOffset;
+  internal static bool HasLayoutMarker(byte[] image) {
+    var off = (int)OpenVmsLayout.LbnToByteOffset(OpenVmsLayout.HomeBlockLbn) + OpenVmsLayout.LayoutMarkerOffset;
     if (off + OpenVmsLayout.LayoutMarker.Length > image.Length) return false;
     return image.AsSpan(off, OpenVmsLayout.LayoutMarker.Length)
       .SequenceEqual(OpenVmsLayout.LayoutMarker.AsSpan());
   }
 
-  private static List<Entry> ParseDirectory(byte[] image) {
+  internal static List<Entry> ParseDirectory(byte[] image) {
     var entries = new List<Entry>();
     var visited = new HashSet<int>();
     var lbn = OpenVmsLayout.RootDirectoryLbn;
     while (lbn > 0 && visited.Add(lbn)) {
-      var off = OpenVmsLayout.LbnToByteOffset(lbn);
+      var off = (int)OpenVmsLayout.LbnToByteOffset(lbn);
       if (off + OpenVmsLayout.BlockSize > image.Length) break;
       var blk = image.AsSpan(off, OpenVmsLayout.BlockSize);
       for (var slot = OpenVmsDirectory.FileEntryStartSlot; slot < OpenVmsDirectory.EntriesPerBlock; slot++) {

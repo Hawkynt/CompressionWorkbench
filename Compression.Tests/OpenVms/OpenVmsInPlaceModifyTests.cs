@@ -44,8 +44,8 @@ public class OpenVmsInPlaceModifyTests {
     var betaLbn = preBetaFh.Extents[0].StartLbn;
     var preAlphaBytes = image.AsSpan(alphaLbn * OpenVmsLayout.BlockSize, OpenVmsLayout.BlockSize).ToArray();
     var preBetaBytes = image.AsSpan(betaLbn * OpenVmsLayout.BlockSize, OpenVmsLayout.BlockSize).ToArray();
-    var preAlphaFhBlock = image.AsSpan(OpenVmsLayout.FileHeaderByteOffset(preAlphaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
-    var preBetaFhBlock = image.AsSpan(OpenVmsLayout.FileHeaderByteOffset(preBetaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
+    var preAlphaFhBlock = image.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(preAlphaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
+    var preBetaFhBlock = image.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(preBetaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
 
     // Add a third file in place.
     using var ms = new MemoryStream();
@@ -63,9 +63,9 @@ public class OpenVmsInPlaceModifyTests {
       Is.EqualTo(preBetaBytes), "BETA's data LBN must be byte-identical after Add.");
 
     // Pre-existing File Headers untouched.
-    Assert.That(modified.AsSpan(OpenVmsLayout.FileHeaderByteOffset(preAlphaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
+    Assert.That(modified.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(preAlphaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
       Is.EqualTo(preAlphaFhBlock), "ALPHA's FH bytes must be byte-identical after Add.");
-    Assert.That(modified.AsSpan(OpenVmsLayout.FileHeaderByteOffset(preBetaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
+    Assert.That(modified.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(preBetaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
       Is.EqualTo(preBetaFhBlock), "BETA's FH bytes must be byte-identical after Add.");
 
     // And the new file round-trips.
@@ -96,8 +96,8 @@ public class OpenVmsInPlaceModifyTests {
 
     var preAlphaBytes = image.AsSpan(alphaFh.Extents[0].StartLbn * OpenVmsLayout.BlockSize, OpenVmsLayout.BlockSize).ToArray();
     var preGammaBytes = image.AsSpan(gammaFh.Extents[0].StartLbn * OpenVmsLayout.BlockSize, OpenVmsLayout.BlockSize).ToArray();
-    var preAlphaFhBlock = image.AsSpan(OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
-    var preGammaFhBlock = image.AsSpan(OpenVmsLayout.FileHeaderByteOffset(gammaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
+    var preAlphaFhBlock = image.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
+    var preGammaFhBlock = image.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(gammaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
 
     using var ms = new MemoryStream();
     ms.Write(image, 0, image.Length);
@@ -110,9 +110,9 @@ public class OpenVmsInPlaceModifyTests {
       Is.EqualTo(preAlphaBytes), "ALPHA's data LBN must be byte-identical after Remove.");
     Assert.That(modified.AsSpan(gammaFh.Extents[0].StartLbn * OpenVmsLayout.BlockSize, OpenVmsLayout.BlockSize).ToArray(),
       Is.EqualTo(preGammaBytes), "GAMMA's data LBN must be byte-identical after Remove.");
-    Assert.That(modified.AsSpan(OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
+    Assert.That(modified.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
       Is.EqualTo(preAlphaFhBlock), "ALPHA's FH bytes must be byte-identical after Remove.");
-    Assert.That(modified.AsSpan(OpenVmsLayout.FileHeaderByteOffset(gammaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
+    Assert.That(modified.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(gammaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
       Is.EqualTo(preGammaFhBlock), "GAMMA's FH bytes must be byte-identical after Remove.");
 
     // The removed file's data LBN is zero-wiped.
@@ -120,7 +120,7 @@ public class OpenVmsInPlaceModifyTests {
     Assert.That(betaSlice, Is.All.EqualTo((byte)0), "Removed file's data LBN must be zero-wiped.");
 
     // The removed FH is marked free (struc-level word zero).
-    var betaFhBlock = modified.AsSpan(OpenVmsLayout.FileHeaderByteOffset(betaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
+    var betaFhBlock = modified.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(betaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
     var strucLev = (ushort)(betaFhBlock[OpenVmsLayout.FhStrucLev] | (betaFhBlock[OpenVmsLayout.FhStrucLev + 1] << 8));
     Assert.That(strucLev, Is.EqualTo(0), "Removed file's FH must have struc-level zero.");
 
@@ -143,7 +143,7 @@ public class OpenVmsInPlaceModifyTests {
     var pre = new OpenVmsReader(image);
     var alphaFh = OpenVmsReader.ReadFileHeader(image, pre.Entries[0].FileId)!;
     var preAlphaBytes = image.AsSpan(alphaFh.Extents[0].StartLbn * OpenVmsLayout.BlockSize, OpenVmsLayout.BlockSize).ToArray();
-    var preAlphaFhBlock = image.AsSpan(OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
+    var preAlphaFhBlock = image.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray();
 
     using var ms = new MemoryStream();
     ms.Write(image, 0, image.Length);
@@ -155,7 +155,7 @@ public class OpenVmsInPlaceModifyTests {
     // ALPHA untouched.
     Assert.That(modified.AsSpan(alphaFh.Extents[0].StartLbn * OpenVmsLayout.BlockSize, OpenVmsLayout.BlockSize).ToArray(),
       Is.EqualTo(preAlphaBytes), "ALPHA's data LBN must survive a BETA replace.");
-    Assert.That(modified.AsSpan(OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
+    Assert.That(modified.AsSpan((int)OpenVmsLayout.FileHeaderByteOffset(alphaFh.FileId), OpenVmsLayout.BlockSize).ToArray(),
       Is.EqualTo(preAlphaFhBlock), "ALPHA's FH bytes must survive a BETA replace.");
 
     // New BETA round-trips with the new bytes.

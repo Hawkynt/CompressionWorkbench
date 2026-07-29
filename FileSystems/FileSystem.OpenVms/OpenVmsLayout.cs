@@ -121,9 +121,23 @@ public static class OpenVmsLayout {
   public const int HbFormatString = 0x1E8;   // "DECFILE11A " or "DECFILE11B "
   public const int HbVolumeName = 0x1F4;     // 12-char ASCII volume label
 
-  /// <summary>Computes the byte offset of an LBN inside the volume.</summary>
-  public static int LbnToByteOffset(int lbn) => lbn * BlockSize;
+  /// <summary>
+  /// Number of LBNs the fixed metadata occupies: boot block, home block,
+  /// BITMAP.SYS, INDEXF.SYS and the root directory. Everything below this LBN
+  /// is written before any file payload, so a volume can be emitted as a small
+  /// metadata prefix followed by the payloads streamed into place.
+  /// </summary>
+  public const int MetadataBlockCount = DataAreaStartLbn;
+
+  /// <summary>Size in bytes of the fixed metadata prefix.</summary>
+  public const int MetadataBytes = MetadataBlockCount * BlockSize;
+
+  /// <summary>
+  /// Computes the byte offset of an LBN inside the volume. The result is 64-bit:
+  /// a volume larger than 4 GB has LBNs whose byte offset does not fit in an int.
+  /// </summary>
+  public static long LbnToByteOffset(long lbn) => lbn * BlockSize;
 
   /// <summary>Computes the byte offset of File Header <paramref name="fid"/> (1-based) inside INDEXF.SYS.</summary>
-  public static int FileHeaderByteOffset(int fid) => LbnToByteOffset(IndexFileStartLbn + fid - 1);
+  public static long FileHeaderByteOffset(int fid) => LbnToByteOffset(IndexFileStartLbn + fid - 1);
 }

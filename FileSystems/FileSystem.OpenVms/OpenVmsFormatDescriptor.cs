@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Globalization;
 using System.Text;
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
@@ -84,76 +85,86 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
-    byte[] image;
+    OpenVmsVolume? volume = null;
     try {
-      image = ReadAll(stream);
+      volume = new OpenVmsVolume(stream);
     } catch {
       entries.Add(new ArchiveEntryInfo(0, "FULL.disk", 0, 0, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
       return entries;
     }
 
-    OpenVmsHomeBlock hb;
-    try {
-      hb = OpenVmsHomeBlock.TryParse(image);
-    } catch {
-      entries.Add(new ArchiveEntryInfo(0, "FULL.disk", image.LongLength, image.LongLength, "stored", false, false, null));
-      entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
-      return entries;
-    }
-
-    var idx = 0;
-    entries.Add(new ArchiveEntryInfo(idx++, "FULL.disk", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
-    if (hb.Valid)
-      entries.Add(new ArchiveEntryInfo(idx++, "home_block.bin", hb.RawBytes.LongLength, hb.RawBytes.LongLength, "stored", false, false, null));
-
-    // CWB-OVMS-WB volumes carry real user files in 000000.DIR — surface those.
-    try {
-      var reader = new OpenVmsReader(image);
-      if (reader.IsCwbVolume) {
-        foreach (var e in reader.Entries)
+    using (volume) {
+      // A volume we wrote ourselves lists exactly its user files. Surfacing the
+      // synthetic header entries alongside them would make every rebuild
+      // (shrink, defrag) fold them back in as real files, so they stay on the
+      // carver path — foreign images, where the header IS all we can offer.
+      var idx = 0;
+      if (volume.IsCwbVolume) {
+        foreach (var e in volume.Entries)
           entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", false, false, null));
+        return entries;
       }
-    } catch {
-      // Unrecognised geometry — fall back to header-surface only.
+
+      OpenVmsHomeBlock hb;
+      try {
+        hb = OpenVmsHomeBlock.TryParse(volume.Metadata);
+      } catch {
+        entries.Add(new ArchiveEntryInfo(0, "FULL.disk", volume.Length, volume.Length, "stored", false, false, null));
+        entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+        return entries;
+      }
+
+      entries.Add(new ArchiveEntryInfo(idx++, "FULL.disk", volume.Length, volume.Length, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
+      if (hb.Valid)
+        entries.Add(new ArchiveEntryInfo(idx++, "home_block.bin", hb.RawBytes.LongLength, hb.RawBytes.LongLength, "stored", false, false, null));
     }
 
     return entries;
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    byte[] image;
+    OpenVmsVolume? volume = null;
     try {
-      image = ReadAll(stream);
+      volume = new OpenVmsVolume(stream);
     } catch {
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
       return;
     }
 
-    OpenVmsHomeBlock hb;
-    try {
-      hb = OpenVmsHomeBlock.TryParse(image);
-    } catch {
-      WriteIfMatch(outputDir, "FULL.disk", image, files);
-      WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
-      return;
-    }
-
-    WriteIfMatch(outputDir, "FULL.disk", image, files);
-    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hb), files);
-    if (hb.Valid)
-      WriteIfMatch(outputDir, "home_block.bin", hb.RawBytes, files);
-
-    try {
-      var reader = new OpenVmsReader(image);
-      if (reader.IsCwbVolume) {
-        foreach (var e in reader.Entries)
-          WriteIfMatch(outputDir, e.Name, reader.Extract(e), files);
+    using (volume) {
+      if (volume.IsCwbVolume) {
+        foreach (var e in volume.Entries) {
+          if (files is { Length: > 0 } && !MatchesFilter(e.Name, files)) continue;
+          Directory.CreateDirectory(outputDir);
+          using var target = File.Create(Path.Combine(outputDir, Path.GetFileName(e.Name)));
+          volume.ExtractTo(e, target);
+        }
+        return;
       }
-    } catch {
-      // Unrecognised geometry — only the header surface is extracted.
+
+      OpenVmsHomeBlock hb;
+      try {
+        hb = OpenVmsHomeBlock.TryParse(volume.Metadata);
+      } catch {
+        this.WriteFullDisk(volume, outputDir, files);
+        WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
+        return;
+      }
+
+      this.WriteFullDisk(volume, outputDir, files);
+      WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hb), files);
+      if (hb.Valid)
+        WriteIfMatch(outputDir, "home_block.bin", hb.RawBytes, files);
     }
+  }
+
+  private void WriteFullDisk(OpenVmsVolume volume, string outputDir, string[]? files) {
+    if (files is { Length: > 0 } && !MatchesFilter("FULL.disk", files)) return;
+    Directory.CreateDirectory(outputDir);
+    using var target = File.Create(Path.Combine(outputDir, "FULL.disk"));
+    volume.CopyTo(0, target, volume.Length);
   }
 
   /// <summary>
@@ -166,38 +177,53 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    byte[] image;
+    OpenVmsVolume volume;
     try {
-      image = ReadAll(archive);
+      volume = new OpenVmsVolume(archive);
     } catch {
       return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
     }
 
-    if (string.Equals(entryName, "FULL.disk", StringComparison.OrdinalIgnoreCase))
-      return new BoundedEntryStream(new MemoryStream(image, writable: false), image.LongLength, leaveOpen: false);
+    using (volume) {
+      if (string.Equals(entryName, "FULL.disk", StringComparison.OrdinalIgnoreCase))
+        return new BoundedEntryStream(new ReadOnlyStreamSlice(archive, 0, volume.Length), volume.Length, leaveOpen: false);
 
-    if (string.Equals(entryName, "home_block.bin", StringComparison.OrdinalIgnoreCase)) {
-      try {
-        var hb = OpenVmsHomeBlock.TryParse(image);
-        if (hb.Valid)
-          return new BoundedEntryStream(new MemoryStream(hb.RawBytes, writable: false), hb.RawBytes.LongLength, leaveOpen: false);
-      } catch {
-        // fall through to user-file search
-      }
-    }
-
-    try {
-      var reader = new OpenVmsReader(image);
-      if (reader.IsCwbVolume) {
-        var normalized = OpenVmsWriter.NormalizeName(entryName);
-        foreach (var e in reader.Entries) {
-          if (!string.Equals(e.Name, normalized, StringComparison.OrdinalIgnoreCase)) continue;
-          var bytes = reader.Extract(e);
-          return new BoundedEntryStream(new MemoryStream(bytes, writable: false), bytes.LongLength, leaveOpen: false);
+      if (string.Equals(entryName, "home_block.bin", StringComparison.OrdinalIgnoreCase)) {
+        try {
+          var hb = OpenVmsHomeBlock.TryParse(volume.Metadata);
+          if (hb.Valid)
+            return new BoundedEntryStream(new MemoryStream(hb.RawBytes, writable: false), hb.RawBytes.LongLength, leaveOpen: false);
+        } catch {
+          // fall through to user-file search
         }
       }
-    } catch {
-      // fall through
+
+      try {
+        if (volume.IsCwbVolume) {
+          var normalized = OpenVmsWriter.NormalizeName(entryName);
+          foreach (var e in volume.Entries) {
+            if (!string.Equals(e.Name, normalized, StringComparison.OrdinalIgnoreCase)) continue;
+            var fh = volume.ReadFileHeader(e.FileId);
+            if (fh == null || !fh.InUse) break;
+
+            // Every file this writer and its in-place modifier emit occupies one
+            // contiguous run, so the entry is a plain window onto the volume —
+            // no copy, whatever the file's size.
+            if (fh.Extents.Count == 1) {
+              var origin = OpenVmsLayout.LbnToByteOffset(fh.Extents[0].StartLbn);
+              var span = Math.Min(fh.Size, Math.Max(0, volume.Length - origin));
+              return new BoundedEntryStream(new ReadOnlyStreamSlice(archive, origin, span), span, leaveOpen: false);
+            }
+
+            using var scratch = new MemoryStream();
+            volume.ExtractTo(e, scratch);
+            var bytes = scratch.ToArray();
+            return new BoundedEntryStream(new MemoryStream(bytes, writable: false), bytes.LongLength, leaveOpen: false);
+          }
+        }
+      } catch {
+        // fall through
+      }
     }
 
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
@@ -220,9 +246,21 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(inputs);
     var label = options?.GetOption("VolumeLabel", "CWBVOL") ?? "CWBVOL";
     if (string.IsNullOrEmpty(label)) label = "CWBVOL";
-    var files = FlatFiles(inputs).ToList();
-    var image = new OpenVmsWriter().Build(files, label);
-    output.Write(image);
+    var files = new List<(string Name, FilePayload Payload)>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var name = Path.GetFileName(input.ArchiveName);
+      if (input.InMemoryContent is { } bytes) {
+        files.Add((name, FilePayload.FromBytes(bytes)));
+        continue;
+      }
+      // Sized from the file on disk and opened only while it is being copied —
+      // a volume never holds more than one buffer of any input.
+      var path = input.FullPath;
+      files.Add((name, FilePayload.FromStream(new FileInfo(path).Length, () => File.OpenRead(path))));
+    }
+
+    new OpenVmsWriter().BuildTo(output, files, label);
   }
 
   /// <summary>
@@ -269,17 +307,4 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  // The read-only header surface is bounded for forensic carver use; the
-  // R/W operations bypass this cap by reading the full volume directly.
-  private const int HeaderReadCap = 16 * 1024 * 1024;  // 16 MB covers the default 4 MB volume with headroom
-
-  private static byte[] ReadAll(Stream stream) {
-    using var ms = new MemoryStream();
-    if (stream.CanSeek) stream.Position = 0;
-    var buf = new byte[8192];
-    int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
-      ms.Write(buf, 0, read);
-    return ms.ToArray();
-  }
 }
