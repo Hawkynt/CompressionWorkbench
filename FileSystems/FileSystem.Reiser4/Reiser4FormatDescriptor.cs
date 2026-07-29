@@ -87,7 +87,18 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       return entries;
     }
 
+    // A volume that carries files lists exactly those. Surfacing the synthetic
+    // header entries alongside them would make every rebuild (shrink, defrag)
+    // fold them back in as real files, so they stay on the carver path — empty
+    // or foreign images, where the header IS all we can offer.
+    var payload = ReadPayload(stream);
     var idx = 0;
+    if (payload.Count > 0) {
+      foreach (var e in payload)
+        entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", false, false, null));
+      return entries;
+    }
+
     entries.Add(new ArchiveEntryInfo(idx++, "FULL.reiser4", image.LongLength, image.LongLength, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (sb.Valid)
@@ -95,6 +106,17 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (sb.Format40Present)
       entries.Add(new ArchiveEntryInfo(idx++, "format40_superblock.bin", sb.Format40Raw.LongLength, sb.Format40Raw.LongLength, "stored", false, false, null));
     return entries;
+  }
+
+  /// <summary>Files the CWB-R4-WB payload area holds. Never throws — empty when there are none.</summary>
+  private static IReadOnlyList<Reiser4Reader.Entry> ReadPayload(Stream stream) {
+    try {
+      if (stream.CanSeek) stream.Position = 0;
+      using var reader = new Reiser4Reader(stream);
+      return reader.Entries;
+    } catch {
+      return [];
+    }
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -113,6 +135,21 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       WriteIfMatch(outputDir, "FULL.reiser4", image, files);
       WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
       return;
+    }
+
+    // A volume that carries files extracts exactly those, mirroring List.
+    if (stream.CanSeek) stream.Position = 0;
+    using (var reader = new Reiser4Reader(stream)) {
+      if (reader.Entries.Count > 0) {
+        foreach (var e in reader.Entries) {
+          if (files is { Length: > 0 } && !MatchesFilter(e.Name, files)) continue;
+          var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+          Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+          using var output = File.Create(target);
+          reader.ExtractTo(e, output);
+        }
+        return;
+      }
     }
 
     WriteIfMatch(outputDir, "FULL.reiser4", image, files);
@@ -151,12 +188,11 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   // ── IArchiveCreatable ────────────────────────────────────────────────
-  // Reiser4 is a filesystem image — there's no "list of files to add at the
-  // root" concept that maps cleanly to an archive's content model. Our
-  // creator emits an empty filesystem with just "/" (root dir + . + ..).
-  // For files-on-image we'd need to grow the storage tree, which is out of
-  // scope for the WORM-minimal writer. Inputs are silently ignored after
-  // a labeled metadata note in the format options.
+  // The reserved blocks are byte-exact mkfs.reiser4 captures describing an empty
+  // storage tree; growing that tree (extent40 item bodies keyed by file offset,
+  // cde40 directory units) is not reproduced here. Files go in the CWB-R4-WB
+  // payload area past those blocks, with the block-allocator bitmap and
+  // sb_free_blocks kept consistent so the volume stays internally coherent.
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     var w = new Reiser4Writer();
@@ -171,9 +207,25 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
     // Image size: the writer counts 4 KB blocks. "Auto (fit to files)" and any
     // unset/unparsable value leave the default (and writer minimum) in place.
+    var sizes = new List<long>();
+    if (inputs != null)
+      foreach (var i in inputs) {
+        if (i.IsDirectory) continue;
+        var length = i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
+        sizes.Add(length);
+        if (i.InMemoryContent is { } bytes) {
+          w.AddFile(i.ArchiveName, bytes);
+          continue;
+        }
+        var path = i.FullPath;
+        w.AddStreamingFile(i.ArchiveName, length, () => File.OpenRead(path));
+      }
+
+    // The requested size is a floor: the volume has to be at least large enough
+    // for the payload's directory chain, data blocks and bitmaps.
     var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
-    if (sizeBytes > 0)
-      w.BlockCount = (ulong)Math.Max(1, sizeBytes / Reiser4Writer.BlockSize);
+    var requested = sizeBytes > 0 ? (ulong)Math.Max(1, sizeBytes / Reiser4Writer.BlockSize) : 0UL;
+    w.BlockCount = Math.Max(requested, Reiser4Writer.EstimateBlockCount(sizes));
 
     w.Write(output);
   }
@@ -182,28 +234,65 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Reiser4 defragment is unsupported in this implementation. The writer
-  /// emits an empty filesystem only (root directory + . + ..) — files-on-image
-  /// require multi-week storage-tree grow logic. Without a reader that walks
-  /// the twig-level B-tree there is nothing to extract and re-pack, so the
-  /// rebuild path is not viable. The descriptor advertises the capability
-  /// so the capability surface stays honest.
+  /// Rewrites the volume with every file laid out contiguously from the start of
+  /// the payload area. Each entry is spilled to scratch and the writer pulls it
+  /// back, so the rebuild is not bounded by what a byte[] can hold.
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) =>
-    throw new NotSupportedException(
-      "Reiser4 defragment requires a twig-level B-tree reader and writer that preserve user files; current implementation is empty-FS WORM only.");
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new NotSupportedException(
+        $"Reiser4 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+
+    Stream? target = null;
+    var spill = new List<(string Name, string Path, long Size)>();
+    DefragRebuilder.RebuildStreaming(archive, options,
+      readEntries: ReadEntries,
+      beginWrite: s => target = s,
+      writeEntry: (name, data) => {
+        // The volume has to be sized before the first byte is written, so the
+        // entries are collected first and the writer is built in finishWrite.
+        var path = Path.GetTempFileName();
+        File.WriteAllBytes(path, data);
+        spill.Add((name, path, data.LongLength));
+      },
+      finishWrite: () => {
+        try {
+          var w = new Reiser4Writer {
+            BlockCount = Reiser4Writer.EstimateBlockCount(spill.ConvertAll(e => e.Size)),
+          };
+          foreach (var (name, path, size) in spill) {
+            var captured = path;
+            w.AddStreamingFile(name, size, () => File.OpenRead(captured));
+          }
+          w.Write(target!);
+        } finally {
+          foreach (var (_, path, _) in spill)
+            try { File.Delete(path); } catch { /* scratch file already gone */ }
+        }
+      });
+  }
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    using var reader = new Reiser4Reader(stream);
+    foreach (var e in reader.Entries) {
+      using var buffer = new MemoryStream();
+      reader.ExtractTo(e, buffer);
+      yield return (e.Name, buffer.ToArray());
+    }
+  }
 
   // ── IArchiveWriteConstraints ─────────────────────────────────────────
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
-    // We accept nothing — the writer creates a strictly empty filesystem.
-    reason = "Reiser4 writer emits an empty filesystem only (root directory + . + ..). " +
-             "Files-on-image require multi-week storage-tree grow logic that is out of scope.";
-    return false;
+    reason = null;
+    return true;
   }
-  public long? MaxTotalArchiveSize => 0;
+  public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => Reiser4Writer.BlockSize * (long)Reiser4Writer.MinBlockCount; // 16 MB
   public string AcceptedInputsDescription =>
-    "Reiser4 writer emits an empty filesystem; inputs are not stored.";
+    "Reiser4 image; files are stored in the CWB-R4-WB payload area past the reserved blocks.";
 
   // Bounded read — must NOT pull multi-GB images into memory when the carver
   // runs us speculatively. Master SB is at 65536, format40 SB at 65536+blocksize

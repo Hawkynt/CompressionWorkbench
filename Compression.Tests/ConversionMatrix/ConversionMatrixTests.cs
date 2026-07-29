@@ -164,7 +164,6 @@ public class ConversionMatrixTests {
       { "Npz", "[other] NumPy .npz; entries suffixed .npy (HELLO.TXT.npy) so verbatim-name match fails" },
       { "PackDisk", "[other] PackDisk Amiga disk; exposed as track_NNN.raw not original names" },
       { "Paragon", "[other] Paragon backup; exposed as chunk_NNNNNN.bin not original names" },
-      { "Reiser4", "[other] Reiser4 image; exposed as *_superblock.bin not original names (read-back stub)" },
       { "TfRecord", "[other] TensorFlow TFRecord; entries renamed record_NNNNN.bin" },
       { "Tfc", "[other] UE texture cache; entries renamed bundle_NNNNN.bin" },
       { "Warc", "[other] WARC; entries listed as 'resource: <name>' so basename match fails" },

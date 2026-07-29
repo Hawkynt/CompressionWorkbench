@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Reflection;
 using System.Text;
 using Compression.Core.Checksums;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Reiser4;
 
@@ -129,6 +130,83 @@ public sealed class Reiser4Writer {
   /// <see cref="MinBlockCount"/>.</summary>
   public ulong BlockCount { get; set; } = MinBlockCount;
 
+  // ── Payload area (CWB-R4-WB) ────────────────────────────────────────────
+  //
+  // The reserved blocks above are byte-exact mkfs.reiser4 captures describing an
+  // empty tree, and the tree's own item plugins (extent40 bodies keyed by file
+  // offset, cde40 directory units) are not reproduced here. Files therefore live
+  // in a workbench-owned area past the reserved blocks, announced by a marker in
+  // the master superblock's spare region and described by a chained directory.
+  //
+  // The format's own accounting stays coherent: every block the payload occupies
+  // is marked allocated in the block-allocator bitmap and subtracted from
+  // sb_free_blocks, so an allocator walking the volume never hands the same block
+  // out twice. What this layout is NOT is a reiser4 storage tree, so the payload
+  // is invisible to the kernel driver — the same honest scope the workbench's
+  // OpenVMS and AmigaPFS writers declare.
+
+  /// <summary>Marker written at <see cref="MasterPayloadMarkerOff" /> of the master superblock.</summary>
+  internal static readonly byte[] PayloadMarker = "CWB-R4-WB"u8.ToArray();
+
+  /// <summary>Offset in the master superblock of the marker, past uuid and label.</summary>
+  internal const int MasterPayloadMarkerOff = 52;
+
+  /// <summary>Offset in the master superblock of the first directory block number (d64).</summary>
+  internal const int MasterPayloadDirOff = MasterPayloadMarkerOff + 12;
+
+  /// <summary>Magic at the head of every payload directory block.</summary>
+  internal static readonly byte[] DirMagic = "CWBR4DIR"u8.ToArray();
+
+  /// <summary>Directory block head: magic, next-block link, entry count.</summary>
+  internal const int DirHeadSize = 8 + 8 + 4;
+
+  /// <summary>One directory entry: a 224-byte name, then the first data block and the byte length.</summary>
+  internal const int DirNameLength = 224;
+  internal const int DirEntrySize = DirNameLength + 8 + 8;
+  internal const int DirEntriesPerBlock = (BlockSize - DirHeadSize) / DirEntrySize;
+
+  /// <summary>
+  /// Blocks one bitmap block accounts for. The block's first four bytes hold the
+  /// adler32 of the rest, so the bit array is four bytes short of the block.
+  /// </summary>
+  internal const ulong BlocksPerBitmap = (ulong)(BlockSize - 4) * 8;
+
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
+
+  /// <summary>Adds a regular file to the payload area.</summary>
+  public void AddFile(string name, byte[] data) {
+    ArgumentException.ThrowIfNullOrEmpty(name);
+    ArgumentNullException.ThrowIfNull(data);
+    this._files.Add((name, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>Adds a file whose bytes are pulled from <paramref name="openStream" /> as the image is written.</summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentException.ThrowIfNullOrEmpty(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    this._files.Add((name, FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>
+  /// Smallest block count that holds <paramref name="fileSizes" />: the reserved
+  /// blocks, the directory chain, every file's data blocks, and the bitmap blocks
+  /// interleaved among them.
+  /// </summary>
+  public static ulong EstimateBlockCount(IEnumerable<long> fileSizes) {
+    ArgumentNullException.ThrowIfNull(fileSizes);
+    var sizes = fileSizes as IReadOnlyCollection<long> ?? [.. fileSizes];
+    var blocks = ReservedBlockCount;
+    blocks += (ulong)((sizes.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock));
+    foreach (var size in sizes)
+      blocks += (ulong)((size + BlockSize - 1) / BlockSize);
+    blocks += blocks / BlocksPerBitmap + 2;   // the strided bitmap blocks
+    return Math.Max(MinBlockCount, blocks + blocks / 20);
+  }
+
+  /// <summary>True when <paramref name="block" /> holds a block-allocator bitmap.</summary>
+  private static bool IsBitmapBlock(ulong block)
+    => block == 18 || (block != 0 && block % BlocksPerBitmap == 0);
+
   /// <summary>Builds the image fully in memory and returns the byte array.
   /// For block counts above ~32 K the result will be tens of MB; prefer the
   /// streaming overload when caller-side allocation matters.</summary>
@@ -172,8 +250,6 @@ public sealed class Reiser4Writer {
     BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40FreeBlocksOff, 8), blocks - ReservedBlockCount);
     BinaryPrimitives.WriteUInt32LittleEndian(blk17.AsSpan(F40MkfsIdOff, 4), mkfsId);
 
-    // ── Bitmap (block 18) ────────────────────────────────────────────────
-    BuildBitmap(blk18, blocks);
 
     // ── Backup record (block 22) ─────────────────────────────────────────
     uuid.AsSpan().CopyTo(blk22.AsSpan(BackupUuidOff, 16));
@@ -186,9 +262,80 @@ public sealed class Reiser4Writer {
     BinaryPrimitives.WriteUInt32LittleEndian(blk23.AsSpan(NodeMkfsIdOff, 4), mkfsId);
     BinaryPrimitives.WriteUInt32LittleEndian(blk24.AsSpan(NodeMkfsIdOff, 4), mkfsId);
 
-    // ── Emit blocks 0..(blocks-1) ────────────────────────────────────────
+    // ── Payload area: directory chain, then each file's data blocks ───────
+    // Both step over the strided bitmap blocks, which the bitmap pass below then
+    // marks along with everything else in use.
+    var cursor = ReservedBlockCount;
+    ulong Alloc() {
+      while (IsBitmapBlock(cursor)) ++cursor;
+      if (cursor >= blocks)
+        throw new IOException($"Reiser4: a {blocks:N0}-block image has no room left for the payload.");
+      return cursor++;
+    }
+
+    var dirBlockCount = (this._files.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock);
+    var dirBlocks = new List<ulong>(dirBlockCount);
+    for (var i = 0; i < dirBlockCount; ++i)
+      dirBlocks.Add(Alloc());
+
+    var payloads = new DeferredPayloads();
+    var entries = new List<(string Name, ulong Block, long Size)>(this._files.Count);
+    foreach (var (name, payload) in this._files) {
+      var need = (payload.Size + BlockSize - 1) / BlockSize;
+      var first = need > 0 ? Alloc() : 0UL;
+      // A file's blocks are consecutive apart from any bitmap they straddle, so
+      // the body is recorded as one payload per contiguous stretch.
+      var runStart = first;
+      var runBlocks = need > 0 ? 1L : 0L;
+      var written = 0L;
+      for (var i = 1L; i < need; ++i) {
+        var next = Alloc();
+        if (next == runStart + (ulong)runBlocks) { ++runBlocks; continue; }
+        AddRun(payloads, payload, runStart, runBlocks, ref written);
+        runStart = next;
+        runBlocks = 1;
+      }
+      if (runBlocks > 0) AddRun(payloads, payload, runStart, runBlocks, ref written);
+      entries.Add((name, first, payload.Size));
+    }
+
+    var usedBlocks = cursor;   // every block below the cursor is reserved or payload
+
+    // ── Directory chain ──────────────────────────────────────────────────
+    var dirImages = new List<byte[]>(dirBlocks.Count);
+    for (var i = 0; i < dirBlocks.Count; ++i) {
+      var block = new byte[BlockSize];
+      DirMagic.CopyTo(block.AsSpan(0, DirMagic.Length));
+      var next = i + 1 < dirBlocks.Count ? dirBlocks[i + 1] : 0UL;
+      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(8, 8), next);
+      var take = Math.Min(DirEntriesPerBlock, entries.Count - i * DirEntriesPerBlock);
+      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(16, 4), (uint)take);
+      for (var j = 0; j < take; ++j) {
+        var (name, first, size) = entries[i * DirEntriesPerBlock + j];
+        var o = DirHeadSize + j * DirEntrySize;
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        nameBytes.AsSpan(0, Math.Min(nameBytes.Length, DirNameLength - 1)).CopyTo(block.AsSpan(o, DirNameLength - 1));
+        BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(o + DirNameLength, 8), first);
+        BinaryPrimitives.WriteInt64LittleEndian(block.AsSpan(o + DirNameLength + 8, 8), size);
+      }
+      dirImages.Add(block);
+    }
+
+    // ── Master superblock: announce the payload area ─────────────────────
+    if (dirBlocks.Count > 0) {
+      PayloadMarker.CopyTo(blk16.AsSpan(MasterPayloadMarkerOff, PayloadMarker.Length));
+      BinaryPrimitives.WriteUInt64LittleEndian(blk16.AsSpan(MasterPayloadDirOff, 8), dirBlocks[0]);
+    }
+
+    // ── Free-block accounting and the bitmap blocks ──────────────────────
+    BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40FreeBlocksOff, 8), blocks - usedBlocks);
+    var bitmaps = BuildBitmaps(blocks, usedBlocks, blk18);
+
+    // ── Emit the metadata prefix, then the payload ───────────────────────
+    var basePosition = output.CanSeek ? output.Position : 0;
+    var firstDataBlock = ReservedBlockCount + (ulong)dirBlocks.Count;
     var zero = new byte[BlockSize];
-    for (var b = 0UL; b < blocks; b++) {
+    for (var b = 0UL; b < firstDataBlock; b++) {
       var buf = b switch {
         16 => blk16,
         17 => blk17,
@@ -197,45 +344,83 @@ public sealed class Reiser4Writer {
         22 => blk22,
         23 => blk23,
         24 => blk24,
-        _ => zero,
+        _ => b >= ReservedBlockCount ? dirImages[(int)(b - ReservedBlockCount)] : zero,
       };
       output.Write(buf, 0, BlockSize);
     }
+    output.Flush();
 
-    // Sanity: stream length advanced by exactly totalBytes.
-    if (output.CanSeek && output.Length < totalBytes) {
-      output.SetLength(totalBytes);
+    if (!output.CanSeek) {
+      for (var b = firstDataBlock; b < blocks; b++)
+        output.Write(zero, 0, BlockSize);
+      return;
     }
+
+    output.SetLength(basePosition + totalBytes);
+    foreach (var (block, bytes) in bitmaps) {
+      if (block < firstDataBlock) continue;   // already emitted in the prefix
+      output.Position = basePosition + (long)block * BlockSize;
+      output.Write(bytes);
+    }
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + totalBytes;
+    output.Flush();
   }
 
-  /// <summary>Builds the block-allocator bitmap for an empty filesystem of
-  /// <paramref name="blocks"/> blocks. The first 25 bits (= reserved blocks
-  /// 0..24) are set, plus all bits beyond the FS's actual range are set to
-  /// "out-of-range" (so the allocator never picks them). The 4-byte adler32
-  /// of bytes 4..4095 is written at offset 0.</summary>
-  private static void BuildBitmap(byte[] block, ulong blocks) {
-    Array.Clear(block, 0, block.Length);
-    // Mark 25 reserved blocks at the beginning. 25 bits = 3 full bytes + 1 bit.
-    block[BitmapDataOff + 0] = 0xff;
-    block[BitmapDataOff + 1] = 0xff;
-    block[BitmapDataOff + 2] = 0xff;
-    block[BitmapDataOff + 3] = 0x01;
+  /// <summary>Records one contiguous run of a file's blocks as a payload to copy.</summary>
+  private static void AddRun(DeferredPayloads payloads, FilePayload payload,
+    ulong firstBlock, long blockCount, ref long written) {
+    var length = Math.Min(blockCount * BlockSize, payload.Size - written);
+    if (length <= 0) return;
+    var skip = written;
+    payloads.Add((long)firstBlock * BlockSize,
+      FilePayload.FromStream(length, () => SkipTo(payload.Open(), skip)));
+    written += blockCount * BlockSize;
+  }
 
-    // Filler: bytes after blocks/8 are 0xff (out-of-range marker). For an
-    // image of N blocks, byte index N/8 is the first filler byte.
-    var firstFillByte = (int)(blocks / 8);
-    if (firstFillByte > 3 && firstFillByte < BitmapDataLength) {
-      var len = BitmapDataLength - firstFillByte;
-      Array.Fill(block, (byte)0xff, BitmapDataOff + firstFillByte, len);
-    } else if (firstFillByte >= BitmapDataLength) {
-      // FS larger than one bitmap block tracks — out of scope (we cap at
-      // 32K blocks per bitmap; multi-bitmap FSes need additional bitmap
-      // blocks at strided offsets which mkfs.reiser4 places automatically).
-      // For now we accept the truncation and let fsck catch it.
+  /// <summary>Advances <paramref name="source" /> to <paramref name="offset" />, reading through when it cannot seek.</summary>
+  private static Stream SkipTo(Stream source, long offset) {
+    if (offset <= 0) return source;
+    if (source.CanSeek) {
+      source.Position = offset;
+      return source;
     }
+    var buffer = new byte[64 * 1024];
+    var remaining = offset;
+    while (remaining > 0) {
+      var n = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+      if (n <= 0) break;
+      remaining -= n;
+    }
+    return source;
+  }
 
-    var adler = Adler32.Compute(block.AsSpan(BitmapDataOff, BitmapDataLength));
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(BitmapAdlerOff, 4), adler);
+  /// <summary>
+  /// Builds every block-allocator bitmap. Bitmap <c>i</c> covers blocks
+  /// <c>[i × BlocksPerBitmap, (i+1) × BlocksPerBitmap)</c>; the first lives at the
+  /// reserved block 18 and the rest at the stride boundaries. Blocks below
+  /// <paramref name="usedBlocks" /> are allocated, as is every bitmap block and
+  /// everything past the end of the filesystem — an out-of-range bit must read as
+  /// 1 or the allocator would hand out a block that is not there.
+  /// </summary>
+  private static List<(ulong Block, byte[] Bytes)> BuildBitmaps(ulong blocks, ulong usedBlocks, byte[] first) {
+    var result = new List<(ulong Block, byte[] Bytes)>();
+    var count = (blocks + BlocksPerBitmap - 1) / BlocksPerBitmap;
+    for (var i = 0UL; i < count; ++i) {
+      var block = i == 0 ? 18UL : i * BlocksPerBitmap;
+      var buf = i == 0 ? first : new byte[BlockSize];
+      Array.Clear(buf, 0, buf.Length);
+      var baseBlock = i * BlocksPerBitmap;
+      for (var bit = 0UL; bit < BlocksPerBitmap; ++bit) {
+        var target = baseBlock + bit;
+        if (target >= usedBlocks && target < blocks && !IsBitmapBlock(target)) continue;
+        buf[BitmapDataOff + (int)(bit >> 3)] |= (byte)(1 << (int)(bit & 7));
+      }
+      var adler = Adler32.Compute(buf.AsSpan(BitmapDataOff, BitmapDataLength));
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(BitmapAdlerOff, 4), adler);
+      result.Add((block, buf));
+    }
+    return result;
   }
 
   private static byte[] TrimLabel(string? label) {
