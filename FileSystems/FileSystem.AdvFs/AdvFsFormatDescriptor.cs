@@ -184,11 +184,12 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       var info = i;
       // Only the length is needed to lay the domain out; reading a large input
       // into a byte[] would cap it at what an array can hold.
-      var name = Path.GetFileName(info.ArchiveName);
+      // Full path, not the leaf: AdvFS records the name verbatim and the
+      // round-trip tests expect nested paths back unchanged.
       if (info.InMemoryContent is { } bytes)
-        w.AddFile(name, bytes);
+        w.AddFile(info.ArchiveName, bytes);
       else
-        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+        w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
     }
     w.Finish();
   }
