@@ -62,18 +62,19 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   // --- WORM write constraints ---
   // F2FS minimum image = ~30 MB in the real-world mkfs.f2fs tool; our writer emits 64 MB by
-  // default. No per-file ceiling is imposed at the descriptor level — the writer rejects
-  // individual files > 923 × 4096 ≈ 3.6 MB (single-extent direct-block limit).
+  // default. A file is capped by what the inode's node tree can address: 923 direct
+  // addresses, two direct nodes, two indirect and one double-indirect.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 64L * 1024 * 1024;
   public string AcceptedInputsDescription =>
-    "F2FS filesystem image (flat root directory, inline dentries; per-file max ≈ 3.6 MB).";
+    "F2FS filesystem image (nested directories, inline or hash-bucket dentries).";
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = null; return true; }
     try {
       var length = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
-      if (length > 923L * 4096L) {
-        reason = $"F2FS writer supports only direct-pointer files (max {923 * 4096} bytes per file).";
+      var maxBytes = F2fsWriter.MaxFileBlocks * 4096L;
+      if (length > maxBytes) {
+        reason = $"F2FS addresses at most {maxBytes} bytes per file through the inode's node tree.";
         return false;
       }
     } catch {
@@ -91,11 +92,14 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new F2fsReader(stream);
+    using var r = new F2fsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -115,9 +119,13 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
-      return new Compression.Registry.Streaming.BoundedEntryStream(
-        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+      // The blocks are scattered across the node tree, so the entry is spooled to
+      // scratch rather than windowed; the spill is deleted when the stream closes.
+      var scratch = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,
+        FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
+      var size = r.ExtractTo(e, scratch);
+      scratch.Position = 0;
+      return new Compression.Registry.Streaming.BoundedEntryStream(scratch, size, leaveOpen: false);
     }
     return new Compression.Registry.Streaming.BoundedEntryStream(
       new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
@@ -132,14 +140,31 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
     var specific = options.FormatSpecific;
     var segments = ParseImageSizeSegments(specific?.GetValueOrDefault("ImageSize"));
     var label = specific?.GetValueOrDefault("VolumeLabel");
 
     var w = new F2fsWriter();
     w.SetVolumeLabel(label);
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var name = input.ArchiveName;
+      if (input.InMemoryContent is { } bytes) {
+        w.AddFile(name, bytes);
+        continue;
+      }
+      // Sized from disk and opened only while the block is being filled, so the
+      // volume is bounded by the target rather than by what a byte[] can hold.
+      var path = input.FullPath;
+      w.AddStreamingFile(name, new FileInfo(path).Length, () => File.OpenRead(path));
+    }
+
+    if (output.CanSeek) {
+      w.BuildToStreaming(output, segments);
+      return;
+    }
 
     var image = segments > 0 ? w.Build(segments) : w.BuildAutoSized();
     output.Write(image, 0, image.Length);
@@ -200,8 +225,37 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// contiguous-from-start multi-segment image (SIT/NAT journals, checkpoint
   /// pack, inline-dentry root).
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Buffering the rebuilt image would cap the volume at what a byte[] can
+    // hold, so the packing modes stream: each entry is spilled to scratch and
+    // the writer pulls it back while laying out the segments.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      F2fsWriter? writer = null;
+      Stream? target = null;
+      var spill = new List<string>();
+      try {
+        DefragRebuilder.RebuildStreaming(archive, options,
+          readEntries: ReadEntries,
+          beginWrite: s => { writer = new F2fsWriter(); target = s; },
+          writeEntry: (name, data) => {
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            File.WriteAllBytes(path, data);
+            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+          },
+          finishWrite: () => writer!.BuildToStreaming(target!));
+      } finally {
+        foreach (var path in spill)
+          try { File.Delete(path); } catch { /* scratch file already gone */ }
+      }
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  }
 
   // ── IArchiveModifiable (in-place log-structured mutation) ──────────────
   // F2FS is a log-structured FS: Add appends new data + node blocks to the
@@ -272,8 +326,8 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
     var w = new F2fsWriter();
     foreach (var (n, d) in files) w.AddFile(n, d);
-    using var ms = new MemoryStream();
-    w.WriteTo(ms);
-    return ms.ToArray();
+    // Auto-size: the default 32-segment image only fits a few megabytes, so a
+    // rebuild of anything larger would run out of main-area segments.
+    return w.BuildAutoSized();
   }
 }

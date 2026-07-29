@@ -72,6 +72,15 @@ public sealed class ReiserFsWriter {
   private const int LeafLevel = 1;
   private const int ItemHeaderSize = 24;
   private const int BlockHeadSize = 24;
+
+  /// <summary>
+  /// Block pointers one INDIRECT item can carry. An item never spans leaves, so
+  /// its body plus its item_head has to fit the leaf payload — which caps a
+  /// single item at about 4 MB of file. Longer files are split into a run of
+  /// INDIRECT items, each keyed by the byte offset it starts at, exactly as the
+  /// kernel's tail-less allocation does.
+  /// </summary>
+  private const int MaxIndirectPointers = (BlockSize - BlockHeadSize - ItemHeaderSize) / 4;
   private const int DehSize = 16;
 
   // SD sizes
@@ -735,13 +744,35 @@ public sealed class ReiserFsWriter {
   /// <see cref="OwnerKey"/> is the (dir_id, objectid) of the file so the
   /// stat-data block-count patcher can credit data blocks back to it.
   /// </summary>
+  /// <summary>
+  /// Advances <paramref name="source" /> to <paramref name="offset" />, seeking when
+  /// it can and reading through when it cannot. Each INDIRECT item of a long file
+  /// covers its own slice, so its data blocks are filled from that point on.
+  /// </summary>
+  private static Stream SkipTo(Stream source, long offset) {
+    if (offset <= 0) return source;
+    if (source.CanSeek) {
+      source.Position = offset;
+      return source;
+    }
+    var buffer = new byte[64 * 1024];
+    var remaining = offset;
+    while (remaining > 0) {
+      var n = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+      if (n <= 0) break;
+      remaining -= n;
+    }
+    return source;
+  }
+
   private sealed record IndirectPlaceholder(
     LeafItem Item, byte[] Payload, int FirstDataBlockIndex, int BlockCount,
     (uint DirId, uint ObjectId) OwnerKey,
     // Streaming body: when StreamOpener is non-null the data blocks are filled
     // from the opener (in BuildToStreaming's seek pass) instead of from Payload;
-    // StreamSize is the body length.
-    Func<Stream>? StreamOpener = null, long StreamSize = 0);
+    // StreamSize is how much of the body this item covers, starting PayloadOffset
+    // bytes in — a long file is a run of items, each covering its own slice.
+    Func<Stream>? StreamOpener = null, long StreamSize = 0, long PayloadOffset = 0);
 
   /// <summary>
   /// File-body cutoff: bodies up to this size go in a single DIRECT item;
@@ -817,20 +848,29 @@ public sealed class ReiserFsWriter {
           // simple and still passes reiserfsck (tail-packing is an
           // optimisation, not a correctness requirement).
           var blockCount = (int)((bodyLength + BlockSize - 1) / BlockSize);
-          var indirectBody = new byte[blockCount * 4]; // pointers patched later
-          var item = new LeafItem {
-            DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
-            // INDIRECT type code 1, offset_v2 = type<<60 | 1 (byte offset 0 == key 1).
-            OffsetV2 = TypeIndirectV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1IndirectUniqueness,
-            KeyFormat = KeyFormat2, UField = 0, Body = indirectBody, ItemType = 1,
-          };
-          items.Add(item);
-          indirectPlaceholders.Add(new IndirectPlaceholder(
-            Item: item, Payload: obj.Data, StreamOpener: obj.StreamOpener,
-            StreamSize: bodyLength,
-            FirstDataBlockIndex: dataBlocksTotal,
-            BlockCount: blockCount,
-            OwnerKey: (obj.ParentObjectId, obj.ObjectId)));
+          // One item per MaxIndirectPointers blocks. The key's offset is the
+          // 1-based byte position the item's first pointer covers, so the reader
+          // reassembles the runs in order.
+          for (var first = 0; first < blockCount; first += MaxIndirectPointers) {
+            var count = Math.Min(MaxIndirectPointers, blockCount - first);
+            var byteOffset = (long)first * BlockSize;
+            var indirectBody = new byte[count * 4]; // pointers patched later
+            var item = new LeafItem {
+              DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
+              // INDIRECT type code 1, offset_v2 = type<<60 | (byte offset + 1).
+              OffsetV2 = TypeIndirectV2 | (ulong)(byteOffset + 1),
+              OffsetV1 = (uint)(byteOffset + 1), UniquenessV1 = V1IndirectUniqueness,
+              KeyFormat = KeyFormat2, UField = 0, Body = indirectBody, ItemType = 1,
+            };
+            items.Add(item);
+            indirectPlaceholders.Add(new IndirectPlaceholder(
+              Item: item, Payload: obj.Data, StreamOpener: obj.StreamOpener,
+              StreamSize: Math.Min((long)count * BlockSize, bodyLength - byteOffset),
+              PayloadOffset: byteOffset,
+              FirstDataBlockIndex: dataBlocksTotal + first,
+              BlockCount: count,
+              OwnerKey: (obj.ParentObjectId, obj.ObjectId)));
+          }
           dataBlocksTotal += blockCount;
         }
       }
@@ -858,13 +898,16 @@ public sealed class ReiserFsWriter {
       // post-fill pass and left zero here. Block pointers above are already
       // contiguous so a single forward write covers the whole run.
       if (p.StreamOpener != null) {
-        streamingSink?.Add(((long)firstBlockNum * BlockSize, p.StreamSize, p.StreamOpener));
+        var opener = p.StreamOpener;
+        var skip = p.PayloadOffset;
+        streamingSink?.Add(((long)firstBlockNum * BlockSize, p.StreamSize,
+          () => SkipTo(opener(), skip)));
         continue;
       }
 
       for (var i = 0; i < p.BlockCount; i++) {
-        var srcOff = i * BlockSize;
-        var copyLen = Math.Min(BlockSize, p.Payload.Length - srcOff);
+        var srcOff = (int)(p.PayloadOffset + (long)i * BlockSize);
+        var copyLen = (int)Math.Min(BlockSize, p.Payload.Length - (long)srcOff);
         if (copyLen <= 0) continue;
         var dstOff = (long)(firstBlockNum + (uint)i) * BlockSize;
         Array.Copy(p.Payload, srcOff, image, dstOff, copyLen);

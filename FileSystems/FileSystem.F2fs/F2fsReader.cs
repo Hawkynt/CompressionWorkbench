@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.F2fs;
@@ -31,6 +32,12 @@ public sealed class F2fsReader : IDisposable {
   private const int InodeIAddrOff = 360; // start of i_addr[DEF_ADDRS_PER_INODE]
   private const int AddrsPerInode = 923;
 
+  // Node-tree geometry: (4096 - 24 footer) / 4 addresses or node ids per node block,
+  // and the five i_nid[] pointers immediately after i_addr[].
+  private const int AddrsPerBlock = 1018;
+  private const int NidsPerBlock = 1018;
+  private const int InodeINidOff = InodeIAddrOff + AddrsPerInode * 4; // 4052
+
   // Inline dentry region inside inode (see F2fsWriter.WriteRootInodeInline for layout).
   // Kernel reserves DEFAULT_INLINE_XATTR_ADDRS=50 __le32 slots at end of i_addr when
   // F2FS_INLINE_DENTRY is set (no F2FS_FEATURE_FLEXIBLE_INLINE_XATTR), so the usable
@@ -43,7 +50,7 @@ public sealed class F2fsReader : IDisposable {
   private const int InlineDentryBase = InlineDentryStart + InlineBitmapSize + InlineReservedSize;
   private const int InlineNameBase = InlineDentryBase + NrInlineDentry * 11;
 
-  private readonly byte[] _data;
+  private readonly ImageAccessor _data;
   private readonly List<F2fsEntry> _entries = [];
 
   private int _blockSize;
@@ -52,30 +59,43 @@ public sealed class F2fsReader : IDisposable {
 
   public IReadOnlyList<F2fsEntry> Entries => this._entries;
 
-  public F2fsReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+  public F2fsReader(Stream stream, bool leaveOpen = true) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    // Blocks are pulled on demand: the metadata a walk touches is a small
+    // fraction of a volume whose data area may run to gigabytes.
+    this._data = new ImageAccessor(stream, leaveOpen);
     this.Parse();
   }
+
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._data.Length;
 
   private void Parse() {
     if (this._data.Length < SbOffset + 200)
       throw new InvalidDataException("F2FS: image too small.");
 
-    var sb = SbOffset;
-    var magic = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(sb));
+    var sb = (long)SbOffset;
+    var magic = this._data.ReadUInt32(sb);
     if (magic != F2fsMagic)
       throw new InvalidDataException("F2FS: invalid superblock magic.");
 
-    var logBlockSize = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(sb + SbLogBlocksizeOff));
+    var logBlockSize = this._data.ReadUInt32(sb + SbLogBlocksizeOff);
     this._blockSize = 1 << (int)logBlockSize;
     if (this._blockSize < 512) this._blockSize = 4096;
 
-    this._natBlkAddr = (int)BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(sb + SbNatBlkAddrOff));
-    this._mainBlkAddr = (int)BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(sb + SbMainBlkAddrOff));
+    this._natBlkAddr = (int)this._data.ReadUInt32(sb + SbNatBlkAddrOff);
+    this._mainBlkAddr = (int)this._data.ReadUInt32(sb + SbMainBlkAddrOff);
 
     this.ReadDirectory(RootNodeId, "");
+  }
+
+  /// <summary>Reads one whole block, or null when it falls outside the image.</summary>
+  private byte[]? ReadBlock(int blockAddr) {
+    if (blockAddr <= 0) return null;
+    var off = (long)blockAddr * this._blockSize;
+    if (off < 0 || off + this._blockSize > this._data.Length) return null;
+    return this._data.Read(off, this._blockSize);
   }
 
   private int LookupNat(uint nodeId) {
@@ -87,60 +107,101 @@ public sealed class F2fsReader : IDisposable {
     var natOff = (long)(this._natBlkAddr + natBlock) * this._blockSize + natIdx * 9;
     if (natOff + 9 > this._data.Length) return -1;
 
-    var blockAddr = (int)BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan((int)natOff + 5));
-    return blockAddr;
+    return (int)this._data.ReadUInt32(natOff + 5);
   }
 
   private void ReadDirectory(uint nodeId, string basePath) {
-    var blockAddr = this.LookupNat(nodeId);
-    if (blockAddr <= 0) return;
-    var nodeOff = (long)blockAddr * this._blockSize;
-    if (nodeOff + this._blockSize > this._data.Length) return;
-    var noff = (int)nodeOff;
+    var inode = this.ReadBlock(this.LookupNat(nodeId));
+    if (inode == null) return;
 
-    var mode = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(noff + InodeModeOff));
+    var mode = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(InodeModeOff));
     if ((mode & 0xF000) != 0x4000) return; // not directory
 
-    var inlineFlag = this._data[noff + InodeInlineFlagOff];
+    var inlineFlag = inode[InodeInlineFlagOff];
 
     if ((inlineFlag & F2fsInlineDentry) != 0) {
-      this.ParseInlineDentries(noff, basePath);
+      this.ParseInlineDentries(inode, basePath);
       return;
     }
 
-    // Traditional layout: iterate i_addr[] data blocks, each a dentry block.
-    for (var i = 0; i < AddrsPerInode; ++i) {
-      var addrOff = noff + InodeIAddrOff + i * 4;
-      if (addrOff + 4 > this._data.Length) break;
-      var dataBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(addrOff));
-      if (dataBlock == 0) continue;
+    // Traditional layout: iterate the inode's data blocks, each a dentry block.
+    foreach (var dataBlock in this.EnumerateDataBlocks(inode)) {
+      var block = this.ReadBlock(dataBlock);
+      if (block == null) continue;
+      this.ParseDentryBlock(block, basePath);
+    }
+  }
 
-      var dataOff = (long)dataBlock * this._blockSize;
-      if (dataOff + this._blockSize > this._data.Length) continue;
+  /// <summary>
+  /// Yields a file's data-block addresses in logical order: the inode's own 923
+  /// addresses, then the blocks reached through i_nid[] — two direct nodes, two
+  /// indirect nodes over direct ones, and a double-indirect node. A zero address
+  /// is a hole and is yielded as zero so the caller keeps its place in the file.
+  /// </summary>
+  private IEnumerable<int> EnumerateDataBlocks(byte[] inode) {
+    for (var i = 0; i < AddrsPerInode; ++i)
+      yield return (int)BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(InodeIAddrOff + i * 4));
 
-      this.ParseDentryBlock((int)dataOff, basePath);
+    for (var slot = 0; slot < 5; ++slot) {
+      var nid = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(InodeINidOff + slot * 4));
+      if (nid == 0) continue;
+      var levels = slot switch { 0 or 1 => 1, 2 or 3 => 2, _ => 3 };
+      foreach (var blk in this.EnumerateNode(nid, levels))
+        yield return blk;
+    }
+  }
+
+  /// <summary>
+  /// Walks one node block. At level 1 its entries are data-block addresses; above
+  /// that they are node ids one level down.
+  /// </summary>
+  private IEnumerable<int> EnumerateNode(uint nid, int levels) {
+    var node = this.ReadBlock(this.LookupNat(nid));
+    if (node == null) yield break;
+
+    if (levels <= 1) {
+      for (var i = 0; i < AddrsPerBlock; ++i)
+        yield return (int)BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(i * 4));
+      yield break;
+    }
+
+    for (var i = 0; i < NidsPerBlock; ++i) {
+      var child = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(i * 4));
+      if (child == 0) continue;
+      foreach (var blk in this.EnumerateNode(child, levels - 1))
+        yield return blk;
     }
   }
 
   /// <summary>
   /// Parses inline dentries embedded in the inode (F2FS_INLINE_DENTRY layout).
   /// </summary>
-  private void ParseInlineDentries(int inodeOff, string basePath) {
-    var bitmapOff = inodeOff + InlineDentryStart;
-    var dentryOff = inodeOff + InlineDentryBase;
-    var nameOff = inodeOff + InlineNameBase;
+  private void ParseInlineDentries(byte[] inode, string basePath) {
+    const int bitmapOff = InlineDentryStart;
+    const int dentryOff = InlineDentryBase;
+    const int nameOff = InlineNameBase;
+    this.ParseDentryRegion(inode, bitmapOff, dentryOff, nameOff, NrInlineDentry, basePath);
+  }
 
-    for (var i = 0; i < NrInlineDentry;) {
+  /// <summary>
+  /// Walks a bitmap-plus-slots dentry region — the same shape whether it lives
+  /// inline in an inode or in a dedicated dentry block.
+  /// </summary>
+  private void ParseDentryRegion(byte[] buffer, int bitmapOff, int dentryOff, int nameOff,
+    int slotCount, string basePath) {
+    var nrInlineDentry = slotCount;
+
+    for (var i = 0; i < nrInlineDentry;) {
       var byteIdx = bitmapOff + i / 8;
-      if (byteIdx >= this._data.Length) break;
-      if ((this._data[byteIdx] & (1 << (i % 8))) == 0) { ++i; continue; }
+      if (byteIdx >= buffer.Length) break;
+      if ((buffer[byteIdx] & (1 << (i % 8))) == 0) { ++i; continue; }
 
       var entryOff = dentryOff + i * 11;
-      if (entryOff + 11 > this._data.Length) break;
+      if (entryOff + 11 > buffer.Length) break;
 
-      var ino = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(entryOff + 4));
-      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(entryOff + 8));
-      var fileType = this._data[entryOff + 10];
+      var ino = BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(entryOff + 4));
+      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(entryOff + 8));
+      var fileType = buffer[entryOff + 10];
 
       // A name spans ceil(nameLen / SLOT_LEN) consecutive slots; advance past all of them.
       var slots = nameLen <= 0 ? 1 : (nameLen + SlotLen - 1) / SlotLen;
@@ -148,10 +209,10 @@ public sealed class F2fsReader : IDisposable {
       if (ino == 0 || nameLen == 0 || nameLen > 255) { i += slots; continue; }
 
       var fnOff = nameOff + i * SlotLen;
-      var fnLen = Math.Min((int)nameLen, this._data.Length - fnOff);
-      if (fnLen <= 0 || fnOff + fnLen > this._data.Length) { i += slots; continue; }
+      var fnLen = Math.Min((int)nameLen, buffer.Length - fnOff);
+      if (fnLen <= 0 || fnOff + fnLen > buffer.Length) { i += slots; continue; }
 
-      var name = Encoding.UTF8.GetString(this._data, fnOff, fnLen);
+      var name = Encoding.UTF8.GetString(buffer, fnOff, fnLen);
       name = name.TrimEnd('\0');
       i += slots;
       if (string.IsNullOrEmpty(name) || name == "." || name == "..") continue;
@@ -172,94 +233,74 @@ public sealed class F2fsReader : IDisposable {
     }
   }
 
-  private void ParseDentryBlock(int blockOff, string basePath) {
+  private void ParseDentryBlock(byte[] block, string basePath) {
     // F2FS dentry block: bitmap(27 bytes) + reserved(3) + dentry[214](11 each) + filename[214][8].
-    var nrDentry = 214;
-    var bitmapSize = (nrDentry + 7) / 8; // 27
+    const int nrDentry = 214;
+    const int bitmapSize = (nrDentry + 7) / 8; // 27
     const int reserved = 3;
-    var dentryOff = blockOff + bitmapSize + reserved;
-    var nameOff = dentryOff + nrDentry * 11;
-
-    for (var i = 0; i < nrDentry;) {
-      var byteIdx = blockOff + i / 8;
-      if (byteIdx >= this._data.Length) break;
-      if ((this._data[byteIdx] & (1 << (i % 8))) == 0) { ++i; continue; }
-
-      var entryOff = dentryOff + i * 11;
-      if (entryOff + 11 > this._data.Length) break;
-
-      var ino = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(entryOff + 4));
-      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(entryOff + 8));
-      var fileType = this._data[entryOff + 10];
-
-      // A name spans ceil(nameLen / SLOT_LEN) consecutive slots; advance past all of them.
-      var slots = nameLen <= 0 ? 1 : (nameLen + SlotLen - 1) / SlotLen;
-
-      if (ino == 0 || nameLen == 0 || nameLen > 255) { i += slots; continue; }
-
-      var fnOff = nameOff + i * SlotLen;
-      var fnLen = Math.Min(nameLen, this._data.Length - fnOff);
-      if (fnLen <= 0 || fnOff + fnLen > this._data.Length) { i += slots; continue; }
-
-      var name = Encoding.UTF8.GetString(this._data, fnOff, fnLen);
-      name = name.TrimEnd('\0');
-      i += slots;
-      if (string.IsNullOrEmpty(name) || name == "." || name == "..") continue;
-
-      var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
-      var isDir = fileType == 2;
-      long childSize = 0;
-      if (!isDir) childSize = this.ReadInodeSize(ino);
-
-      this._entries.Add(new F2fsEntry {
-        Name = fullPath,
-        Size = isDir ? 0 : childSize,
-        IsDirectory = isDir,
-        NodeId = ino,
-      });
-
-      if (isDir) this.ReadDirectory(ino, fullPath);
-    }
+    const int dentryOff = bitmapSize + reserved;
+    const int nameOff = dentryOff + nrDentry * 11;
+    this.ParseDentryRegion(block, 0, dentryOff, nameOff, nrDentry, basePath);
   }
 
   private long ReadInodeSize(uint ino) {
-    var childBlock = this.LookupNat(ino);
-    if (childBlock <= 0) return 0;
-    var childOff = (long)childBlock * this._blockSize;
-    if (childOff + InodeSizeOff + 8 > this._data.Length) return 0;
-    return (long)BinaryPrimitives.ReadUInt64LittleEndian(this._data.AsSpan((int)childOff + InodeSizeOff));
+    var inode = this.ReadBlock(this.LookupNat(ino));
+    if (inode == null) return 0;
+    return (long)BinaryPrimitives.ReadUInt64LittleEndian(inode.AsSpan(InodeSizeOff));
   }
 
   public byte[] Extract(F2fsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    if (entry.IsDirectory) return [];
-
-    var blockAddr = this.LookupNat(entry.NodeId);
-    if (blockAddr <= 0) return [];
-    var nodeOff = (long)blockAddr * this._blockSize;
-    if (nodeOff + this._blockSize > this._data.Length) return [];
-    var noff = (int)nodeOff;
-
-    var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(this._data.AsSpan(noff + InodeSizeOff));
+    var size = this.SizeOf(entry);
     if (size <= 0) return [];
+    if (size > Array.MaxLength)
+      throw new IOException(
+        $"F2FS: '{entry.Name}' is {size:N0} bytes, past the array limit; use ExtractTo.");
 
-    using var ms = new MemoryStream();
-    for (var i = 0; i < AddrsPerInode && ms.Length < size; ++i) {
-      var addrOff = noff + InodeIAddrOff + i * 4;
-      if (addrOff + 4 > this._data.Length) break;
-      var dataBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(addrOff));
-      if (dataBlock == 0) continue;
-      var dataOff = (long)dataBlock * this._blockSize;
-      var len = (int)Math.Min(this._blockSize, size - ms.Length);
-      if (dataOff + len <= this._data.Length)
-        ms.Write(this._data, (int)dataOff, len);
-    }
-
-    var result = ms.ToArray();
-    if (result.Length > size)
-      return result.AsSpan(0, (int)size).ToArray();
+    var result = new byte[size];
+    using var target = new MemoryStream(result, writable: true);
+    this.ExtractTo(entry, target);
     return result;
   }
 
-  public void Dispose() { }
+  /// <summary>The file's logical size, straight from its inode.</summary>
+  public long SizeOf(F2fsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory) return 0;
+    var inode = this.ReadBlock(this.LookupNat(entry.NodeId));
+    if (inode == null) return 0;
+    return (long)BinaryPrimitives.ReadUInt64LittleEndian(inode.AsSpan(InodeSizeOff));
+  }
+
+  /// <summary>
+  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />
+  /// block by block, following the inode's node tree. Returns the byte count.
+  /// </summary>
+  public long ExtractTo(F2fsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
+
+    var inode = this.ReadBlock(this.LookupNat(entry.NodeId));
+    if (inode == null) return 0;
+    var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(inode.AsSpan(InodeSizeOff));
+    if (size <= 0) return 0;
+
+    // An address of zero is a hole, which reads back as zeros.
+    var hole = new byte[this._blockSize];
+    long written = 0;
+    foreach (var dataBlock in this.EnumerateDataBlocks(inode)) {
+      if (written >= size) break;
+      var len = (int)Math.Min(this._blockSize, size - written);
+      var off = (long)dataBlock * this._blockSize;
+      if (dataBlock <= 0 || off + len > this._data.Length)
+        destination.Write(hole, 0, len);
+      else
+        this._data.CopyTo(off, destination, len);
+      written += len;
+    }
+    return written;
+  }
+
+  public void Dispose() => this._data.Dispose();
 }

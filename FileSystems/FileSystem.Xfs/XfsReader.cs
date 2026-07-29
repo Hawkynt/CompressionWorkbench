@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Xfs;
@@ -8,7 +9,8 @@ public sealed class XfsReader : IDisposable {
   private const uint XfsMagic = 0x58465342; // "XFSB"
   private const ushort InodeMagic = 0x494E; // "IN"
 
-  private readonly byte[] _data;
+  private readonly ImageAccessor _img;
+  private readonly long _len;
   private readonly List<XfsEntry> _entries = [];
 
   private uint _blockSize;
@@ -26,37 +28,50 @@ public sealed class XfsReader : IDisposable {
 
   public IReadOnlyList<XfsEntry> Entries => _entries;
 
-  public XfsReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+  public XfsReader(Stream stream, bool leaveOpen = true) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    // Blocks are pulled on demand: an XFS volume's metadata is a small prefix
+    // however many gigabytes of file extents follow it.
+    _img = new ImageAccessor(stream, leaveOpen);
+    _len = _img.Length;
     Parse();
   }
 
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
+  private ushort U16(long off) => this._img.Length >= off + 2 ? BinaryPrimitives.ReverseEndianness(this._img.ReadUInt16(off)) : (ushort)0;
+  private uint U32(long off) => this._img.Length >= off + 4 ? BinaryPrimitives.ReverseEndianness(this._img.ReadUInt32(off)) : 0u;
+  private ulong U64(long off) => this._img.Length >= off + 8 ? BinaryPrimitives.ReverseEndianness(this._img.ReadUInt64(off)) : 0UL;
+  private byte B(long off) => off >= 0 && off < this._img.Length ? this._img.ReadByte(off) : (byte)0;
+  private byte[] Read(long off, int len) => this._img.Read(off, len);
+  private string Str(long off, int len) => Encoding.UTF8.GetString(this._img.Read(off, len));
+
   private void Parse() {
-    if (_data.Length < 512)
+    if (_len < 512)
       throw new InvalidDataException("XFS: image too small.");
 
-    var magic = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(0));
+    var magic = U32((0));
     if (magic != XfsMagic)
       throw new InvalidDataException("XFS: invalid superblock magic.");
 
-    _blockSize = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(4));
-    _rootIno = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(56));
-    _agBlocks = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(84));
-    _agCount = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(88));
-    _versionNum = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(100));
-    _inodeSize = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(104));
-    _agBlkLog = _data[124];
-    _dirBlkLog = _data[192]; // sb_dirblklog — directory block = blocksize << this
+    _blockSize = U32((4));
+    _rootIno = U64((56));
+    _agBlocks = U32((84));
+    _agCount = U32((88));
+    _versionNum = U16((100));
+    _inodeSize = U16((104));
+    _agBlkLog = B(124);
+    _dirBlkLog = B(192); // sb_dirblklog — directory block = blocksize << this
     // sb_features_incompat lives at offset 216 on v5 superblocks. Only read
     // when sb is v5 (low nibble of sb_versionnum == 5); otherwise leave zero.
-    if ((_versionNum & 0xF) >= 5 && _data.Length >= 220)
-      _featuresIncompat = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(216));
+    if ((_versionNum & 0xF) >= 5 && _len >= 220)
+      _featuresIncompat = U32((216));
 
     if (_blockSize == 0) _blockSize = 4096;
     if (_inodeSize == 0) _inodeSize = 256;
-    if (_agBlocks == 0) _agBlocks = (uint)(_data.Length / _blockSize);
+    if (_agBlocks == 0) _agBlocks = (uint)(_len / _blockSize);
     if (_agBlkLog == 0) {
       // Recover from agblocks.
       var v = _agBlocks;
@@ -87,17 +102,17 @@ public sealed class XfsReader : IDisposable {
 
   private void ReadDirectory(ulong ino, string basePath) {
     var off = InodeOffset(ino);
-    if (off < 0 || off + _inodeSize > _data.Length) return;
+    if (off < 0 || off + _inodeSize > _len) return;
     var ioff = (int)off;
 
     // Validate inode magic
-    if (BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(ioff)) != InodeMagic) return;
+    if (U16((ioff)) != InodeMagic) return;
 
-    var mode = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(ioff + 2));
+    var mode = U16((ioff + 2));
     if ((mode & 0xF000) != 0x4000) return; // not directory
 
-    var format = _data[ioff + 5];
-    var size = (long)BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(ioff + 56));
+    var format = B(ioff + 5);
+    var size = (long)U64((ioff + 56));
     var forkOff = InodeForkOffset;
 
     if (format == 1) {
@@ -110,19 +125,19 @@ public sealed class XfsReader : IDisposable {
   }
 
   private void ReadShortFormDir(int dataOff, int dataLen, string basePath) {
-    if (dataOff + 6 > _data.Length) return;
-    var count = _data[dataOff]; // number of entries
-    var i8count = _data[dataOff + 1]; // number of entries with 8-byte inodes
+    if (dataOff + 6 > _len) return;
+    var count = B(dataOff); // number of entries
+    var i8count = B(dataOff + 1); // number of entries with 8-byte inodes
     var pos = dataOff + 6; // skip count(1)+i8count(1)+parent(4)
 
     if (i8count > 0) pos = dataOff + 10; // parent is 8 bytes
 
     for (int i = 0; i < count + i8count && pos + 3 < dataOff + dataLen; i++) {
-      var nameLen = _data[pos];
+      var nameLen = B(pos);
       if (nameLen == 0) break;
-      var offset = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(pos + 1));
-      if (pos + 3 + nameLen > _data.Length) break;
-      var name = Encoding.UTF8.GetString(_data, pos + 3, nameLen);
+      var offset = U16((pos + 1));
+      if (pos + 3 + nameLen > _len) break;
+      var name = Str(pos + 3, nameLen);
 
       ulong childIno;
       // With the FTYPE feature, each sf entry inserts a 1-byte ftype between
@@ -131,13 +146,13 @@ public sealed class XfsReader : IDisposable {
       var inoPos = pos + 3 + nameLen + ftypeLen;
       if (i < count && i8count == 0) {
         // 4-byte inode
-        if (inoPos + 4 > _data.Length) break;
-        childIno = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(inoPos));
+        if (inoPos + 4 > _len) break;
+        childIno = U32((inoPos));
         pos = inoPos + 4;
       } else {
         // 8-byte inode
-        if (inoPos + 8 > _data.Length) break;
-        childIno = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(inoPos));
+        if (inoPos + 8 > _len) break;
+        childIno = U64((inoPos));
         pos = inoPos + 8;
       }
 
@@ -147,10 +162,10 @@ public sealed class XfsReader : IDisposable {
       var childOff = InodeOffset(childIno);
       bool isDir = false;
       long childSize = 0;
-      if (childOff >= 0 && childOff + 64 <= _data.Length) {
-        var childMode = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan((int)childOff + 2));
+      if (childOff >= 0 && childOff + 64 <= _len) {
+        var childMode = U16(((int)childOff + 2));
         isDir = (childMode & 0xF000) == 0x4000;
-        childSize = (long)BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan((int)childOff + 56));
+        childSize = (long)U64(((int)childOff + 56));
       }
 
       _entries.Add(new XfsEntry {
@@ -176,8 +191,8 @@ public sealed class XfsReader : IDisposable {
   private void ReadExtentDir(int inodeOff, string basePath) {
     // Extent list starts at the inode's fork offset.
     var forkOff = InodeForkOffset;
-    if (inodeOff + forkOff + 4 > _data.Length) return;
-    var nextents = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(inodeOff + 76));
+    if (inodeOff + forkOff + 4 > _len) return;
+    var nextents = U32((inodeOff + 76));
     if (nextents == 0 || nextents > 100) return;
 
     // A directory block can span several fs blocks (sb_dirblklog); parse each
@@ -189,9 +204,9 @@ public sealed class XfsReader : IDisposable {
 
     var extOff = inodeOff + forkOff;
     for (uint e = 0; e < nextents; e++) {
-      if (extOff + 16 > _data.Length) break;
-      var hi = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(extOff));
-      var lo = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(extOff + 8));
+      if (extOff + 16 > _len) break;
+      var hi = U64((extOff));
+      var lo = U64((extOff + 8));
       extOff += 16;
 
       var blockCount = (int)(lo & 0x1FFFFF);
@@ -202,7 +217,7 @@ public sealed class XfsReader : IDisposable {
       // Walk the extent one directory block at a time.
       for (var b = 0; b < blockCount; b += dirFsBlocks) {
         var blockOff = (long)(startBlock + (ulong)b) * _blockSize;
-        if (blockOff + 8 > _data.Length) continue;
+        if (blockOff + 8 > _len) continue;
         ReadDirDataBlock((int)blockOff, dirFsBlocks * (int)_blockSize, basePath);
       }
     }
@@ -219,8 +234,8 @@ public sealed class XfsReader : IDisposable {
     var end = blockOff + blockLen;
 
     // Only parse blocks that are directory data blocks; skip everything else.
-    if (pos + 4 > _data.Length) return;
-    var bMagic = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(pos));
+    if (pos + 4 > _len) return;
+    var bMagic = U32((pos));
     var isV3 = bMagic is Dir3BlockMagic or Dir3DataMagic;
     var isV2 = bMagic is Dir2BlockMagic or Dir2DataMagic;
     if (!isV3 && !isV2) return;
@@ -230,7 +245,7 @@ public sealed class XfsReader : IDisposable {
     // block end; the data-entry area stops short of it. The tail's leaf-entry
     // count lets us compute that boundary so leaf entries aren't misread as data.
     if (bMagic is Dir3BlockMagic or Dir2BlockMagic && end - 8 >= blockOff) {
-      var leafCount = (int)BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(end - 8));
+      var leafCount = (int)U32((end - 8));
       var dataEnd = end - 8 - leafCount * 8;
       if (dataEnd > blockOff && dataEnd < end) end = dataEnd;
     }
@@ -239,30 +254,30 @@ public sealed class XfsReader : IDisposable {
     // FTYPE feature is set], tag(2), padded to 8 bytes. An unused (free) region
     // begins with the 0xffff free-tag in the first 2 bytes.
     var ftypeLen = this.HasFtype ? 1 : 0;
-    while (pos + 12 <= end && pos + 12 <= _data.Length) {
+    while (pos + 12 <= end && pos + 12 <= _len) {
       // Skip an xfs_dir2_data_unused free region (freetag 0xffff, then length).
-      if (BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(pos)) == 0xFFFF) {
-        var freeLen = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(pos + 2));
+      if (U16((pos)) == 0xFFFF) {
+        var freeLen = U16((pos + 2));
         if (freeLen < 8) break;
         pos += freeLen;
         continue;
       }
-      var entIno = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(pos));
-      var nameLen = _data[pos + 8];
+      var entIno = U64((pos));
+      var nameLen = B(pos + 8);
       if (nameLen == 0 || entIno == 0) { pos += 8; continue; }
-      if (pos + 9 + nameLen + ftypeLen + 2 > _data.Length) break;
-      var name = Encoding.UTF8.GetString(_data, pos + 9, nameLen);
+      if (pos + 9 + nameLen + ftypeLen + 2 > _len) break;
+      var name = Str(pos + 9, nameLen);
 
       if (name != "." && name != "..") {
         var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
         var childOff = InodeOffset(entIno);
         bool isDir = false;
         long childSize = 0;
-        if (childOff >= 0 && childOff + 64 <= _data.Length &&
-            BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan((int)childOff)) == InodeMagic) {
-          var childMode = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan((int)childOff + 2));
+        if (childOff >= 0 && childOff + 64 <= _len &&
+            U16(((int)childOff)) == InodeMagic) {
+          var childMode = U16(((int)childOff + 2));
           isDir = (childMode & 0xF000) == 0x4000;
-          childSize = (long)BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan((int)childOff + 56));
+          childSize = (long)U64(((int)childOff + 56));
         }
 
         _entries.Add(new XfsEntry {
@@ -287,60 +302,73 @@ public sealed class XfsReader : IDisposable {
 
   public byte[] Extract(XfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    if (entry.IsDirectory) return [];
+    var size = entry.Size;
+    if (size > Array.MaxLength)
+      throw new IOException(
+        $"XFS: '{entry.Name}' is {size:N0} bytes, past the array limit; use ExtractTo.");
+
+    using var ms = new MemoryStream();
+    this.ExtractTo(entry, ms);
+    return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />,
+  /// extent by extent. Returns the number of bytes written.
+  /// </summary>
+  public long ExtractTo(XfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
 
     var off = InodeOffset((ulong)entry.InodeNumber);
-    if (off < 0 || off + _inodeSize > _data.Length) return [];
-    var ioff = (int)off;
+    if (off < 0 || off + _inodeSize > _len) return 0;
+    var ioff = off;
 
-    if (BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(ioff)) != InodeMagic) return [];
+    if (U16(ioff) != InodeMagic) return 0;
 
-    var format = _data[ioff + 5];
-    var size = (long)BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(ioff + 56));
+    var format = B(ioff + 5);
+    var size = (long)U64(ioff + 56);
     var forkOff = InodeForkOffset;
 
     if (format == 1) {
       // Local/inline data
       var dataOff = ioff + forkOff;
       var len = (int)Math.Min(size, _inodeSize - forkOff);
-      if (dataOff + len <= _data.Length)
-        return _data.AsSpan(dataOff, len).ToArray();
-    } else if (format == 2) {
-      // Extents
-      return ReadExtentData(ioff, size);
+      if (len <= 0 || dataOff + len > _len) return 0;
+      destination.Write(Read(dataOff, len));
+      return len;
     }
 
-    return [];
+    if (format != 2) return 0;
+    return this.WriteExtentData(ioff, size, destination);
   }
 
-  private byte[] ReadExtentData(int inodeOff, long size) {
-    var nextents = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(inodeOff + 76));
-    if (nextents == 0 || nextents > 100) return [];
+  private long WriteExtentData(long inodeOff, long size, Stream destination) {
+    var nextents = U32(inodeOff + 76);
+    if (nextents == 0) return 0;
 
-    using var ms = new MemoryStream();
+    long written = 0;
     var extOff = inodeOff + InodeForkOffset;
-    for (uint e = 0; e < nextents && ms.Length < size; e++) {
-      if (extOff + 16 > _data.Length) break;
-      var hi = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(extOff));
-      var lo = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(extOff + 8));
+    for (uint e = 0; e < nextents && written < size; e++) {
+      if (extOff + 16 > _len) break;
+      var hi = U64(extOff);
+      var lo = U64(extOff + 8);
       extOff += 16;
 
-      var blockCount = (int)(lo & 0x1FFFFF);
+      var blockCount = (long)(lo & 0x1FFFFF);
       var startBlock = ((hi & 0x1FF) << 43) | (lo >> 21);
 
-      for (int b = 0; b < blockCount && ms.Length < size; b++) {
+      for (long b = 0; b < blockCount && written < size; b++) {
         var blockOff = (long)(startBlock + (ulong)b) * _blockSize;
-        var len = (int)Math.Min(_blockSize, size - ms.Length);
-        if (blockOff + len <= _data.Length)
-          ms.Write(_data, (int)blockOff, len);
+        var len = (int)Math.Min(_blockSize, size - written);
+        if (blockOff + len > _len) break;
+        _img.CopyTo(blockOff, destination, len);
+        written += len;
       }
     }
-
-    var result = ms.ToArray();
-    if (result.Length > size)
-      return result.AsSpan(0, (int)size).ToArray();
-    return result;
+    return written;
   }
 
-  public void Dispose() { }
+  public void Dispose() => this._img.Dispose();
 }

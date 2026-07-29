@@ -154,11 +154,14 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new XfsReader(stream);
+    using var r = new XfsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -178,9 +181,13 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
-      return new Compression.Registry.Streaming.BoundedEntryStream(
-        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+      // The file may span several extents, so it is spooled to scratch rather
+      // than windowed; the spill is deleted when the stream closes.
+      var scratch = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,
+        FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
+      var size = r.ExtractTo(e, scratch);
+      scratch.Position = 0;
+      return new Compression.Registry.Streaming.BoundedEntryStream(scratch, size, leaveOpen: false);
     }
     return new Compression.Registry.Streaming.BoundedEntryStream(
       new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
@@ -195,11 +202,20 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
     var w = new XfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, i.ReadContent());
+      if (i.InMemoryContent is { } bytes) {
+        w.AddFile(i.ArchiveName, bytes);
+        continue;
+      }
+      // Sized from disk and opened only while its extent is being filled, so the
+      // volume is bounded by the target rather than by what a byte[] can hold.
+      var path = i.FullPath;
+      w.AddStreamingFile(i.ArchiveName, new FileInfo(path).Length, () => File.OpenRead(path));
     }
     w.WriteTo(output);
   }

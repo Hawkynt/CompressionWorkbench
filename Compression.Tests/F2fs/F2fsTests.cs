@@ -183,9 +183,32 @@ public class F2fsTests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void Writer_OversizedFile_Throws() {
+  public void Writer_FilePastNodeTreeCeiling_Throws() {
+    // The inode addresses 923 blocks directly, then two direct nodes, two indirect
+    // and one double-indirect — about 4 TB. Past that there is nowhere to hang the
+    // blocks, so the writer must refuse rather than silently truncate.
     var w = new F2fsWriter();
-    Assert.Throws<InvalidOperationException>(() => w.AddFile("big.bin", new byte[924 * 4096]));
+    Assert.Throws<InvalidOperationException>(
+      () => w.AddStreamingFile("huge.bin", 5L * 1024 * 1024 * 1024 * 1024, () => new MemoryStream()));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_FilePastDirectPointers_RoundTripsThroughNodeBlocks() {
+    // 1000 blocks: 923 in the inode's own i_addr[], the remaining 77 in the first
+    // direct node hanging off i_nid[0].
+    var payload = new byte[1000 * 4096];
+    for (var i = 0; i < payload.Length; ++i)
+      payload[i] = (byte)(i * 31 + i / 4096);
+
+    var w = new F2fsWriter();
+    w.AddFile("indirect.bin", payload);
+    var image = w.BuildAutoSized();
+
+    using var ms = new MemoryStream(image);
+    using var r = new F2fsReader(ms);
+    var entry = r.Entries.Single(e => !e.IsDirectory);
+    Assert.That(entry.Size, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(entry), Is.EqualTo(payload));
   }
 
   // ------------------------------------------------------------------

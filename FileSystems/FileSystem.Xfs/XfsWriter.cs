@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 using Compression.Core.Checksums;
 
@@ -45,17 +46,19 @@ public sealed class XfsWriter {
   private const uint CntbtV5Magic = 0x41423343;  // "AB3C" — v5 cntbt (CRC)
   private const uint InobtV5Magic = 0x49414233;  // "IAB3" — v5 inobt (CRC)
 
-  // Geometry — 2 AGs × 4096 blocks × 4 KiB = 16 MiB per AG, 32 MiB total.
+  // Geometry — 2 AGs, each at least 4096 blocks × 4 KiB = 16 MiB.
   // xfs kernel validate_sb_common requires agblocks × blocksize ≥ XFS_MIN_AG_BYTES
-  // (= 16 MiB); smaller AGs trigger "SB sanity check failed".
-  private const int AgBlocks = 4096;
+  // (= 16 MiB); smaller AGs trigger "SB sanity check failed". The AG grows with
+  // the payload — XFS allows up to 1 TB per AG — so a large volume is a larger
+  // AG rather than a refusal to lay the content out.
+  private const int MinAgBlocks = 4096;
+  private const int MaxAgBlocks = 1 << 28;   // XFS_MAX_AG_BYTES (1 TB) / 4 KiB
   private const int AgCount = 2;
   private const byte BlockLog = 12;     // log2(4096)
   private const byte SectorLog = 9;     // log2(512)
   private const byte InodeLog = 8;      // log2(256)
   private const byte InoPbLog = 4;      // log2(16)
-  private const byte AgBlkLog = 12;     // log2(4096)
-  private const byte AgInoLog = AgBlkLog + InoPbLog; // 16
+  private const byte MinAgBlkLog = 12;  // log2(4096)
 
   // AG-internal block positions (agbno).
   private const int AgfSector = 1;
@@ -130,7 +133,6 @@ public sealed class XfsWriter {
   // data being copied from a byte[]; the data block region is left zero and
   // BuildToStreaming's second pass post-fills it in <=64 KB chunks. XFS file
   // data carries no CRC, so streaming it does not invalidate any checksum.
-  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
@@ -245,10 +247,43 @@ public sealed class XfsWriter {
     return (root, nodes);
   }
 
+  // Chosen per build: the AG size in blocks, its log2, and the AG-1 header the
+  // layout parks at the far end of the volume.
+  private int _agBlocks = MinAgBlocks;
+  private byte _agBlkLog = MinAgBlkLog;
+  private byte[] _ag1Header = [];
+  private long _totalBytes;
+  private readonly DeferredPayloads _filePayloads = new();
+
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
-    var image = BuildImage();
-    output.Write(image);
+    var prefix = this.BuildImage();
+    var basePosition = output.CanSeek ? output.Position : 0;
+    output.Write(prefix);
+    output.Flush();
+    if (output.CanSeek) {
+      output.SetLength(basePosition + this._totalBytes);
+      output.Position = basePosition + (long)this._agBlocks * BlockSize;
+      output.Write(this._ag1Header);
+      this._filePayloads.FlushTo(output, basePosition);
+      output.Position = basePosition + this._totalBytes;
+    }
+    output.Flush();
+  }
+
+  /// <summary>Builds the whole volume in memory. Only valid below the array limit.</summary>
+  public byte[] BuildImageBytes() {
+    var prefix = this.BuildImage();
+    if (this._totalBytes > Array.MaxLength)
+      throw new IOException(
+        $"XFS: a {this._totalBytes:N0}-byte volume exceeds the array limit; use WriteTo(Stream).");
+
+    var image = new byte[this._totalBytes];
+    prefix.CopyTo(image.AsSpan());
+    this._ag1Header.CopyTo(image.AsSpan((int)((long)this._agBlocks * BlockSize)));
+    using var target = new MemoryStream(image, writable: true);
+    this._filePayloads.FlushTo(target);
+    return image;
   }
 
   /// <summary>
@@ -267,36 +302,8 @@ public sealed class XfsWriter {
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
 
-    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
-    this._streamingSink = sink;
-    byte[] image;
-    try {
-      image = BuildImage(); // streaming files recorded into sink, left zero
-    } finally {
-      this._streamingSink = null;
-    }
-
-    output.SetLength(image.Length);
     output.Position = 0;
-    output.Write(image);
-
-    var buf = new byte[64 * 1024];
-    foreach (var (byteOffset, size, opener) in sink) {
-      if (size <= 0) continue;
-      if (byteOffset < 0 || byteOffset >= output.Length) continue;
-      output.Position = byteOffset;
-      using var src = opener();
-      long copied = 0;
-      while (copied < size) {
-        var want = (int)Math.Min(buf.Length, size - copied);
-        var n = src.Read(buf, 0, want);
-        if (n <= 0) break;
-        output.Write(buf, 0, n);
-        copied += n;
-      }
-      // Data-block tail past `size` retains zero from the image init.
-    }
-    output.Flush();
+    this.WriteTo(output);
   }
 
   private byte[] BuildImage() {
@@ -326,19 +333,14 @@ public sealed class XfsWriter {
     var inodeBlocks = chunkCount * InodeChunkBlocks;
     var dataStartBlock = InodeChunkBlock + inodeBlocks;
 
-    // ── Allocate data blocks for regular-file nodes, in slot order ──
-    var nextBlock = dataStartBlock;
-    foreach (var node in nodes) {
-      if (node.IsDirectory) continue;
-      node.DataBlock = nextBlock;
-      node.BlockCount = Math.Max(1, (int)((node.FileLength + BlockSize - 1) / BlockSize));
-      nextBlock += node.BlockCount;
-    }
-
     // ── Allocate directory blocks for any directory whose short-form encoding
     //    overflows the inode literal area (block- or leaf-form dir2) ──
     // The first fs block of each out-of-line directory is aligned to a
     // directory-block boundary so its logical block address maps cleanly.
+    // Directories and the log are laid out before file data so that everything
+    // the writer has to build in memory forms one prefix, and the file payloads
+    // — which may be many gigabytes — follow it and can simply be copied in.
+    var nextBlock = dataStartBlock;
     var dirFsBlocks = DirFsBlocks;
     foreach (var node in nodes) {
       if (!node.IsDirectory) continue;
@@ -354,38 +356,67 @@ public sealed class XfsWriter {
       _ = byteSize;                              // di_size is recomputed during layout
       nextBlock += node.BlockCount;
     }
-    // Reserve 64 blocks (256 KiB) for an internal log at the tail of AG 0.
+
+    // Reserve 64 blocks (256 KiB) for an internal log.
     const int LogBlocks = 64;
     var logStartAgBno = nextBlock;
     nextBlock += LogBlocks;
     var logStartFsBno = (ulong)logStartAgBno;
 
-    // All inodes, file/dir data and the log live in AG 0. If they would spill
-    // past the AG boundary they'd overwrite AG 1's metadata, so refuse instead.
-    if (nextBlock > AgBlocks)
+    // The prefix ends here: every byte before this point is metadata the writer
+    // assembles in memory.
+    var prefixBlocks = nextBlock;
+
+    // ── Allocate data blocks for regular-file nodes, in slot order ──
+    foreach (var node in nodes) {
+      if (node.IsDirectory) continue;
+      node.DataBlock = nextBlock;
+      node.BlockCount = Math.Max(1, (int)((node.FileLength + BlockSize - 1) / BlockSize));
+      nextBlock += node.BlockCount;
+    }
+
+    // ── Size the allocation group to what AG 0 actually holds ──
+    // Everything lives in AG 0; AG 1 carries only its own header. A power-of-two
+    // AG keeps sb_agblklog exact, and one spare block past the content leaves the
+    // free-space btree a non-empty extent to describe.
+    // sb_agblklog is ceil(log2(agblocks)), so the AG need not be a power of two —
+    // rounding to the 16 MB minimum keeps the volume close to its content instead
+    // of doubling it.
+    var agBlocks = Math.Max(MinAgBlocks,
+      (int)(((long)nextBlock + 1 + MinAgBlocks - 1) / MinAgBlocks * MinAgBlocks));
+    if (agBlocks > MaxAgBlocks)
       throw new InvalidOperationException(
-        $"XfsWriter: total content exceeds one allocation group ({nextBlock} of {AgBlocks} blocks).");
+        $"XfsWriter: content needs {nextBlock:N0} blocks, past the {MaxAgBlocks:N0}-block AG ceiling.");
+    var agBlkLog = MinAgBlkLog;
+    while ((1L << agBlkLog) < agBlocks) ++agBlkLog;
+    this._agBlocks = agBlocks;
+    this._agBlkLog = (byte)agBlkLog;
 
-    // Total blocks: pad to AgCount × AgBlocks so every AG has the same size.
-    var totalBlocks = Math.Max(nextBlock, AgBlocks * AgCount);
-    var image = new byte[totalBlocks * BlockSize];
+    var totalBlocks = agBlocks * (long)AgCount;
+    this._totalBytes = totalBlocks * BlockSize;
+    var image = new byte[(long)prefixBlocks * BlockSize];
 
-    // Free-extent bookkeeping (AG 0: single trailing extent after log).
-    var freeStartAg0 = logStartAgBno + LogBlocks;
-    var freeLenAg0 = AgBlocks - freeStartAg0;
+    // Free-extent bookkeeping (AG 0: single trailing extent after the files).
+    var freeStartAg0 = nextBlock;
+    var freeLenAg0 = agBlocks - freeStartAg0;
     // Free-extent bookkeeping (AG 1+): no inode chunk, no files — the region
     // past the per-AG metadata header is entirely free.
     var freeStartAgN = InodeChunkBlock;  // no inode chunk in AG 1+
-    var freeLenAgN = AgBlocks - freeStartAgN;
+    var freeLenAgN = agBlocks - freeStartAgN;
 
     var freeInodeSlots = totalInodeSlots - usedInodeSlots;
 
     // ── Per-AG metadata ──
+    // AG 0's header is the head of the prefix; AG 1's sits a whole AG away, so it
+    // is assembled separately and parked at its offset when the volume is written.
+    const int AgHeaderBlocks = InobtBlock + 1;
+    this._ag1Header = new byte[AgHeaderBlocks * BlockSize];
     for (var ag = 0; ag < AgCount; ag++) {
-      var agByteOffset = ag * AgBlocks * BlockSize;
+      var agImage = ag == 0 ? image : this._ag1Header;
+      var agByteOffset = 0;
 
-      WriteSuperblock(image.AsSpan(agByteOffset),
-        totalBlocks: (ulong)(AgBlocks * AgCount),
+      WriteSuperblock(agImage.AsSpan(agByteOffset),
+        totalBlocks: (ulong)totalBlocks,
         logStart: logStartFsBno,
         logBlocks: LogBlocks,
         icount: (ulong)(ag == 0 ? totalInodeSlots : 0),
@@ -394,44 +425,44 @@ public sealed class XfsWriter {
         dirBlockLog: this._dirBlockLog,
         volumeLabel: this._volumeLabel);
 
-      WriteAgf(image.AsSpan(agByteOffset + AgfSector * SectorSize),
+      WriteAgf(agImage.AsSpan(agByteOffset + AgfSector * SectorSize),
         agNumber: (uint)ag,
-        agBlocks: AgBlocks,
+        agBlocks: (uint)agBlocks,
         bnobtRoot: BnobtBlock,
         cntbtRoot: CntbtBlock,
         freeBlocks: (uint)(ag == 0 ? freeLenAg0 : freeLenAgN),
         longest: (uint)(ag == 0 ? freeLenAg0 : freeLenAgN));
 
-      WriteAgi(image.AsSpan(agByteOffset + AgiSector * SectorSize),
+      WriteAgi(agImage.AsSpan(agByteOffset + AgiSector * SectorSize),
         agNumber: (uint)ag,
-        agBlocks: AgBlocks,
+        agBlocks: (uint)agBlocks,
         inodeCount: ag == 0 ? (uint)totalInodeSlots : 0u,
         freeInodes: ag == 0 ? (uint)freeInodeSlots : 0u,
         inobtRoot: InobtBlock,
         inobtLevel: 1u,  // always 1 — an empty btree still has a root leaf
         newIno: ag == 0 ? (uint)RootIno : 0xFFFFFFFFu);
 
-      WriteAgfl(image.AsSpan(agByteOffset + AgflSector * SectorSize), agNumber: (uint)ag);
+      WriteAgfl(agImage.AsSpan(agByteOffset + AgflSector * SectorSize), agNumber: (uint)ag);
 
       // bb_blkno is the **disk sector number**, not the filesystem block number.
       // For 4 KiB block × 512 B sector, sector = fsblock × 8.
       const int SectorsPerBlock = BlockSize / SectorSize;
 
-      WriteBnobt(image.AsSpan(agByteOffset + BnobtBlock * BlockSize),
+      WriteBnobt(agImage.AsSpan(agByteOffset + BnobtBlock * BlockSize),
         agNumber: (uint)ag,
-        selfSector: (ulong)(ag * AgBlocks + BnobtBlock) * SectorsPerBlock,
+        selfSector: (ulong)((long)ag * agBlocks + BnobtBlock) * SectorsPerBlock,
         freeStart: (uint)(ag == 0 ? freeStartAg0 : freeStartAgN),
         freeLen: (uint)(ag == 0 ? freeLenAg0 : freeLenAgN));
 
-      WriteCntbt(image.AsSpan(agByteOffset + CntbtBlock * BlockSize),
+      WriteCntbt(agImage.AsSpan(agByteOffset + CntbtBlock * BlockSize),
         agNumber: (uint)ag,
-        selfSector: (ulong)(ag * AgBlocks + CntbtBlock) * SectorsPerBlock,
+        selfSector: (ulong)((long)ag * agBlocks + CntbtBlock) * SectorsPerBlock,
         freeStart: (uint)(ag == 0 ? freeStartAg0 : freeStartAgN),
         freeLen: (uint)(ag == 0 ? freeLenAg0 : freeLenAgN));
 
-      WriteInobt(image.AsSpan(agByteOffset + InobtBlock * BlockSize),
+      WriteInobt(agImage.AsSpan(agByteOffset + InobtBlock * BlockSize),
         agNumber: (uint)ag,
-        selfSector: (ulong)(ag * AgBlocks + InobtBlock) * SectorsPerBlock,
+        selfSector: (ulong)((long)ag * agBlocks + InobtBlock) * SectorsPerBlock,
         chunkCount: ag == 0 ? chunkCount : 0,
         startAgino: (uint)RootIno,
         usedSlots: usedInodeSlots);
@@ -497,10 +528,12 @@ public sealed class XfsWriter {
       // copies fewer bytes than the block-rounded region). XFS file data has no
       // CRC, so post-filling these bytes is sound.
       var dataByteOffset = (long)node.DataBlock * BlockSize;
-      if (node.StreamOpener != null)
-        this._streamingSink?.Add((dataByteOffset, node.FileLength, node.StreamOpener));
-      else
-        node.Data.CopyTo(image, (int)dataByteOffset);
+      if (node.StreamOpener != null) {
+        var opener = node.StreamOpener;
+        this._filePayloads.Add(dataByteOffset, FilePayload.FromStream(node.FileLength, opener));
+      } else if (node.Data.Length > 0) {
+        this._filePayloads.Add(dataByteOffset, FilePayload.FromBytes(node.Data));
+      }
     }
 
     // ── Format the log at (logStartAgBno, LogBlocks) ──
@@ -523,15 +556,14 @@ public sealed class XfsWriter {
     }
 
     // ── CRC backfill (last — after all data is written) ──
-    for (var ag = 0; ag < AgCount; ag++) {
-      var agOff = ag * AgBlocks * BlockSize;
-      BackfillCrc(image.AsSpan(agOff, SectorSize), SbCrcOffset);
-      BackfillCrc(image.AsSpan(agOff + AgfSector * SectorSize, SectorSize), AgfCrcOffset);
-      BackfillCrc(image.AsSpan(agOff + AgiSector * SectorSize, SectorSize), AgiCrcOffset);
-      BackfillCrc(image.AsSpan(agOff + AgflSector * SectorSize, SectorSize), AgflCrcOffset);
-      BackfillCrc(image.AsSpan(agOff + BnobtBlock * BlockSize, BlockSize), BtreeCrcOffset);
-      BackfillCrc(image.AsSpan(agOff + CntbtBlock * BlockSize, BlockSize), BtreeCrcOffset);
-      BackfillCrc(image.AsSpan(agOff + InobtBlock * BlockSize, BlockSize), BtreeCrcOffset);
+    foreach (var agImage in (byte[][])[image, this._ag1Header]) {
+      BackfillCrc(agImage.AsSpan(0, SectorSize), SbCrcOffset);
+      BackfillCrc(agImage.AsSpan(AgfSector * SectorSize, SectorSize), AgfCrcOffset);
+      BackfillCrc(agImage.AsSpan(AgiSector * SectorSize, SectorSize), AgiCrcOffset);
+      BackfillCrc(agImage.AsSpan(AgflSector * SectorSize, SectorSize), AgflCrcOffset);
+      BackfillCrc(agImage.AsSpan(BnobtBlock * BlockSize, BlockSize), BtreeCrcOffset);
+      BackfillCrc(agImage.AsSpan(CntbtBlock * BlockSize, BlockSize), BtreeCrcOffset);
+      BackfillCrc(agImage.AsSpan(InobtBlock * BlockSize, BlockSize), BtreeCrcOffset);
     }
     // Every inode slot across all allocated chunks needs a valid CRC.
     for (var slot = 0; slot < totalInodeSlots; slot++) {
@@ -1006,7 +1038,7 @@ public sealed class XfsWriter {
     }
   }
 
-  private static void WriteSuperblock(Span<byte> sb, ulong totalBlocks, ulong logStart,
+  private void WriteSuperblock(Span<byte> sb, ulong totalBlocks, ulong logStart,
       int logBlocks, ulong icount, ulong ifree, ulong fdblocks, byte dirBlockLog,
       string volumeLabel) {
     BinaryPrimitives.WriteUInt32BigEndian(sb[0..], XfsMagic);
@@ -1026,7 +1058,7 @@ public sealed class XfsWriter {
     BinaryPrimitives.WriteUInt64BigEndian(sb[64..], RootIno + 1);       // sb_rbmino
     BinaryPrimitives.WriteUInt64BigEndian(sb[72..], RootIno + 2);       // sb_rsumino
     BinaryPrimitives.WriteUInt32BigEndian(sb[80..], 1);                 // sb_rextsize
-    BinaryPrimitives.WriteUInt32BigEndian(sb[84..], AgBlocks);
+    BinaryPrimitives.WriteUInt32BigEndian(sb[84..], (uint)this._agBlocks);
     BinaryPrimitives.WriteUInt32BigEndian(sb[88..], AgCount);
     BinaryPrimitives.WriteUInt32BigEndian(sb[92..], 0);                 // sb_rbmblocks
     BinaryPrimitives.WriteUInt32BigEndian(sb[96..], (uint)logBlocks);
@@ -1045,7 +1077,7 @@ public sealed class XfsWriter {
     sb[121] = SectorLog;
     sb[122] = InodeLog;
     sb[123] = InoPbLog;
-    sb[124] = AgBlkLog;
+    sb[124] = this._agBlkLog;
     sb[125] = 0;          // sb_rextslog
     sb[126] = 0;          // sb_inprogress
     sb[127] = 25;         // sb_imax_pct
