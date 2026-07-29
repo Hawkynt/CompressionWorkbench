@@ -729,7 +729,9 @@ internal sealed class Ocfs2Writer {
       BinaryPrimitives.WriteUInt16LittleEndian(image.At(dinodeOff + DynFeaturesOffset, 2), DynInlineData);
       var off = dinodeOff + Id2Offset;
       BinaryPrimitives.WriteUInt16LittleEndian(image.At(off, 2), MaxInline); // id_count
-      if (size > 0) image.Write(off + InlineHeaderLen, f.Data.AsSpan(0, (int)size));
+      // From the payload, not the byte[]: a streamed entry carries no bytes, and
+      // an inline file is at most MaxInline long so reading it costs nothing.
+      if (size > 0) image.Write(off + InlineHeaderLen, f.Payload.ToArray().AsSpan(0, (int)size));
       return;
     }
     WriteDinodeHeaderWithSlot(image, f.DinodeBlkno, ModeFile, FlValid, size, 1, 0, f.InodeAllocBit);
