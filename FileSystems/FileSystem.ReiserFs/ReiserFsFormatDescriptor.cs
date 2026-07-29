@@ -83,11 +83,14 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new ReiserFsReader(stream);
+    using var r = new ReiserFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -107,9 +110,13 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
-      return new Compression.Registry.Streaming.BoundedEntryStream(
-        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+      // A body may span many INDIRECT items, so it is spooled to scratch rather
+      // than windowed; the spill is deleted when the stream closes.
+      var scratch = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,
+        FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
+      var size = r.ExtractTo(e, scratch);
+      scratch.Position = 0;
+      return new Compression.Registry.Streaming.BoundedEntryStream(scratch, size, leaveOpen: false);
     }
     return new Compression.Registry.Streaming.BoundedEntryStream(
       new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);

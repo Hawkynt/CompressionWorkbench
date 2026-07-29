@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Hammer;
@@ -32,7 +33,7 @@ namespace FileSystem.Hammer;
 ///   <c>size(8)@80</c>.</description></item>
 /// </list>
 /// </summary>
-public sealed class HammerReader {
+public sealed class HammerReader : IDisposable {
   private const ulong VolSignature = 0xC8414D4DC5523031UL;
   private const long Bigblock = 8192L * 1024;
   private const long BlockmapLayer2 = (Bigblock / 16) * Bigblock;
@@ -47,7 +48,8 @@ public sealed class HammerReader {
   private const byte ObjtypeRegfile = 2;
   private const long ObjidRoot = 1;
 
-  private readonly byte[] _image;
+  private readonly ImageAccessor _image;
+  private readonly long _len;
   private readonly long _volBufBeg;
   private readonly long _freemapLayer1Phys;
   private readonly long _btreeRoot;
@@ -55,8 +57,9 @@ public sealed class HammerReader {
   /// <summary>True if the image carries a valid HAMMER volume header.</summary>
   public bool Valid { get; }
 
-  private HammerReader(byte[] image, bool valid, long volBufBeg, long freemapLayer1Phys, long btreeRoot) {
+  private HammerReader(ImageAccessor image, bool valid, long volBufBeg, long freemapLayer1Phys, long btreeRoot) {
     this._image = image;
+    this._len = image.Length;
     this.Valid = valid;
     this._volBufBeg = volBufBeg;
     this._freemapLayer1Phys = freemapLayer1Phys;
@@ -66,16 +69,35 @@ public sealed class HammerReader {
   /// <summary>Opens a HAMMER image. Never throws on a malformed header; check <see cref="Valid"/>.</summary>
   public static HammerReader Open(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
-    if (image.Length < 1024 || BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(0, 8)) != VolSignature)
+    return Open(ImageAccessor.FromBytes(image));
+  }
+
+  /// <summary>
+  /// Opens a HAMMER volume, pulling blocks on demand. Never throws on a malformed
+  /// header; check <see cref="Valid"/>.
+  /// </summary>
+  public static HammerReader Open(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    return Open(new ImageAccessor(stream));
+  }
+
+  private static HammerReader Open(ImageAccessor image) {
+    if (image.Length < 1024 || image.ReadUInt64(0) != VolSignature)
       return new HammerReader(image, false, 0, 0, 0);
 
-    var volBufBeg = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(24, 8));
-    var btreeRoot = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(240, 8));
+    var volBufBeg = (long)image.ReadUInt64(24);
+    var btreeRoot = (long)image.ReadUInt64(240);
     // vol0_blockmap[4] (freemap) lives at 264 + 4*40; phys_offset is the first 8 bytes (a zone-2 offset).
-    var freemapPhysZone2 = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(264 + 4 * 40, 8));
+    var freemapPhysZone2 = (long)image.ReadUInt64(264 + 4 * 40);
     var freemapLayer1Phys = volBufBeg + (long)((ulong)freemapPhysZone2 & OffShortMask);
     return new HammerReader(image, true, volBufBeg, freemapLayer1Phys, btreeRoot);
   }
+
+  private ushort U16(long off) => this._len >= off + 2 ? this._image.ReadUInt16(off) : (ushort)0;
+  private uint U32(long off) => this._len >= off + 4 ? this._image.ReadUInt32(off) : 0u;
+  private ulong U64(long off) => this._len >= off + 8 ? this._image.ReadUInt64(off) : 0UL;
+  private byte B(long off) => off >= 0 && off < this._len ? this._image.ReadByte(off) : (byte)0;
 
   /// <summary>A regular file recovered from the B-Tree: full POSIX path and exact bytes.</summary>
   public readonly record struct FileEntry(string Path, byte[] Content);
@@ -157,37 +179,37 @@ public sealed class HammerReader {
       return;
 
     var physL = this.Resolve(nodeOffset);
-    if (physL < 0 || physL + 64 > this._image.Length)
+    if (physL < 0 || physL + 64 > this._len)
       return;
-    var phys = (int)physL;
+    var phys = physL;
 
-    var count = BinaryPrimitives.ReadInt32LittleEndian(this._image.AsSpan(phys + 16, 4));
-    var type = (char)this._image[phys + 20];
+    var count = (int)U32(phys + 16);
+    var type = (char)B(phys + 20);
     if (count < 0 || count > 63)
       return;
 
     for (var i = 0; i < count; ++i) {
       var b = phys + 64 + i * 64;
-      if ((long)b + 64 > this._image.Length)
+      if ((long)b + 64 > this._len)
         break;
-      var btype = (char)this._image[b + 35];
+      var btype = (char)B(b + 35);
 
       if (type == 'I') {
         // Internal node: descend into the subtree. Skip the right-boundary
         // element (btype 0) which carries no subtree of its own.
-        var sub = BinaryPrimitives.ReadInt64LittleEndian(this._image.AsSpan(b + 40, 8));
+        var sub = (long)U64(b + 40);
         if (btype is 'I' or 'L')
           this.WalkNode(sub, visited, inodes, children, dataChunks);
         continue;
       }
 
       // Leaf element.
-      var objId = BinaryPrimitives.ReadInt64LittleEndian(this._image.AsSpan(b + 0, 8));
-      var key = BinaryPrimitives.ReadInt64LittleEndian(this._image.AsSpan(b + 8, 8));
-      var deleteTid = BinaryPrimitives.ReadUInt64LittleEndian(this._image.AsSpan(b + 24, 8));
-      var recType = BinaryPrimitives.ReadUInt16LittleEndian(this._image.AsSpan(b + 32, 2));
-      var dataOff = BinaryPrimitives.ReadInt64LittleEndian(this._image.AsSpan(b + 48, 8));
-      var dataLen = BinaryPrimitives.ReadInt32LittleEndian(this._image.AsSpan(b + 56, 4));
+      var objId = (long)U64(b + 0);
+      var key = (long)U64(b + 8);
+      var deleteTid = U64(b + 24);
+      var recType = U16(b + 32);
+      var dataOff = (long)U64(b + 48);
+      var dataLen = (int)U32(b + 56);
 
       if (deleteTid != 0)            // historically deleted record — ignore.
         continue;
@@ -208,7 +230,7 @@ public sealed class HammerReader {
             if (!children.TryGetValue(objId, out var list))
               children[objId] = list = [];
             // obj_type of the target is carried in the element base (b+34).
-            list.Add(new DirEntry(name, childObjId, this._image[b + 34]));
+            list.Add(new DirEntry(name, childObjId, B(b + 34)));
           }
           break;
 
@@ -242,8 +264,13 @@ public sealed class HammerReader {
     if (dataLen <= 0)
       return [];
     var physL = this.Resolve(dataOff);
-    if (physL < 0 || physL + dataLen > this._image.Length)
+    if (physL < 0 || physL + dataLen > this._len)
       return [];
-    return this._image.AsSpan((int)physL, dataLen).ToArray();
+    return this._image.Read(physL, dataLen);
   }
+
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
+  public void Dispose() => this._image.Dispose();
 }

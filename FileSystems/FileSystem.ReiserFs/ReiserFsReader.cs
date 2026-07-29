@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.ReiserFs;
@@ -29,7 +30,8 @@ public sealed class ReiserFsReader : IDisposable {
   private const uint RootParentObjectId = 1; // dir_id of "/"
   private const uint RootObjectId = 2;        // objectid of "/"
 
-  private readonly byte[] _data;
+  private readonly ImageAccessor _img;
+  private readonly long _len;
   private readonly List<ReiserFsEntry> _entries = [];
   private int _blockSize;
   private int _rootBlock;
@@ -48,19 +50,31 @@ public sealed class ReiserFsReader : IDisposable {
   /// <summary>Volume label from the superblock <c>s_label</c> field (16 bytes, NUL-trimmed ASCII).</summary>
   public string Label { get; private set; } = "";
 
-  public ReiserFsReader(Stream stream, bool leaveOpen = false) {
+  public ReiserFsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    if (stream.CanSeek) stream.Position = 0;
+    // Blocks are pulled on demand: the S+tree is a small prefix however many
+    // gigabytes of INDIRECT file bodies follow it.
+    _img = new ImageAccessor(stream, leaveOpen);
+    _len = _img.Length;
     Parse();
   }
 
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
+  private ushort U16(long off) => this._len >= off + 2 ? this._img.ReadUInt16(off) : (ushort)0;
+  private uint U32(long off) => this._len >= off + 4 ? this._img.ReadUInt32(off) : 0u;
+  private ulong U64(long off) => this._len >= off + 8 ? this._img.ReadUInt64(off) : 0UL;
+  private byte B(long off) => off >= 0 && off < this._len ? this._img.ReadByte(off) : (byte)0;
+  private byte[] Read(long off, int len) => this._img.Read(off, len);
+  private string Str(long off, int len) => Encoding.UTF8.GetString(this._img.Read(off, len));
+
   private void Parse() {
-    if (_data.Length < SuperblockOffset + 128)
+    if (_len < SuperblockOffset + 128)
       throw new InvalidDataException("ReiserFS: image too small.");
 
-    var magicSpan = _data.AsSpan(SuperblockOffset + Off_Magic, 10);
+    var magicSpan = Read(SuperblockOffset + Off_Magic, 10).AsSpan();
     bool found = false;
     foreach (var m in Magics) {
       if (magicSpan[..m.Length].SequenceEqual(m)) { found = true; break; }
@@ -68,14 +82,14 @@ public sealed class ReiserFsReader : IDisposable {
     if (!found)
       throw new InvalidDataException("ReiserFS: invalid magic.");
 
-    _blockSize = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(SuperblockOffset + Off_BlockSize));
+    _blockSize = U16((SuperblockOffset + Off_BlockSize));
     if (_blockSize == 0) _blockSize = 4096;
 
-    var labelSpan = _data.AsSpan(SuperblockOffset + Off_Label, 16);
+    var labelSpan = Read(SuperblockOffset + Off_Label, 16).AsSpan();
     var labelLen = labelSpan.IndexOf((byte)0);
     if (labelLen < 0) labelLen = 16;
     this.Label = labelLen == 0 ? "" : System.Text.Encoding.ASCII.GetString(labelSpan[..labelLen]);
-    _rootBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(SuperblockOffset + Off_RootBlock));
+    _rootBlock = (int)U32((SuperblockOffset + Off_RootBlock));
 
     // Pass 1: scan every leaf, indexing stat-data modes and directory entries.
     ScanTree(_rootBlock);
@@ -86,20 +100,20 @@ public sealed class ReiserFsReader : IDisposable {
 
   private void ScanTree(int blockNum) {
     var blockOff = (long)blockNum * _blockSize;
-    if (blockOff < 0 || blockOff + 24 > _data.Length) return;
+    if (blockOff < 0 || blockOff + 24 > _len) return;
     var boff = (int)blockOff;
 
-    var level = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(boff));
-    var nrItems = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(boff + 2));
+    var level = U16((boff));
+    var nrItems = U16((boff + 2));
 
     if (level > 1) {
       // Internal node: (nrItems+1) block-number pointers after the keys.
       var ptrsOff = boff + 24 + nrItems * 16;
       for (int i = 0; i <= nrItems && i < 1000; i++) {
         var ptrOff = ptrsOff + i * 8;
-        if (ptrOff + 4 > _data.Length) break;
-        var childBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ptrOff));
-        if (childBlock > 0 && childBlock < _data.Length / _blockSize)
+        if (ptrOff + 4 > _len) break;
+        var childBlock = (int)U32((ptrOff));
+        if (childBlock > 0 && childBlock < _len / _blockSize)
           ScanTree(childBlock);
       }
       return;
@@ -107,23 +121,23 @@ public sealed class ReiserFsReader : IDisposable {
 
     for (int i = 0; i < nrItems && i < 1000; i++) {
       var ihOff = boff + 24 + i * 24;
-      if (ihOff + 24 > _data.Length) break;
+      if (ihOff + 24 > _len) break;
 
-      var keyDirId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 0));
-      var keyObjId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 4));
-      var ihCount = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 16));
-      var ihLength = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 18));
-      var ihLocation = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 20));
+      var keyDirId = U32((ihOff + 0));
+      var keyObjId = U32((ihOff + 4));
+      var ihCount = U16((ihOff + 16));
+      var ihLength = U16((ihOff + 18));
+      var ihLocation = U16((ihOff + 20));
 
       var dataOff = boff + ihLocation;
-      if (dataOff < 0 || dataOff + ihLength > _data.Length) continue;
+      if (dataOff < 0 || dataOff + ihLength > _len) continue;
 
       var itemType = ResolveItemType(ihOff);
 
       if (itemType == 0) {
         // STAT_DATA — record sd_mode (le16 at body +0) for dir/file detection.
         if (ihLength >= 2)
-          _statMode[(keyDirId, keyObjId)] = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataOff));
+          _statMode[(keyDirId, keyObjId)] = U16((dataOff));
         continue;
       }
 
@@ -144,12 +158,12 @@ public sealed class ReiserFsReader : IDisposable {
     // name ends at item_end; entry[i]'s name ends at entry[i-1]'s deh_location.
     for (int e = 0; e < ihCount; e++) {
       var dehOff = dataOff + e * 16;
-      if (dehOff + 16 > _data.Length) break;
+      if (dehOff + 16 > _len) break;
 
-      var pointedDirId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dehOff + 4));
-      var pointedObjId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dehOff + 8));
-      var nameLoc = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dehOff + 12));
-      var state = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dehOff + 14));
+      var pointedDirId = U32((dehOff + 4));
+      var pointedObjId = U32((dehOff + 8));
+      var nameLoc = U16((dehOff + 12));
+      var state = U16((dehOff + 14));
 
       if ((state & 4) == 0) continue; // not visible
       var nameOff = dataOff + nameLoc;
@@ -159,17 +173,17 @@ public sealed class ReiserFsReader : IDisposable {
       if (e == 0) {
         nameEndInItem = ihLength;
       } else {
-        var prevLoc = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataOff + (e - 1) * 16 + 12));
+        var prevLoc = U16((dataOff + (e - 1) * 16 + 12));
         nameEndInItem = prevLoc;
       }
       var nameEnd = dataOff + nameEndInItem;
       // Trailing NULs are slot padding (ROUND_UP8); stop at the first one.
-      for (var k = nameOff; k < nameEnd && k < _data.Length; k++) {
-        if (_data[k] == 0) { nameEnd = k; break; }
+      for (var k = nameOff; k < nameEnd && k < _len; k++) {
+        if (B(k) == 0) { nameEnd = k; break; }
       }
       if (nameEnd <= nameOff) continue;
 
-      var name = Encoding.UTF8.GetString(_data, nameOff, nameEnd - nameOff);
+      var name = Str(nameOff, nameEnd - nameOff);
       if (name == "." || name == "..") continue;
       if (!name.All(c => c >= 0x20 && c < 0x7F)) continue;
       result.Add(new DirEntry(name, pointedDirId, pointedObjId));
@@ -211,10 +225,10 @@ public sealed class ReiserFsReader : IDisposable {
   /// Returns 0=SD, 1=INDIRECT, 2=DIRECT, 3=DIRENTRY, -1=unknown.
   /// </summary>
   private int ResolveItemType(int ihOff) {
-    var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
+    var keyOffsetV2 = U64((ihOff + 8));
     var typeV2 = (uint)(keyOffsetV2 >> 60);
     if (typeV2 == 0 || typeV2 == 15) {
-      var uniqueness = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 12));
+      var uniqueness = U32((ihOff + 12));
       return uniqueness switch {
         0u => 0, 0xfffffffeu => 1, 0xffffffffu => 2, 500u => 3, _ => -1,
       };
@@ -234,25 +248,62 @@ public sealed class ReiserFsReader : IDisposable {
     // the first body item); sort by it and concatenate in order. Truncate to
     // sd_size (a partial last INDIRECT block must shrink to the actual file
     // tail).
-    var bodyParts = new List<(ulong KeyOffset, byte[] Bytes)>();
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"ReiserFS: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    using var buffer = new MemoryStream();
+    this.ExtractTo(entry, buffer);
+    return buffer.ToArray();
+  }
+
+  /// <summary>
+  /// Writes <paramref name="entry" />'s body into <paramref name="destination" />,
+  /// one item at a time. Returns the byte count.
+  /// </summary>
+  public long ExtractTo(ReiserFsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
+
+    var bodyParts = new List<BodyPart>();
     var sdSize = -1L;
     CollectFileItems(_rootBlock, entry.ObjectId, entry.DirId, bodyParts, ref sdSize);
-    if (bodyParts.Count == 0 && sdSize <= 0) return [];
+    if (bodyParts.Count == 0 || sdSize == 0) return 0;
 
     bodyParts.Sort(static (a, b) => a.KeyOffset.CompareTo(b.KeyOffset));
-    var totalLen = 0;
-    foreach (var part in bodyParts) totalLen += part.Bytes.Length;
-    var assembled = new byte[totalLen];
-    var pos = 0;
+
+    // Bytes past sd_size are the last block's zero padding and are dropped.
+    var limit = sdSize >= 0 ? sdSize : long.MaxValue;
+    var hole = new byte[_blockSize];
+    long written = 0;
     foreach (var part in bodyParts) {
-      Buffer.BlockCopy(part.Bytes, 0, assembled, pos, part.Bytes.Length);
-      pos += part.Bytes.Length;
+      if (written >= limit) break;
+      if (!part.Indirect) {
+        var take = (int)Math.Min(part.Length, limit - written);
+        if (take <= 0) continue;
+        destination.Write(this._img.Read(part.Offset, take));
+        written += take;
+        continue;
+      }
+
+      var ptrCount = part.Length / 4;
+      for (var p = 0; p < ptrCount && written < limit; ++p) {
+        var ptr = U32(part.Offset + p * 4);
+        var take = (int)Math.Min(_blockSize, limit - written);
+        var src = (long)ptr * _blockSize;
+        // A zero pointer is a hole, and so is a pointer past the image.
+        if (ptr == 0 || src < 0 || src + _blockSize > _len)
+          destination.Write(hole, 0, take);
+        else
+          this._img.CopyTo(src, destination, take);
+        written += take;
+      }
     }
-    // Truncate to the StatData-declared size (drops last-block zero padding).
-    if (sdSize >= 0 && sdSize < assembled.Length)
-      Array.Resize(ref assembled, (int)sdSize);
-    return assembled;
+    return written;
   }
+
+  /// <summary>One body item: where it lives in the image, and whether it is a pointer array.</summary>
+  private readonly record struct BodyPart(ulong KeyOffset, long Offset, int Length, bool Indirect);
 
   /// <summary>
   /// Walks every leaf below <paramref name="blockNum"/> and collects every
@@ -265,22 +316,22 @@ public sealed class ReiserFsReader : IDisposable {
   /// </summary>
   private void CollectFileItems(
     int blockNum, uint objectId, uint dirId,
-    List<(ulong KeyOffset, byte[] Bytes)> bodyParts, ref long sdSize) {
+    List<BodyPart> bodyParts, ref long sdSize) {
     var blockOff = (long)blockNum * _blockSize;
-    if (blockOff < 0 || blockOff + 24 > _data.Length) return;
+    if (blockOff < 0 || blockOff + 24 > _len) return;
     var boff = (int)blockOff;
 
-    var level = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(boff));
-    var nrItems = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(boff + 2));
+    var level = U16((boff));
+    var nrItems = U16((boff + 2));
 
     if (level > 1) {
       var keysOff = boff + 24;
       var ptrsOff = keysOff + nrItems * 16;
       for (int i = 0; i <= nrItems && i < 1000; i++) {
         var ptrOff = ptrsOff + i * 8;
-        if (ptrOff + 4 > _data.Length) break;
-        var childBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ptrOff));
-        if (childBlock > 0 && childBlock < _data.Length / _blockSize)
+        if (ptrOff + 4 > _len) break;
+        var childBlock = (int)U32((ptrOff));
+        if (childBlock > 0 && childBlock < _len / _blockSize)
           CollectFileItems(childBlock, objectId, dirId, bodyParts, ref sdSize);
       }
       return;
@@ -288,55 +339,46 @@ public sealed class ReiserFsReader : IDisposable {
 
     for (int i = 0; i < nrItems && i < 1000; i++) {
       var ihOff = boff + 24 + i * 24;
-      if (ihOff + 24 > _data.Length) break;
+      if (ihOff + 24 > _len) break;
 
-      var keyDirId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 0));
-      var keyObjId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 4));
+      var keyDirId = U32((ihOff + 0));
+      var keyObjId = U32((ihOff + 4));
       // dirId may be 0 (older callers use objectId only); when non-zero,
       // restrict the match to the exact (dir_id, objectid) pair.
       if (keyObjId != objectId) continue;
       if (dirId != 0 && keyDirId != dirId) continue;
 
-      var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
-      var ihLength = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 18));
-      var ihLocation = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 20));
+      var keyOffsetV2 = U64((ihOff + 8));
+      var ihLength = U16((ihOff + 18));
+      var ihLocation = U16((ihOff + 20));
       var dataOff = boff + ihLocation;
-      if (dataOff < 0 || dataOff + ihLength > _data.Length || ihLength <= 0) continue;
+      if (dataOff < 0 || dataOff + ihLength > _len || ihLength <= 0) continue;
 
       var itemType = ResolveItemType(ihOff);
       if (itemType == 0) {
         // STAT_DATA — pick up sd_size (le64 @ body +8). If multiple SD items
         // exist (shouldn't, per spec) the last one wins; benign.
         if (ihLength >= 16)
-          sdSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(dataOff + 8));
+          sdSize = (long)U64((dataOff + 8));
         continue;
       }
 
       if (itemType == 2) {
         // DIRECT — body is the inline bytes.
-        var directBytes = _data.AsSpan(dataOff, ihLength).ToArray();
-        bodyParts.Add((keyOffsetV2 & 0x0FFFFFFFFFFFFFFFUL, directBytes));
+        bodyParts.Add(new BodyPart(keyOffsetV2 & 0x0FFFFFFFFFFFFFFFUL, dataOff, ihLength, Indirect: false));
         continue;
       }
 
       if (itemType == 1) {
         // INDIRECT — body is an array of __le32 block pointers. Each pointer
-        // references one full filesystem block of file payload.
-        var ptrCount = ihLength / 4;
-        var assembled = new byte[ptrCount * _blockSize];
-        for (var p = 0; p < ptrCount; p++) {
-          var ptr = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dataOff + p * 4));
-          if (ptr == 0) continue; // hole — leave as zeros
-          var src = (long)ptr * _blockSize;
-          if (src < 0 || src + _blockSize > _data.Length) continue;
-          Buffer.BlockCopy(_data, (int)src, assembled, p * _blockSize, _blockSize);
-        }
-        bodyParts.Add((keyOffsetV2 & 0x0FFFFFFFFFFFFFFFUL, assembled));
+        // references one full filesystem block of file payload, which is read
+        // when the body is written out rather than assembled here.
+        bodyParts.Add(new BodyPart(keyOffsetV2 & 0x0FFFFFFFFFFFFFFFUL, dataOff, ihLength, Indirect: true));
         continue;
       }
       // itemType == 3 (DIRENTRY) or -1 (unknown) — skip; not file body.
     }
   }
 
-  public void Dispose() { }
+  public void Dispose() => this._img.Dispose();
 }

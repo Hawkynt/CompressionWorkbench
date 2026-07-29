@@ -114,9 +114,8 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     try {
       if (stream.CanSeek)
         stream.Position = 0;
-      using var ms = new MemoryStream();
-      stream.CopyTo(ms);
-      return HammerReader.Open(ms.ToArray()).ReadFiles();
+      using var reader = HammerReader.Open(stream);
+      return reader.ReadFiles();
     } catch {
       return [];
     }
