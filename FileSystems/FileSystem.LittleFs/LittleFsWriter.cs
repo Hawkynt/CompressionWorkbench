@@ -79,7 +79,26 @@ public sealed class LittleFsWriter {
     this.BuildDir(this._root, blocks, blockCount);
 
     // ── 4. Emit the image ─────────────────────────────────────────────────
-    var image = new byte[(long)blockCount * this._blockSize];
+    // Block by block, not as one array: the blocks are already laid out
+    // individually, so materialising the whole volume only served to cap it at
+    // what a byte[] can address.
+    var totalBytes = (long)blockCount * this._blockSize;
+    if (output.CanSeek) {
+      var basePosition = output.Position;
+      output.SetLength(basePosition + totalBytes);
+      foreach (var index in blocks.Keys.Order()) {
+        output.Position = basePosition + (long)index * this._blockSize;
+        output.Write(blocks[index], 0, blocks[index].Length);
+      }
+      output.Position = basePosition + totalBytes;
+      output.Flush();
+      return;
+    }
+
+    if (totalBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"LittleFS: a {totalBytes:N0}-byte volume exceeds the array limit; write it to a seekable stream instead.");
+    var image = new byte[totalBytes];
     foreach (var (index, content) in blocks)
       content.CopyTo(image.AsSpan((int)((long)index * this._blockSize)));
 

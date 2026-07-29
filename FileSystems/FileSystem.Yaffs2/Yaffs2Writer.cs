@@ -52,7 +52,10 @@ internal sealed class Yaffs2Writer {
   /// 2. Directory object headers for every intermediate path segment
   /// 3. For each file: object header (type=file, parent=its directory) + data chunks
   /// </summary>
-  public byte[] Build() {
+  public byte[] Build() => MaterialiseChunks(this.BuildChunks());
+
+  /// <summary>Lays the image out as its ordered list of NAND chunks.</summary>
+  private List<byte[]> BuildChunks() {
     var chunks = new List<byte[]>();
     uint seqNumber = 0x1000; // Sequence numbers start at a conventional value.
     var nextObjectId = ReservedObjectIdCeiling + 1; // Allocate fresh ids above the reserved range.
@@ -113,18 +116,31 @@ internal sealed class Yaffs2Writer {
       }
     }
 
-    // Concatenate all chunks into a single image
-    var image = new byte[chunks.Count * Stride];
+    return chunks;
+  }
+
+  /// <summary>Concatenates the chunk list into one image.</summary>
+  private static byte[] MaterialiseChunks(List<byte[]> chunks) {
+    var totalBytes = (long)chunks.Count * Stride;
+    if (totalBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"YAFFS2: a {totalBytes:N0}-byte image exceeds the array limit; write it to a seekable stream instead.");
+    var image = new byte[totalBytes];
     for (var i = 0; i < chunks.Count; i++)
       Buffer.BlockCopy(chunks[i], 0, image, i * Stride, Stride);
 
     return image;
   }
 
-  /// <summary>Writes the image to a stream.</summary>
+  /// <summary>
+  /// Writes the image to a stream, one chunk at a time. Concatenating them into
+  /// a single array first is what capped the image at what a byte[] can address.
+  /// </summary>
   public void WriteTo(Stream output) {
-    var data = Build();
-    output.Write(data, 0, data.Length);
+    ArgumentNullException.ThrowIfNull(output);
+    foreach (var chunk in this.BuildChunks())
+      output.Write(chunk, 0, Stride);
+    output.Flush();
   }
 
   /// <summary>
