@@ -25,7 +25,7 @@ public sealed class HtfsReader {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     _image = new ImageAccessor(stream, leaveOpen: true);
-    var sb = HtfsSuperblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 64 * 1024)));
+    var sb = HtfsSuperblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 1024 * 1024)));
     if (!sb.Valid) throw new InvalidDataException("Not an HTFS image: superblock magic mismatch.");
 
     // Block size auto-detect: try 512/1024/2048 and pick the one whose

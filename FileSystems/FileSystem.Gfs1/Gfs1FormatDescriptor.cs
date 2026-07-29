@@ -106,7 +106,13 @@ public sealed class Gfs1FormatDescriptor :
     w.SetLockTable(options.GetOption("LockTable", "WORM:gfs1"));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, i.ReadContent());
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      var info = i;
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(info.ArchiveName, bytes);
+      else
+        w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
     }
     w.WriteTo(output);
   }

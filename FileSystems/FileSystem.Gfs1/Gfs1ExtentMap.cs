@@ -11,13 +11,17 @@ internal static class Gfs1ExtentMap {
   internal static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    var bytes = ms.ToArray();
-    return EnumerateBytes(bytes);
+    // The head carries the superblock and inode table; the walk goes through the
+    // reader, which streams. Buffering the whole volume capped the wipe at the
+    // array limit and returned nothing when it threw -- and an empty extent list
+    // reads as "the volume is entirely free".
+    var head = new byte[(int)Math.Min(image.Length, 4 * 1024 * 1024)];
+    image.ReadExactly(head, 0, head.Length);
+    image.Position = 0;
+    return EnumerateBytes(head, image);
   }
 
-  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes) {
+  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes, Stream image) {
     var result = new List<DefragBlockInfo>();
     var sb = Gfs1Superblock.TryParse(bytes);
     if (!sb.Valid) return result;
@@ -26,8 +30,8 @@ internal static class Gfs1ExtentMap {
     result.Add(new DefragBlockInfo(Gfs1Writer.SuperblockOffset, Gfs1Writer.BlockSize, DefragBlockKind.MetadataReserved, "superblock"));
     var inodeStart = Gfs1Writer.SuperblockOffset + Gfs1Writer.BlockSize;
     try {
-      using var rs = new MemoryStream(bytes);
-      var reader = new Gfs1Reader(rs);
+      image.Position = 0;
+      var reader = new Gfs1Reader(image);
       // Surface root dir + inode table block.
       result.Add(new DefragBlockInfo(inodeStart, Gfs1Writer.BlockSize, DefragBlockKind.MetadataReserved, "inode_table"));
       foreach (var e in reader.Entries) {
@@ -42,7 +46,7 @@ internal static class Gfs1ExtentMap {
       // Root dir (inode 2) is not yielded by reader.Entries — surface it too.
       // Its first block sits at inodeStart + BlockSize.
       var rootDirStart = inodeStart + Gfs1Writer.BlockSize;
-      if (rootDirStart < bytes.Length)
+      if (rootDirStart < image.Length)
         result.Add(new DefragBlockInfo(rootDirStart, Gfs1Writer.BlockSize,
           DefragBlockKind.MetadataReserved, "root_dir"));
     } catch { /* tolerate */ }

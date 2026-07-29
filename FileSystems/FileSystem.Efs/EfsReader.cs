@@ -27,7 +27,7 @@ public sealed class EfsReader {
     if (stream.CanSeek) stream.Position = 0;
     _image = new ImageAccessor(stream, leaveOpen: true);
 
-    var sb = EfsSuperblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 64 * 1024)));
+    var sb = EfsSuperblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 1024 * 1024)));
     if (!sb.Valid) throw new InvalidDataException("Not an EFS image: superblock magic mismatch.");
 
     // Walk from inode 2 (root). For each directory inode we read its first

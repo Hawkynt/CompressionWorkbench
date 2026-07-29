@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Gfs1;
@@ -37,7 +38,7 @@ public sealed class Gfs1Writer {
   // Reserved magic for directory body (used by reader to spot writer-emitted dirs).
   private const ushort DirBlockMagic = 0xDEAD;
 
-  private readonly List<(string Path, byte[] Data)> _files = [];
+  private readonly List<(string Path, FilePayload Payload)> _files = [];
   private string _volumeLabel = "WORM";
   private int _journalCount = 1;
   private string _lockProto = "lock_nolock";
@@ -53,10 +54,50 @@ public sealed class Gfs1Writer {
     ArgumentNullException.ThrowIfNull(data);
     var n = name.Replace('\\', '/').Trim('/');
     if (n.Length == 0) return;
-    _files.Add((n, data));
+    _files.Add((n, FilePayload.FromBytes(data)));
   }
 
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    var n = name.Replace('\\', '/').Trim('/');
+    if (n.Length == 0) return;
+    _files.Add((n, FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>Materialises the whole volume.</summary>
   public byte[] Build() {
+    var image = this.BuildCore(out var payloads);
+    return payloads.Materialise(image);
+  }
+
+  /// <summary>
+  /// Writes the volume into <paramref name="output" />: the blocks the filesystem
+  /// populates, then each file's bytes at the offset it was allocated. Only a
+  /// non-seekable target has to materialise the volume.
+  /// </summary>
+  public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = this.Build();
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = this.BuildCore(out var payloads);
+    image.WriteTo(output);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + image.TotalBytes;
+    output.Flush();
+  }
+
+  private SparseBlockImage BuildCore(out DeferredPayloads payloads) {
     var tree = BuildTree();
     if (tree.Nodes.Count > MaxInodes)
       throw new InvalidOperationException($"GFS1 writer caps at {MaxInodes} inodes; tree has {tree.Nodes.Count}.");
@@ -73,18 +114,22 @@ public sealed class Gfs1Writer {
     for (var i = 0; i < tree.Nodes.Count; i++) {
       var n = tree.Nodes[i];
       var blks = n.IsDirectory ? 1
-        : n.Data.Length == 0 ? 0 : (n.Data.Length + BlockSize - 1) / BlockSize;
+        : n.Payload.Size == 0 ? 0 : (int)((n.Payload.Size + BlockSize - 1) / BlockSize);
       firstBlockPerNode[i] = blks > 0 ? nextData : 0;
       blocksPerNode[i] = blks;
       nextData += blks;
     }
     var totalBlocks = nextData;
-    var image = new byte[(long)totalBlocks * BlockSize];
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(BlockSize, (long)totalBlocks * BlockSize);
+    payloads = new DeferredPayloads();
 
     // ── Superblock @ block 16 ────────────────────────────────────────────────
     // GFS metaheader (BE): mh_magic(4) + mh_type(4) + mh_generation(8) +
     // mh_format(4) + mh_incarn(4) — first 24 bytes.
-    var sb = image.AsSpan(SuperblockOffset, BlockSize);
+    var sb = image.At(SuperblockOffset, BlockSize);
     BinaryPrimitives.WriteUInt32BigEndian(sb[0..], Gfs1Superblock.MhMagicConst); // mh_magic
     BinaryPrimitives.WriteUInt32BigEndian(sb[4..], 1);                            // mh_type = GFS_METATYPE_SB
     BinaryPrimitives.WriteUInt64BigEndian(sb[8..], 1);                            // mh_generation
@@ -120,7 +165,7 @@ public sealed class Gfs1Writer {
       var ino = i + 2; // 1 reserved, 2 = root
       var blockOff = (ino - 2) / InodesPerBlock;
       var slotOff = (ino - 2) % InodesPerBlock;
-      var ip = image.AsSpan((inodeStart + blockOff) * BlockSize + slotOff * InodeSize, InodeSize);
+      var ip = image.At(((long)inodeStart + blockOff) * BlockSize + slotOff * InodeSize, InodeSize);
 
       // GFS1 dinode (BE): mh(24) + di_num.no_addr(8) + di_num.no_formal_ino(8) +
       // di_mode(4) + di_uid(4) + di_gid(4) + di_nlink(4) + di_size(8) +
@@ -134,7 +179,7 @@ public sealed class Gfs1Writer {
       BinaryPrimitives.WriteUInt32BigEndian(ip[44..], 0); // uid
       BinaryPrimitives.WriteUInt32BigEndian(ip[48..], 0); // gid
       BinaryPrimitives.WriteUInt32BigEndian(ip[52..], (uint)(node.IsDirectory ? 2 : 1)); // nlink
-      var size = node.IsDirectory ? ComputeDirSize(node) : (ulong)node.Data.Length;
+      var size = node.IsDirectory ? ComputeDirSize(node) : (ulong)node.Payload.Size;
       BinaryPrimitives.WriteUInt64BigEndian(ip[56..], size);
       BinaryPrimitives.WriteUInt64BigEndian(ip[64..], (ulong)blocksPerNode[i]);
       var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -149,7 +194,7 @@ public sealed class Gfs1Writer {
       if (blocksPerNode[i] == 0) continue;
       var start = firstBlockPerNode[i] * BlockSize;
       if (node.IsDirectory) {
-        var blk = image.AsSpan(start, BlockSize);
+        var blk = image.At(start, BlockSize);
         BinaryPrimitives.WriteUInt16BigEndian(blk[0..], DirBlockMagic);
         BinaryPrimitives.WriteUInt16BigEndian(blk[2..], (ushort)(node.Children.Count + 2));
         var off = 4;
@@ -158,17 +203,12 @@ public sealed class Gfs1Writer {
         foreach (var (childName, childInode) in node.Children)
           WriteDirEntry(blk, ref off, (uint)childInode, childName);
       } else {
-        node.Data.CopyTo(image.AsSpan(start));
+        payloads.Add(start, node.Payload);
       }
     }
     return image;
   }
 
-  public void WriteTo(Stream output) {
-    ArgumentNullException.ThrowIfNull(output);
-    var img = Build();
-    output.Write(img, 0, img.Length);
-  }
 
   private static void WriteDirEntry(Span<byte> blk, ref int off, uint inode, string name) {
     var nb = Encoding.UTF8.GetBytes(name);
@@ -192,7 +232,7 @@ public sealed class Gfs1Writer {
     public required bool IsDirectory;
     public required string Name;
     public required int ParentInode;
-    public byte[] Data = [];
+    public FilePayload Payload;
     public readonly List<(string Name, int Inode)> Children = [];
   }
 
@@ -202,7 +242,7 @@ public sealed class Gfs1Writer {
     var root = new TreeNode { IsDirectory = true, Name = "", ParentInode = 2 };
     var nodes = new List<TreeNode> { root };
     var byPath = new Dictionary<string, TreeNode>(StringComparer.Ordinal) { [""] = root };
-    foreach (var (path, data) in _files) {
+    foreach (var (path, payload) in _files) {
       var segs = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segs.Length == 0) continue;
       var parent = root; var parentInode = 2;
@@ -218,7 +258,7 @@ public sealed class Gfs1Writer {
         parentInode = nodes.IndexOf(dir) + 2;
         parent = dir;
       }
-      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Data = data };
+      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Payload = payload };
       nodes.Add(file);
       parent.Children.Add((segs[^1], nodes.Count + 1));
     }

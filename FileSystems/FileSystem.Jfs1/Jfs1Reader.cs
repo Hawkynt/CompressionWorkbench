@@ -24,7 +24,7 @@ public sealed class Jfs1Reader {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     _image = new ImageAccessor(stream, leaveOpen: true);
-    var sb = Jfs1Superblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 64 * 1024)));
+    var sb = Jfs1Superblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 1024 * 1024)));
     if (!sb.Valid) throw new InvalidDataException("Not a JFS1 image: superblock magic mismatch.");
     _blockSize = (int)sb.BlockSize;
     if (_blockSize <= 0) _blockSize = Jfs1Writer.DefaultBlockSize;
