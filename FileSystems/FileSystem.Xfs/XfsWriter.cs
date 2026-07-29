@@ -392,7 +392,11 @@ public sealed class XfsWriter {
     this._agBlocks = agBlocks;
     this._agBlkLog = (byte)agBlkLog;
 
-    var totalBlocks = agBlocks * (long)AgCount;
+    // XFS sizes every AG the same except the last, which may be short. AG 0 holds
+    // all the content; AG 1 only needs its own header, so the volume stays close
+    // to the payload instead of doubling it.
+    var lastAgBlocks = (long)MinAgBlocks;
+    var totalBlocks = agBlocks + lastAgBlocks;
     this._totalBytes = totalBlocks * BlockSize;
     var image = new byte[(long)prefixBlocks * BlockSize];
 
@@ -402,7 +406,7 @@ public sealed class XfsWriter {
     // Free-extent bookkeeping (AG 1+): no inode chunk, no files — the region
     // past the per-AG metadata header is entirely free.
     var freeStartAgN = InodeChunkBlock;  // no inode chunk in AG 1+
-    var freeLenAgN = agBlocks - freeStartAgN;
+    var freeLenAgN = (int)(lastAgBlocks - freeStartAgN);
 
     var freeInodeSlots = totalInodeSlots - usedInodeSlots;
 
@@ -427,7 +431,7 @@ public sealed class XfsWriter {
 
       WriteAgf(agImage.AsSpan(agByteOffset + AgfSector * SectorSize),
         agNumber: (uint)ag,
-        agBlocks: (uint)agBlocks,
+        agBlocks: (uint)(ag == 0 ? agBlocks : lastAgBlocks),
         bnobtRoot: BnobtBlock,
         cntbtRoot: CntbtBlock,
         freeBlocks: (uint)(ag == 0 ? freeLenAg0 : freeLenAgN),
@@ -435,7 +439,7 @@ public sealed class XfsWriter {
 
       WriteAgi(agImage.AsSpan(agByteOffset + AgiSector * SectorSize),
         agNumber: (uint)ag,
-        agBlocks: (uint)agBlocks,
+        agBlocks: (uint)(ag == 0 ? agBlocks : lastAgBlocks),
         inodeCount: ag == 0 ? (uint)totalInodeSlots : 0u,
         freeInodes: ag == 0 ? (uint)freeInodeSlots : 0u,
         inobtRoot: InobtBlock,

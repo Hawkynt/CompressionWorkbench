@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -169,19 +170,34 @@ public sealed class ReiserFsWriter {
   /// <see cref="BuildToStreaming"/> can post-fill the data blocks. Null in the
   /// classic buffered path.
   /// </summary>
-  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
-    output.Write(this.BuildImageBytes());
+    if (output.CanSeek) {
+      this.BuildToStreaming(output);
+      return;
+    }
+
+    var prefix = this.BuildImageBytes();
+    if (this._totalBytes > Array.MaxLength)
+      throw new IOException(
+        $"ReiserFS: a {this._totalBytes:N0}-byte volume needs a seekable target.");
+
+    var image = new byte[this._totalBytes];
+    prefix.CopyTo(image.AsSpan());
+    foreach (var (block, bytes) in this._tailBitmaps)
+      bytes.CopyTo(image.AsSpan(block * BlockSize));
+    using (var buffer = new MemoryStream(image, writable: true))
+      this._filePayloads.FlushTo(buffer);
+    output.Write(image);
   }
 
   /// <summary>
   /// Builds the full ReiserFS image into a byte array. INDIRECT streaming files
   /// (added via <see cref="AddStreamingFile"/> with bodies above
   /// <see cref="MaxDirectBody"/>) leave their data-block run zero and, when
-  /// <see cref="_streamingSink"/> is set, record their (offset, size, opener)
-  /// for the post-fill pass in <see cref="BuildToStreaming"/>.
+  /// the writer records their (offset, size, opener) for the copy pass in
+  /// <see cref="BuildToStreaming"/>.
   /// </summary>
   private byte[] BuildImageBytes() {
     // Materialise the directory tree (root + intermediate dirs + files) into a
@@ -244,19 +260,46 @@ public sealed class ReiserFsWriter {
     // Each INDIRECT placeholder reserved its block-pointer count; the global
     // running counter dataBlocksTotal sums them.
     var firstDataBlock = lastTreeBlock + 1;
-    var lastDataBlock = firstDataBlock + dataBlocksTotal - 1;
-    var lastUsedBlock = dataBlocksTotal > 0 ? lastDataBlock : lastTreeBlock;
+
+    // ReiserFS pins bitmap block i at block i × (BlockSize × 8); only the first
+    // sits next to the superblock. Every one past the first falls inside the data
+    // region, so the data allocation steps over them.
+    const int BlocksPerBitmap = BlockSize * 8;
+    static bool IsBitmapBlock(long block)
+      => block == FirstBitmapBlock || (block != 0 && block % BlocksPerBitmap == 0);
+
+    // Walk the data region assigning each file block the next non-bitmap block.
+    var dataBlockNumbers = new int[dataBlocksTotal];
+    var cursor = (long)firstDataBlock;
+    for (var i = 0; i < dataBlocksTotal; ++i) {
+      while (IsBitmapBlock(cursor)) ++cursor;
+      dataBlockNumbers[i] = checked((int)cursor);
+      ++cursor;
+    }
+
+    var lastUsedBlock = dataBlocksTotal > 0 ? dataBlockNumbers[^1] : lastTreeBlock;
     var totalBlocks = lastUsedBlock + 1;
-    var imageSize = totalBlocks * BlockSize;
-    var image = new byte[imageSize];
+    var bitmapBlocks = new List<int> { FirstBitmapBlock };
+    for (var b = (long)BlocksPerBitmap; b < totalBlocks; b += BlocksPerBitmap)
+      bitmapBlocks.Add((int)b);
+
+    // Everything up to the tree is metadata the writer assembles in memory; the
+    // file bodies follow it and are copied into place, so a multi-gigabyte volume
+    // never has to fit in an array.
+    var prefixBlocks = lastTreeBlock + 1;
+    this._totalBytes = (long)totalBlocks * BlockSize;
+    this._bitmapBlocks = bitmapBlocks;
+    this._tailBitmaps.Clear();
+    var image = new byte[(long)prefixBlocks * BlockSize];
 
     // Resolve every INDIRECT placeholder's block-pointer array now that the
     // data-block region's absolute start is known. Bodies are patched in-place
     // inside the existing LeafItem.Body byte arrays (which the leaf serialiser
-    // copies into the leaf block as-is), and the actual file bytes are written
-    // into the dedicated data blocks.
+    // copies into the leaf block as-is), and the actual file bytes are recorded
+    // for the copy pass.
+    this._filePayloads = new DeferredPayloads();
     if (dataBlocksTotal > 0)
-      ResolveIndirectPlaceholders(indirectPlaceholders, image, firstDataBlock, this._streamingSink);
+      ResolveIndirectPlaceholders(indirectPlaceholders, dataBlockNumbers, this._filePayloads);
 
     // For free-block accounting: blocks 0..lastUsedBlock are all in use.
     var usedBlocks = lastUsedBlock + 1;
@@ -337,25 +380,30 @@ public sealed class ReiserFsWriter {
     for (var i = 0; i < oidMap.Length; i++)
       BinaryPrimitives.WriteUInt32LittleEndian(sb[(SuperblockSize + i * 4)..], oidMap[i]);
 
-    // ── Bitmap block (17): mark all "in-use" blocks allocated ──────────────
+    // ── Bitmap blocks: mark all "in-use" blocks allocated ─────────────────
     // Kernel reiserfscore/bitmap.c:reiserfs_fetch_ondisk_bitmap reads
     // (block_count + 7) / 8 bytes. For the trailing bytes within the bitmap
     // BLOCK that lie OUTSIDE the filesystem, the kernel requires every byte
     // == 0xFF (otherwise "Zero bit found... after the last valid bit").
     // Even within the last byte that contains valid bits, the bits beyond
     // s_block_count must be set to 1.
-    var bmap = image.AsSpan(17 * BlockSize, BlockSize);
-    // Mark blocks 0..lastUsedBlock used (boot + sb + bitmap + journal + tree + data).
-    for (var b = 0; b <= lastUsedBlock; b++)
-      bmap[b >> 3] |= (byte)(1 << (b & 7));
-    // Tail-fill: from totalBlocks bit through end of bitmap block, every bit
-    // must be 1. Set the remainder of the partial last byte.
-    for (var b = totalBlocks; (b & 7) != 0; b++)
-      bmap[b >> 3] |= (byte)(1 << (b & 7));
-    // Then fill any whole trailing bytes inside the bitmap block.
-    var lastValidByte = (totalBlocks + 7) / 8;
-    for (var i = lastValidByte; i < BlockSize; i++)
-      bmap[i] = 0xFF;
+    // Every block from 0 to lastUsedBlock is in use — the boot area, superblock,
+    // bitmaps, journal, tree and data. Bit b of bitmap i covers block
+    // i × BlocksPerBitmap + b.
+    for (var i = 0; i < bitmapBlocks.Count; ++i) {
+      var bmap = i == 0
+        ? image.AsSpan(FirstBitmapBlock * BlockSize, BlockSize)
+        : new byte[BlockSize].AsSpan();
+      var baseBlock = (long)i * BlocksPerBitmap;
+      for (var bit = 0; bit < BlocksPerBitmap; ++bit) {
+        var block = baseBlock + bit;
+        // Bits past the end of the filesystem must read as 1, or the kernel
+        // reports "Zero bit found after the last valid bit".
+        if (block <= lastUsedBlock || block >= totalBlocks)
+          bmap[bit >> 3] |= (byte)(1 << (bit & 7));
+      }
+      if (i > 0) this._tailBitmaps.Add((bitmapBlocks[i], bmap.ToArray()));
+    }
 
     // ── Journal header (block journalHeaderBlock) ─────────────────────────
     // Kernel struct reiserfs_journal_header:
@@ -403,6 +451,15 @@ public sealed class ReiserFsWriter {
     return image;
   }
 
+  /// <summary>Block number of the first bitmap, immediately after the superblock.</summary>
+  private const int FirstBitmapBlock = 17;
+
+  // Layout state carried from BuildImageBytes to the emitters.
+  private long _totalBytes;
+  private List<int> _bitmapBlocks = [];
+  private readonly List<(int Block, byte[] Bytes)> _tailBitmaps = [];
+  private DeferredPayloads _filePayloads = new();
+
   /// <summary>
   /// Two-pass streaming write: pass 1 builds the complete image byte array with
   /// INDIRECT streaming bodies left zero (recorded into a sink); pass 2 seeks to
@@ -418,35 +475,17 @@ public sealed class ReiserFsWriter {
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
 
-    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
-    this._streamingSink = sink;
-    byte[] image;
-    try {
-      image = this.BuildImageBytes();
-    } finally {
-      this._streamingSink = null;
+    var prefix = this.BuildImageBytes();
+    var basePosition = output.Position;
+    output.Write(prefix);
+    output.Flush();
+    output.SetLength(basePosition + this._totalBytes);
+    foreach (var (block, bytes) in this._tailBitmaps) {
+      output.Position = basePosition + (long)block * BlockSize;
+      output.Write(bytes);
     }
-
-    output.SetLength(image.Length);
-    output.Position = 0;
-    output.Write(image);
-
-    var buf = new byte[64 * 1024];
-    foreach (var (byteOffset, size, opener) in sink) {
-      if (size <= 0) continue;
-      if (byteOffset < 0 || byteOffset >= output.Length) continue;
-      output.Position = byteOffset;
-      using var src = opener();
-      long copied = 0;
-      while (copied < size) {
-        var want = (int)Math.Min(buf.Length, size - copied);
-        var n = src.Read(buf, 0, want);
-        if (n <= 0) break;
-        output.Write(buf, 0, n);
-        copied += n;
-      }
-      // Last-block tail past `size` keeps the zero from the image init.
-    }
+    this._filePayloads.FlushTo(output, basePosition);
+    output.Position = basePosition + this._totalBytes;
     output.Flush();
   }
 
@@ -886,31 +925,37 @@ public sealed class ReiserFsWriter {
   /// little-endian uint32.
   /// </summary>
   private static void ResolveIndirectPlaceholders(
-    List<IndirectPlaceholder> placeholders, byte[] image, int firstDataBlock,
-    List<(long ByteOffset, long Size, Func<Stream> Opener)>? streamingSink) {
+    List<IndirectPlaceholder> placeholders, int[] dataBlockNumbers, DeferredPayloads payloads) {
     foreach (var p in placeholders) {
       var body = p.Item.Body;
-      var firstBlockNum = (uint)(firstDataBlock + p.FirstDataBlockIndex);
       for (var i = 0; i < p.BlockCount; i++)
-        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(i * 4), firstBlockNum + (uint)i);
+        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(i * 4),
+          (uint)dataBlockNumbers[p.FirstDataBlockIndex + i]);
 
-      // Streaming body: the contiguous data-block run is recorded for the
-      // post-fill pass and left zero here. Block pointers above are already
-      // contiguous so a single forward write covers the whole run.
-      if (p.StreamOpener != null) {
-        var opener = p.StreamOpener;
-        var skip = p.PayloadOffset;
-        streamingSink?.Add(((long)firstBlockNum * BlockSize, p.StreamSize,
-          () => SkipTo(opener(), skip)));
-        continue;
-      }
+      // The run is contiguous apart from the bitmap blocks it steps over, so it
+      // is recorded as one payload per contiguous stretch. Each stretch opens the
+      // source at the byte offset it starts from.
+      var payload = p.StreamOpener != null
+        ? FilePayload.FromStream(p.StreamSize, p.StreamOpener)
+        : FilePayload.FromBytes(p.Payload);
 
-      for (var i = 0; i < p.BlockCount; i++) {
-        var srcOff = (int)(p.PayloadOffset + (long)i * BlockSize);
-        var copyLen = (int)Math.Min(BlockSize, p.Payload.Length - (long)srcOff);
-        if (copyLen <= 0) continue;
-        var dstOff = (long)(firstBlockNum + (uint)i) * BlockSize;
-        Array.Copy(p.Payload, srcOff, image, dstOff, copyLen);
+      var i0 = 0;
+      while (i0 < p.BlockCount) {
+        var i1 = i0 + 1;
+        while (i1 < p.BlockCount
+            && dataBlockNumbers[p.FirstDataBlockIndex + i1]
+               == dataBlockNumbers[p.FirstDataBlockIndex + i1 - 1] + 1)
+          ++i1;
+
+        var runStart = p.PayloadOffset + (long)i0 * BlockSize;
+        var runLength = Math.Min((long)(i1 - i0) * BlockSize, p.StreamSize - (long)i0 * BlockSize);
+        if (runLength > 0) {
+          var skip = runStart;
+          var source = payload;
+          payloads.Add((long)dataBlockNumbers[p.FirstDataBlockIndex + i0] * BlockSize,
+            FilePayload.FromStream(runLength, () => SkipTo(source.Open(), skip)));
+        }
+        i0 = i1;
         // Remainder of the last block (when partial) stays zero — matches how
         // mkfs.reiserfs / the kernel zero-pad short tails when tail-packing is
         // disabled.

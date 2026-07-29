@@ -83,6 +83,7 @@ public sealed class HammerWriter {
   private const int BtreeLeafElms = 63;
   private const int NodeOndiskSize = 64 + BtreeLeafElms * 64; // 4096 (header + 63 x 64)
   private const byte BtreeTypeLeaf = (byte)'L';
+  private const byte BtreeTypeInternal = (byte)'I';
   private const byte BtreeTypeRecord = (byte)'R';
   private const int InodeDataSize = 128;                      // sizeof(struct hammer_inode_data)
   private const int InodeCrcsize = 112;                       // offsetof(hammer_inode_data, mtime)
@@ -461,29 +462,123 @@ public sealed class HammerWriter {
       ++this._vol0StatInodes;
     }
 
-    // ---- emit the leaf node, elements ordered by the HAMMER base-element key ----
+    // ---- emit the B-Tree, elements ordered by the HAMMER base-element key ----
     elms.Sort(CompareBase);
-    if (elms.Count > BtreeLeafElms)
-      throw new InvalidOperationException(
-        $"HAMMER writer: {elms.Count} B-Tree elements exceed the single-leaf ceiling of {BtreeLeafElms}");
+    return this.BuildBtree(elms, nowSecs);
+  }
 
-    // A node's mirror_tid must be >= the create_tid/delete_tid of every element it
-    // holds; otherwise the kernel flags the elements as BADMIRRORTID and the ASOF
-    // cursor in hammer_vop_read prunes the node, reading file bodies as zero-fill.
-    var nodeMirrorTid = elms.Count == 0 ? 0UL : elms.Max(e => e.CreateTid);
+  /// <summary>
+  /// Lays the sorted elements into a HAMMER B-Tree and returns the root's zone-X
+  /// offset. Elements are chunked into leaves; when more than one leaf is needed
+  /// internal nodes are stacked above them until a single root remains. An
+  /// internal node's element <c>i</c> is child <c>i</c>'s left boundary and
+  /// carries its subtree_offset; the extra element at <c>count</c> is the node's
+  /// right boundary and has no subtree, which is the shape hammer_btree_iterate
+  /// expects.
+  /// </summary>
+  private long BuildBtree(List<LeafElm> elms, uint nowSecs) {
+    // Nodes are filled and then written, because a child's parent pointer is not
+    // known until the level above it has been allocated.
+    var nodes = new List<(byte[] Node, long Offset)>();
 
-    var bnode = this.AllocBtreeNode(out var btreeOff);
-    BinaryPrimitives.WriteUInt64LittleEndian(bnode.AsSpan(8, 8), 0);                 // parent = 0
-    BinaryPrimitives.WriteInt32LittleEndian(bnode.AsSpan(16, 4), elms.Count);        // count
-    bnode[20] = BtreeTypeLeaf;                                                        // type 'L'
-    BinaryPrimitives.WriteUInt64LittleEndian(bnode.AsSpan(56, 8), nodeMirrorTid);    // mirror_tid
-    for (var i = 0; i < elms.Count; ++i)
-      WriteLeafElm(bnode, i, elms[i], nowSecs);
+    byte[] NewNode(byte type, out long offset) {
+      var node = this.AllocBtreeNode(out offset);
+      BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(8, 8), 0);   // parent, patched below
+      node[20] = type;
+      nodes.Add((node, offset));
+      return node;
+    }
 
-    this.SetBtreeCrc(bnode);
-    this.WriteAtZone2(this.ZoneXToZone2(btreeOff), bnode, NodeOndiskSize);
+    // ---- leaves ----
+    var level = new List<(long Offset, LeafElm First, LeafElm Last, byte[] Node, byte Type)>();
+    for (var i = 0; i < elms.Count || level.Count == 0; i += BtreeLeafElms) {
+      var count = Math.Min(BtreeLeafElms, Math.Max(0, elms.Count - i));
+      var leaf = NewNode(BtreeTypeLeaf, out var leafOff);
+      BinaryPrimitives.WriteInt32LittleEndian(leaf.AsSpan(16, 4), count);
+      // A node's mirror_tid must be >= the create_tid/delete_tid of every element
+      // it holds; otherwise the kernel flags the elements as BADMIRRORTID and the
+      // ASOF cursor in hammer_vop_read prunes the node, reading file bodies as
+      // zero-fill.
+      var mirrorTid = 0UL;
+      for (var j = 0; j < count; ++j) {
+        WriteLeafElm(leaf, j, elms[i + j], nowSecs);
+        if (elms[i + j].CreateTid > mirrorTid) mirrorTid = elms[i + j].CreateTid;
+      }
+      BinaryPrimitives.WriteUInt64LittleEndian(leaf.AsSpan(56, 8), mirrorTid);
+      level.Add((leafOff, count > 0 ? elms[i] : new LeafElm(), count > 0 ? elms[i + count - 1] : new LeafElm(), leaf, BtreeTypeLeaf));
+      if (count == 0) break;
+    }
 
-    return btreeOff;
+    // ---- internal levels ----
+    // An internal node of C children needs C+1 elements, so it takes one fewer
+    // child than a leaf takes elements.
+    var maxChildren = BtreeLeafElms - 1;
+    while (level.Count > 1) {
+      var next = new List<(long Offset, LeafElm First, LeafElm Last, byte[] Node, byte Type)>();
+      for (var i = 0; i < level.Count; i += maxChildren) {
+        var count = Math.Min(maxChildren, level.Count - i);
+        var node = NewNode(BtreeTypeInternal, out var nodeOff);
+        BinaryPrimitives.WriteInt32LittleEndian(node.AsSpan(16, 4), count);
+
+        var mirrorTid = 0UL;
+        for (var j = 0; j < count; ++j) {
+          var child = level[i + j];
+          WriteInternalElm(node, j, child.First, child.Offset, child.Type);
+          BinaryPrimitives.WriteUInt64LittleEndian(child.Node.AsSpan(8, 8), (ulong)nodeOff);
+          if (child.Last.CreateTid > mirrorTid) mirrorTid = child.Last.CreateTid;
+        }
+
+        // Right boundary: the next sibling's left boundary, or one past the last
+        // key in this subtree when there is no sibling.
+        var boundary = i + count < level.Count
+          ? level[i + count].First
+          : Successor(level[i + count - 1].Last);
+        WriteInternalElm(node, count, boundary, 0, 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(56, 8), mirrorTid);
+
+        next.Add((nodeOff, level[i].First, level[i + count - 1].Last, node, BtreeTypeInternal));
+      }
+      level = next;
+    }
+
+    foreach (var (node, offset) in nodes) {
+      this.SetBtreeCrc(node);
+      this.WriteAtZone2(this.ZoneXToZone2(offset), node, NodeOndiskSize);
+    }
+
+    return level[0].Offset;
+  }
+
+  /// <summary>
+  /// The smallest base element strictly greater than <paramref name="e" />, used as
+  /// an internal node's right boundary so the subtree's own keys all fall inside it.
+  /// </summary>
+  private static LeafElm Successor(LeafElm e) => new() {
+    ObjId = e.ObjId,
+    Key = e.Key == long.MaxValue ? e.Key : e.Key + 1,
+    CreateTid = 0,
+    RecType = e.RecType,
+    ObjType = e.ObjType,
+    Localization = e.Localization,
+  };
+
+  private static void WriteInternalElm(byte[] node, int idx, LeafElm boundary, long subtreeOffset, byte childType) {
+    // elms[] start at byte 64; each element is 64 bytes.
+    var b = 64 + idx * 64;
+    // base: obj_id(8), key(8), create_tid(8), delete_tid(8), rec_type(2), obj_type(1), btype(1), localization(4).
+    BinaryPrimitives.WriteInt64LittleEndian(node.AsSpan(b + 0, 8), boundary.ObjId);
+    BinaryPrimitives.WriteInt64LittleEndian(node.AsSpan(b + 8, 8), boundary.Key);
+    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 16, 8), boundary.CreateTid);
+    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 24, 8), 0);             // delete_tid
+    BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(b + 32, 2), boundary.RecType);
+    node[b + 34] = boundary.ObjType;
+    // btype names what the subtree's root is ('L' or 'I'); the right-boundary
+    // element carries no subtree, and a zero btype is how the kernel's iterator
+    // — and this workbench's reader — recognises it.
+    node[b + 35] = childType;
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(b + 36, 4), boundary.Localization);
+    // internal: subtree_offset(8)@40, mirror_tid(8)@48.
+    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 40, 8), (ulong)subtreeOffset);
   }
 
   // Fills a 128-byte hammer_inode_data:

@@ -84,18 +84,26 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       return entries;
     }
 
-    var idx = 0;
-    entries.Add(new ArchiveEntryInfo(idx++, "FULL.hammer", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
-    if (hdr.Valid)
-      entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
-
     // Walk the B-Tree for the real files. The header parse above used a bounded
     // read; re-read the whole image for the walk only when the header is valid
     // (a deliberately-opened HAMMER archive, not speculative carving).
-    if (hdr.Valid)
-      foreach (var f in ReadFiles(stream))
-        entries.Add(new ArchiveEntryInfo(idx++, f.Path, f.Content.LongLength, f.Content.LongLength, "stored", false, false, null));
+    var found = hdr.Valid ? ReadFiles(stream) : [];
+
+    // A volume that carries files lists exactly those. Surfacing the synthetic
+    // header entries alongside them would make every rebuild (shrink, defrag)
+    // fold them back in as real files, so they stay on the carver path — empty
+    // or foreign images, where the header IS all we can offer.
+    var idx = 0;
+    if (found.Count == 0) {
+      entries.Add(new ArchiveEntryInfo(idx++, "FULL.hammer", image.LongLength, image.LongLength, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
+      if (hdr.Valid)
+        entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
+      return entries;
+    }
+
+    foreach (var f in found)
+      entries.Add(new ArchiveEntryInfo(idx++, f.Path, f.Content.LongLength, f.Content.LongLength, "stored", false, false, null));
 
     return entries;
   }
@@ -158,17 +166,20 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       return;
     }
 
+    // Materialise the real files by walking the B-Tree. The header parse above
+    // used a bounded read, so re-read the whole image for the walk. The header
+    // surface is written only for a volume that holds no files, mirroring List.
+    var found = hdr.Valid ? ReadFiles(stream) : [];
+    if (found.Count > 0) {
+      foreach (var f in found)
+        WriteIfMatch(outputDir, f.Path, f.Content, files);
+      return;
+    }
+
     WriteIfMatch(outputDir, "FULL.hammer", image, files);
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
     if (hdr.Valid)
       WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
-
-    // Materialise the real files by walking the B-Tree (best-effort; the surface
-    // files above are still written when the walk yields nothing). The header
-    // parse above used a bounded read, so re-read the whole image for the walk.
-    if (hdr.Valid)
-      foreach (var f in ReadFiles(stream))
-        WriteIfMatch(outputDir, f.Path, f.Content, files);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {

@@ -147,6 +147,32 @@ public sealed class ZfsFormatDescriptor :
     // ZFS labels live at fixed start + end positions, so keep the original
     // footprint. Capture it before the rebuild rewrites the archive.
     var originalSize = archive.Length;
+
+    // Buffering the rebuilt pool would cap it at what a byte[] can hold, so the
+    // packing modes stream: each entry is spilled to scratch and the writer pulls
+    // it back while writing records.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      ZfsWriter? writer = null;
+      Stream? target = null;
+      var spill = new List<string>();
+      try {
+        DefragRebuilder.RebuildStreaming(archive, options,
+          readEntries: ReadEntries,
+          beginWrite: s => { writer = new ZfsWriter(); target = s; },
+          writeEntry: (name, data) => {
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            File.WriteAllBytes(path, data);
+            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+          },
+          finishWrite: () => writer!.WriteTo(target!, Math.Max(originalSize, writer.ComputeAutoSize())));
+      } finally {
+        foreach (var path in spill)
+          try { File.Delete(path); } catch { /* scratch file already gone */ }
+      }
+      return;
+    }
+
     DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, originalSize));
   }
 
