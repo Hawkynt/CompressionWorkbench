@@ -208,11 +208,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Vpk\FileFormat.Vpk.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vpp\FileFormat.Vpp.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.VppV2\FileFormat.VppV2.csproj" PrivateAssets="all" />
-    <!-- Dicom, Nifti, Wad and Wad2 are deliberately absent: PNGCrushCS's image bundle carries
-         complete readers for all four under the same assembly names, and shipping both makes the
-         two packages un-composable — a consumer referencing them together gets whichever assembly
-         wins conflict resolution and a TypeLoadException from the other's registry. The image
-         bundle keeps them; this one does not. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Wad\FileFormat.Wad.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wad2\FileFormat.Wad2.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ypf\FileFormat.Ypf.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zap\FileFormat.Zap.csproj" PrivateAssets="all" />
   </ItemGroup>
@@ -252,7 +249,9 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Numpy\FileFormat.Numpy.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Hdf4\FileFormat.Hdf4.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Hdf5\FileFormat.Hdf5.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nifti\FileFormat.Nifti.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Onnx\FileFormat.Onnx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dicom\FileFormat.Dicom.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Stl\FileFormat.Stl.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ply\FileFormat.Ply.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Dxf\FileFormat.Dxf.csproj" PrivateAssets="all" />
