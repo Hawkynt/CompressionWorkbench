@@ -125,12 +125,24 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
       writer.VolumeName = label;
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      writer.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the image out; reading a large input
+      // into a byte[] would cap it at what an array can hold.
+      if (info.InMemoryContent is { } bytes)
+        writer.AddFile(info.ArchiveName, bytes);
+      else
+        writer.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length,
+                                () => File.OpenRead(info.FullPath));
+    }
     writer.WriteTo(output);
   }
 
   private static ErofsReader OpenReader(Stream stream) {
+    // Straight from the stream: copying the image into a byte[] capped the
+    // reader at the array limit, which EROFS's block addresses do not.
+    if (stream.CanSeek) return new ErofsReader(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     return new ErofsReader(ms.ToArray());

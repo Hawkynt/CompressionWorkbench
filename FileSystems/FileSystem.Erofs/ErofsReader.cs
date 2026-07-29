@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Erofs;
@@ -30,10 +31,14 @@ public sealed class ErofsReader {
   private const int LayoutFlatPlain = 0;
   private const int LayoutFlatInline = 2;
 
-  private readonly byte[] _data;
-  private readonly int _blockSize;
-  private readonly uint _metaBlkAddr;
-  private readonly ulong _rootNid;
+  /// <summary>
+  /// Random-access view over the image. Copying it into a byte[] capped the
+  /// reader at the array limit, which EROFS's block addresses do not.
+  /// </summary>
+  private readonly ImageAccessor _data;
+  private int _blockSize;
+  private uint _metaBlkAddr;
+  private ulong _rootNid;
   private readonly List<Entry> _entries = [];
   private readonly HashSet<ulong> _visited = [];
 
@@ -42,9 +47,22 @@ public sealed class ErofsReader {
   /// <summary>Volume label from the superblock <c>volume_name</c> field (16 bytes, NUL-trimmed ASCII).</summary>
   public string VolumeName { get; private set; } = "";
 
+  /// <summary>Reads an image straight from a seekable stream.</summary>
+  public ErofsReader(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    this._data = new ImageAccessor(stream, leaveOpen: true);
+    this.Parse();
+  }
+
   public ErofsReader(byte[] data) {
-    this._data = data;
-    if (data.Length < 1024 + 128)
+    ArgumentNullException.ThrowIfNull(data);
+    this._data = ImageAccessor.FromBytes(data);
+    this.Parse();
+  }
+
+  private void Parse() {
+    if (this._data.Length < 1024 + 128)
       throw new InvalidDataException("EROFS image too small for superblock.");
 
     // erofs_super_block at offset 1024:
@@ -53,7 +71,7 @@ public sealed class ErofsReader {
     //   build_time_nsec@32 (u32), blocks@36 (u32), meta_blkaddr@40 (u32),
     //   xattr_blkaddr@44 (u32), uuid@48[16], volume_name@64[16],
     //   feature_incompat@80 (u32), ...
-    var sb = data.AsSpan(1024);
+    var sb = this._data.Read(1024, 128).AsSpan();
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(sb);
     if (magic != Magic)
       throw new InvalidDataException($"EROFS: bad superblock magic 0x{magic:X8} (want 0x{Magic:X8}).");
@@ -109,7 +127,7 @@ public sealed class ErofsReader {
     var inodeOffset = (long)this._metaBlkAddr * this._blockSize + (long)(nid * 32);
     if (inodeOffset < 0 || inodeOffset + 32 > this._data.Length) return null;
 
-    var inode = this._data.AsSpan((int)inodeOffset);
+    var inode = this._data.Read(inodeOffset, 64).AsSpan();
     var format = BinaryPrimitives.ReadUInt16LittleEndian(inode);
     var isExtended = (format & 0x01) != 0;       // EROFS_I_VERSION_BIT
     var layout = (format >> 1) & 0x07;            // EROFS_I_DATALAYOUT
@@ -150,7 +168,7 @@ public sealed class ErofsReader {
       length = (int)Math.Max(0, this._data.Length - offset);
     var buf = new byte[length];
     if (length > 0)
-      this._data.AsSpan((int)offset, length).CopyTo(buf);
+      this._data.Read(offset, length).CopyTo(buf);
     return buf;
   }
 
@@ -168,13 +186,13 @@ public sealed class ErofsReader {
       var want = fullBlocks * this._blockSize;
       var take = (int)Math.Min(want, this._data.Length - src);
       if (take > 0)
-        this._data.AsSpan((int)src, take).CopyTo(buf);
+        this._data.Read(src, take).CopyTo(buf);
     }
     if (tail > 0) {
       var tailSrc = inodeOffset + headerSize;
       var take = (int)Math.Min(tail, this._data.Length - tailSrc);
       if (take > 0)
-        this._data.AsSpan((int)tailSrc, take).CopyTo(buf.AsSpan(fullBlocks * this._blockSize));
+        this._data.Read(tailSrc, take).CopyTo(buf.AsSpan(fullBlocks * this._blockSize));
     }
     return buf;
   }

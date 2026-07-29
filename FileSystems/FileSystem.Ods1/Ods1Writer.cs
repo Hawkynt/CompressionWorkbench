@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Ods1;
 
@@ -53,6 +54,48 @@ public static class Ods1Writer {
   /// <param name="volumeName">Volume label (≤ 12 ASCII chars, space-padded).</param>
   public static byte[] Build(IReadOnlyList<(string Name, byte[] Data)> files, string volumeName = "CWBVOL") {
     ArgumentNullException.ThrowIfNull(files);
+    return Build(files.Select(f => (f.Name, FilePayload.FromBytes(f.Data))).ToList(), volumeName);
+  }
+
+  /// <summary>Materialises an image from payloads that may be streamed.</summary>
+  public static byte[] Build(IReadOnlyList<(string Name, FilePayload Payload)> files, string volumeName = "CWBVOL") {
+    var image = BuildCore(files, volumeName, out var payloads, out var totalBytes);
+    if (totalBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"ODS-1: a {totalBytes:N0}-byte volume exceeds the array limit; write it to a seekable stream instead.");
+    var full = new byte[totalBytes];
+    image.CopyTo(full, 0);
+    using var target = new MemoryStream(full, writable: true);
+    payloads.FlushTo(target);
+    return full;
+  }
+
+  /// <summary>
+  /// Writes the volume into <paramref name="output" />: the header window, then
+  /// each file's bytes at the extent it was allocated. Only the header window is
+  /// resident, so a volume past what a byte[] can address is producible.
+  /// </summary>
+  public static void WriteTo(Stream output, IReadOnlyList<(string Name, FilePayload Payload)> files,
+                             string volumeName = "CWBVOL") {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = Build(files, volumeName);
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = BuildCore(files, volumeName, out var payloads, out var totalBytes);
+    output.Write(image, 0, image.Length);
+    output.SetLength(basePosition + totalBytes);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + totalBytes;
+    output.Flush();
+  }
+
+  private static byte[] BuildCore(IReadOnlyList<(string Name, FilePayload Payload)> files, string volumeName,
+                                  out DeferredPayloads payloads, out long totalBytes) {
+    ArgumentNullException.ThrowIfNull(files);
     ArgumentNullException.ThrowIfNull(volumeName);
 
     // Validate filenames up-front so we don't half-emit then throw.
@@ -83,7 +126,7 @@ public static class Ods1Writer {
     var extents = new (uint StartLbn, uint Blocks)[files.Count];
     var nextData = dataStart;
     for (var i = 0; i < files.Count; i++) {
-      var blocks = (uint)((files[i].Data.Length + LbnSize - 1) / LbnSize);
+      var blocks = (uint)((files[i].Payload.Size + LbnSize - 1) / LbnSize);
       if (blocks == 0) blocks = 1; // every file owns at least one LBN
       extents[i] = (nextData, blocks);
       nextData += blocks;
@@ -91,7 +134,12 @@ public static class Ods1Writer {
 
     // Floor: enough room for boot/home/bitmap + full index-file window + data.
     var totalLbn = Math.Max((int)nextData, IndexfLbn + IndexfHeaderSlots + 1);
-    var image = new byte[(long)totalLbn * LbnSize];
+    totalBytes = (long)totalLbn * LbnSize;
+    // Only the header window is materialised: data extents start beyond it and
+    // are placed by seek, so a volume past what a byte[] can address costs its
+    // metadata rather than its size.
+    payloads = new DeferredPayloads();
+    var image = new byte[(long)dataStart * LbnSize];
 
     // ── LBN 1: home block ──────────────────────────────────────────────────
     WriteHomeBlock(image, volumeName);
@@ -114,10 +162,9 @@ public static class Ods1Writer {
       WriteFileHeader(image, (int)headerLbn, fileNum, stem, ext,
         isDirectory: false, dataStartLbn: start, dataBlocks: blocks);
 
-      // Copy payload to its allocated extent (zero-padded to block boundary).
-      var data = files[i].Data;
-      var startByte = (long)start * LbnSize;
-      data.CopyTo(image.AsSpan((int)startByte));
+      // The payload belongs at its allocated extent (zero-padded to the block
+      // boundary); it is written after the header window.
+      payloads.Add((long)start * LbnSize, files[i].Payload);
     }
 
     return image;

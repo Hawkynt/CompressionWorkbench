@@ -253,7 +253,7 @@ public class Ods1WormTests {
 
   [Test, Category("Sad")]
   public void Writer_RejectsNullInputs() {
-    Assert.Throws<ArgumentNullException>(() => Ods1Writer.Build(null!));
+    Assert.Throws<ArgumentNullException>(() => Ods1Writer.Build((IReadOnlyList<(string Name, byte[] Data)>)null!));
   }
 
   [Test, Category("Sad")]

@@ -79,15 +79,20 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var files = new List<(string Name, byte[] Data)>();
+    var files = new List<(string Name, Compression.Core.DiskImage.FilePayload Payload)>();
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      files.Add((Path.GetFileName(input.ArchiveName), input.ReadContent()));
+      var info = input;
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap it at what an array can hold.
+      files.Add((Path.GetFileName(info.ArchiveName), info.InMemoryContent is { } bytes
+        ? Compression.Core.DiskImage.FilePayload.FromBytes(bytes)
+        : Compression.Core.DiskImage.FilePayload.FromStream(
+            new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath))));
     }
     var volumeName = options?.GetOption("VolumeLabel", "") ?? "";
     if (string.IsNullOrEmpty(volumeName)) volumeName = "CWBVOL";
-    var image = Ods1Writer.Build(files, volumeName);
-    output.Write(image);
+    Ods1Writer.WriteTo(output, files, volumeName);
   }
 
   /// <summary>

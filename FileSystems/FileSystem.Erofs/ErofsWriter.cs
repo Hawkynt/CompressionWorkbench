@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Erofs;
@@ -50,7 +51,11 @@ public sealed class ErofsWriter {
     public string Name = "";
     public uint Nid;                 // 32-byte granule from meta base
     public Node? Parent;
-    public byte[] Body = [];         // directory dirent block bytes, or file content
+    public byte[] Body = [];         // directory dirent block bytes; empty for files
+    /// <summary>A file's content. Directories keep theirs in <see cref="Body" />.</summary>
+    public FilePayload Payload = FilePayload.Empty;
+    /// <summary>Content length, whichever of the two carries it.</summary>
+    public long Length => this.Body.Length > 0 ? this.Body.Length : this.Payload.Size;
     public ushort Mode;
     public uint Nlink = 1;
     // Datalayout selection (matches mkfs.erofs):
@@ -58,7 +63,7 @@ public sealed class ErofsWriter {
     //     stored inline after the inode header, full blocks (if any) live at FullBlockAddress.
     //   - exact block multiple (incl. empty) => FLAT_PLAIN: every block lives at
     //     FullBlockAddress, nothing inline.
-    public bool UseInline => this.Body.Length % BlockSize != 0;
+    public bool UseInline => this.Length % BlockSize != 0;
     public uint FullBlockAddress = NoFullBlock;
     public int FullBlockCount;
   }
@@ -82,9 +87,23 @@ public sealed class ErofsWriter {
   /// intermediate directories are created on demand so nested layouts round-trip with
   /// their full directory chain intact.
   /// </summary>
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string path, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(openStream);
+    this.AddPayload(path, FilePayload.FromStream(size, openStream));
+  }
+
   public void AddFile(string path, byte[] content) {
-    ArgumentNullException.ThrowIfNull(path);
     ArgumentNullException.ThrowIfNull(content);
+    this.AddPayload(path, FilePayload.FromBytes(content));
+  }
+
+  private void AddPayload(string path, FilePayload payload) {
+    ArgumentNullException.ThrowIfNull(path);
 
     var segments = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
     if (segments.Length == 0)
@@ -108,7 +127,9 @@ public sealed class ErofsWriter {
     var fileName = segments[^1];
     if (dir.Children.ContainsKey(fileName))
       throw new InvalidOperationException($"Duplicate entry '{path}'.");
-    dir.Children.Add(fileName, new FileNode { Name = fileName, Parent = dir, Mode = ModeRegular, Body = content });
+    dir.Children.Add(fileName, new FileNode {
+      Name = fileName, Parent = dir, Mode = ModeRegular, Payload = payload,
+    });
   }
 
   /// <summary>Produces the complete EROFS image as a byte array.</summary>
@@ -153,8 +174,8 @@ public sealed class ErofsWriter {
     //   FLAT_PLAIN   => ceil(size / block) full blocks (i.e. all of it), none inline.
     foreach (var node in allNodes)
       node.FullBlockCount = node.UseInline
-        ? node.Body.Length / BlockSize
-        : CeilDiv(node.Body.Length, BlockSize);
+        ? (int)(node.Length / BlockSize)
+        : (int)CeilDiv(node.Length, BlockSize);
 
     // Pass A: assign nids by walking the packed meta layout.
     var cursor = metaBase;
@@ -187,7 +208,16 @@ public sealed class ErofsWriter {
     }
 
     var totalBlocks = Math.Max(nextDataBlock, dataStartBlock);
-    var image = new byte[(long)totalBlocks * BlockSize];
+    var totalImageBytes = (long)totalBlocks * BlockSize;
+    // Only the metadata prefix is materialised when the target can seek: file
+    // blocks all sit at or past dataStartBlock and are placed afterwards.
+    var bufferBytes = output.CanSeek
+      ? Math.Min(totalImageBytes, (long)dataStartBlock * BlockSize)
+      : totalImageBytes;
+    if (bufferBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"EROFS: a {totalImageBytes:N0}-byte image exceeds the array limit; write it to a seekable stream instead.");
+    var image = new byte[bufferBytes];
 
     // 3. Superblock at offset 1024.
     WriteSuperblock(image, rootNid: this._root.Nid, inodeCount: allNodes.Count,
@@ -201,20 +231,60 @@ public sealed class ErofsWriter {
       WriteInode(image, cursor, node);
       var tail = InlineTail(node);
       if (tail > 0) {
-        var fullBytes = node.FullBlockCount * BlockSize;
-        Buffer.BlockCopy(node.Body, fullBytes, image, (int)(cursor + ExtendedInodeSize), tail);
+        var fullBytes = (long)node.FullBlockCount * BlockSize;
+        // The tail is at most one block, so reading it is cheap even when the
+        // rest of the file is streamed.
+        var tailBytes = node.Body.Length > 0
+          ? node.Body.AsSpan((int)fullBytes, tail).ToArray()
+          : ReadTail(node.Payload, fullBytes, tail);
+        tailBytes.CopyTo(image.AsSpan((int)(cursor + ExtendedInodeSize)));
       }
       cursor += ExtendedInodeSize + tail;
     }
 
-    // 5. Whole-block data.
+    // 5. Whole-block data. A file's blocks are placed by seek after the metadata
+    //    prefix; only a directory's body is small enough to stay in the buffer.
+    var payloads = new DeferredPayloads();
     foreach (var node in allNodes) {
       if (node.FullBlockCount == 0) continue;
-      var fullBytes = node.FullBlockCount * BlockSize;
-      Buffer.BlockCopy(node.Body, 0, image, (int)((long)node.FullBlockAddress * BlockSize), fullBytes);
+      var fullBytes = (long)node.FullBlockCount * BlockSize;
+      var at = (long)node.FullBlockAddress * BlockSize;
+      if (node.Body.Length > 0)
+        node.Body.AsSpan(0, (int)fullBytes).CopyTo(image.AsSpan((int)at));
+      else
+        payloads.Add(at, FilePayload.FromStream(fullBytes, node.Payload.Open));
     }
 
-    output.Write(image, 0, image.Length);
+    if (output.CanSeek) {
+      var basePosition = output.Position;
+      output.Write(image, 0, image.Length);
+      output.SetLength(basePosition + totalImageBytes);
+      payloads.FlushTo(output, basePosition);
+      output.Position = basePosition + totalImageBytes;
+    } else {
+      output.Write(image, 0, image.Length);
+    }
+    output.Flush();
+  }
+
+  /// <summary>Reads <paramref name="count" /> bytes from <paramref name="offset" /> of a payload.</summary>
+  private static byte[] ReadTail(FilePayload payload, long offset, int count) {
+    using var src = payload.Open();
+    var buffer = new byte[64 * 1024];
+    var skipped = 0L;
+    while (skipped < offset) {
+      var n = src.Read(buffer, 0, (int)Math.Min(buffer.Length, offset - skipped));
+      if (n <= 0) break;
+      skipped += n;
+    }
+    var result = new byte[count];
+    var read = 0;
+    while (read < count) {
+      var n = src.Read(result, read, count - read);
+      if (n <= 0) break;
+      read += n;
+    }
+    return result;
   }
 
   private static void Collect(DirectoryNode dir, List<DirectoryNode> directories, List<FileNode> files) {
@@ -298,7 +368,7 @@ public sealed class ErofsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(inode[2..], 0);                    // i_xattr_icount @2
     BinaryPrimitives.WriteUInt16LittleEndian(inode[4..], node.Mode);            // i_mode @4
     BinaryPrimitives.WriteUInt16LittleEndian(inode[6..], 0);                    // i_reserved @6
-    BinaryPrimitives.WriteInt64LittleEndian(inode[8..], node.Body.Length);      // i_size @8
+    BinaryPrimitives.WriteInt64LittleEndian(inode[8..], node.Length);      // i_size @8
     BinaryPrimitives.WriteUInt32LittleEndian(inode[16..], node.FullBlockAddress); // i_u (raw_blkaddr) @16
     BinaryPrimitives.WriteUInt32LittleEndian(inode[20..], node.Nid);            // i_ino @20 (informational)
     BinaryPrimitives.WriteUInt32LittleEndian(inode[24..], Uid);                 // i_uid @24
@@ -328,7 +398,7 @@ public sealed class ErofsWriter {
   }
 
   // Bytes stored inline after the inode header: the partial tail for FLAT_INLINE, else 0.
-  private static int InlineTail(Node node) => node.UseInline ? node.Body.Length % BlockSize : 0;
+  private static int InlineTail(Node node) => node.UseInline ? (int)(node.Length % BlockSize) : 0;
 
   private static long Align(long value, int alignment) => (value + alignment - 1) / alignment * alignment;
   private static int CeilDiv(long value, int divisor) => (int)((value + divisor - 1) / divisor);
