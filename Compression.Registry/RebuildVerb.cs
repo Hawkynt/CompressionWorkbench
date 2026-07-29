@@ -101,7 +101,9 @@ public static class RebuildVerb {
       IArchiveFormatOperations ops, IArchiveCreatable creator,
       IReadOnlyDictionary<string, string>? formatSpecific = null) {
     ArgumentNullException.ThrowIfNull(archive);
-    using var rebuilt = new MemoryStream();
+    // A scratch file, not a MemoryStream: the rebuilt image is a whole volume,
+    // and a MemoryStream cannot hold one past 2 GB ("Stream was too long").
+    using var rebuilt = CreateScratchStream();
     // Throws (leaving `archive` untouched) if the rebuild would lose data.
     RebuildToStream(archive, rebuilt, ops, creator, formatSpecific);
     archive.Position = 0;
@@ -139,7 +141,7 @@ public static class RebuildVerb {
         inputs.Add(new ArchiveInputInfo(file, rel, false));
       }
 
-      using var rebuilt = new MemoryStream();
+      using var rebuilt = CreateScratchStream();
       creator.Create(rebuilt, inputs, new FormatCreateOptions());
 
       // Verify the result lists back (a valid image) before committing.
@@ -155,4 +157,13 @@ public static class RebuildVerb {
       try { Directory.Delete(tmpDir, true); } catch { /* best effort */ }
     }
   }
+  /// <summary>
+  /// A writable scratch stream that is not bounded by what a byte[] can hold.
+  /// Deleted on close.
+  /// </summary>
+  internal static FileStream CreateScratchStream()
+    => new(Path.Combine(Path.GetTempPath(), "cwb_rebuild_" + Guid.NewGuid().ToString("N") + ".tmp"),
+           FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024,
+           FileOptions.DeleteOnClose);
+
 }

@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Qnx4;
@@ -38,7 +39,11 @@ namespace FileSystem.Qnx4;
 /// </summary>
 public sealed class Qnx4Reader : IDisposable {
 
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the image. Copying the volume into a byte[] capped
+  /// the reader at the array limit, which no QNX4 volume is obliged to respect.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<Qnx4Entry> _entries = [];
 
   public IReadOnlyList<Qnx4Entry> Entries => this._entries;
@@ -59,10 +64,8 @@ public sealed class Qnx4Reader : IDisposable {
 
   public Qnx4Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+    this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
   }
 
@@ -79,7 +82,7 @@ public sealed class Qnx4Reader : IDisposable {
     for (var i = 0; i < 32; i++) {
       var off = BlockSize + i * InodeSize;
       if (off + InodeSize > this._data.Length) break;
-      var status = this._data[off + 0x3D];
+      var status = this._data.ReadByte(off + 0x3D);
       if (IsLiveStatus(status)) validInodes++;
     }
     if (validInodes == 0)
@@ -97,9 +100,9 @@ public sealed class Qnx4Reader : IDisposable {
       for (var i = 0; i < 8; i++) { // 8 inodes per 512-byte block
         var off = (int)blockOff + i * InodeSize;
         if (off + InodeSize > this._data.Length) break;
-        var status = this._data[off + 0x3D];
+        var status = this._data.ReadByte(off + 0x3D);
         if (!IsLiveStatus(status)) continue;
-        var name = ReadName(this._data.AsSpan(off, 16));
+        var name = ReadName(this._data.Read(off, 16));
         // Skip the self-referencing root inode ("/") emitted by Qnx4Writer.
         if (string.Equals(name, "/", StringComparison.Ordinal)) continue;
         // Hide QNX4 system files from the user-visible listing — they are
@@ -109,10 +112,10 @@ public sealed class Qnx4Reader : IDisposable {
         // does not surface them in ls(1).
         if (name is ".bitmap" or ".inodes" or ".bootblock" or ".altboot") continue;
         if (string.IsNullOrEmpty(name) || name is "." or "..") continue;
-        var size = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(off + 0x10));
-        var xtntBlk = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(off + 0x14));
-        var xtntCnt = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(off + 0x18));
-        var mode = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(off + 0x20));
+        var size = this._data.ReadUInt32(off + 0x10);
+        var xtntBlk = this._data.ReadUInt32(off + 0x14);
+        var xtntCnt = this._data.ReadUInt32(off + 0x18);
+        var mode = this._data.ReadUInt16(off + 0x20);
         var isDir = (mode & SIfdir) == SIfdir;
         var fullPath = string.IsNullOrEmpty(path) ? name : $"{path}/{name}";
         this._entries.Add(new Qnx4Entry {
@@ -140,13 +143,26 @@ public sealed class Qnx4Reader : IDisposable {
     return Encoding.ASCII.GetString(raw[..end]);
   }
 
+  /// <summary>
+  /// Copies an entry's bytes into <paramref name="destination" /> a block at a
+  /// time, so an entry larger than a byte[] can hold is extracted like any other.
+  /// </summary>
+  public void ExtractTo(Qnx4Entry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return;
+    var offset = (long)entry.FirstExtentBlock * BlockSize;
+    if (offset < 0 || offset >= this._data.Length) return;
+    this._data.CopyTo(offset, destination, Math.Min(entry.Size, this._data.Length - offset));
+  }
+
   public byte[] Extract(Qnx4Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var offset = (long)entry.FirstExtentBlock * BlockSize;
     if (offset < 0 || offset >= this._data.Length) return [];
     var take = (int)Math.Min(entry.Size, this._data.Length - offset);
-    return this._data.AsSpan((int)offset, take).ToArray();
+    return this._data.Read(offset, take);
   }
 
   public void Dispose() { }

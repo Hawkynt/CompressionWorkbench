@@ -130,6 +130,15 @@ public sealed class IsoWriter {
   /// <summary>
   /// Builds the complete ISO 9660 image and returns it as a byte array.
   /// </summary>
+  /// <summary>First sector of file data; everything below it is metadata.</summary>
+  private int FileDataStartSector { get; set; }
+
+  /// <summary>Declared size of the image the last build laid out.</summary>
+  private long TotalImageBytes { get; set; }
+
+  /// <summary>When set, Build materialises only the metadata prefix.</summary>
+  private bool _prefixOnly;
+
   public byte[] Build() {
     var root = BuildTree();
 
@@ -183,6 +192,10 @@ public sealed class IsoWriter {
       }
 
     // Shared file data after all directory extents; referenced by both trees.
+    // Everything below this sector is metadata, so only that prefix has to be
+    // materialised -- allocating the whole volume caps an ISO at the array limit,
+    // which no DVD or Blu-ray image is obliged to respect.
+    this.FileDataStartSector = cursor;
     foreach (var dir in dirs)
       foreach (var file in dir.Files) {
         file.Lba = cursor;
@@ -194,7 +207,14 @@ public sealed class IsoWriter {
     // (and the backing file) clear the minimum size real readers such as cdrtools
     // isoinfo expect. The padding sectors are zero-filled slack at the tail.
     var totalSectors = cursor + TrailingPadSectors;
-    var image = new byte[totalSectors * SectorSize];
+    this.TotalImageBytes = (long)totalSectors * SectorSize;
+    var prefixBytes = this._prefixOnly
+      ? (long)this.FileDataStartSector * SectorSize
+      : this.TotalImageBytes;
+    if (prefixBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"ISO: a {this.TotalImageBytes:N0}-byte image exceeds the array limit; write it to a seekable stream instead.");
+    var image = new byte[prefixBytes];
 
     // Primary Volume Descriptor (sector 16).
     this.WriteVolumeDescriptor(image, 16, type: 1, totalSectors, root,
@@ -237,8 +257,15 @@ public sealed class IsoWriter {
         if (file.StreamOpener != null) {
           if (this._streamingSink != null && file.Length > 0)
             this._streamingSink.Add(((long)file.Lba * SectorSize, file.Length, file.StreamOpener));
+        } else if (this._streamingSink != null) {
+          // Inline payloads are placed by seek too when building for a stream:
+          // they sit past the materialised prefix.
+          if (file.Length > 0) {
+            var payload = file.Data;
+            this._streamingSink.Add(((long)file.Lba * SectorSize, file.Length, () => new MemoryStream(payload, writable: false)));
+          }
         } else {
-          file.Data.CopyTo(image, file.Lba * SectorSize);
+          file.Data.CopyTo(image, (long)file.Lba * SectorSize);
         }
       }
 
@@ -262,14 +289,16 @@ public sealed class IsoWriter {
 
     var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
     this._streamingSink = sink;
+    this._prefixOnly = true;
     byte[] image;
     try {
       image = Build();
     } finally {
       this._streamingSink = null;
+      this._prefixOnly = false;
     }
 
-    output.SetLength(image.Length);
+    output.SetLength(this.TotalImageBytes);
     output.Position = 0;
     output.Write(image);
 

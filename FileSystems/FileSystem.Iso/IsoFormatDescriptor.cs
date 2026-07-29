@@ -167,9 +167,19 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ApplicationIdentifier = options?.GetOption("Application", "") ?? "",
       EnableJoliet          = options?.GetOptionBool("Joliet", true) ?? true,
     };
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
-    output.Write(w.Build());
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the image out; reading a large input
+      // into a byte[] would cap the image at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
+    if (output.CanSeek) w.BuildToStreaming(output);
+    else output.Write(w.Build());
   }
 
   /// <summary>
@@ -219,7 +229,9 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      // Streamed, not buffered: an ISO entry may be larger than a byte[] can hold.
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.ExtractTo(e, target);
     }
   }
 
@@ -276,6 +288,30 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// image is repacked with files reordered per mode.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // An image too large to materialise goes through the streaming rebuilder;
+    // buildImage returns a byte[] of the whole image, which Build refuses to
+    // produce once it passes the array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      IsoWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new IsoReader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => { streamWriter = new IsoWriter(); target = s2; },
+        // As a stream factory, not inline: an inline payload is materialised
+        // inside the image buffer, which is what a large image cannot afford.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => streamWriter!.BuildToStreaming(target!));
+      return;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new IsoReader(stream);
@@ -287,6 +323,9 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         return w.Build();
       });
   }
+
+  /// <summary>Largest image a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   /// <summary>
   /// Removes the named entries from an existing ISO 9660 image. Uses

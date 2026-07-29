@@ -46,7 +46,9 @@ public interface IArchiveShrinkable {
       input.CopyTo(output);
       return;
     }
-    using var rebuilt = new MemoryStream();
+    // A scratch file, not a MemoryStream: the rebuilt image is a whole volume,
+    // and a MemoryStream cannot hold one past 2 GB ("Stream was too long").
+    using var rebuilt = RebuildVerb.CreateScratchStream();
     var useRebuilt = false;
     try {
       RebuildVerb.RebuildToStream(input, rebuilt, ops, creator);

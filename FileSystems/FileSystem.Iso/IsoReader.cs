@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Iso;
@@ -9,7 +10,11 @@ namespace FileSystem.Iso;
 /// </summary>
 public sealed class IsoReader : IDisposable {
   private const int SectorSize = 2048;
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the image. Copying the volume into a byte[] capped
+  /// the reader at the array limit, which no DVD or Blu-ray image respects.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<IsoEntry> _entries = [];
   private readonly bool _preferJoliet;
   private bool _joliet;
@@ -26,9 +31,8 @@ public sealed class IsoReader : IDisposable {
   /// </summary>
   public IsoReader(Stream stream, bool leaveOpen = false, bool useJoliet = true) {
     _preferJoliet = useJoliet;
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    if (stream.CanSeek) stream.Position = 0;
+    _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
@@ -44,7 +48,7 @@ public sealed class IsoReader : IDisposable {
       var off = sector * SectorSize;
       if (off + SectorSize > _data.Length) break;
 
-      var type = _data[off];
+      var type = _data.ReadByte(off);
       if (type == 0xFF) break; // terminator
 
       if (!IsCD001(off)) continue;
@@ -53,7 +57,7 @@ public sealed class IsoReader : IDisposable {
         pvdOffset = off;
       else if (type == 2 && jolietOffset < 0 && _preferJoliet) {
         // Check escape sequences at offset 88 for Joliet
-        var esc = _data.AsSpan(off + 88, 3);
+        var esc = _data.Read(off + 88, 3);
         if (esc[0] == 0x25 && esc[1] == 0x2F && (esc[2] == 0x40 || esc[2] == 0x43 || esc[2] == 0x45))
           jolietOffset = off;
       }
@@ -73,25 +77,27 @@ public sealed class IsoReader : IDisposable {
 
     // Parse root directory record from chosen descriptor at offset 156
     var rootRec = descOff + 156;
-    var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(rootRec + 2));
-    var rootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(rootRec + 10));
+    var rootLba = (int)_data.ReadUInt32(rootRec + 2);
+    var rootLen = (int)_data.ReadUInt32(rootRec + 10);
 
     ReadDirectory(rootLba, rootLen, "");
   }
 
   private bool IsCD001(int vdOffset) =>
     _data.Length > vdOffset + 5 &&
-    _data[vdOffset + 1] == 'C' && _data[vdOffset + 2] == 'D' &&
-    _data[vdOffset + 3] == '0' && _data[vdOffset + 4] == '0' && _data[vdOffset + 5] == '1';
+    _data.ReadByte(vdOffset + 1) == 'C' && _data.ReadByte(vdOffset + 2) == 'D' &&
+    _data.ReadByte(vdOffset + 3) == '0' && _data.ReadByte(vdOffset + 4) == '0' && _data.ReadByte(vdOffset + 5) == '1';
 
   private void ReadDirectory(int lba, int length, string basePath) {
-    var offset = lba * SectorSize;
+    // 64-bit throughout: a directory extent past 2 GB has an LBA whose product
+    // with the sector size overflows int and wraps to a negative offset.
+    var offset = (long)lba * SectorSize;
     var end = offset + length;
     if (end > _data.Length) end = _data.Length;
     var pos = offset;
 
     while (pos < end) {
-      var recLen = _data[pos];
+      var recLen = _data.ReadByte(pos);
       if (recLen == 0) {
         // Skip to next sector boundary
         var nextSector = ((pos / SectorSize) + 1) * SectorSize;
@@ -100,21 +106,21 @@ public sealed class IsoReader : IDisposable {
       }
       if (pos + recLen > end) break;
 
-      var extLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(pos + 2));
-      var dataLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(pos + 10));
-      var flags = _data[pos + 25];
-      var nameLen = _data[pos + 32];
+      var extLba = (int)_data.ReadUInt32(pos + 2);
+      var dataLen = (int)_data.ReadUInt32(pos + 10);
+      var flags = _data.ReadByte(pos + 25);
+      var nameLen = _data.ReadByte(pos + 32);
       var isDir = (flags & 2) != 0;
 
       string name;
       if (_joliet) {
-        name = Encoding.BigEndianUnicode.GetString(_data, pos + 33, nameLen);
+        name = Encoding.BigEndianUnicode.GetString(_data.Read(pos + 33, nameLen));
       } else {
         // Check for Rock Ridge NM entry in System Use area
         var suOffset = 33 + nameLen;
         if ((nameLen & 1) == 0) suOffset++; // padding byte
         name = GetRockRidgeName(pos + suOffset, pos + recLen)
-               ?? Encoding.ASCII.GetString(_data, pos + 33, nameLen);
+               ?? Encoding.ASCII.GetString(_data.Read(pos + 33, nameLen));
       }
 
       // Clean up name
@@ -123,7 +129,7 @@ public sealed class IsoReader : IDisposable {
       name = name.TrimEnd('.');
 
       // Skip . and .. entries
-      if (nameLen == 1 && (_data[pos + 33] == 0 || _data[pos + 33] == 1)) {
+      if (nameLen == 1 && (_data.ReadByte(pos + 33) == 0 || _data.ReadByte(pos + 33) == 1)) {
         pos += recLen;
         continue;
       }
@@ -138,12 +144,12 @@ public sealed class IsoReader : IDisposable {
       // Date/time: 7 bytes at offset 18
       DateTime? lastMod = null;
       if (pos + 24 < end) {
-        var y = _data[pos + 18] + 1900;
-        var m = _data[pos + 19];
-        var d = _data[pos + 20];
-        var h = _data[pos + 21];
-        var mi = _data[pos + 22];
-        var s = _data[pos + 23];
+        var y = _data.ReadByte(pos + 18) + 1900;
+        var m = _data.ReadByte(pos + 19);
+        var d = _data.ReadByte(pos + 20);
+        var h = _data.ReadByte(pos + 21);
+        var mi = _data.ReadByte(pos + 22);
+        var s = _data.ReadByte(pos + 23);
         if (y >= 1970 && m >= 1 && m <= 12 && d >= 1 && d <= 31)
           lastMod = new DateTime(y, m, d, h, mi, s, DateTimeKind.Utc);
       }
@@ -163,22 +169,34 @@ public sealed class IsoReader : IDisposable {
     }
   }
 
-  private string? GetRockRidgeName(int start, int end) {
+  private string? GetRockRidgeName(long start, long end) {
     var pos = start;
     while (pos + 4 <= end) {
-      var sig0 = _data[pos];
-      var sig1 = _data[pos + 1];
-      var len = _data[pos + 2];
+      var sig0 = _data.ReadByte(pos);
+      var sig1 = _data.ReadByte(pos + 1);
+      var len = _data.ReadByte(pos + 2);
       if (len < 4) break;
       if (pos + len > end) break;
 
       if (sig0 == 'N' && sig1 == 'M' && len > 5) {
         var nameLen = len - 5;
-        return Encoding.ASCII.GetString(_data, pos + 5, nameLen);
+        return Encoding.ASCII.GetString(_data.Read(pos + 5, nameLen));
       }
       pos += len;
     }
     return null;
+  }
+
+  /// <summary>
+  /// Copies an entry's bytes into <paramref name="destination" /> a block at a
+  /// time, so an entry larger than a byte[] can hold is extracted like any other.
+  /// </summary>
+  public void ExtractTo(IsoEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return;
+    if (entry.DataOffset + entry.Size > _data.Length) return;
+    _data.CopyTo(entry.DataOffset, destination, entry.Size);
   }
 
   /// <summary>
@@ -188,7 +206,7 @@ public sealed class IsoReader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.DataOffset + entry.Size > _data.Length) return [];
-    return _data.AsSpan((int)entry.DataOffset, (int)entry.Size).ToArray();
+    return _data.Read(entry.DataOffset, (int)entry.Size);
   }
 
   /// <inheritdoc/>

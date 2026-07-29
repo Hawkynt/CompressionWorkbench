@@ -7,8 +7,9 @@ namespace Compression.Core.DiskImage;
 /// still be written straight to a stream.
 /// </summary>
 /// <remarks>
-/// Shared by the ext-family writers, which address everything they emit in whole
-/// blocks and never straddle a block boundary with a single field.
+/// Shared by the filesystem writers. <see cref="At" /> is the fast path for a
+/// field that is known not to straddle a block boundary; <see cref="Write" /> and
+/// <see cref="Read" /> handle arbitrary offsets and lengths.
 /// </remarks>
 public sealed class SparseBlockImage(int blockSize, long totalBytes) {
 
@@ -37,6 +38,50 @@ public sealed class SparseBlockImage(int blockSize, long totalBytes) {
     if (within + length > this.BlockSize)
       throw new ArgumentOutOfRangeException(nameof(length), "A field must not cross a block boundary.");
     return this.Block((int)(offset / this.BlockSize)).Slice(within, length);
+  }
+
+  /// <summary>Copies <paramref name="data" /> to <paramref name="offset" />, spanning blocks as needed.</summary>
+  public void Write(long offset, ReadOnlySpan<byte> data) {
+    while (!data.IsEmpty) {
+      var block = (int)(offset / this.BlockSize);
+      var within = (int)(offset % this.BlockSize);
+      var take = Math.Min(data.Length, this.BlockSize - within);
+      data[..take].CopyTo(this.Block(block).Slice(within, take));
+      data = data[take..];
+      offset += take;
+    }
+  }
+
+  /// <summary>Fills <paramref name="count" /> bytes at <paramref name="offset" /> with <paramref name="value" />.</summary>
+  public void Fill(long offset, byte value, long count) {
+    while (count > 0) {
+      var block = (int)(offset / this.BlockSize);
+      var within = (int)(offset % this.BlockSize);
+      var take = (int)Math.Min(count, this.BlockSize - within);
+      this.Block(block).Slice(within, take).Fill(value);
+      count -= take;
+      offset += take;
+    }
+  }
+
+  /// <summary>Reads <paramref name="length" /> bytes from <paramref name="offset" />, spanning blocks as needed.</summary>
+  public byte[] Read(long offset, int length) {
+    var result = new byte[length];
+    var written = 0;
+    while (written < length) {
+      var block = (int)((offset + written) / this.BlockSize);
+      var within = (int)((offset + written) % this.BlockSize);
+      var take = Math.Min(length - written, this.BlockSize - within);
+      this.Block(block).Slice(within, take).CopyTo(result.AsSpan(written, take));
+      written += take;
+    }
+    return result;
+  }
+
+  /// <summary>Single byte at <paramref name="offset" />.</summary>
+  public byte this[long offset] {
+    get => this.Block((int)(offset / this.BlockSize))[(int)(offset % this.BlockSize)];
+    set => this.Block((int)(offset / this.BlockSize))[(int)(offset % this.BlockSize)] = value;
   }
 
   /// <summary>Materialises the whole volume.</summary>

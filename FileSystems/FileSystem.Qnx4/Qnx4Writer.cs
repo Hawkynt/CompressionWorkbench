@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Qnx4;
@@ -60,7 +61,10 @@ public sealed class Qnx4Writer {
   private const ushort PermFile = 0x01A4;
   private const ushort PermDir = 0x01ED;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  /// <summary>A file's payload: held inline, or opened on demand when it is too large to hold.</summary>
+  private readonly record struct FileEntry(string Name, long Size, byte[]? Data, Func<Stream>? Opener);
+
+  private readonly List<FileEntry> _files = [];
 
   /// <summary>Adds a single regular file to be written into the root directory.
   /// Names are truncated to 16 bytes (QNX4 short-name limit) and any path
@@ -76,7 +80,23 @@ public sealed class Qnx4Writer {
     var bytes = Encoding.UTF8.GetBytes(leaf);
     if (bytes.Length > MaxShortName) bytes = bytes.AsSpan(0, MaxShortName).ToArray();
     var trimmed = Encoding.UTF8.GetString(bytes).TrimEnd('�');
-    this._files.Add((trimmed, data));
+    this._files.Add(new FileEntry(trimmed, data.LongLength, data, null));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    var leaf = Path.GetFileName(name.Replace('\\', '/'));
+    if (string.IsNullOrEmpty(leaf) || leaf is "." or "..") return;
+    var bytes = Encoding.UTF8.GetBytes(leaf);
+    if (bytes.Length > MaxShortName) bytes = bytes.AsSpan(0, MaxShortName).ToArray();
+    this._files.Add(new FileEntry(Encoding.UTF8.GetString(bytes).TrimEnd('�'), size, null, openStream));
   }
 
   /// <summary>Serialises the accumulated files into a QNX4 image.</summary>
@@ -96,7 +116,7 @@ public sealed class Qnx4Writer {
     var fileExtents = new (uint StartBlock, uint BlockCount)[this._files.Count];
     var nextBlock = FirstDataBlock;
     for (var i = 0; i < this._files.Count; i++) {
-      var sizeBytes = this._files[i].Data.Length;
+      var sizeBytes = this._files[i].Size;
       var blocks = (uint)((sizeBytes + BlockSize - 1) / BlockSize);
       if (blocks == 0) blocks = 1; // even zero-byte files reserve one block to satisfy reader extent walk
       fileExtents[i] = (nextBlock, blocks);
@@ -104,7 +124,10 @@ public sealed class Qnx4Writer {
     }
 
     var totalBlocks = nextBlock;
-    var image = new byte[(long)totalBlocks * BlockSize];
+    // Only the blocks the filesystem actually populates are held: file payloads
+    // are placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(BlockSize, (long)totalBlocks * BlockSize);
 
     // === Block 0: boot block — zeroed (no QNX4 boot magic; harmless). ===
     // The Linux driver does not validate the boot block.
@@ -138,20 +161,19 @@ public sealed class Qnx4Writer {
     );
 
     // Entries 3..N: user files
+    var dataWrites = new List<(long Offset, FileEntry Entry)>();
     for (var i = 0; i < this._files.Count; i++) {
-      var (name, data) = this._files[i];
+      var entry = this._files[i];
+      var name = entry.Name;
       var (startBlk, blkCount) = fileExtents[i];
       WriteInode(
         image, RootDirStart, entryIndex: 3 + i,
-        name: name, size: (uint)data.Length,
+        name: name, size: (uint)Math.Min(entry.Size, uint.MaxValue),
         firstExtentBlock: startBlk, extentBlockCount: blkCount,
         mode: (ushort)(SIfreg | PermFile),
         status: FileUsed
       );
-      // Copy data bytes into the extent
-      var dataOffset = (long)startBlk * BlockSize;
-      data.AsSpan().CopyTo(image.AsSpan((int)dataOffset));
-      // Trailing block bytes already zero
+      dataWrites.Add(((long)startBlk * BlockSize, entry));
     }
 
     // === Block 5: .bitmap — mark reserved + used blocks ===
@@ -160,11 +182,41 @@ public sealed class Qnx4Writer {
     // === Block 6: .inodes — left zero ===
     // (already zero from initialisation)
 
-    output.Write(image, 0, image.Length);
+    if (output.CanSeek) {
+      var basePosition = output.Position;
+      image.WriteTo(output);
+      WriteEntryData(output, dataWrites, basePosition);
+      output.Position = basePosition + image.TotalBytes;
+    } else {
+      var full = image.Materialise();
+      using var target = new MemoryStream(full, writable: true);
+      WriteEntryData(target, dataWrites, 0);
+      output.Write(full, 0, full.Length);
+    }
+    output.Flush();
+  }
+
+  /// <summary>Copies each entry's bytes into the extent it was allocated.</summary>
+  private static void WriteEntryData(Stream output, List<(long Offset, FileEntry Entry)> dataWrites, long basePosition) {
+    var buffer = new byte[64 * 1024];
+    foreach (var (offset, entry) in dataWrites) {
+      if (entry.Size <= 0) continue;
+      output.Position = basePosition + offset;
+      if (entry.Data is { Length: > 0 } inline) { output.Write(inline, 0, inline.Length); continue; }
+
+      using var src = entry.Opener!();
+      var remaining = entry.Size;
+      while (remaining > 0) {
+        var n = src.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+        if (n <= 0) break;
+        output.Write(buffer, 0, n);
+        remaining -= n;
+      }
+    }
   }
 
   private static void WriteInode(
-      byte[] image, uint blockBase, int entryIndex,
+      SparseBlockImage image, uint blockBase, int entryIndex,
       string name, uint size,
       uint firstExtentBlock, uint extentBlockCount,
       ushort mode, byte status) {
@@ -172,25 +224,25 @@ public sealed class Qnx4Writer {
     // entryIndex spans 0..31 across the 4-block root cluster.
     var blockOffset = entryIndex / InodesPerBlock;
     var slotInBlock = entryIndex % InodesPerBlock;
-    var offset = (int)((blockBase + blockOffset) * BlockSize + slotInBlock * InodeSize);
+    var offset = (long)(blockBase + blockOffset) * BlockSize + slotInBlock * InodeSize;
 
     // di_fname (16 bytes, NUL-padded ASCII/UTF-8)
     var nameBytes = Encoding.UTF8.GetBytes(name);
     var nameLen = Math.Min(nameBytes.Length, MaxShortName);
-    nameBytes.AsSpan(0, nameLen).CopyTo(image.AsSpan(offset, MaxShortName));
+    image.Write(offset, nameBytes.AsSpan(0, nameLen));
 
     // di_size (offset 0x10, 4 bytes LE)
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 0x10), size);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x10, 4), size);
 
     // di_first_xtnt: xtnt_blk (0x14) + xtnt_size (0x18), each u32 LE
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 0x14), firstExtentBlock);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 0x18), extentBlockCount);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x14, 4), firstExtentBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x18, 4), extentBlockCount);
 
     // di_num_xtnts (0x1C, u32 LE) — 0 = first extent only
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 0x1C), 0u);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x1C, 4), 0u);
 
     // di_mode (0x20, u16 LE)
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(offset + 0x20), mode);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(offset + 0x20, 2), mode);
 
     // di_uid (0x22) / di_gid (0x24) — leave as 0
     // di_ftime (0x26) / di_mtime (0x2A) / di_atime (0x2E) / di_ctime (0x32) — leave as 0
@@ -202,13 +254,13 @@ public sealed class Qnx4Writer {
 
   /// <summary>Marks the on-disk bitmap (block 5) so blocks 0..(used-1) are flagged
   /// allocated. QNX4 stores 1 bit per block, LSB-first within each byte.</summary>
-  private static void BuildBitmap(byte[] image, uint totalBlocks, (uint StartBlock, uint BlockCount)[] fileExtents) {
-    var bitmapOffset = (int)(BitmapBlock * BlockSize);
+  private static void BuildBitmap(SparseBlockImage image, uint totalBlocks, (uint StartBlock, uint BlockCount)[] fileExtents) {
+    var bitmapOffset = (long)BitmapBlock * BlockSize;
     const int bitmapCapacity = BlockSize * 8;
 
-    static void MarkBit(byte[] img, int baseOffset, uint blk) {
+    static void MarkBit(SparseBlockImage img, long baseOffset, uint blk) {
       if (blk >= bitmapCapacity) return;
-      img[baseOffset + (int)(blk >> 3)] |= (byte)(1 << (int)(blk & 7));
+      img[baseOffset + (blk >> 3)] |= (byte)(1 << (int)(blk & 7));
     }
 
     // Boot

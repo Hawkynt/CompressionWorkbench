@@ -61,7 +61,9 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      // Streamed, not buffered: an entry may be larger than a byte[] can hold.
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.ExtractTo(e, target);
     }
   }
 
@@ -91,8 +93,17 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new Qnx4Writer();
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
     w.WriteTo(output);
   }
 
