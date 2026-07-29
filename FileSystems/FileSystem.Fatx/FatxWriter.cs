@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Fatx;
@@ -29,7 +30,7 @@ namespace FileSystem.Fatx;
 /// </summary>
 public sealed class FatxWriter {
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
 
   internal const int SectorSize = 512;
   internal const int SuperblockSize = 0x1000;
@@ -43,7 +44,18 @@ public sealed class FatxWriter {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, data));
+    this._files.Add((name, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the cluster layout is
+  /// settled from it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    this._files.Add((name, FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>Builds a complete FATX image containing the previously-added
@@ -116,7 +128,16 @@ public sealed class FatxWriter {
       if (imageSize > 0x7FFFFFFFL) throw new InvalidOperationException("FATX: image too large during FAT-type alignment.");
     }
 
-    var image = new byte[imageSize];
+    this.DeclaredImageBytes = imageSize;
+    // Only the superblock and FAT are materialised: every cluster payload --
+    // directory blobs included -- lives in the data region past them and is
+    // placed by seek. Allocating the whole image capped FATX at the array limit.
+    var prefixBytes = this._deferPayloads ? dataRegionStart : imageSize;
+    if (prefixBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"FATX: a {imageSize:N0}-byte image exceeds the array limit; write it to a seekable stream instead.");
+    this._payloads = new DeferredPayloads();
+    var image = new byte[prefixBytes];
 
     // ── Phase 3: superblock ─────────────────────────────────────────────
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x00), MagicFatx);
@@ -135,7 +156,7 @@ public sealed class FatxWriter {
     WriteChains(image.AsSpan(fatOffset), root, fatType, eoc);
 
     // ── Phase 5: directory + file payload ───────────────────────────────
-    WritePayload(image, root, (int)dataRegionStart, clusterSize, fatType);
+    this.WritePayload(image, root, dataRegionStart, clusterSize, fatType);
 
     return image;
   }
@@ -154,7 +175,7 @@ public sealed class FatxWriter {
   /// number of 512-byte sectors per cluster (a power of two).
   /// </summary>
   private int SelectOptimalSectorsPerCluster(long totalBytes) {
-    var fileSizes = this._files.Select(f => (long)f.Data.Length).ToList();
+    var fileSizes = this._files.Select(f => f.Payload.Size).ToList();
     // Empty volumes have no slack signal — keep the canonical small cluster.
     if (totalBytes <= 0) return SectorsPerClusterCandidates[0];
 
@@ -194,9 +215,9 @@ public sealed class FatxWriter {
     }
   }
 
-  private sealed class FileNode(string name, byte[] data) {
+  private sealed class FileNode(string name, FilePayload payload) {
     public string Name { get; } = name;
-    public byte[] Data { get; } = data;
+    public FilePayload Payload { get; } = payload;
     public uint StartCluster { get; set; }
     public uint ClusterCount { get; set; }
   }
@@ -231,7 +252,7 @@ public sealed class FatxWriter {
 
   private static long SumPayload(DirNode node) {
     var total = 0L;
-    foreach (var f in node.Files) total += f.Data.Length;
+    foreach (var f in node.Files) total += f.Payload.Size;
     foreach (var d in node.Dirs) total += SumPayload(d);
     return total;
   }
@@ -253,7 +274,7 @@ public sealed class FatxWriter {
 
     // Now files.
     foreach (var f in node.Files) {
-      var clusters = f.Data.Length == 0 ? 0u : (uint)((f.Data.Length + clusterSize - 1) / clusterSize);
+      var clusters = f.Payload.Size == 0 ? 0u : (uint)((f.Payload.Size + clusterSize - 1) / clusterSize);
       if (clusters == 0) {
         f.StartCluster = 0; // zero-length files conventionally point nowhere
         f.ClusterCount = 0;
@@ -303,7 +324,7 @@ public sealed class FatxWriter {
 
     var off = 0;
     foreach (var f in node.Files)
-      off += WriteDirent(blob.AsSpan(off), f.Name, attr: 0x20, firstCluster: f.StartCluster, size: (uint)f.Data.Length);
+      off += WriteDirent(blob.AsSpan(off), f.Name, attr: 0x20, firstCluster: f.StartCluster, size: (uint)Math.Min(f.Payload.Size, uint.MaxValue));
     foreach (var d in node.Dirs)
       off += WriteDirent(blob.AsSpan(off), d.Name, attr: 0x10, firstCluster: d.StartCluster, size: 0);
     // The remaining tail stays 0xFF, which the reader interprets as
@@ -372,22 +393,68 @@ public sealed class FatxWriter {
 
   // ── payload ──────────────────────────────────────────────────────────
 
-  private static void WritePayload(byte[] image, DirNode node, int dataRegionStart, int clusterSize, int fatType) {
+  private void WritePayload(byte[] image, DirNode node, long dataRegionStart, int clusterSize, int fatType) {
     // Directory blob first.
-    var dirOff = dataRegionStart + (int)(node.StartCluster - 1) * clusterSize;
-    var copy = Math.Min(node.DirentBlob.Length, image.Length - dirOff);
-    if (copy > 0) Buffer.BlockCopy(node.DirentBlob, 0, image, dirOff, copy);
+    var dirOff = dataRegionStart + (long)(node.StartCluster - 1) * clusterSize;
+    if (this._deferPayloads) {
+      this._payloads!.Add(dirOff, node.DirentBlob);
+    } else {
+      var copy = (int)Math.Min(node.DirentBlob.Length, image.Length - dirOff);
+      if (copy > 0) Buffer.BlockCopy(node.DirentBlob, 0, image, (int)dirOff, copy);
+    }
 
     // Files.
     foreach (var f in node.Files) {
       if (f.ClusterCount == 0) continue;
-      var fileOff = dataRegionStart + (int)(f.StartCluster - 1) * clusterSize;
-      var fcopy = Math.Min(f.Data.Length, image.Length - fileOff);
-      if (fcopy > 0) Buffer.BlockCopy(f.Data, 0, image, fileOff, fcopy);
+      var fileOff = dataRegionStart + (long)(f.StartCluster - 1) * clusterSize;
+      if (this._deferPayloads) {
+        this._payloads!.Add(fileOff, f.Payload);
+        continue;
+      }
+      var bytes = f.Payload.ToArray();
+      var fcopy = (int)Math.Min(bytes.Length, image.Length - fileOff);
+      if (fcopy > 0) Buffer.BlockCopy(bytes, 0, image, (int)fileOff, fcopy);
     }
 
     // Subdirectories.
     foreach (var d in node.Dirs)
-      WritePayload(image, d, dataRegionStart, clusterSize, fatType);
+      this.WritePayload(image, d, dataRegionStart, clusterSize, fatType);
+  }
+
+  /// <summary>Declared size of the image the last build laid out.</summary>
+  private long DeclaredImageBytes { get; set; }
+
+  /// <summary>When set, cluster payloads are collected instead of copied into the buffer.</summary>
+  private bool _deferPayloads;
+
+  private DeferredPayloads? _payloads;
+
+  /// <summary>
+  /// Writes the image into <paramref name="output" />: the superblock and FAT,
+  /// then every cluster payload at its offset. Only a non-seekable target has to
+  /// materialise the image, so a seekable one is bounded by the disk rather than
+  /// by what a byte[] can address.
+  /// </summary>
+  public void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0x12345678) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = this.Build(sectorsPerCluster, volumeId);
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    this._deferPayloads = true;
+    byte[] prefix;
+    try {
+      prefix = this.Build(sectorsPerCluster, volumeId);
+    } finally {
+      this._deferPayloads = false;
+    }
+    output.Write(prefix, 0, prefix.Length);
+    output.SetLength(basePosition + this.DeclaredImageBytes);
+    this._payloads!.FlushTo(output, basePosition);
+    output.Position = basePosition + this.DeclaredImageBytes;
+    output.Flush();
   }
 }

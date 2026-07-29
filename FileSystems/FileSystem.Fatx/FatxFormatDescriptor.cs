@@ -63,7 +63,9 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      // Streamed, not buffered: an entry may be larger than a byte[] can hold.
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.ExtractTo(e, target);
     }
   }
 
@@ -98,8 +100,17 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new FatxWriter();
-    foreach (var (name, data) in FilesOnly(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to plan the cluster chains; reading a large
+      // input into a byte[] would cap the image at what an array can hold.
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(info.ArchiveName, bytes);
+      else
+        w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length,
+                           () => File.OpenRead(info.FullPath));
+    }
 
     // Sectors-per-cluster: 0 (or unset) hands the choice to the writer's layout
     // optimiser; an explicit power-of-two value is honoured verbatim so pinned
@@ -114,6 +125,11 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
             ? uint.TryParse(span[2..], System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
             : uint.TryParse(span, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out parsed))
         volumeId = parsed;
+    }
+
+    if (output.CanSeek) {
+      w.WriteTo(output, sectorsPerCluster: spc, volumeId: volumeId);
+      return;
     }
 
     var image = w.Build(sectorsPerCluster: spc, volumeId: volumeId);

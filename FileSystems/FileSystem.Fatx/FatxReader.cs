@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Fatx;
@@ -33,7 +34,11 @@ namespace FileSystem.Fatx;
 /// </summary>
 public sealed class FatxReader : IDisposable {
 
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the image. Copying it into a byte[] capped the
+  /// reader at the array limit, which FATX's 32-bit cluster numbers do not.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<FatxEntry> _entries = [];
 
   public IReadOnlyList<FatxEntry> Entries => this._entries;
@@ -50,10 +55,8 @@ public sealed class FatxReader : IDisposable {
 
   public FatxReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+    this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
   }
 
@@ -61,12 +64,12 @@ public sealed class FatxReader : IDisposable {
     if (this._data.Length < SuperblockSize)
       throw new InvalidDataException("FATX: image smaller than superblock (4 KiB).");
 
-    var magic = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(0));
+    var magic = this._data.ReadUInt32(0);
     if (magic != MagicFatx)
       throw new InvalidDataException($"FATX: bad magic 0x{magic:X8} (expected 'FATX' 0x{MagicFatx:X8}).");
 
-    this.SectorsPerCluster = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(0x08));
-    this.RootDirCluster = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(0x0C));
+    this.SectorsPerCluster = this._data.ReadUInt32(0x08);
+    this.RootDirCluster = this._data.ReadUInt32(0x0C);
     if (this.SectorsPerCluster == 0 || (this.SectorsPerCluster & (this.SectorsPerCluster - 1)) != 0)
       throw new InvalidDataException($"FATX: invalid sectors_per_cluster {this.SectorsPerCluster} (must be power of two).");
 
@@ -107,8 +110,8 @@ public sealed class FatxReader : IDisposable {
     var pos = this.FatRegionStart + (long)cluster * width;
     if (pos + width > this._data.Length) return EndOfChain();
     return this.FatType == 16
-      ? BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan((int)pos))
-      : BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan((int)pos));
+      ? this._data.ReadUInt16(pos)
+      : this._data.ReadUInt32(pos);
   }
 
   internal uint EndOfChain() => this.FatType == 16 ? 0xFFF8u : 0xFFFFFFF8u;
@@ -123,7 +126,7 @@ public sealed class FatxReader : IDisposable {
       if (offset < 0 || offset + this.ClusterSize > this._data.Length) break;
       var endOfDir = false;
       for (var off = 0; off < this.ClusterSize; off += DirRecordSize) {
-        var rec = this._data.AsSpan((int)offset + off, DirRecordSize);
+        var rec = this._data.Read(offset + off, DirRecordSize).AsSpan();
         var nameLen = rec[0];
         if (nameLen == 0xFF || nameLen == 0x00) { endOfDir = true; break; }
         if (nameLen == 0xE5) continue; // deleted
@@ -162,15 +165,37 @@ public sealed class FatxReader : IDisposable {
       var offset = this.ClusterOffset(cluster);
       if (offset < 0 || offset + this.ClusterSize > this._data.Length) break;
       var take = (int)Math.Min(remaining, this.ClusterSize);
-      ms.Write(this._data, (int)offset, take);
+      this._data.CopyTo(offset, ms, take);
       remaining -= take;
       cluster = this.GetNextCluster(cluster);
     }
     return ms.ToArray();
   }
 
-  /// <summary>Internal accessor for the in-memory image used by the bounded chain stream.</summary>
-  internal byte[] Image => this._data;
+  /// <summary>Internal accessor for the image used by the bounded chain stream.</summary>
+  internal ImageAccessor Image => this._data;
+
+  /// <summary>
+  /// Copies an entry's bytes into <paramref name="destination" /> one cluster at
+  /// a time, so an entry larger than a byte[] can hold is extracted like any other.
+  /// </summary>
+  public void ExtractTo(FatxEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return;
+
+    var remaining = entry.Size;
+    var cluster = entry.FirstCluster;
+    var seen = new HashSet<uint>();
+    while (remaining > 0 && cluster >= 1 && !this.IsEoc(cluster) && seen.Add(cluster)) {
+      var offset = this.ClusterOffset(cluster);
+      if (offset < 0 || offset + this.ClusterSize > this._data.Length) break;
+      var take = Math.Min(remaining, this.ClusterSize);
+      this._data.CopyTo(offset, destination, take);
+      remaining -= take;
+      cluster = this.GetNextCluster(cluster);
+    }
+  }
 
   public void Dispose() { }
 }
