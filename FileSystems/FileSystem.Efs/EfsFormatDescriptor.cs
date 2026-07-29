@@ -100,7 +100,13 @@ public sealed class EfsFormatDescriptor :
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, i.ReadContent());
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      var info = i;
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(info.ArchiveName, bytes);
+      else
+        w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
     }
     w.WriteTo(output);
   }
@@ -158,8 +164,32 @@ public sealed class EfsFormatDescriptor :
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A volume too large to materialise goes through the streaming rebuilder;
+    // the buffered path's buildImage returns a byte[] of the whole image, which
+    // the writer refuses to produce once it passes the array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      EfsWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new EfsReader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => { streamWriter = new EfsWriter(); target = s2; },
+        // As a stream factory, not inline: an inline payload is materialised
+        // inside the image buffer, which is what a large volume cannot afford.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => streamWriter!.WriteTo(target!));
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new EfsReader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
@@ -169,6 +199,11 @@ public sealed class EfsFormatDescriptor :
         foreach (var (n, d) in files) w.AddFile(n, d);
         return w.Build();
       });
+  }
+
+  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
+
 
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);

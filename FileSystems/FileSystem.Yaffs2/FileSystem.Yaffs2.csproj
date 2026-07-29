@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Compression.Tests" />
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

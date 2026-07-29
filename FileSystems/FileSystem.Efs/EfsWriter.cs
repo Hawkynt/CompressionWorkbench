@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Efs;
@@ -31,7 +32,7 @@ public sealed class EfsWriter {
   private const ushort ModeDir = 0x4000 | 0x1ED;  // 0o755
   private const ushort ModeFile = 0x8000 | 0x1A4; // 0o644
 
-  private readonly List<(string Path, byte[] Data)> _files = [];
+  private readonly List<(string Path, FilePayload Payload)> _files = [];
   private string _volumeLabel = "WORM";
 
   /// <summary>Sets the 6-char volume label (truncated/padded).</summary>
@@ -48,11 +49,53 @@ public sealed class EfsWriter {
     ArgumentNullException.ThrowIfNull(data);
     var n = name.Replace('\\', '/').Trim('/');
     if (n.Length == 0) return;
-    _files.Add((n, data));
+    _files.Add((n, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read, so a payload past what a byte[] can hold is placed
+  /// like any other.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    var n = name.Replace('\\', '/').Trim('/');
+    if (n.Length == 0) return;
+    _files.Add((n, FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>Builds the image and returns it as a byte array.</summary>
+  /// <summary>Materialises the whole volume.</summary>
   public byte[] Build() {
+    var image = this.BuildCore(out var payloads);
+    return payloads.Materialise(image);
+  }
+
+  /// <summary>
+  /// Writes the volume into <paramref name="output" />: the blocks the filesystem
+  /// populates, then each file's bytes at the offset it was allocated. Only a
+  /// non-seekable target has to materialise the volume, so a seekable one is
+  /// bounded by the disk rather than by what a byte[] can address.
+  /// </summary>
+  public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = this.Build();
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = this.BuildCore(out var payloads);
+    image.WriteTo(output);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + image.TotalBytes;
+    output.Flush();
+  }
+
+  private SparseBlockImage BuildCore(out DeferredPayloads payloads) {
     // Tree model: root + intermediate dirs + files. Inode numbers allocated in
     // first-encounter order starting from 2 (1 = reserved, 2 = root by EFS convention).
     var tree = BuildTree();
@@ -79,7 +122,7 @@ public sealed class EfsWriter {
       if (node.IsDirectory) {
         blocks = 1;                              // single-block directory
       } else {
-        blocks = node.Data.Length == 0 ? 0 : (node.Data.Length + BasicBlock - 1) / BasicBlock;
+        blocks = node.Payload.Size == 0 ? 0 : (int)((node.Payload.Size + BasicBlock - 1) / BasicBlock);
       }
       firstBlockPerNode[i] = blocks > 0 ? nextDataBlock : 0;
       blocksPerNode[i] = blocks;
@@ -87,10 +130,14 @@ public sealed class EfsWriter {
     }
     var totalBlocks = nextDataBlock;
     var imageSize = totalBlocks * BasicBlock;
-    var image = new byte[imageSize];
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(BasicBlock, (long)totalBlocks * BasicBlock);
+    payloads = new DeferredPayloads();
 
     // ── Superblock @ 0 (efs_fs.h layout, big-endian) ─────────────────────────
-    var sb = image.AsSpan(SuperblockOffset, BasicBlock);
+    var sb = image.At(SuperblockOffset, BasicBlock);
     BinaryPrimitives.WriteInt32BigEndian(sb[0x00..], totalBlocks);     // s_size
     BinaryPrimitives.WriteInt32BigEndian(sb[0x04..], dataStart);       // s_firstcg = first data BB
     BinaryPrimitives.WriteInt32BigEndian(sb[0x08..], totalBlocks - dataStart); // s_cgfsize
@@ -112,7 +159,7 @@ public sealed class EfsWriter {
       var ino = i + 2;                            // 1 reserved, 2 = root
       var blockOff = (ino - 2) / InodesPerBlock;  // which 512 B inode block
       var slotOff = (ino - 2) % InodesPerBlock;
-      var ip = image.AsSpan((InodeTableOffset + blockOff) * BasicBlock + slotOff * InodeSize, InodeSize);
+      var ip = image.At(((long)InodeTableOffset + blockOff) * BasicBlock + slotOff * InodeSize, InodeSize);
 
       // efs_dinode: di_mode(2), di_nlink(2), di_uid(2), di_gid(2), di_size(4),
       //             di_atime(4), di_mtime(4), di_ctime(4), di_gen(4),
@@ -122,7 +169,7 @@ public sealed class EfsWriter {
       BinaryPrimitives.WriteUInt16BigEndian(ip[2..], (ushort)(node.IsDirectory ? 2 : 1));
       BinaryPrimitives.WriteUInt16BigEndian(ip[4..], 0);
       BinaryPrimitives.WriteUInt16BigEndian(ip[6..], 0);
-      var size = node.IsDirectory ? ComputeDirSize(node) : node.Data.Length;
+      var size = node.IsDirectory ? ComputeDirSize(node) : (int)Math.Min(node.Payload.Size, int.MaxValue);
       BinaryPrimitives.WriteInt32BigEndian(ip[8..], size);
       var now = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
       BinaryPrimitives.WriteInt32BigEndian(ip[12..], now);
@@ -156,7 +203,7 @@ public sealed class EfsWriter {
         // packing: 2-byte BE inode + 1-byte nlen + name bytes per entry.
         // Reader stub (TryParse) doesn't yet walk this, but our own EfsReader
         // (added in this commit) does.
-        var blk = image.AsSpan(startByte, BasicBlock);
+        var blk = image.At(startByte, BasicBlock);
         // magic = 0xBEEF (informal — EFS dirblks use a 16-bit hash slot mark
         // in real IRIX; we use a fixed marker so the reader can verify shape).
         BinaryPrimitives.WriteUInt16BigEndian(blk[0..], 0xBEEF);
@@ -167,18 +214,11 @@ public sealed class EfsWriter {
         foreach (var (childName, childInode) in node.Children)
           WriteDirEntry(blk, ref off, (ushort)childInode, childName);
       } else {
-        node.Data.CopyTo(image.AsSpan(startByte));
+        payloads.Add(startByte, node.Payload);
       }
     }
 
     return image;
-  }
-
-  /// <summary>Builds the image and writes it to <paramref name="output"/>.</summary>
-  public void WriteTo(Stream output) {
-    ArgumentNullException.ThrowIfNull(output);
-    var img = Build();
-    output.Write(img, 0, img.Length);
   }
 
   private static void WriteDirEntry(Span<byte> blk, ref int off, ushort inode, string name) {
@@ -204,7 +244,7 @@ public sealed class EfsWriter {
     public required bool IsDirectory;
     public required string Name;
     public required int ParentInode;
-    public byte[] Data = [];
+    public FilePayload Payload;
     public readonly List<(string Name, int Inode)> Children = [];
   }
 
@@ -217,7 +257,7 @@ public sealed class EfsWriter {
     var nodes = new List<TreeNode> { root };
     var byPath = new Dictionary<string, TreeNode>(StringComparer.Ordinal) { [""] = root };
 
-    foreach (var (path, data) in _files) {
+    foreach (var (path, payload) in _files) {
       var segs = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segs.Length == 0) continue;
       var parent = root;
@@ -235,7 +275,7 @@ public sealed class EfsWriter {
         parentInode = nodes.IndexOf(dir) + 2;
         parent = dir;
       }
-      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Data = data };
+      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Payload = payload };
       nodes.Add(file);
       parent.Children.Add((segs[^1], nodes.Count + 1));
     }

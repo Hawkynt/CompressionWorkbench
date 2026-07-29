@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Jfs1;
@@ -29,7 +30,7 @@ public sealed class Jfs1Writer {
   // Reader magic for our writer-emitted dir blocks.
   private const ushort DirBlockMagic = 0xD1F1;
 
-  private readonly List<(string Path, byte[] Data)> _files = [];
+  private readonly List<(string Path, FilePayload Payload)> _files = [];
   private string _volumeLabel = "WORM";
   private int _blockSize = DefaultBlockSize;
   private int _aggregateBlockSize = DefaultBlockSize;
@@ -51,10 +52,52 @@ public sealed class Jfs1Writer {
     ArgumentNullException.ThrowIfNull(data);
     var n = name.Replace('\\', '/').Trim('/');
     if (n.Length == 0) return;
-    _files.Add((n, data));
+    _files.Add((n, FilePayload.FromBytes(data)));
   }
 
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read, so a payload past what a byte[] can hold is placed
+  /// like any other.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    var n = name.Replace('\\', '/').Trim('/');
+    if (n.Length == 0) return;
+    _files.Add((n, FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>Materialises the whole volume.</summary>
   public byte[] Build() {
+    var image = this.BuildCore(out var payloads);
+    return payloads.Materialise(image);
+  }
+
+  /// <summary>
+  /// Writes the volume into <paramref name="output" />: the blocks the filesystem
+  /// populates, then each file's bytes at the offset it was allocated. Only a
+  /// non-seekable target has to materialise the volume, so a seekable one is
+  /// bounded by the disk rather than by what a byte[] can address.
+  /// </summary>
+  public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = this.Build();
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = this.BuildCore(out var payloads);
+    image.WriteTo(output);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + image.TotalBytes;
+    output.Flush();
+  }
+
+  private SparseBlockImage BuildCore(out DeferredPayloads payloads) {
     var tree = BuildTree();
     if (tree.Nodes.Count > MaxInodes)
       throw new InvalidOperationException($"JFS1 writer caps at {MaxInodes} inodes; tree has {tree.Nodes.Count}.");
@@ -72,16 +115,20 @@ public sealed class Jfs1Writer {
     for (var i = 0; i < tree.Nodes.Count; i++) {
       var n = tree.Nodes[i];
       var blks = n.IsDirectory ? 1
-        : n.Data.Length == 0 ? 0 : (n.Data.Length + _blockSize - 1) / _blockSize;
+        : n.Payload.Size == 0 ? 0 : (int)((n.Payload.Size + _blockSize - 1) / _blockSize);
       firstBlockPerNode[i] = blks > 0 ? nextData : 0;
       blocksPerNode[i] = blks;
       nextData += blks;
     }
     var totalBlocks = nextData;
-    var image = new byte[(long)totalBlocks * _blockSize];
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(_blockSize, (long)totalBlocks * _blockSize);
+    payloads = new DeferredPayloads();
 
     // ── Superblock @ block 0 (JFS1 LE per IBM OS/2 spec) ────────────────────
-    var sb = image.AsSpan(SbBlock * _blockSize, _blockSize);
+    var sb = image.At((long)SbBlock * _blockSize, _blockSize);
     Jfs1Superblock.Jfs1Magic.CopyTo(sb);                                       // "JFS1"
     BinaryPrimitives.WriteUInt32LittleEndian(sb[4..], 1u);                     // s_version = 1 (OS/2)
     BinaryPrimitives.WriteUInt64LittleEndian(sb[8..], (ulong)totalBlocks);     // s_size in s_bsize blocks
@@ -101,7 +148,7 @@ public sealed class Jfs1Writer {
       var ino = i + 2;
       var blockOff = (ino - 2) / inodesPerBlock;
       var slotOff = (ino - 2) % inodesPerBlock;
-      var ip = image.AsSpan((inodeStart + blockOff) * _blockSize + slotOff * InodeSize, InodeSize);
+      var ip = image.At(((long)inodeStart + blockOff) * _blockSize + slotOff * InodeSize, InodeSize);
 
       // JFS1 dinode (LE): di_inostamp(4) di_fileset(4) di_number(4) di_gen(4)
       // di_ixpxd(8) di_size(8) di_nblocks(8) di_nlink(4) di_uid(4) di_gid(4)
@@ -113,7 +160,7 @@ public sealed class Jfs1Writer {
       // di_ixpxd is an extent pointer to the first data block.
       BinaryPrimitives.WriteUInt32LittleEndian(ip[16..], (uint)firstBlockPerNode[i]); // address
       BinaryPrimitives.WriteUInt32LittleEndian(ip[20..], (uint)blocksPerNode[i]);     // length
-      var size = node.IsDirectory ? (ulong)ComputeDirSize(node) : (ulong)node.Data.Length;
+      var size = node.IsDirectory ? (ulong)ComputeDirSize(node) : (ulong)node.Payload.Size;
       BinaryPrimitives.WriteUInt64LittleEndian(ip[24..], size);              // di_size
       BinaryPrimitives.WriteUInt64LittleEndian(ip[32..], (ulong)blocksPerNode[i]); // di_nblocks
       BinaryPrimitives.WriteUInt32LittleEndian(ip[40..], (uint)(node.IsDirectory ? 2 : 1)); // di_nlink
@@ -132,7 +179,7 @@ public sealed class Jfs1Writer {
       if (blocksPerNode[i] == 0) continue;
       var start = firstBlockPerNode[i] * _blockSize;
       if (node.IsDirectory) {
-        var blk = image.AsSpan(start, _blockSize);
+        var blk = image.At(start, _blockSize);
         BinaryPrimitives.WriteUInt16LittleEndian(blk[0..], DirBlockMagic);
         BinaryPrimitives.WriteUInt16LittleEndian(blk[2..], (ushort)(node.Children.Count + 2));
         var off = 4;
@@ -141,17 +188,12 @@ public sealed class Jfs1Writer {
         foreach (var (childName, childInode) in node.Children)
           WriteDirEntry(blk, ref off, (uint)childInode, childName);
       } else {
-        node.Data.CopyTo(image.AsSpan(start));
+        payloads.Add(start, node.Payload);
       }
     }
     return image;
   }
 
-  public void WriteTo(Stream output) {
-    ArgumentNullException.ThrowIfNull(output);
-    var img = Build();
-    output.Write(img, 0, img.Length);
-  }
 
   private static void WriteDirEntry(Span<byte> blk, ref int off, uint inode, string name) {
     var nb = Encoding.UTF8.GetBytes(name);
@@ -181,7 +223,7 @@ public sealed class Jfs1Writer {
     public required bool IsDirectory;
     public required string Name;
     public required int ParentInode;
-    public byte[] Data = [];
+    public FilePayload Payload;
     public readonly List<(string Name, int Inode)> Children = [];
   }
 
@@ -191,7 +233,7 @@ public sealed class Jfs1Writer {
     var root = new TreeNode { IsDirectory = true, Name = "", ParentInode = 2 };
     var nodes = new List<TreeNode> { root };
     var byPath = new Dictionary<string, TreeNode>(StringComparer.Ordinal) { [""] = root };
-    foreach (var (path, data) in _files) {
+    foreach (var (path, payload) in _files) {
       var segs = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segs.Length == 0) continue;
       var parent = root; var parentInode = 2;
@@ -207,7 +249,7 @@ public sealed class Jfs1Writer {
         parentInode = nodes.IndexOf(dir) + 2;
         parent = dir;
       }
-      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Data = data };
+      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Payload = payload };
       nodes.Add(file);
       parent.Children.Add((segs[^1], nodes.Count + 1));
     }

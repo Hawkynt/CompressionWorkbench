@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Jfs1;
@@ -10,17 +11,20 @@ namespace FileSystem.Jfs1;
 /// its full nested path.
 /// </summary>
 public sealed class Jfs1Reader {
-  private readonly byte[] _image;
+  /// <summary>
+  /// Random-access view over the image. Copying the volume into a byte[] capped
+  /// the reader at the array limit, which the on-disk block addresses do not.
+  /// </summary>
+  private readonly ImageAccessor _image;
   private readonly int _blockSize;
   private readonly int _inodesPerBlock;
   private readonly List<Jfs1Entry> _entries = [];
 
   public Jfs1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _image = ms.ToArray();
-    var sb = Jfs1Superblock.TryParse(_image);
+    if (stream.CanSeek) stream.Position = 0;
+    _image = new ImageAccessor(stream, leaveOpen: true);
+    var sb = Jfs1Superblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 64 * 1024)));
     if (!sb.Valid) throw new InvalidDataException("Not a JFS1 image: superblock magic mismatch.");
     _blockSize = (int)sb.BlockSize;
     if (_blockSize <= 0) _blockSize = Jfs1Writer.DefaultBlockSize;
@@ -37,7 +41,7 @@ public sealed class Jfs1Reader {
     var start = entry.FirstBlock * _blockSize;
     if (start + entry.Size > _image.Length)
       throw new InvalidDataException("JFS1 extract: extent reaches past image end.");
-    return _image.AsSpan(start, (int)entry.Size).ToArray();
+    return _image.Read(start, (int)entry.Size);
   }
 
   private void Recurse(int inode, string prefix) {
@@ -45,7 +49,7 @@ public sealed class Jfs1Reader {
     if (!info.IsDirectory || info.FirstBlock == 0) return;
     var off = info.FirstBlock * _blockSize;
     if (off >= _image.Length) return;
-    var blk = _image.AsSpan(off, Math.Min(_blockSize, _image.Length - off));
+    var blk = _image.Read(off, (int)Math.Min(_blockSize, _image.Length - off));
     if (blk.Length < 4) return;
     var magic = BinaryPrimitives.ReadUInt16LittleEndian(blk[..2]);
     if (magic != Jfs1Writer.DirBlockMagicConst) return;
@@ -55,7 +59,7 @@ public sealed class Jfs1Reader {
       var childInode = BinaryPrimitives.ReadUInt32LittleEndian(blk[cur..]);
       int nlen = blk[cur + 4];
       if (cur + 5 + nlen > blk.Length) break;
-      var name = Encoding.UTF8.GetString(blk.Slice(cur + 5, nlen));
+      var name = Encoding.UTF8.GetString(blk.AsSpan(cur + 5, nlen));
       cur += 5 + nlen;
       if (name is "." or "..") continue;
       var childInfo = ReadInode((int)childInode);
@@ -69,7 +73,7 @@ public sealed class Jfs1Reader {
     var inodeStart = 1;
     var blockOff = (inode - 2) / _inodesPerBlock;
     var slotOff = (inode - 2) % _inodesPerBlock;
-    var ip = _image.AsSpan((inodeStart + blockOff) * _blockSize + slotOff * Jfs1Writer.InodeSize, Jfs1Writer.InodeSize);
+    var ip = _image.Read(((long)inodeStart + blockOff) * _blockSize + slotOff * Jfs1Writer.InodeSize, Jfs1Writer.InodeSize);
     var firstBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(ip[16..]);
     var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(ip[24..]);
     var mode = BinaryPrimitives.ReadUInt32LittleEndian(ip[52..]);

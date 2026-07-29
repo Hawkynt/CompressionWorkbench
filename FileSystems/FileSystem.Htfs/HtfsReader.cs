@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Htfs;
@@ -10,7 +11,11 @@ namespace FileSystem.Htfs;
 /// the file tree at full nested paths.
 /// </summary>
 public sealed class HtfsReader {
-  private readonly byte[] _image;
+  /// <summary>
+  /// Random-access view over the image. Copying the volume into a byte[] capped
+  /// the reader at the array limit, which the on-disk block addresses do not.
+  /// </summary>
+  private readonly ImageAccessor _image;
   private readonly int _blockSize;
   private readonly int _inodeStart;
   private readonly int _inodesPerBlock;
@@ -18,10 +23,9 @@ public sealed class HtfsReader {
 
   public HtfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _image = ms.ToArray();
-    var sb = HtfsSuperblock.TryParse(_image);
+    if (stream.CanSeek) stream.Position = 0;
+    _image = new ImageAccessor(stream, leaveOpen: true);
+    var sb = HtfsSuperblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 64 * 1024)));
     if (!sb.Valid) throw new InvalidDataException("Not an HTFS image: superblock magic mismatch.");
 
     // Block size auto-detect: try 512/1024/2048 and pick the one whose
@@ -43,7 +47,7 @@ public sealed class HtfsReader {
     var start = entry.FirstBlock * _blockSize;
     if (start + entry.Size > _image.Length)
       throw new InvalidDataException("HTFS extract: extent reaches past image end.");
-    return _image.AsSpan(start, entry.Size).ToArray();
+    return _image.Read(start, entry.Size);
   }
 
   private int DetectBlockSize(uint sbFsize) {
@@ -60,11 +64,11 @@ public sealed class HtfsReader {
     if (!info.IsDirectory || info.FirstBlock == 0) return;
     var off = info.FirstBlock * _blockSize;
     if (off >= _image.Length) return;
-    var blk = _image.AsSpan(off, Math.Min(_blockSize, _image.Length - off));
+    var blk = _image.Read(off, (int)Math.Min(_blockSize, _image.Length - off));
     for (var cur = 0; cur + 16 <= blk.Length; cur += 16) {
       var childInode = BinaryPrimitives.ReadUInt16LittleEndian(blk[cur..]);
       if (childInode == 0) continue;
-      var nameSpan = blk.Slice(cur + 2, HtfsWriter.MaxNameLen);
+      var nameSpan = blk.AsSpan(cur + 2, HtfsWriter.MaxNameLen);
       var nul = nameSpan.IndexOf((byte)0);
       var len = nul < 0 ? nameSpan.Length : nul;
       if (len == 0) continue;
@@ -80,7 +84,7 @@ public sealed class HtfsReader {
   private InodeInfo ReadInode(int inode) {
     var blockOff = (inode - 2) / _inodesPerBlock;
     var slotOff = (inode - 2) % _inodesPerBlock;
-    var ip = _image.AsSpan((_inodeStart + blockOff) * _blockSize + slotOff * HtfsWriter.InodeSize, HtfsWriter.InodeSize);
+    var ip = _image.Read(((long)_inodeStart + blockOff) * _blockSize + slotOff * HtfsWriter.InodeSize, HtfsWriter.InodeSize);
     var mode = BinaryPrimitives.ReadUInt16LittleEndian(ip[..2]);
     var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(ip[8..]);
     var first = (int)BinaryPrimitives.ReadUInt32LittleEndian(ip[24..]);

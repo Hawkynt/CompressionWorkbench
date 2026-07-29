@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Efs;
@@ -10,7 +11,11 @@ namespace FileSystem.Efs;
 /// yields the file tree as a flat list of <see cref="EfsEntry"/>.
 /// </summary>
 public sealed class EfsReader {
-  private readonly byte[] _image;
+  /// <summary>
+  /// Random-access view over the image. Copying the volume into a byte[] capped
+  /// the reader at the array limit, which the on-disk block addresses do not.
+  /// </summary>
+  private readonly ImageAccessor _image;
   private readonly List<EfsEntry> _entries = [];
 
   /// <summary>
@@ -19,11 +24,10 @@ public sealed class EfsReader {
   /// </summary>
   public EfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _image = ms.ToArray();
+    if (stream.CanSeek) stream.Position = 0;
+    _image = new ImageAccessor(stream, leaveOpen: true);
 
-    var sb = EfsSuperblock.TryParse(_image);
+    var sb = EfsSuperblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 64 * 1024)));
     if (!sb.Valid) throw new InvalidDataException("Not an EFS image: superblock magic mismatch.");
 
     // Walk from inode 2 (root). For each directory inode we read its first
@@ -43,7 +47,7 @@ public sealed class EfsReader {
     var start = entry.FirstBlock * EfsWriter.BasicBlock;
     if (start + len > _image.Length)
       throw new InvalidDataException("EFS extract: extent reaches past image end.");
-    return _image.AsSpan(start, len).ToArray();
+    return _image.Read(start, len);
   }
 
   private void Recurse(int inode, string prefix) {
@@ -52,7 +56,7 @@ public sealed class EfsReader {
     if (info.NumExtents == 0 || info.FirstBlock == 0) return;
     var off = info.FirstBlock * EfsWriter.BasicBlock;
     if (off >= _image.Length) return;
-    var blk = _image.AsSpan(off, Math.Min(EfsWriter.BasicBlock, _image.Length - off));
+    var blk = _image.Read(off, (int)Math.Min(EfsWriter.BasicBlock, _image.Length - off));
     if (blk.Length < 3) return;
     var magic = BinaryPrimitives.ReadUInt16BigEndian(blk[..2]);
     if (magic != 0xBEEF) return; // not our writer's directory shape
@@ -62,7 +66,7 @@ public sealed class EfsReader {
       var childInode = BinaryPrimitives.ReadUInt16BigEndian(blk[cur..]);
       int nlen = blk[cur + 2];
       if (cur + 3 + nlen > blk.Length) break;
-      var name = Encoding.UTF8.GetString(blk.Slice(cur + 3, nlen));
+      var name = Encoding.UTF8.GetString(blk.AsSpan(cur + 3, nlen));
       cur += 3 + nlen;
       if (name is "." or "..") continue;
       var childInfo = ReadInode(childInode);
@@ -75,7 +79,7 @@ public sealed class EfsReader {
   private InodeInfo ReadInode(int inode) {
     var blockOff = (inode - 2) / EfsWriter.InodesPerBlock;
     var slotOff = (inode - 2) % EfsWriter.InodesPerBlock;
-    var ip = _image.AsSpan((EfsWriter.InodeTableOffset + blockOff) * EfsWriter.BasicBlock + slotOff * EfsWriter.InodeSize, EfsWriter.InodeSize);
+    var ip = _image.Read(((long)EfsWriter.InodeTableOffset + blockOff) * EfsWriter.BasicBlock + slotOff * EfsWriter.InodeSize, EfsWriter.InodeSize);
     var mode = BinaryPrimitives.ReadUInt16BigEndian(ip[..2]);
     var size = BinaryPrimitives.ReadInt32BigEndian(ip[8..]);
     var numExtents = BinaryPrimitives.ReadInt16BigEndian(ip[28..]);

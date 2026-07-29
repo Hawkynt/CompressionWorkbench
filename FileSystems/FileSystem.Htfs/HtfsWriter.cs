@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Htfs;
@@ -29,7 +30,7 @@ public sealed class HtfsWriter {
   private const ushort ModeDir = 0x4000 | 0x1ED;    // 0o755 dir
   private const ushort ModeFile = 0x8000 | 0x1A4;   // 0o644 file
 
-  private readonly List<(string Path, byte[] Data)> _files = [];
+  private readonly List<(string Path, FilePayload Payload)> _files = [];
   private string _volumeLabel = "WORM";
   private int _blockSize = DefaultBlockSize;
 
@@ -50,10 +51,52 @@ public sealed class HtfsWriter {
     ArgumentNullException.ThrowIfNull(data);
     var n = name.Replace('\\', '/').Trim('/');
     if (n.Length == 0) return;
-    _files.Add((n, data));
+    _files.Add((n, FilePayload.FromBytes(data)));
   }
 
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read, so a payload past what a byte[] can hold is placed
+  /// like any other.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    var n = name.Replace('\\', '/').Trim('/');
+    if (n.Length == 0) return;
+    _files.Add((n, FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>Materialises the whole volume.</summary>
   public byte[] Build() {
+    var image = this.BuildCore(out var payloads);
+    return payloads.Materialise(image);
+  }
+
+  /// <summary>
+  /// Writes the volume into <paramref name="output" />: the blocks the filesystem
+  /// populates, then each file's bytes at the offset it was allocated. Only a
+  /// non-seekable target has to materialise the volume, so a seekable one is
+  /// bounded by the disk rather than by what a byte[] can address.
+  /// </summary>
+  public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = this.Build();
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = this.BuildCore(out var payloads);
+    image.WriteTo(output);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + image.TotalBytes;
+    output.Flush();
+  }
+
+  private SparseBlockImage BuildCore(out DeferredPayloads payloads) {
     var tree = BuildTree();
     if (tree.Nodes.Count > MaxInodes)
       throw new InvalidOperationException(
@@ -73,16 +116,20 @@ public sealed class HtfsWriter {
     for (var i = 0; i < tree.Nodes.Count; i++) {
       var n = tree.Nodes[i];
       int blks = n.IsDirectory ? 1
-        : n.Data.Length == 0 ? 0 : (n.Data.Length + _blockSize - 1) / _blockSize;
+        : n.Payload.Size == 0 ? 0 : (int)((n.Payload.Size + _blockSize - 1) / _blockSize);
       firstBlockPerNode[i] = blks > 0 ? nextData : 0;
       blocksPerNode[i] = blks;
       nextData += blks;
     }
     var totalBlocks = nextData;
-    var image = new byte[totalBlocks * _blockSize];
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(_blockSize, (long)totalBlocks * _blockSize);
+    payloads = new DeferredPayloads();
 
     // ── Superblock @ sector 1 (LE per htfs_fs.h) ────────────────────────────
-    var sb = image.AsSpan(SuperblockOffset, Math.Min(_blockSize, image.Length - SuperblockOffset));
+    var sb = image.At(SuperblockOffset, _blockSize);
     BinaryPrimitives.WriteUInt32LittleEndian(sb[0x00..], HtfsSuperblock.HtfsMagic);
     BinaryPrimitives.WriteUInt32LittleEndian(sb[0x04..], (uint)inodeBlocks);   // s_isize
     BinaryPrimitives.WriteUInt32LittleEndian(sb[0x08..], (uint)totalBlocks);   // s_fsize
@@ -102,7 +149,7 @@ public sealed class HtfsWriter {
       var ino = i + 2;                            // 1 reserved, 2 = root
       var blockOff = (ino - 2) / inodesPerBlock;
       var slotOff = (ino - 2) % inodesPerBlock;
-      var ip = image.AsSpan((inodeStart + blockOff) * _blockSize + slotOff * InodeSize, InodeSize);
+      var ip = image.At(((long)inodeStart + blockOff) * _blockSize + slotOff * InodeSize, InodeSize);
 
       // di_mode(2), di_nlink(2), di_uid(2), di_gid(2), di_size(4),
       // di_atime(4), di_mtime(4), di_ctime(4), di_first_blk(4), di_block_count(4),
@@ -111,7 +158,7 @@ public sealed class HtfsWriter {
       BinaryPrimitives.WriteUInt16LittleEndian(ip[2..], (ushort)(node.IsDirectory ? 2 : 1));
       BinaryPrimitives.WriteUInt16LittleEndian(ip[4..], 0);
       BinaryPrimitives.WriteUInt16LittleEndian(ip[6..], 0);
-      var size = node.IsDirectory ? ComputeDirSize(node) : node.Data.Length;
+      var size = node.IsDirectory ? ComputeDirSize(node) : node.Payload.Size;
       BinaryPrimitives.WriteUInt32LittleEndian(ip[8..], (uint)size);
       var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
       BinaryPrimitives.WriteUInt32LittleEndian(ip[12..], now);
@@ -127,7 +174,7 @@ public sealed class HtfsWriter {
       if (blocksPerNode[i] == 0) continue;
       var start = firstBlockPerNode[i] * _blockSize;
       if (node.IsDirectory) {
-        var blk = image.AsSpan(start, _blockSize);
+        var blk = image.At(start, _blockSize);
         // dir entry = 2-byte LE inode + 14-byte name (S5 d_ino + d_name).
         var off = 0;
         WriteDirEntry(blk, ref off, (ushort)(i + 2), ".");
@@ -135,17 +182,12 @@ public sealed class HtfsWriter {
         foreach (var (childName, childInode) in node.Children)
           WriteDirEntry(blk, ref off, (ushort)childInode, childName);
       } else {
-        node.Data.CopyTo(image.AsSpan(start));
+        payloads.Add(start, node.Payload);
       }
     }
     return image;
   }
 
-  public void WriteTo(Stream output) {
-    ArgumentNullException.ThrowIfNull(output);
-    var img = Build();
-    output.Write(img, 0, img.Length);
-  }
 
   private static void WriteDirEntry(Span<byte> blk, ref int off, ushort inode, string name) {
     if (off + 16 > blk.Length)
@@ -167,7 +209,7 @@ public sealed class HtfsWriter {
     public required bool IsDirectory;
     public required string Name;
     public required int ParentInode;
-    public byte[] Data = [];
+    public FilePayload Payload;
     public readonly List<(string Name, int Inode)> Children = [];
   }
 
@@ -179,7 +221,7 @@ public sealed class HtfsWriter {
     var root = new TreeNode { IsDirectory = true, Name = "", ParentInode = 2 };
     var nodes = new List<TreeNode> { root };
     var byPath = new Dictionary<string, TreeNode>(StringComparer.Ordinal) { [""] = root };
-    foreach (var (path, data) in _files) {
+    foreach (var (path, payload) in _files) {
       var segs = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segs.Length == 0) continue;
       var parent = root;
@@ -196,7 +238,7 @@ public sealed class HtfsWriter {
         parentInode = nodes.IndexOf(dir) + 2;
         parent = dir;
       }
-      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Data = data };
+      var file = new TreeNode { IsDirectory = false, Name = segs[^1], ParentInode = parentInode, Payload = payload };
       nodes.Add(file);
       parent.Children.Add((segs[^1], nodes.Count + 1));
     }

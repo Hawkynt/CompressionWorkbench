@@ -13,13 +13,17 @@ internal static class HtfsExtentMap {
   internal static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    var bytes = ms.ToArray();
-    return EnumerateBytes(bytes);
+    // The head carries the superblock and inode table; the walk itself goes
+    // through the reader, which streams. Buffering the whole volume capped the
+    // wipe at the array limit and, worse, returned nothing when it threw -- and
+    // an empty extent list reads as "the volume is entirely free".
+    var head = new byte[(int)Math.Min(image.Length, 4 * 1024 * 1024)];
+    image.ReadExactly(head, 0, head.Length);
+    image.Position = 0;
+    return EnumerateBytes(head, image);
   }
 
-  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes) {
+  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes, Stream image) {
     var result = new List<DefragBlockInfo>();
     var sb = HtfsSuperblock.TryParse(bytes);
     if (!sb.Valid) return result;
@@ -27,7 +31,7 @@ internal static class HtfsExtentMap {
     int blockSize = HtfsWriter.DefaultBlockSize;
     foreach (var bs in new[] { 512, 1024, 2048 }) {
       var implied = (long)sb.Fsize * bs;
-      if (implied >= bytes.Length - bs && implied <= bytes.Length + bs) {
+      if (implied >= image.Length - bs && implied <= image.Length + bs) {
         blockSize = bs;
         break;
       }
@@ -43,11 +47,11 @@ internal static class HtfsExtentMap {
 
     // Root directory (inode 2) + every reader entry.
     try {
-      using var rs = new MemoryStream(bytes);
-      var reader = new HtfsReader(rs);
+      image.Position = 0;
+      var reader = new HtfsReader(image);
       // First data block hosts root dir; surface it explicitly.
       var rootStart = inodeStart + inodeBytes;
-      if (rootStart < bytes.Length)
+      if (rootStart < image.Length)
         result.Add(new DefragBlockInfo(rootStart, blockSize, DefragBlockKind.MetadataReserved, "root_dir"));
       foreach (var e in reader.Entries) {
         if (e.FirstBlock == 0) continue;

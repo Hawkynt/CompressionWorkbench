@@ -16,13 +16,17 @@ internal static class EfsExtentMap {
   internal static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    var bytes = ms.ToArray();
-    return EnumerateBytes(bytes);
+    // The head carries the superblock and inode table; the walk itself goes
+    // through the reader, which streams. Buffering the whole volume capped the
+    // wipe at the array limit and, worse, returned nothing when it threw -- and
+    // an empty extent list reads as "the volume is entirely free".
+    var head = new byte[(int)Math.Min(image.Length, 4 * 1024 * 1024)];
+    image.ReadExactly(head, 0, head.Length);
+    image.Position = 0;
+    return EnumerateBytes(head, image);
   }
 
-  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes) {
+  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes, Stream image) {
     var result = new List<DefragBlockInfo>();
     var sb = EfsSuperblock.TryParse(bytes);
     if (!sb.Valid) return result;
@@ -39,11 +43,11 @@ internal static class EfsExtentMap {
     // on-disk metadata. We have to surface the ROOT directory's extent too;
     // the reader's Entries collection lists children only.
     try {
-      using var rs = new MemoryStream(bytes);
-      var reader = new EfsReader(rs);
+      image.Position = 0;
+      var reader = new EfsReader(image);
       // Root directory body extent: walk inode 2 directly so we don't lose it.
       var rootBlock = sb.FirstCg; // first data block after the inode table
-      if (rootBlock > 0 && rootBlock * EfsWriter.BasicBlock < bytes.Length)
+      if (rootBlock > 0 && rootBlock * EfsWriter.BasicBlock < image.Length)
         result.Add(new DefragBlockInfo(rootBlock * EfsWriter.BasicBlock, EfsWriter.BasicBlock,
           DefragBlockKind.MetadataReserved, "root_dir"));
       foreach (var e in reader.Entries) {

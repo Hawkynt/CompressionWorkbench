@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using Compression.Registry;
 
 namespace FileSystem.Jfs1;
@@ -11,13 +12,17 @@ internal static class Jfs1ExtentMap {
   internal static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    var bytes = ms.ToArray();
-    return EnumerateBytes(bytes);
+    // The head carries the superblock and inode table; the walk itself goes
+    // through the reader, which streams. Buffering the whole volume capped the
+    // wipe at the array limit and, worse, returned nothing when it threw -- and
+    // an empty extent list reads as "the volume is entirely free".
+    var head = new byte[(int)Math.Min(image.Length, 4 * 1024 * 1024)];
+    image.ReadExactly(head, 0, head.Length);
+    image.Position = 0;
+    return EnumerateBytes(head, image);
   }
 
-  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes) {
+  private static List<DefragBlockInfo> EnumerateBytes(byte[] bytes, Stream image) {
     var result = new List<DefragBlockInfo>();
     var sb = Jfs1Superblock.TryParse(bytes);
     if (!sb.Valid) return result;
@@ -26,12 +31,18 @@ internal static class Jfs1ExtentMap {
     // Block 0 = superblock; block 1.. = inode table; then data.
     result.Add(new DefragBlockInfo(0, bsize, DefragBlockKind.MetadataReserved, "superblock"));
     try {
-      using var rs = new MemoryStream(bytes);
-      var reader = new Jfs1Reader(rs);
-      result.Add(new DefragBlockInfo(bsize, bsize, DefragBlockKind.MetadataReserved, "inode_table"));
-      // Root dir block follows inode table.
-      var rootDirOffset = 2L * bsize;
-      if (rootDirOffset < bytes.Length)
+      image.Position = 0;
+      var reader = new Jfs1Reader(image);
+      // The inode table is as many blocks as the inode count needs, not one: the
+      // writer records that count in s_inostamp. Assuming a single block put the
+      // root directory a block early, so a wipe zeroed the real one and the
+      // volume came back empty.
+      var inodeBlocks = (int)Math.Max(1, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0x18)));
+      result.Add(new DefragBlockInfo(bsize, (long)inodeBlocks * bsize,
+        DefragBlockKind.MetadataReserved, "inode_table"));
+      // Root dir block follows the inode table.
+      var rootDirOffset = (long)(1 + inodeBlocks) * bsize;
+      if (rootDirOffset < image.Length)
         result.Add(new DefragBlockInfo(rootDirOffset, bsize, DefragBlockKind.MetadataReserved, "root_dir"));
       foreach (var e in reader.Entries) {
         if (e.FirstBlock == 0) continue;

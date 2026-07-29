@@ -94,9 +94,21 @@ public sealed class Jfs1FormatDescriptor :
     var w = new Jfs1Writer();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
 
-    var files = inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, Data: i.ReadContent())).ToList();
-    foreach (var (name, data) in files)
-      w.AddFile(name, data);
+    var fileSizes = new List<long>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      if (info.InMemoryContent is { } bytes) {
+        w.AddFile(info.ArchiveName, bytes);
+        fileSizes.Add(bytes.LongLength);
+      } else {
+        var size = new FileInfo(info.FullPath).Length;
+        w.AddStreamingFile(info.ArchiveName, size, () => File.OpenRead(info.FullPath));
+        fileSizes.Add(size);
+      }
+    }
 
     // Block size: a pinned value wins verbatim; when unset, the shared layout
     // optimiser picks the legal 1024/2048/4096 size that minimises slack +
@@ -107,7 +119,7 @@ public sealed class Jfs1FormatDescriptor :
       ? options.GetOptionInt("BlockSize", 4096)
       : Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
           [1024, 2048, 4096],
-          files.Select(f => (long)f.Data.Length).ToList(),
+          fileSizes,
           fixedOverhead: blk => 3L * blk); // sb + inode block + root dir
     if (bs is 1024 or 2048 or 4096) w.SetBlockSize(bs);
     var abs = options.HasOption("AggregateBlockSize")
@@ -171,8 +183,32 @@ public sealed class Jfs1FormatDescriptor :
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A volume too large to materialise goes through the streaming rebuilder;
+    // the buffered path's buildImage returns a byte[] of the whole image, which
+    // the writer refuses to produce once it passes the array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      Jfs1Writer? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new Jfs1Reader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => { streamWriter = new Jfs1Writer(); target = s2; },
+        // As a stream factory, not inline: an inline payload is materialised
+        // inside the image buffer, which is what a large volume cannot afford.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => streamWriter!.WriteTo(target!));
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new Jfs1Reader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
@@ -182,6 +218,11 @@ public sealed class Jfs1FormatDescriptor :
         foreach (var (n, d) in files) w.AddFile(n, d);
         return w.Build();
       });
+  }
+
+  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
+
 
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
