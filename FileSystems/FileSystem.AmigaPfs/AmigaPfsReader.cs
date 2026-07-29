@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.AmigaPfs;
 
@@ -42,7 +43,7 @@ namespace FileSystem.AmigaPfs;
 /// </summary>
 public sealed class AmigaPfsReader : IDisposable {
 
-  private readonly byte[] _data;
+  private readonly ImageAccessor _accessor;
   private readonly List<AmigaPfsEntry> _entries = [];
 
   public IReadOnlyList<AmigaPfsEntry> Entries => this._entries;
@@ -61,34 +62,38 @@ public sealed class AmigaPfsReader : IDisposable {
     if (blockSize <= 0 || (blockSize & (blockSize - 1)) != 0)
       throw new ArgumentOutOfRangeException(nameof(blockSize), "Block size must be a positive power of two.");
     this.BlockSize = blockSize;
-    using var ms = new MemoryStream();
-    if (stream.CanSeek) stream.Position = 0;
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+    // Blocks are pulled on demand: a PFS volume's metadata is a handful of
+    // blocks however large the payload area behind it grows.
+    this._accessor = new ImageAccessor(stream);
     this.Parse();
   }
 
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._accessor.Length;
+
   private void Parse() {
-    if (this._data.Length < this.BlockSize * 2)
+    if (this._accessor.Length < this.BlockSize * 2L)
       throw new InvalidDataException("AmigaPFS: image too small for boot block.");
     // Check signature in boot block (block 0).
-    var sig = Encoding.ASCII.GetString(this._data, 0, 4);
+    var boot = this._accessor.Read(0, Math.Min(this.BlockSize, 64));
+    var sig = Encoding.ASCII.GetString(boot, 0, 4);
     if (sig is not ("PFS\x02" or "PFS\x03" or "PFSa"))
       throw new InvalidDataException($"AmigaPFS: invalid boot signature '{sig}' (expected PFS\\x02/PFS\\x03/PFSa).");
     this.Signature = sig;
 
     // The boot block points to the root block at byte offset 8 (u32 BE).
-    var rootBlockNum = BinaryPrimitives.ReadUInt32BigEndian(this._data.AsSpan(8));
+    var rootBlockNum = BinaryPrimitives.ReadUInt32BigEndian(boot.AsSpan(8));
     if (rootBlockNum == 0) rootBlockNum = 80; // floppy default
     var rootOffset = (long)rootBlockNum * this.BlockSize;
-    if (rootOffset + this.BlockSize > this._data.Length) return;
+    if (rootOffset + this.BlockSize > this._accessor.Length) return;
+    var rootBlock = this._accessor.Read(rootOffset, this.BlockSize);
 
     // Disk name at +26 (32 bytes) within the root block — try to read it.
-    var diskName = ReadBcplString(this._data, (int)rootOffset + 26, 32);
+    var diskName = ReadBcplString(rootBlock, 26, 32);
     this.DiskName = diskName;
 
     // First dirblock pointer at +60 (u32 BE).
-    var firstDirBlock = BinaryPrimitives.ReadUInt32BigEndian(this._data.AsSpan((int)rootOffset + 60));
+    var firstDirBlock = BinaryPrimitives.ReadUInt32BigEndian(rootBlock.AsSpan(60));
     if (firstDirBlock == 0) return;
 
     this.WalkDirectoryChain(firstDirBlock, "");
@@ -99,8 +104,8 @@ public sealed class AmigaPfsReader : IDisposable {
     var seen = new HashSet<uint>();
     while (blockNum != 0 && seen.Add(blockNum)) {
       var off = (long)blockNum * this.BlockSize;
-      if (off + this.BlockSize > this._data.Length) break;
-      var dirBlock = this._data.AsSpan((int)off, this.BlockSize);
+      if (off + this.BlockSize > this._accessor.Length) break;
+      var dirBlock = this._accessor.Read(off, this.BlockSize).AsSpan();
       // dirblock header (PFS3aio dirblock_t):
       //   +0  id       u16 (=0xC4)
       //   +2  not_used u16
@@ -161,17 +166,35 @@ public sealed class AmigaPfsReader : IDisposable {
   }
 
   public byte[] Extract(AmigaPfsEntry entry) {
-    ArgumentNullException.ThrowIfNull(entry);
-    if (entry.IsDirectory) return [];
-    // Simple Stage 1 extractor: treat anode number as a direct block number.
-    // Real PFS3 anodes are entries in an anode table; tracing that table is
-    // deferred. For our synthetic test images we lay file data directly at
-    // `anode * BlockSize` so this works.
-    var offset = (long)entry.AnodeNumber * this.BlockSize;
-    if (offset < 0 || offset >= this._data.Length) return [];
-    var take = (int)Math.Min(entry.Size, this._data.Length - offset);
-    return this._data.AsSpan((int)offset, take).ToArray();
+    var (offset, take) = this.Locate(entry);
+    if (take <= 0) return [];
+    if (take > Array.MaxLength)
+      throw new IOException(
+        $"AmigaPFS: '{entry.Name}' is {take:N0} bytes, past the array limit; use ExtractTo.");
+    return this._accessor.Read(offset, (int)take);
   }
 
-  public void Dispose() { }
+  /// <summary>Copies <paramref name="entry" />'s bytes into <paramref name="destination" />.</summary>
+  public long ExtractTo(AmigaPfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(destination);
+    var (offset, take) = this.Locate(entry);
+    if (take <= 0) return 0;
+    this._accessor.CopyTo(offset, destination, take);
+    return take;
+  }
+
+  /// <summary>
+  /// Resolves an entry to its byte range. Stage 1 treats the anode number as a
+  /// direct block number: real PFS3 anodes index an anode table, which this
+  /// reader does not walk, and the writer lays every file out to match.
+  /// </summary>
+  public (long Offset, long Length) Locate(AmigaPfsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory) return (0, 0);
+    var offset = (long)entry.AnodeNumber * this.BlockSize;
+    if (offset < 0 || offset >= this._accessor.Length) return (0, 0);
+    return (offset, Math.Min(entry.Size, this._accessor.Length - offset));
+  }
+
+  public void Dispose() => this._accessor.Dispose();
 }

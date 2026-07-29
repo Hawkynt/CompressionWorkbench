@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Hammer2;
 
@@ -79,6 +80,10 @@ public sealed class Hammer2Writer {
   private const byte OpflagDirectData = 0x01;                    // HAMMER2_OPFLAG_DIRECTDATA
 
   private const int EmbeddedDataMax = 512;                       // inode union HAMMER2_EMBEDDED_BYTES
+  private const int DataBlockRadix = 16;                         // HAMMER2_PBUFSIZE — largest data block
+  private const int DataBlockBytes = 1 << DataBlockRadix;        // 64 KB
+  private const int IndRadix = 12;                               // HAMMER2_IND_BYTES = 4 KB
+  private const int IndFanout = (1 << IndRadix) / BlockrefBytes; // 32 blockrefs per indirect
   private const long FirstInum = 0x400;                          // kernel's first allocated inode number
 
   private const byte PfsTypeMaster = 6;                          // HAMMER2_PFSTYPE_MASTER
@@ -95,7 +100,7 @@ public sealed class Hammer2Writer {
   private static readonly byte[] FsTypeUuid =
     [0xd1, 0x9a, 0xbb, 0x5c, 0x2d, 0x86, 0xdc, 0x11, 0xa9, 0x4d, 0x01, 0x30, 0x1b, 0xb8, 0xa9, 0xf5];
 
-  private readonly List<(string Name, byte[] Content)> _files = [];
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
   private string _label = "DATA";
   private long _volumeSize = 256L * 1024 * 1024;                  // newfs_hammer2 minimum-ish
 
@@ -122,7 +127,18 @@ public sealed class Hammer2Writer {
   /// </summary>
   public void AddFile(string name, byte[] content) {
     ArgumentException.ThrowIfNullOrEmpty(name);
-    this._files.Add((name, content ?? []));
+    this._files.Add((name, FilePayload.FromBytes(content ?? [])));
+  }
+
+  /// <summary>
+  /// Records a regular file whose bytes are pulled from <paramref name="openStream" />
+  /// as the volume is written. Only the length is needed to lay out the blockrefs, so
+  /// the file never has to be resident.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentException.ThrowIfNullOrEmpty(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    this._files.Add((name, FilePayload.FromStream(size, openStream)));
   }
 
   // ===== layout state =====
@@ -136,6 +152,13 @@ public sealed class Hammer2Writer {
   // data blocks — and grows as the bump allocator hands out space.
   private byte[] _topo = [];
   private long _bump;                // next free byte within _topo
+  private long _topoReserved = TopoReserved;
+
+  // File payloads live past the topology area, in the general allocator space,
+  // and are written straight to the output as they are laid out — a data block
+  // never passes through _topo, so the volume is not bounded by an array.
+  private long _dataBump;
+  private Stream? _sink;
 
   private ulong _mirrorTid = 0x10;   // newfs stamps mirror_tid/freemap_tid = 0x10
 
@@ -145,6 +168,9 @@ public sealed class Hammer2Writer {
 
     this._allocatorBeg = BootBeg + BootSize + AuxSize;             // topo area start
     this._fsid = Guid.NewGuid().ToByteArray();
+    this._topoReserved = this.ComputeTopoReserve();
+    this._dataBump = this._allocatorBeg + this._topoReserved;
+    this._sink = output;
 
     // Build the topology area: super-root inode + the PFS inodes (with the
     // labelled PFS root populated), then the volume header that points at the
@@ -153,12 +179,12 @@ public sealed class Hammer2Writer {
 
     // Size the volume to cover everything the bump allocator handed out, keep at
     // least the historical minimum, and align down to the volume alignment.
-    var topoEnd = this._allocatorBeg + this._bump;
-    var minimum = this._allocatorBeg + TopoReserved + VolumeAlign;
+    var topoEnd = Math.Max(this._allocatorBeg + this._bump, this._dataBump);
+    var minimum = this._allocatorBeg + this._topoReserved + VolumeAlign;
     var size = AlignUp(Math.Max(Math.Max(this._volumeSize, minimum), topoEnd + VolumeAlign), VolumeAlign);
 
     this._voluSize = size;
-    this._allocatorSize = size - (this._allocatorBeg + TopoReserved);
+    this._allocatorSize = size - (this._allocatorBeg + this._topoReserved);
 
     output.SetLength(size);
 
@@ -173,6 +199,25 @@ public sealed class Hammer2Writer {
 
     output.Seek(size, SeekOrigin.Begin);
     output.Flush();
+    this._sink = null;
+  }
+
+  /// <summary>
+  /// Sizes the topology-reserved area. Metadata scales with the payload: each
+  /// 64 KB data block needs a 128-byte blockref, and those blockrefs need their
+  /// own indirect blocks, so a fixed 4 MB reserve only covers small volumes.
+  /// </summary>
+  private long ComputeTopoReserve() {
+    var dataBlocks = 0L;
+    foreach (var (_, payload) in this._files) {
+      if (payload.Size <= EmbeddedDataMax) continue;
+      dataBlocks += (payload.Size + DataBlockBytes - 1) / DataBlockBytes;
+    }
+    // Leaf blockrefs plus every interior level: the levels above a fanout-32
+    // tree add about a thirtieth again, so doubling the leaf cost covers them
+    // with room to spare.
+    var needed = TopoReserved + dataBlocks * BlockrefBytes * 2;
+    return AlignUp(Math.Max(TopoReserved, needed), 1L << 20);
   }
 
   // ---- bump allocator over the topology area ----------------------------------
@@ -185,6 +230,9 @@ public sealed class Hammer2Writer {
     this._bump = AlignUp(this._bump, size);
     var offsetInTopo = this._bump;
     this._bump += size;
+    if (this._bump > this._topoReserved)
+      throw new InvalidOperationException(
+        $"HAMMER2: topology needs {this._bump:N0} bytes but only {this._topoReserved:N0} are reserved.");
     EnsureCapacity(ref this._topo, this._bump);
     deviceOffset = this._allocatorBeg + offsetInTopo;
     return EncodeDataOff(deviceOffset, radix);
@@ -192,7 +240,7 @@ public sealed class Hammer2Writer {
 
   // ---- topology: SUPROOT inode + PFS inodes -----------------------------------
   private long BuildTopology(out byte[] srootCheck) {
-    this._topo = new byte[TopoReserved];
+    this._topo = new byte[Math.Min(this._topoReserved, 4L * 1024 * 1024)];
     // newfs reserves the first 0xc00 bytes of the topo area before its first
     // allocation; mirror that so our offsets resemble the kernel's.
     this._bump = 0xC00;
@@ -225,14 +273,13 @@ public sealed class Hammer2Writer {
     var brefs = new List<(ulong Key, byte[] Bref)>();
 
     var inum = (ulong)FirstInum;
-    foreach (var (fileName, content) in this._files) {
+    foreach (var (fileName, payload) in this._files) {
       var thisInum = inum++;
-      var data = content ?? [];
 
       // The file inode (objtype REGFILE). Its on-disk filename is the hex of the
       // inode number — exactly what the kernel writes; the human name lives only
       // in the dirent.
-      var inode = this.BuildRegFileInode(thisInum, data);
+      var inode = this.BuildRegFileInode(thisInum, payload);
       var inodeOff = this.PlaceBlock(inode, RadixForInode);
 
       var inodeBref = new byte[BlockrefBytes];
@@ -251,7 +298,7 @@ public sealed class Hammer2Writer {
   }
 
   // ---- a regular-file inode (HAMMER2_OBJTYPE_REGFILE) -------------------------
-  private byte[] BuildRegFileInode(ulong thisInum, byte[] data) {
+  private byte[] BuildRegFileInode(ulong thisInum, FilePayload payload) {
     var inode = new byte[InodeBytes];
     var now = NowMicros();
     var name = "0x" + thisInum.ToString("x16");           // kernel's on-disk inode name
@@ -264,7 +311,7 @@ public sealed class Hammer2Writer {
     inode[0x50] = ObjTypeRegfile;                                                        // type = REGFILE
     BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(0x54, 4), 0x1A4);              // mode 0644
     BinaryPrimitives.WriteUInt64LittleEndian(inode.AsSpan(0x58, 8), thisInum);           // inum
-    BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(0x60, 8), data.LongLength);     // size
+    BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(0x60, 8), payload.Size);        // size
     BinaryPrimitives.WriteUInt64LittleEndian(inode.AsSpan(0x68, 8), 1);                  // nlinks = 1
     BinaryPrimitives.WriteUInt64LittleEndian(inode.AsSpan(0x70, 8), (ulong)PfsRootInum); // iparent = root
     BinaryPrimitives.WriteUInt64LittleEndian(inode.AsSpan(0x78, 8), thisInum);           // name_key = inum
@@ -273,22 +320,49 @@ public sealed class Hammer2Writer {
     inode[0x85] = CheckXxhash64;                                                         // check_algo
     nameBytes.CopyTo(inode.AsSpan(0x100));                                               // filename[]
 
-    if (data.Length <= EmbeddedDataMax) {
+    if (payload.Size <= EmbeddedDataMax) {
       // Direct data: the payload lives in the inode's 512-byte union.
       inode[0x51] = OpflagDirectData;                                                    // op_flags
-      data.CopyTo(inode.AsSpan(0x200, data.Length));
-    } else {
-      // Spill to a HAMMER2_BREF_TYPE_DATA block sized to the next logical buffer.
-      var radix = DataRadix(data.Length);
-      var block = new byte[1 << radix];
-      data.CopyTo(block.AsSpan(0, data.Length));
-      var blockOff = this.PlaceBlock(block, radix);
-
-      // blockref[0] -> the data block, keyed by logical offset 0.
-      this.WriteBlockref(inode.AsSpan(0x200, BlockrefBytes), BrefTypeData,
-        checkAlgo: CheckXxhash64, compAlgo: CompNone, flags: 0,
-        key: 0, vradix: radix, dataOff: blockOff, check: ComputeXxCheck(block));
+      var embedded = payload.ToArray();
+      embedded.CopyTo(inode.AsSpan(0x200, embedded.Length));
+      return inode;
     }
+
+    // Larger files are a run of HAMMER2_BREF_TYPE_DATA blocks, each keyed by its
+    // logical offset in the file and capped at HAMMER2_PBUFSIZE. Four fit in the
+    // inode's embedded blockset; past that they hang off indirect blocks.
+    var brefs = new List<(ulong Key, byte[] Bref)>();
+    var block = new byte[DataBlockBytes];
+    using (var source = payload.Open()) {
+      long logical = 0;
+      while (logical < payload.Size) {
+        var want = (int)Math.Min(DataBlockBytes, payload.Size - logical);
+        var got = 0;
+        while (got < want) {
+          var n = source.Read(block, got, want - got);
+          if (n <= 0) break;
+          got += n;
+        }
+        if (got <= 0)
+          throw new IOException($"HAMMER2: inode 0x{thisInum:x} ended after {logical:N0} of {payload.Size:N0} bytes.");
+
+        // A block is exactly 1<<radix bytes and its check covers all of them, so
+        // the tail of a short final block is zero-filled.
+        var radix = Math.Max(DataRadix(got), 10);
+        var span = 1 << radix;
+        Array.Clear(block, got, span - got);
+        var blockOff = this.WriteDataBlock(block.AsSpan(0, span), radix);
+
+        var bref = new byte[BlockrefBytes];
+        this.WriteBlockref(bref, BrefTypeData, checkAlgo: CheckXxhash64, compAlgo: CompNone,
+          flags: 0, key: (ulong)logical, vradix: radix, dataOff: blockOff,
+          check: ComputeXxCheck(block.AsSpan(0, span)));
+        brefs.Add(((ulong)logical, bref));
+        logical += got;
+      }
+    }
+
+    this.LayoutBlockset(inode.AsSpan(0x200, SetCount * BlockrefBytes), brefs);
     return inode;
   }
 
@@ -398,8 +472,8 @@ public sealed class Hammer2Writer {
 
   // ---- lay a set of blockrefs into a 4-entry blockset, spilling to indirect ---
   // The blockrefs are sorted ascending by key. When ≤4 they fit in the embedded
-  // blockset directly; otherwise a single HAMMER2_BREF_TYPE_INDIRECT block holds
-  // them all and the embedded blockset gets one indirect blockref.
+  // blockset directly; otherwise indirect blocks are built bottom-up until four
+  // or fewer roots remain.
   private void LayoutBlockset(Span<byte> blockset, List<(ulong Key, byte[] Bref)> brefs) {
     var sorted = brefs.OrderBy(b => b.Key).ToList();
 
@@ -409,57 +483,77 @@ public sealed class Hammer2Writer {
       return;
     }
 
-    // Spill: build indirect blocks. The kernel subdivides the 64-bit keyspace by
-    // radix; we mirror that by splitting the most-significant bit that separates
-    // the entries until each group fits in one HAMMER2_BREF_TYPE_INDIRECT block,
-    // then point at the resulting children from the embedded blockset.
-    var children = this.BuildIndirectChildren(sorted, keyStart: 0, keyBits: 64);
-    for (var i = 0; i < children.Count && i < SetCount; ++i)
-      children[i].CopyTo(blockset.Slice(i * BlockrefBytes, BlockrefBytes));
+    var roots = this.BuildIndirectLevels(sorted);
+    if (roots.Count > SetCount)
+      throw new InvalidOperationException(
+        $"HAMMER2: {roots.Count} indirect roots do not fit a {SetCount}-entry blockset.");
+    for (var i = 0; i < roots.Count; ++i)
+      roots[i].Bref.CopyTo(blockset.Slice(i * BlockrefBytes, BlockrefBytes));
   }
 
-  // Recursively builds indirect blocks for the given sorted blockrefs over the
-  // keyspace [keyStart, keyStart + 2^keyBits). Returns the parent-level blockrefs
-  // pointing at the children. Each indirect block is a 4 KB block (32 brefs),
-  // matching the kernel's HAMMER2_IND_BYTES layout.
-  private List<byte[]> BuildIndirectChildren(List<(ulong Key, byte[] Bref)> entries, ulong keyStart, int keyBits) {
-    const int IndRadix = 12;                       // HAMMER2_IND_BYTES = 4 KB
-    const int Fanout = (1 << IndRadix) / BlockrefBytes; // 32 blockrefs per indirect
+  /// <summary>
+  /// Builds HAMMER2_BREF_TYPE_INDIRECT levels over key-sorted blockrefs until at
+  /// most <see cref="SetCount" /> roots remain.
+  /// </summary>
+  /// <remarks>
+  /// Grouping is by position rather than by keyspace bisection: a bisecting split
+  /// yields however many children the key distribution happens to produce, which
+  /// for a file's logical offsets is far more than the four an embedded blockset
+  /// holds. The low and high halves of the 64-bit keyspace are grouped separately
+  /// so no indirect ever needs keybits 64 — a full-64-bit span the kernel cannot
+  /// express (inode keys sit below 2^63, dirent hashes above it).
+  /// </remarks>
+  private List<(ulong Key, byte[] Bref)> BuildIndirectLevels(List<(ulong Key, byte[] Bref)> entries) {
+    const ulong Mid = 1UL << 63;
+    var low = entries.Where(e => e.Key < Mid).ToList();
+    var high = entries.Where(e => e.Key >= Mid).ToList();
 
-    // When everything fits, emit a single indirect block over this keyspace —
-    // but never with keybits 64 (a full-64-bit span). The kernel caps keybits at
-    // 63 (1<<64 is undefined), so a top-level [0,2^64) range must first split at
-    // bit 63 into a low half (inode brefs, keys < 2^63) and a high half (dirent
-    // brefs, keys >= 2^63), each a keybits=63 indirect — exactly as the kernel
-    // lays out a directory that overflows the inode's embedded blockset.
-    if (entries.Count <= Fanout && keyBits <= 63) {
+    while (low.Count + high.Count > SetCount) {
+      var before = low.Count + high.Count;
+      if (low.Count > 1) low = this.CollapseLevel(low);
+      if (high.Count > 1) high = this.CollapseLevel(high);
+      if (low.Count + high.Count >= before)
+        throw new InvalidOperationException("HAMMER2: indirect tree failed to converge.");
+    }
+
+    return [.. low, .. high];
+  }
+
+  /// <summary>Packs one level of blockrefs into indirect blocks, returning the level above.</summary>
+  private List<(ulong Key, byte[] Bref)> CollapseLevel(List<(ulong Key, byte[] Bref)> level) {
+    var next = new List<(ulong Key, byte[] Bref)>();
+    for (var i = 0; i < level.Count; i += IndFanout) {
+      var count = Math.Min(IndFanout, level.Count - i);
       var block = new byte[1 << IndRadix];
-      for (var i = 0; i < entries.Count; ++i)
-        entries[i].Bref.CopyTo(block.AsSpan(i * BlockrefBytes, BlockrefBytes));
+      for (var j = 0; j < count; ++j)
+        level[i + j].Bref.CopyTo(block.AsSpan(j * BlockrefBytes, BlockrefBytes));
+
+      var lo = level[i].Key;
+      var hi = level[i + count - 1].Key;
+      var (baseKey, keyBits) = SpanOf(lo, hi);
+
       var off = this.PlaceBlock(block, IndRadix);
       var bref = new byte[BlockrefBytes];
       this.WriteBlockref(bref, BrefTypeIndirect, checkAlgo: CheckXxhash64, compAlgo: CompNone,
-        flags: 0, key: keyStart, vradix: IndRadix, dataOff: off, check: ComputeXxCheck(block));
+        flags: 0, key: baseKey, vradix: IndRadix, dataOff: off, check: ComputeXxCheck(block));
       bref[3] = (byte)keyBits;                     // keybits: span of this indirect
       // leaf_count: number of leaf blockrefs under this indirect. The kernel uses
       // it to size directory iteration; 0 makes readdir treat the subtree as empty.
-      BinaryPrimitives.WriteUInt16LittleEndian(bref.AsSpan(6, 2),
-        (ushort)Math.Min(entries.Count, ushort.MaxValue));
-      return [bref];
+      BinaryPrimitives.WriteUInt16LittleEndian(bref.AsSpan(6, 2), (ushort)Math.Min(count, ushort.MaxValue));
+      next.Add((baseKey, bref));
     }
+    return next;
+  }
 
-    // Otherwise subdivide into two halves at the top bit of this keyspace.
-    var half = keyBits - 1;
-    var mid = keyStart + (1UL << half);
-    var lower = entries.Where(e => e.Key < mid).ToList();
-    var upper = entries.Where(e => e.Key >= mid).ToList();
-
-    var result = new List<byte[]>();
-    if (lower.Count > 0)
-      result.AddRange(this.BuildIndirectChildren(lower, keyStart, half));
-    if (upper.Count > 0)
-      result.AddRange(this.BuildIndirectChildren(upper, mid, half));
-    return result;
+  /// <summary>
+  /// Smallest aligned keyspace covering [lo, hi]: the number of low bits the two
+  /// keys differ in, and the base key with those bits cleared.
+  /// </summary>
+  private static (ulong BaseKey, int KeyBits) SpanOf(ulong lo, ulong hi) {
+    var bits = 0;
+    while (bits < 63 && (lo >> bits) != (hi >> bits))
+      ++bits;
+    return (bits == 0 ? lo : (lo >> bits) << bits, bits);
   }
 
   // ---- volume header (struct hammer2_volume_data) ----
@@ -550,6 +644,22 @@ public sealed class Hammer2Writer {
     return dataOff;
   }
 
+  /// <summary>
+  /// Allocates a data block past the topology area and writes it straight to the
+  /// output, returning the encoded data_off. File contents never enter _topo.
+  /// </summary>
+  private long WriteDataBlock(ReadOnlySpan<byte> block, int radix) {
+    var size = 1L << radix;
+    this._dataBump = AlignUp(this._dataBump, size);
+    var deviceOffset = this._dataBump;
+    this._dataBump += size;
+
+    var sink = this._sink ?? throw new InvalidOperationException("HAMMER2: no output stream bound.");
+    sink.Seek(deviceOffset, SeekOrigin.Begin);
+    sink.Write(block);
+    return EncodeDataOff(deviceOffset, radix);
+  }
+
   // Writes 'src' at the device offset, translating through the topo base.
   private static void PlaceAt(byte[] topo, long topoBase, long deviceOffset, byte[] src) =>
     src.CopyTo(topo.AsSpan((int)(deviceOffset - topoBase), src.Length));
@@ -578,7 +688,7 @@ public sealed class Hammer2Writer {
   private static long EncodeDataOff(long deviceOffset, int radix) =>
     (deviceOffset & ~0x3FL) | (long)(uint)(radix & 0x3F);
 
-  private static byte[] ComputeXxCheck(byte[] data) {
+  private static byte[] ComputeXxCheck(ReadOnlySpan<byte> data) {
     var h = Hammer2Crc.XxHash64(data, Hammer2Crc.Hammer2Seed);
     var b = new byte[8];
     BinaryPrimitives.WriteUInt64LittleEndian(b, h);

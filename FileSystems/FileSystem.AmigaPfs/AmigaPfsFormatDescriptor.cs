@@ -109,12 +109,16 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
         w.AddDirectory(input.ArchiveName);
         continue;
       }
-      w.AddFile(input.ArchiveName, input.ReadContent());
+      if (input.InMemoryContent is { } bytes) {
+        w.AddFile(input.ArchiveName, bytes);
+        continue;
+      }
+      var path = input.FullPath;
+      w.AddStreamingFile(input.ArchiveName, new FileInfo(path).Length, () => File.OpenRead(path));
     }
     var label = options?.GetOption("VolumeLabel", "DISK") ?? "DISK";
     if (string.IsNullOrEmpty(label)) label = "DISK";
-    var image = w.Build(label);
-    output.Write(image, 0, image.Length);
+    w.BuildTo(output, label);
   }
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -124,11 +128,14 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new AmigaPfsReader(stream);
+    using var r = new AmigaPfsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -136,12 +143,14 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    var r = new AmigaPfsReader(archive);
+    using var r = new AmigaPfsReader(archive);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
-      return new BoundedEntryStream(new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+      // A file is one contiguous extent, so the entry is a plain window onto
+      // the image -- no copy, whatever its size.
+      var (offset, length) = r.Locate(e);
+      return new BoundedEntryStream(new ReadOnlyStreamSlice(archive, offset, length), length, leaveOpen: false);
     }
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }

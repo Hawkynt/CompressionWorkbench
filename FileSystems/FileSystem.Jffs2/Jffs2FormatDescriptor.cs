@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
@@ -61,33 +62,37 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
-    byte[] image;
+    ImageAccessor image;
     try {
-      image = ReadAll(stream);
+      if (stream.CanSeek) stream.Position = 0;
+      image = new ImageAccessor(stream);
     } catch {
       entries.Add(new ArchiveEntryInfo(0, "FULL.jffs2", 0, 0, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
       return entries;
     }
 
-    entries.Add(new ArchiveEntryInfo(0, "FULL.jffs2", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+    using (image) {
+      entries.Add(new ArchiveEntryInfo(0, "FULL.jffs2", image.Length, image.Length, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
 
-    Jffs2Scanner.ScanResult scan;
-    try { scan = Jffs2Scanner.Scan(image); } catch { return entries; }
+      Jffs2Scanner.ScanResult scan;
+      try { scan = Jffs2Scanner.Scan(image); } catch { return entries; }
 
-    if (scan.Dirents.Count > 0)
-      entries.Add(new ArchiveEntryInfo(entries.Count, "dirents.txt", 0, 0, "stored", false, false, null));
-    if (scan.Inodes.Count > 0)
-      entries.Add(new ArchiveEntryInfo(entries.Count, "inodes.txt", 0, 0, "stored", false, false, null));
+      if (scan.Dirents.Count > 0)
+        entries.Add(new ArchiveEntryInfo(entries.Count, "dirents.txt", 0, 0, "stored", false, false, null));
+      if (scan.Inodes.Count > 0)
+        entries.Add(new ArchiveEntryInfo(entries.Count, "inodes.txt", 0, 0, "stored", false, false, null));
+    }
 
     // Also list actual files from the file reader
     try {
-      var reader = new Jffs2FileReader(image);
+      if (stream.CanSeek) stream.Position = 0;
+      var reader = new Jffs2FileReader(stream);
       foreach (var entry in reader.Entries) {
         if (entry.IsDirectory) continue;
-        var data = reader.Extract(entry);
-        entries.Add(new ArchiveEntryInfo(entries.Count, entry.Name, data.LongLength, data.LongLength, "stored", false, false, null));
+        var size = reader.SizeOf(entry);
+        entries.Add(new ArchiveEntryInfo(entries.Count, entry.Name, size, size, "stored", false, false, null));
       }
     } catch {
       // Fall back to triage-only listing
@@ -97,38 +102,48 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    byte[] image;
+    ImageAccessor image;
     try {
-      image = ReadAll(stream);
+      if (stream.CanSeek) stream.Position = 0;
+      image = new ImageAccessor(stream);
     } catch {
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
       return;
     }
 
-    WriteIfMatch(outputDir, "FULL.jffs2", image, files);
+    using (image) {
+      if (files is not { Length: > 0 } || MatchesFilter("FULL.jffs2", files)) {
+        Directory.CreateDirectory(outputDir);
+        using var full = File.Create(Path.Combine(outputDir, "FULL.jffs2"));
+        image.CopyTo(0, full, image.Length);
+      }
 
-    Jffs2Scanner.ScanResult scan;
-    try {
-      scan = Jffs2Scanner.Scan(image);
-    } catch {
-      WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
-      return;
+      Jffs2Scanner.ScanResult scan;
+      try {
+        scan = Jffs2Scanner.Scan(image);
+      } catch {
+        WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
+        return;
+      }
+
+      WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(scan), files);
+      if (scan.Dirents.Count > 0)
+        WriteIfMatch(outputDir, "dirents.txt", BuildDirents(scan), files);
+      if (scan.Inodes.Count > 0)
+        WriteIfMatch(outputDir, "inodes.txt", BuildInodes(scan), files);
     }
-
-    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(scan), files);
-    if (scan.Dirents.Count > 0)
-      WriteIfMatch(outputDir, "dirents.txt", BuildDirents(scan), files);
-    if (scan.Inodes.Count > 0)
-      WriteIfMatch(outputDir, "inodes.txt", BuildInodes(scan), files);
 
     // Also extract actual files
     try {
-      var reader = new Jffs2FileReader(image);
+      if (stream.CanSeek) stream.Position = 0;
+      var reader = new Jffs2FileReader(stream);
       foreach (var entry in reader.Entries) {
         if (entry.IsDirectory) continue;
         if (files != null && files.Length > 0 && !MatchesFilter(entry.Name, files)) continue;
-        var data = reader.Extract(entry);
-        WriteFile(outputDir, entry.Name, data);
+        var target = Path.Combine(outputDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+        using var output = File.Create(target);
+        reader.ExtractTo(entry, output);
       }
     } catch {
       // Fall back to triage-only extraction
@@ -149,8 +164,8 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       foreach (var entry in reader.Entries) {
         if (entry.IsDirectory) continue;
         if (!string.Equals(entry.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-        var bytes = reader.Extract(entry);
-        return new BoundedEntryStream(new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+        var size = reader.SizeOf(entry);
+        return new BoundedEntryStream(reader.OpenEntry(entry), size, leaveOpen: false);
       }
     } catch {
       // Fall through to empty bounded stream
@@ -170,8 +185,15 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Jffs2Writer(ResolveEraseBlockSize(options));
-    foreach (var (name, data) in FilesOnly(inputs))
-      w.AddFile(name, data);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      if (input.InMemoryContent is { } bytes) {
+        w.AddFile(input.ArchiveName, bytes);
+        continue;
+      }
+      var path = input.FullPath;
+      w.AddStreamingFile(input.ArchiveName, new FileInfo(path).Length, () => File.OpenRead(path));
+    }
     w.WriteTo(output);
   }
 
@@ -231,39 +253,69 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Buffering the rebuilt image would cap the volume at what a byte[] can
+    // hold, so the packing modes stream: each entry is spilled to scratch and
+    // the writer pulls it back while emitting nodes.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      Jffs2Writer? writer = null;
+      Stream? target = null;
+      var spill = new List<string>();
+      try {
+        DefragRebuilder.RebuildStreaming(archive, options,
+          readEntries: ReadFileEntries,
+          beginWrite: s => { writer = new Jffs2Writer(); target = s; },
+          writeEntry: (name, data) => {
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            File.WriteAllBytes(path, data);
+            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+          },
+          finishWrite: () => writer!.WriteTo(target!));
+      } finally {
+        foreach (var path in spill)
+          try { File.Delete(path); } catch { /* scratch file already gone */ }
+      }
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options,
       readEntries: ReadFileEntries,
       buildImage: BuildImage);
+  }
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    byte[] data;
+    ArgumentNullException.ThrowIfNull(image);
     try {
-      image.Position = 0;
-      using var ms = new MemoryStream();
-      image.CopyTo(ms);
-      data = ms.ToArray();
+      if (image.CanSeek) image.Position = 0;
+      using var accessor = new ImageAccessor(image);
+      return EnumerateExtentsCore(accessor);
     } catch {
       return [];
     }
-
-    return EnumerateExtentsCore(data);
   }
 
-  private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data) {
+  private static List<DefragBlockInfo> EnumerateExtentsCore(ImageAccessor data) {
     var result = new List<DefragBlockInfo>();
-    var off = 0;
+    var probe = new byte[40 + 128];
+    long off = 0;
     while (off + 12 <= data.Length) {
-      var magic = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(off, 2));
+      var want = (int)Math.Min(probe.Length, data.Length - off);
+      var read = data.Read(off, probe.AsSpan(0, want));
+      if (read < 12) break;
+      var node = probe.AsSpan(0, read);
+
+      var magic = BinaryPrimitives.ReadUInt16LittleEndian(node[..2]);
       if (magic != 0x1985) {
         // Check if this is 0xFF-filled free space
-        if (off + 4 <= data.Length && data[off] == 0xFF && data[off + 1] == 0xFF && data[off + 2] == 0xFF && data[off + 3] == 0xFF) {
+        if (read >= 4 && node[0] == 0xFF && node[1] == 0xFF && node[2] == 0xFF && node[3] == 0xFF) {
           var freeStart = off;
-          while (off < data.Length && data[off] == 0xFF)
-            off++;
-          off = (off + 3) & ~3;
+          off = ScanErased(data, off);
           if (off > freeStart)
             result.Add(new DefragBlockInfo(freeStart, off - freeStart, DefragBlockKind.Free));
           continue;
@@ -272,26 +324,26 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         continue;
       }
 
-      var nodeType = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(off + 2, 2));
-      var totLen = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(off + 4, 4));
+      var nodeType = BinaryPrimitives.ReadUInt16LittleEndian(node.Slice(2, 2));
+      var totLen = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(4, 4));
 
-      if (totLen < 12 || totLen > data.Length || off + (int)totLen > data.Length) {
+      if (totLen < 12 || off + totLen > data.Length) {
         off += 4;
         continue;
       }
 
-      var aligned = ((int)totLen + 3) & ~3;
+      var aligned = (long)((totLen + 3) & ~3u);
 
       switch (nodeType) {
         case 0x2003: // CLEANMARKER
           result.Add(new DefragBlockInfo(off, aligned, DefragBlockKind.MetadataReserved, "cleanmarker"));
           break;
         case 0xE001: // DIRENT
-          var name = TryGetDirentName(data, off);
+          var name = TryGetDirentName(node);
           result.Add(new DefragBlockInfo(off, aligned, DefragBlockKind.MetadataReserved, name != null ? $"dirent:{name}" : "dirent"));
           break;
         case 0xE002: // INODE
-          var ino = off + 16 <= data.Length ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(off + 12, 4)) : 0u;
+          var ino = node.Length >= 16 ? BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(12, 4)) : 0u;
           result.Add(new DefragBlockInfo(off, aligned, DefragBlockKind.Used, $"inode:{ino}"));
           break;
         case 0x2004: // PADDING
@@ -334,13 +386,7 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // obsolete nodes so deleted content can't be recovered. Live nodes stay intact
     // (a zeroed node is magic-less → the scanner skips it as free space).
     if (wipeDeletedEntries) {
-      image.Position = 0;
-      using var ms = new MemoryStream();
-      image.CopyTo(ms);
-      var buf = ms.ToArray();
-      wiped += Jffs2ForensicWiper.WipeObsolete(buf);
-      image.Position = 0;
-      image.Write(buf, 0, buf.Length);
+      wiped += Jffs2ForensicWiper.WipeObsolete(image);
     }
 
     image.Position = 0;
@@ -358,21 +404,41 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return reader.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, reader.Extract(e)));
   }
 
+
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
     var w = new Jffs2Writer();
     foreach (var (n, d) in files) w.AddFile(n, d);
     return w.Build();
   }
 
-  private static string? TryGetDirentName(byte[] data, int off) {
+  private static string? TryGetDirentName(ReadOnlySpan<byte> node) {
     try {
-      if (off + 40 > data.Length) return null;
-      var nsize = data[off + 28];
-      if (nsize == 0 || nsize > 128 || off + 40 + nsize > data.Length) return null;
-      return Encoding.UTF8.GetString(data, off + 40, nsize);
+      if (node.Length < 40) return null;
+      var nsize = node[28];
+      if (nsize == 0 || nsize > 128 || 40 + nsize > node.Length) return null;
+      return Encoding.UTF8.GetString(node.Slice(40, nsize));
     } catch {
       return null;
     }
+  }
+
+  /// <summary>
+  /// Walks forward from <paramref name="start" /> over erased (0xFF) bytes and
+  /// returns the 4-aligned offset where the run ends.
+  /// </summary>
+  private static long ScanErased(ImageAccessor data, long start) {
+    var chunk = new byte[64 * 1024];
+    var off = start;
+    while (off < data.Length) {
+      var want = (int)Math.Min(chunk.Length, data.Length - off);
+      var read = data.Read(off, chunk.AsSpan(0, want));
+      if (read <= 0) break;
+      var i = 0;
+      while (i < read && chunk[i] == 0xFF) ++i;
+      off += i;
+      if (i < read) break;
+    }
+    return (off + 3) & ~3L;
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -407,9 +473,4 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
-  private static byte[] ReadAll(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    return ms.ToArray();
-  }
 }

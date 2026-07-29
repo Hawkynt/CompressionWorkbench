@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Globalization;
 using System.Text;
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -88,31 +89,38 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       return entries;
     }
 
-    var idx = 0;
-    entries.Add(new ArchiveEntryInfo(idx++, "FULL.hammer2", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
-    if (hdr.Valid)
-      entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
-
     // Walk the blockref tree for the real files. The header parse above used a
     // bounded read; re-read the whole image for the walk only when the header is
     // valid (a deliberately-opened HAMMER2 archive, not speculative carving).
-    if (hdr.Valid)
-      foreach (var (name, content) in ReadFiles(stream))
-        entries.Add(new ArchiveEntryInfo(idx++, name, content.LongLength, content.LongLength, "stored", false, false, null));
+    var files = hdr.Valid ? ReadFiles(stream) : [];
+
+    // A volume that carries files lists exactly those. Surfacing the synthetic
+    // header entries alongside them would make every rebuild (shrink, defrag)
+    // fold them back in as real files, so they stay on the carver path — empty
+    // or foreign images, where the header IS all we can offer.
+    var idx = 0;
+    if (files.Count == 0) {
+      entries.Add(new ArchiveEntryInfo(idx++, "FULL.hammer2", image.LongLength, image.LongLength, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
+      if (hdr.Valid)
+        entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
+      return entries;
+    }
+
+    foreach (var file in files)
+      entries.Add(new ArchiveEntryInfo(idx++, file.Path, file.Size, file.Size, "stored", false, false, null));
 
     return entries;
   }
 
-  // Walks the HAMMER2 blockref tree and returns the real regular files it holds,
-  // keyed by path. Never throws — returns nothing when the walk fails.
-  private static IEnumerable<KeyValuePair<string, byte[]>> ReadFiles(Stream stream) {
+  // Walks the HAMMER2 blockref tree and returns the real regular files it holds.
+  // Never throws — returns nothing when the walk fails.
+  private static List<Hammer2Reader.FileRef> ReadFiles(Stream stream) {
     try {
       if (stream.CanSeek)
         stream.Position = 0;
-      using var ms = new MemoryStream();
-      stream.CopyTo(ms);
-      return new Hammer2Reader(ms.ToArray()).ReadAllFiles();
+      using var reader = new Hammer2Reader(stream);
+      return reader.EnumerateFiles();
     } catch {
       return [];
     }
@@ -140,7 +148,12 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      writer.AddFile(input.ArchiveName, input.ReadContent());
+      if (input.InMemoryContent is { } bytes) {
+        writer.AddFile(input.ArchiveName, bytes);
+        continue;
+      }
+      var path = input.FullPath;
+      writer.AddStreamingFile(input.ArchiveName, new FileInfo(path).Length, () => File.OpenRead(path));
     }
 
     writer.WriteTo(output);
@@ -172,10 +185,12 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // re-emit a fresh image from a file list via the writer.
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream archive) {
     archive.Position = 0;
-    using var ms = new MemoryStream();
-    archive.CopyTo(ms);
-    foreach (var (name, content) in new Hammer2Reader(ms.ToArray()).ReadAllFiles())
-      yield return (name, content);
+    using var reader = new Hammer2Reader(archive);
+    foreach (var file in reader.EnumerateFiles()) {
+      using var buffer = new MemoryStream();
+      reader.ExtractTo(file, buffer);
+      yield return (file.Path, buffer.ToArray());
+    }
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
@@ -188,37 +203,64 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    byte[] image;
+    ImageAccessor image;
     try {
-      image = ReadAllFull(stream);
+      if (stream.CanSeek) stream.Position = 0;
+      image = new ImageAccessor(stream);
     } catch {
       WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
       return;
     }
 
     Hammer2VolumeData hdr;
-    try {
-      hdr = Hammer2VolumeData.TryParse(image);
-    } catch {
-      WriteIfMatch(outputDir, "FULL.hammer2", image, files);
-      WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
-      return;
-    }
-
-    WriteIfMatch(outputDir, "FULL.hammer2", image, files);
-    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
-    if (hdr.Valid)
-      WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
-
-    // Materialise the real files by walking the blockref tree.
-    if (hdr.Valid) {
+    using (image) {
       try {
-        foreach (var (name, content) in new Hammer2Reader(image).ReadAllFiles())
-          WriteIfMatch(outputDir, name, content, files);
+        hdr = Hammer2VolumeData.TryParse(image.Read(0, (int)Math.Min(HeaderReadCap, image.Length)));
       } catch {
-        // Best-effort; the surface files above are still written.
+        WriteFullImage(image, outputDir, files);
+        WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
+        return;
+      }
+
+      if (!hdr.Valid) {
+        WriteFullImage(image, outputDir, files);
+        WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
+        return;
       }
     }
+
+    // Materialise the real files by walking the blockref tree. The header
+    // surface is written only for a volume that holds none, mirroring List.
+    var extracted = 0;
+    try {
+      if (stream.CanSeek) stream.Position = 0;
+      using var reader = new Hammer2Reader(stream);
+      foreach (var file in reader.EnumerateFiles()) {
+        ++extracted;
+        if (files is { Length: > 0 } && !MatchesFilter(file.Path, files)) continue;
+        var target = Path.Combine(outputDir, file.Path.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+        using var output = File.Create(target);
+        reader.ExtractTo(file, output);
+      }
+    } catch {
+      // Best-effort; the header surface below still gets written.
+    }
+
+    if (extracted > 0) return;
+
+    if (stream.CanSeek) stream.Position = 0;
+    using var surface = new ImageAccessor(stream);
+    WriteFullImage(surface, outputDir, files);
+    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
+    WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
+  }
+
+  private static void WriteFullImage(ImageAccessor image, string outputDir, string[]? files) {
+    if (files is { Length: > 0 } && !MatchesFilter("FULL.hammer2", files)) return;
+    Directory.CreateDirectory(outputDir);
+    using var target = File.Create(Path.Combine(outputDir, "FULL.hammer2"));
+    image.CopyTo(0, target, image.Length);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -265,13 +307,4 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return ms.ToArray();
   }
 
-  // Full read for an explicit extract: the caller deliberately opened a HAMMER2
-  // image, so the whole device is pulled in to walk the blockref tree.
-  private static byte[] ReadAllFull(Stream stream) {
-    if (stream.CanSeek)
-      stream.Position = 0;
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    return ms.ToArray();
-  }
 }

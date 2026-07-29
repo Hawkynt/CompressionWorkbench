@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Hammer2;
@@ -29,7 +30,7 @@ namespace FileSystem.Hammer2;
 /// flagged via <see cref="HasCompressedData"/> — decompression is out of scope.
 /// </para>
 /// </summary>
-public sealed class Hammer2Reader {
+public sealed class Hammer2Reader : IDisposable {
   private const ulong VolumeIdHbo = 0x48414d3205172011UL;
   private const ulong VolumeIdAbo = 0x11201705324d4148UL;
   private const int VolumeBytes = 65536;
@@ -47,13 +48,25 @@ public sealed class Hammer2Reader {
   private const byte ObjTypeRegfile = 2;
   private const byte OpflagDirectData = 0x01;
 
-  private readonly byte[] _image;
+  private readonly ImageAccessor _image;
 
   /// <summary>Creates a reader over the full HAMMER2 image bytes.</summary>
   public Hammer2Reader(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
-    this._image = image;
+    this._image = ImageAccessor.FromBytes(image);
   }
+
+  /// <summary>
+  /// Creates a reader over a HAMMER2 volume, pulling blocks on demand. The
+  /// blockref tree is a few megabytes however large the payload area behind it.
+  /// </summary>
+  public Hammer2Reader(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    this._image = new ImageAccessor(image);
+  }
+
+  /// <summary>A regular file the reader surfaced, with the inode needed to read it back.</summary>
+  public sealed record FileRef(string Path, long Size, byte[] Inode);
 
   /// <summary>True iff a valid HAMMER2 volume header was found.</summary>
   public bool Valid { get; private set; }
@@ -69,6 +82,25 @@ public sealed class Hammer2Reader {
   /// </summary>
   public Dictionary<string, byte[]> ReadAllFiles() {
     var result = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+    foreach (var file in this.EnumerateFiles()) {
+      if (file.Size > Array.MaxLength)
+        throw new IOException(
+          $"HAMMER2: '{file.Path}' is {file.Size:N0} bytes, past the array limit; use ExtractTo.");
+      using var buffer = new MemoryStream();
+      this.ExtractTo(file, buffer);
+      result[file.Path] = buffer.ToArray();
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Surfaces every regular file in every PFS root, keyed by its path
+  /// (<c>name</c> at the root, <c>dir/name</c> for nested files). Never throws —
+  /// yields whatever it could parse. Contents are pulled separately through
+  /// <see cref="ExtractTo" />, so a listing costs nothing but the tree walk.
+  /// </summary>
+  public List<FileRef> EnumerateFiles() {
+    var result = new List<FileRef>();
     try {
       var vh = this.SelectVolumeHeader();
       if (vh < 0)
@@ -76,7 +108,7 @@ public sealed class Hammer2Reader {
       this.Valid = true;
 
       // sroot_blockset[0] -> super-root inode.
-      var srootBref = this._image.AsSpan(vh + 0x200, BlockrefBytes);
+      var srootBref = this._image.Read(vh + 0x200, BlockrefBytes);
       if (srootBref[0] != BrefTypeInode)
         return result;
       var srootInodeOff = DecodeOffset(ReadI64(srootBref, 32));
@@ -105,7 +137,7 @@ public sealed class Hammer2Reader {
   }
 
   // ---- directory walk ---------------------------------------------------------
-  private void WalkDirectory(byte[] dirInode, string prefix, Dictionary<string, byte[]> result) {
+  private void WalkDirectory(byte[] dirInode, string prefix, List<FileRef> result) {
     // Gather the directory's children: a map of inum -> inode, plus the dirents
     // (name + inum) that give them human names.
     var inodesByInum = new Dictionary<ulong, byte[]>();
@@ -138,42 +170,70 @@ public sealed class Hammer2Reader {
       if (objType == ObjTypeDirectory)
         this.WalkDirectory(inode, path, result);
       else if (objType == ObjTypeRegfile)
-        result[path] = this.ReadFileData(inode);
+        result.Add(new FileRef(path, ReadI64(inode, 0x60), inode));
     }
   }
 
   // ---- file data --------------------------------------------------------------
-  private byte[] ReadFileData(byte[] inode) {
+
+  /// <summary>
+  /// Writes <paramref name="file" />'s contents into <paramref name="destination" />,
+  /// one data block at a time. Returns the number of bytes written.
+  /// </summary>
+  public long ExtractTo(FileRef file, Stream destination) {
+    ArgumentNullException.ThrowIfNull(file);
+    ArgumentNullException.ThrowIfNull(destination);
+
+    var inode = file.Inode;
     var size = ReadI64(inode, 0x60);
     if (size <= 0)
-      return [];
+      return 0;
 
     var opFlags = inode[0x51];
     if ((opFlags & OpflagDirectData) != 0) {
       // Embedded direct data in the inode union @0x200.
       var n = (int)Math.Min(size, InodeBytes - 0x200);
-      return inode.AsSpan(0x200, n).ToArray();
+      destination.Write(inode, 0x200, n);
+      return n;
     }
 
     // Otherwise the blockset holds DATA (or INDIRECT->DATA) blockrefs, each
-    // covering a logical-offset range. Reassemble by key (logical offset).
-    var data = new byte[size];
+    // covering a logical-offset range. Blocks are emitted in logical order, so
+    // the file streams out without ever being assembled whole.
+    var blocks = new List<(long Logical, long Offset, long Size)>();
     foreach (var bref in this.EnumerateBlockset(inode, 0x200, SetCount * BlockrefBytes)) {
       if (bref.Type != BrefTypeData)
         continue;
       if ((bref.CompAlgo & 15) != 0)
         this.HasCompressedData = true;
-      var blockSize = 1L << RadixOf(bref.DataOff);
-      var block = this.ReadBlock(DecodeOffset(bref.DataOff), (int)blockSize);
-      if (block == null)
-        continue;
       var logical = (long)bref.Key;
       if (logical >= size)
         continue;
-      var copy = (int)Math.Min(blockSize, size - logical);
-      block.AsSpan(0, copy).CopyTo(data.AsSpan((int)logical, copy));
+      blocks.Add((logical, DecodeOffset(bref.DataOff), 1L << RadixOf(bref.DataOff)));
     }
-    return data;
+    blocks.Sort((a, b) => a.Logical.CompareTo(b.Logical));
+
+    // A range no blockref covers is a hole, which reads back as zeros.
+    var zeros = new byte[64 * 1024];
+    long written = 0;
+    foreach (var (logical, offset, blockSize) in blocks) {
+      if (logical < written) continue;
+      while (written < logical) {
+        var gap = (int)Math.Min(zeros.Length, logical - written);
+        destination.Write(zeros, 0, gap);
+        written += gap;
+      }
+      var copy = Math.Min(blockSize, size - logical);
+      if (copy <= 0) continue;
+      this._image.CopyTo(offset, destination, copy);
+      written += copy;
+    }
+    while (written < size) {
+      var gap = (int)Math.Min(zeros.Length, size - written);
+      destination.Write(zeros, 0, gap);
+      written += gap;
+    }
+    return written;
   }
 
   // ---- blockset / indirect enumeration ---------------------------------------
@@ -239,22 +299,22 @@ public sealed class Hammer2Reader {
 
   // ---- raw block / inode reads ------------------------------------------------
   private byte[]? ReadBlock(long deviceOffset, int size) {
-    if (deviceOffset < 0 || deviceOffset + size > this._image.LongLength)
+    if (deviceOffset < 0 || deviceOffset + size > this._image.Length)
       return null;
-    return this._image.AsSpan((int)deviceOffset, size).ToArray();
+    return this._image.Read(deviceOffset, size);
   }
 
-  private int SelectVolumeHeader() {
-    var best = -1;
+  private long SelectVolumeHeader() {
+    var best = -1L;
     ulong bestTid = 0;
     for (var slot = 0; slot < NumVolhdrs; ++slot) {
-      var off = slot * VolumeBytes;
-      if (off + VolumeBytes > this._image.LongLength)
+      var off = (long)slot * VolumeBytes;
+      if (off + VolumeBytes > this._image.Length)
         break;
-      var magic = ReadU64(this._image, off);
+      var magic = this._image.ReadUInt64(off);
       if (magic != VolumeIdHbo && magic != VolumeIdAbo)
         continue;
-      var mirrorTid = ReadU64(this._image, off + 0x78);
+      var mirrorTid = this._image.ReadUInt64(off + 0x78);
       if (best < 0 || mirrorTid >= bestTid) {
         best = off;
         bestTid = mirrorTid;
@@ -262,6 +322,11 @@ public sealed class Hammer2Reader {
     }
     return best;
   }
+
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._image.Length;
+
+  public void Dispose() => this._image.Dispose();
 
   private static string ReadInodeName(byte[] inode) {
     var nameLen = ReadU16(inode, 0x80);

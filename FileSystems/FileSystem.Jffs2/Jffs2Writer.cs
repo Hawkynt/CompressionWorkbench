@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.Checksums;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Jffs2;
 
@@ -16,7 +17,7 @@ namespace FileSystem.Jffs2;
 /// through the reader instead of being flattened into the root.
 /// </summary>
 public sealed class Jffs2Writer {
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
   private readonly int _eraseBlockSize;
 
   /// <summary>Default erase block size for NOR flash: 128 KiB.</summary>
@@ -29,6 +30,17 @@ public sealed class Jffs2Writer {
   private const ushort NodeTypeDirent = 0xE001;
   private const ushort NodeTypeInode = 0xE002;
   private const ushort NodeTypeCleanmarker = 0x2003;
+
+  /// <summary>Fills the tail of an erase block so no node straddles the boundary.</summary>
+  private const ushort NodeTypePadding = 0x2004;
+
+  /// <summary>
+  /// Largest data payload one inode node carries. JFFS2 writes a file as a run of
+  /// page-sized fragments, each an inode node with its own <c>offset</c> into the
+  /// file; a single node holding a whole multi-gigabyte file could neither fit an
+  /// erase block nor be expressed by the 32-bit length fields.
+  /// </summary>
+  private const int DataFragmentSize = 4096;
 
   /// <summary>JFFS2 inode node fixed header size (before data).</summary>
   private const int InodeNodeHeaderSize = 68;
@@ -64,7 +76,19 @@ public sealed class Jffs2Writer {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, data));
+    this._files.Add((name, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Queues a file whose bytes are pulled from <paramref name="openStream" /> as the
+  /// image is written, so the content never has to fit in memory.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size > uint.MaxValue)
+      throw new IOException($"JFFS2: '{name}' is {size:N0} bytes; the inode isize field is 32-bit.");
+    this._files.Add((name, FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>
@@ -78,22 +102,23 @@ public sealed class Jffs2Writer {
   /// Image is padded to a multiple of the erase block size.
   /// </summary>
   public byte[] Build() {
-    var nodes = new List<byte[]>();
+    using var buffer = new MemoryStream();
+    this.WriteTo(buffer);
+    return buffer.ToArray();
+  }
+
+  /// <summary>Writes the image to a stream, node by node — nothing is buffered whole.</summary>
+  public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    var emitter = new NodeEmitter(output, this._eraseBlockSize);
     uint nextInode = 2; // inode 1 = root dir
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     // 1. Cleanmarker
-    nodes.Add(BuildCleanmarker());
+    emitter.Emit(BuildCleanmarker());
 
     // 2. Root directory inode (inode 1)
-    nodes.Add(BuildInodeNode(
-      inode: RootInode,
-      version: 1,
-      mode: ModeDirectory,
-      size: 0,
-      data: [],
-      mtime: now
-    ));
+    emitter.Emit(BuildInodeNode(RootInode, 1, ModeDirectory, 0, [], now));
 
     // Maps a normalized directory path (e.g. "docs/api") to its inode number.
     // The empty path maps to the root inode.
@@ -102,7 +127,7 @@ public sealed class Jffs2Writer {
     };
 
     // 3. Per-file: ensure parent directory tree exists, then emit the file.
-    foreach (var (rawName, data) in this._files) {
+    foreach (var (rawName, payload) in this._files) {
       var segments = SplitPath(rawName);
       if (segments.Length == 0)
         continue;
@@ -115,81 +140,110 @@ public sealed class Jffs2Writer {
         if (!directoryInodes.TryGetValue(pathSoFar, out var dirInode)) {
           dirInode = nextInode++;
           directoryInodes[pathSoFar] = dirInode;
-
-          // Directory inode node.
-          nodes.Add(BuildInodeNode(
-            inode: dirInode,
-            version: 1,
-            mode: ModeDirectory,
-            size: 0,
-            data: [],
-            mtime: now
-          ));
-
-          // Dirent linking this directory's leaf name into its parent.
-          nodes.Add(BuildDirentNode(
-            parentInode: parentInode,
-            inode: dirInode,
-            name: segments[i],
-            type: DtDir,
-            version: 1,
-            mtime: now
-          ));
+          emitter.Emit(BuildInodeNode(dirInode, 1, ModeDirectory, 0, [], now));
+          emitter.Emit(BuildDirentNode(parentInode, dirInode, segments[i], DtDir, 1, now));
         }
 
         parentInode = dirInode;
       }
 
-      // File inode node with data, named under its (now existing) parent dir.
+      // File data: one inode node per fragment, all at version 1 so the reader
+      // treats them as a single write contributing successive ranges.
       var leafName = segments[^1];
       var fileInode = nextInode++;
+      var size = (uint)payload.Size;
 
-      nodes.Add(BuildInodeNode(
-        inode: fileInode,
-        version: 1,
-        mode: ModeRegular,
-        size: (uint)data.Length,
-        data: data,
-        mtime: now
-      ));
+      if (size == 0) {
+        emitter.Emit(BuildInodeNode(fileInode, 1, ModeRegular, 0, [], now));
+      } else {
+        var fragment = new byte[DataFragmentSize];
+        using var source = payload.Open();
+        uint written = 0;
+        while (written < size) {
+          var want = (int)Math.Min(DataFragmentSize, size - written);
+          var got = 0;
+          while (got < want) {
+            var n = source.Read(fragment, got, want - got);
+            if (n <= 0) break;
+            got += n;
+          }
+          if (got <= 0)
+            throw new IOException($"JFFS2: '{rawName}' ended after {written:N0} of {size:N0} bytes.");
+          emitter.Emit(BuildDataNode(fileInode, ModeRegular, size, written, fragment.AsSpan(0, got), now));
+          written += (uint)got;
+        }
+      }
 
-      nodes.Add(BuildDirentNode(
-        parentInode: parentInode,
-        inode: fileInode,
-        name: leafName,
-        type: DtReg,
-        version: 1,
-        mtime: now
-      ));
+      emitter.Emit(BuildDirentNode(parentInode, fileInode, leafName, DtReg, 1, now));
     }
 
-    // Calculate total size: sum of aligned node sizes, padded to erase block boundary
-    var totalNodeBytes = 0;
-    foreach (var node in nodes)
-      totalNodeBytes += Align4(node.Length);
-
-    var imageSize = ((totalNodeBytes + this._eraseBlockSize - 1) / this._eraseBlockSize) * this._eraseBlockSize;
-    if (imageSize < this._eraseBlockSize)
-      imageSize = this._eraseBlockSize;
-
-    // Fill with 0xFF (erased flash state)
-    var image = new byte[imageSize];
-    Array.Fill(image, (byte)0xFF);
-
-    // Write nodes sequentially
-    var offset = 0;
-    foreach (var node in nodes) {
-      node.CopyTo(image, offset);
-      offset += Align4(node.Length);
-    }
-
-    return image;
+    emitter.Finish();
   }
 
-  /// <summary>Writes the image to a stream.</summary>
-  public void WriteTo(Stream output) {
-    var data = this.Build();
-    output.Write(data, 0, data.Length);
+  /// <summary>
+  /// Appends nodes to a stream, keeping each one inside a single erase block —
+  /// a node that straddles the boundary is unrecoverable once that block is
+  /// erased, so the tail is filled with a padding node instead.
+  /// </summary>
+  private sealed class NodeEmitter(Stream output, int eraseBlockSize) {
+
+    private long _position;
+
+    public void Emit(byte[] node) {
+      var aligned = Align4(node.Length);
+      var room = eraseBlockSize - (int)(this._position % eraseBlockSize);
+      if (aligned > room) {
+        this.Pad(room);
+        room = eraseBlockSize;
+      }
+      if (aligned > room)
+        throw new IOException(
+          $"JFFS2: a {node.Length}-byte node does not fit a {eraseBlockSize}-byte erase block.");
+
+      output.Write(node, 0, node.Length);
+      for (var i = node.Length; i < aligned; ++i) output.WriteByte(0xFF);
+      this._position += aligned;
+    }
+
+    /// <summary>Rounds the image up to a whole erase block, in the erased 0xFF state.</summary>
+    public void Finish() {
+      var tail = (int)(this._position % eraseBlockSize);
+      // An image is always a whole number of erase blocks, and never zero of them.
+      var fill = this._position == 0 ? eraseBlockSize : tail == 0 ? 0 : eraseBlockSize - tail;
+      this.FillErased(fill);
+      this._position += fill;
+      output.Flush();
+    }
+
+    private void Pad(int room) {
+      if (room <= 0) return;
+      // Under twelve bytes there is no room for a padding node's header, so the
+      // remainder simply stays in the erased state.
+      if (room >= CommonHeaderSize) {
+        var pad = new byte[CommonHeaderSize];
+        BinaryPrimitives.WriteUInt16LittleEndian(pad.AsSpan(0, 2), Magic);
+        BinaryPrimitives.WriteUInt16LittleEndian(pad.AsSpan(2, 2), NodeTypePadding);
+        BinaryPrimitives.WriteUInt32LittleEndian(pad.AsSpan(4, 4), (uint)room);
+        BinaryPrimitives.WriteUInt32LittleEndian(pad.AsSpan(8, 4), Crc32.Compute(pad.AsSpan(0, 8)));
+        output.Write(pad, 0, pad.Length);
+        this.FillErased(room - CommonHeaderSize);
+      } else {
+        this.FillErased(room);
+      }
+      this._position += room;
+    }
+
+    private void FillErased(long count) {
+      if (count <= 0) return;
+      var chunk = new byte[(int)Math.Min(count, 64 * 1024)];
+      Array.Fill(chunk, (byte)0xFF);
+      var remaining = count;
+      while (remaining > 0) {
+        var n = (int)Math.Min(chunk.Length, remaining);
+        output.Write(chunk, 0, n);
+        remaining -= n;
+      }
+    }
   }
 
   /// <summary>
@@ -218,7 +272,16 @@ public sealed class Jffs2Writer {
   /// 60: data_crc(u32) 64: node_crc(u32)
   /// 68: data[csize]
   /// </summary>
-  private static byte[] BuildInodeNode(uint inode, uint version, uint mode, uint size, byte[] data, uint mtime) {
+  private static byte[] BuildInodeNode(uint inode, uint version, uint mode, uint size, byte[] data, uint mtime)
+    => BuildDataNode(inode, mode, size, 0, data, mtime, version);
+
+  /// <summary>
+  /// Builds one data-carrying inode node: <paramref name="fileOffset" /> is where
+  /// <paramref name="data" /> starts within the file and <paramref name="size" /> is
+  /// the file's total length, which every fragment repeats.
+  /// </summary>
+  private static byte[] BuildDataNode(uint inode, uint mode, uint size, uint fileOffset,
+    ReadOnlySpan<byte> data, uint mtime, uint version = 1) {
     var totLen = (uint)(InodeNodeHeaderSize + data.Length);
     var node = new byte[totLen];
 
@@ -238,7 +301,7 @@ public sealed class Jffs2Writer {
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(32, 4), mtime); // atime
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(36, 4), mtime); // mtime
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(40, 4), mtime); // ctime
-    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(44, 4), 0); // offset (start of data in file)
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(44, 4), fileOffset); // offset (start of data in file)
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(48, 4), (uint)data.Length); // csize (compressed size = dsize for uncompressed)
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(52, 4), (uint)data.Length); // dsize (decompressed size)
     node[56] = 0x00; // compr = JFFS2_COMPR_NONE
@@ -247,10 +310,10 @@ public sealed class Jffs2Writer {
 
     // Data
     if (data.Length > 0)
-      data.CopyTo(node, InodeNodeHeaderSize);
+      data.CopyTo(node.AsSpan(InodeNodeHeaderSize));
 
     // data_crc — CRC of the data payload
-    var dataCrc = data.Length > 0 ? Crc32.Compute(data) : Crc32.Compute(ReadOnlySpan<byte>.Empty);
+    var dataCrc = Crc32.Compute(data);
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(60, 4), dataCrc);
 
     // node_crc — CRC of bytes 0..59 (header without data_crc and node_crc fields)

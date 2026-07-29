@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Jffs2;
 
@@ -31,9 +32,26 @@ internal static class Jffs2Scanner {
     public List<DirentInfo> Dirents { get; } = [];
     public List<InodeInfo> Inodes { get; } = [];
     public bool ParseOk { get; set; }
+
+    /// <summary>Set when the node tables stopped at <see cref="MaxTableRows" /> and more nodes followed.</summary>
+    public bool TablesTruncated { get; set; }
   }
 
+  /// <summary>
+  /// Cap on rows in the dirent / inode triage tables. A multi-gigabyte volume holds
+  /// hundreds of thousands of data nodes; the tables exist to eyeball a suspect image,
+  /// not to transcribe it, so past this point the scan records that it stopped.
+  /// </summary>
+  public const int MaxTableRows = 10_000;
+
   public static ScanResult Scan(ReadOnlySpan<byte> image) {
+    using var accessor = ImageAccessor.FromBytes(image.ToArray());
+    return Scan(accessor);
+  }
+
+  /// <summary>Scans a volume through random access, so the image never has to be resident.</summary>
+  public static ScanResult Scan(ImageAccessor image) {
+    ArgumentNullException.ThrowIfNull(image);
     var result = new ScanResult();
     try {
       result.EraseSizeIfDetectable = DetectEraseSize(image);
@@ -51,16 +69,16 @@ internal static class Jffs2Scanner {
   /// of every erase block. We pick the largest candidate whose start offsets
   /// all show magic.
   /// </summary>
-  private static int DetectEraseSize(ReadOnlySpan<byte> image) {
+  private static int DetectEraseSize(ImageAccessor image) {
     foreach (var candidate in (int[])[0x1000, 0x4000, 0x10000, 0x20000, 0x40000, 0x100000, 0x400000]) {
       if (candidate > image.Length) break;
       if (image.Length % candidate != 0) continue;
-      var hits = 0;
+      var hits = 0L;
       var count = image.Length / candidate;
-      for (var i = 0; i < count; ++i) {
+      for (var i = 0L; i < count; ++i) {
         var off = i * candidate;
         if (off + 2 > image.Length) break;
-        if (BinaryPrimitives.ReadUInt16LittleEndian(image.Slice(off, 2)) == Magic) ++hits;
+        if (image.ReadUInt16(off) == Magic) ++hits;
       }
       // Require at least half the blocks to begin with magic for a confident match.
       if (count > 0 && hits * 2 >= count) return candidate;
@@ -68,26 +86,33 @@ internal static class Jffs2Scanner {
     return 0;
   }
 
-  private static void ScanLinear(ReadOnlySpan<byte> image, ScanResult result) {
-    var off = 0;
-    while (off + 12 <= image.Length) {
-      var magic = BinaryPrimitives.ReadUInt16LittleEndian(image.Slice(off, 2));
+  private static void ScanLinear(ImageAccessor image, ScanResult result) {
+    var length = image.Length;
+    var header = new byte[MaxNodeProbe];
+    long off = 0;
+    while (off + 12 <= length) {
+      var want = (int)Math.Min(MaxNodeProbe, length - off);
+      var read = image.Read(off, header.AsSpan(0, want));
+      if (read < 12) break;
+      var node = header.AsSpan(0, read);
+
+      var magic = BinaryPrimitives.ReadUInt16LittleEndian(node[..2]);
       if (magic != Magic) {
         off += 4; // JFFS2 nodes are 4-byte aligned; skip 4 bytes when out of sync.
         continue;
       }
-      var nodeType = BinaryPrimitives.ReadUInt16LittleEndian(image.Slice(off + 2, 2));
-      var totLen = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 4, 4));
+      var nodeType = BinaryPrimitives.ReadUInt16LittleEndian(node.Slice(2, 2));
+      var totLen = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(4, 4));
 
       result.TotalNodes++;
       switch (nodeType) {
         case NodeTypeDirent:
           result.DirentCount++;
-          TryParseDirent(image, off, totLen, result);
+          TryParseDirent(node, totLen, result);
           break;
         case NodeTypeInode:
           result.InodeCount++;
-          TryParseInode(image, off, totLen, result);
+          TryParseInode(node, result);
           break;
         case NodeTypeCleanmarker: result.CleanmarkerCount++; break;
         case NodeTypePadding: result.PaddingCount++; break;
@@ -95,14 +120,16 @@ internal static class Jffs2Scanner {
       }
 
       // Advance to next node (align totLen to 4).
-      if (totLen < 12 || totLen > image.Length || off + (int)totLen > image.Length) {
+      if (totLen < 12 || off + totLen > length) {
         off += 4;
         continue;
       }
-      var aligned = ((int)totLen + 3) & ~3;
-      off += aligned;
+      off += (totLen + 3) & ~3u;
     }
   }
+
+  /// <summary>Bytes read per node probe: the dirent header plus the longest name it can carry.</summary>
+  private const int MaxNodeProbe = 40 + 128;
 
   // Dirent layout (LE):
   //  0  magic    u16
@@ -119,17 +146,18 @@ internal static class Jffs2Scanner {
   // 32  node_crc u32
   // 36  name_crc u32
   // 40  name[nsize]
-  private static void TryParseDirent(ReadOnlySpan<byte> image, int off, uint totLen, ScanResult result) {
+  private static void TryParseDirent(ReadOnlySpan<byte> node, uint totLen, ScanResult result) {
     try {
-      if (off + 40 > image.Length) return;
-      var parent = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 12, 4));
-      var inode = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 20, 4));
-      var nsize = image[off + 28];
-      var type = image[off + 29];
+      if (node.Length < 40) return;
+      var parent = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(12, 4));
+      var inode = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(20, 4));
+      var nsize = node[28];
+      var type = node[29];
       if (nsize == 0 || nsize > 128) return;
-      if (off + 40 + nsize > image.Length) return;
-      if (off + 40 + nsize > off + totLen) return;
-      var name = Encoding.UTF8.GetString(image.Slice(off + 40, nsize));
+      if (40 + nsize > node.Length) return;
+      if (40 + nsize > totLen) return;
+      if (result.Dirents.Count >= MaxTableRows) { result.TablesTruncated = true; return; }
+      var name = Encoding.UTF8.GetString(node.Slice(40, nsize));
       result.Dirents.Add(new DirentInfo(parent, inode, name, type));
     } catch {
       // swallow
@@ -158,20 +186,20 @@ internal static class Jffs2Scanner {
   // 58  flags    u16
   // 60  data_crc u32
   // 64  node_crc u32
-  private static void TryParseInode(ReadOnlySpan<byte> image, int off, uint totLen, ScanResult result) {
+  private static void TryParseInode(ReadOnlySpan<byte> node, ScanResult result) {
     try {
-      if (off + 44 > image.Length) return;
-      var ino = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 12, 4));
-      var version = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 16, 4));
-      var mode = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 20, 4));
-      var uid = BinaryPrimitives.ReadUInt16LittleEndian(image.Slice(off + 24, 2));
-      var gid = BinaryPrimitives.ReadUInt16LittleEndian(image.Slice(off + 26, 2));
-      var isize = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 28, 4));
-      var mtime = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(off + 36, 4));
+      if (node.Length < 44) return;
+      if (result.Inodes.Count >= MaxTableRows) { result.TablesTruncated = true; return; }
+      var ino = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(12, 4));
+      var version = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(16, 4));
+      var mode = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(20, 4));
+      var uid = BinaryPrimitives.ReadUInt16LittleEndian(node.Slice(24, 2));
+      var gid = BinaryPrimitives.ReadUInt16LittleEndian(node.Slice(26, 2));
+      var isize = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(28, 4));
+      var mtime = BinaryPrimitives.ReadUInt32LittleEndian(node.Slice(36, 4));
       result.Inodes.Add(new InodeInfo(ino, version, uid, gid, mode, isize, mtime));
     } catch {
       // swallow
     }
-    _ = totLen;
   }
 }

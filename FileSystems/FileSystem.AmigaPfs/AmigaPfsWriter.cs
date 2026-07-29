@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.AmigaPfs;
 
@@ -51,7 +52,7 @@ public sealed class AmigaPfsWriter {
 
   private readonly int _blockSize;
   private readonly uint _rootBlock;
-  private readonly List<(string Name, byte[] Data, DateTime? ModTime, bool IsDirectory)> _entries = [];
+  private readonly List<(string Name, FilePayload Payload, DateTime? ModTime, bool IsDirectory)> _entries = [];
 
   /// <summary>
   /// Creates a writer that produces a PFS3 image with the given block size and
@@ -71,7 +72,18 @@ public sealed class AmigaPfsWriter {
   public void AddFile(string name, byte[] data, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._entries.Add((name, data, modTime, false));
+    this._entries.Add((name, FilePayload.FromBytes(data), modTime, false));
+  }
+
+  /// <summary>
+  /// Adds a regular file whose bytes are pulled from <paramref name="openStream" />
+  /// when the image is emitted. Only the length is needed to lay the volume out,
+  /// so the file never has to fit in memory.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? modTime = null) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    this._entries.Add((name, FilePayload.FromStream(size, openStream), modTime, false));
   }
 
   /// <summary>
@@ -82,7 +94,7 @@ public sealed class AmigaPfsWriter {
   /// </summary>
   public void AddDirectory(string name, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(name);
-    this._entries.Add((name, [], modTime, true));
+    this._entries.Add((name, FilePayload.Empty, modTime, true));
   }
 
   /// <summary>
@@ -92,6 +104,38 @@ public sealed class AmigaPfsWriter {
   /// fixed image size.
   /// </summary>
   public byte[] Build(string diskName = "DISK") {
+    var plan = this.PlanImage(diskName);
+    if (plan.ImageSize > Array.MaxLength)
+      throw new IOException(
+        $"AmigaPFS: a {plan.ImageSize:N0}-byte image exceeds the array limit; use BuildTo(Stream).");
+
+    var image = new byte[plan.ImageSize];
+    plan.Prefix.CopyTo(image.AsSpan());
+    using var target = new MemoryStream(image, writable: true);
+    plan.Payloads.FlushTo(target);
+    return image;
+  }
+
+  /// <summary>
+  /// Emits the image to <paramref name="output" />: the boot block, root block and
+  /// dirblock chain first, then each file's extent copied into place. Only the
+  /// metadata prefix and one copy buffer are ever resident.
+  /// </summary>
+  public void BuildTo(Stream output, string diskName = "DISK") {
+    ArgumentNullException.ThrowIfNull(output);
+    var plan = this.PlanImage(diskName);
+    var basePosition = output.CanSeek ? output.Position : 0;
+    output.Write(plan.Prefix);
+    output.Flush();
+    if (output.CanSeek) output.SetLength(basePosition + plan.ImageSize);
+    plan.Payloads.FlushTo(output, basePosition);
+    if (output.CanSeek) output.Position = basePosition + plan.ImageSize;
+  }
+
+  /// <summary>A laid-out image: the metadata prefix, the total size, and where each file goes.</summary>
+  private sealed record ImagePlan(byte[] Prefix, long ImageSize, DeferredPayloads Payloads);
+
+  private ImagePlan PlanImage(string diskName) {
     ArgumentNullException.ThrowIfNull(diskName);
 
     // ── Pass 1: plan the layout. We need to know how many dirblocks the
@@ -103,7 +147,7 @@ public sealed class AmigaPfsWriter {
     //   block _rootBlock+1 .. +K   dirblock chain (K chosen so all entries fit)
     //   block _rootBlock+K+1 ..    per-file contiguous data extents
     var dirEntries = this._entries
-      .Select(e => new DirEntry(e.Name, e.Data, e.ModTime, e.IsDirectory))
+      .Select(e => new DirEntry(e.Name, e.Payload, e.ModTime, e.IsDirectory))
       .ToList();
 
     // Bucket entries into dirblocks. Each dirblock has (_blockSize - 20) bytes
@@ -112,7 +156,7 @@ public sealed class AmigaPfsWriter {
 
     // ── Allocate block numbers.
     var firstDirBlock = this._rootBlock + 1u;
-    var nextFreeBlock = firstDirBlock + (uint)dirblocks.Count;
+    var nextFreeBlock = (long)firstDirBlock + dirblocks.Count;
 
     // Each file gets a contiguous run of blocks. AnodeNumber := starting block.
     foreach (var batch in dirblocks)
@@ -121,21 +165,31 @@ public sealed class AmigaPfsWriter {
           entry.AnodeNumber = 0; // unused — directories surfaced as names only
           continue;
         }
-        if (entry.Data.Length == 0) {
+        // The dirblock entry stores the size as a 32-bit big-endian field, and
+        // the anode doubles as a block number in the same width.
+        if (entry.Payload.Size > uint.MaxValue)
+          throw new IOException(
+            $"AmigaPFS: '{entry.LeafName}' is {entry.Payload.Size:N0} bytes; the dirblock size field is 32-bit.");
+        if (entry.Payload.Size == 0) {
           // Zero-byte files still need a valid block reference so anode != 0,
           // otherwise the reader's chain-terminator check skips them.
-          entry.AnodeNumber = nextFreeBlock++;
+          entry.AnodeNumber = checked((uint)nextFreeBlock++);
           continue;
         }
-        var blocks = (entry.Data.Length + this._blockSize - 1) / this._blockSize;
-        entry.AnodeNumber = nextFreeBlock;
-        nextFreeBlock += (uint)blocks;
+        var blocks = (entry.Payload.Size + this._blockSize - 1) / this._blockSize;
+        entry.AnodeNumber = checked((uint)nextFreeBlock);
+        nextFreeBlock += blocks;
       }
 
-    var imageSize = (int)nextFreeBlock * this._blockSize;
-    if (imageSize < (int)(this._rootBlock + 1) * this._blockSize)
-      imageSize = (int)(this._rootBlock + 1) * this._blockSize;
-    var image = new byte[imageSize];
+    var imageSize = nextFreeBlock * this._blockSize;
+    var prefixBlocks = (long)firstDirBlock + dirblocks.Count;
+    if (imageSize < prefixBlocks * this._blockSize)
+      imageSize = prefixBlocks * this._blockSize;
+    // Everything the reader needs to enumerate the volume -- boot block, root
+    // block and the whole dirblock chain -- precedes the first file extent, so
+    // the image is a small prefix followed by payloads.
+    var image = new byte[prefixBlocks * this._blockSize];
+    var deferred = new DeferredPayloads();
 
     // ── Boot block: signature + root-block pointer.
     image[0] = (byte)'P';
@@ -167,19 +221,19 @@ public sealed class AmigaPfsWriter {
       WriteDirBlock(image, off, dirblocks[i], nextChain, this._rootBlock);
     }
 
-    // ── File data: write each file's payload at AnodeNumber * BlockSize.
+    // ── File data: each file's payload goes at AnodeNumber * BlockSize.
     foreach (var batch in dirblocks)
       foreach (var entry in batch) {
-        if (entry.IsDirectory || entry.Data.Length == 0)
+        if (entry.IsDirectory || entry.Payload.Size == 0)
           continue;
-        var off = (int)(entry.AnodeNumber * this._blockSize);
-        if (off + entry.Data.Length > image.Length)
+        var off = (long)entry.AnodeNumber * this._blockSize;
+        if (off + entry.Payload.Size > imageSize)
           throw new InvalidOperationException(
-            $"AmigaPFS: file '{entry.LeafName}' extent ({entry.Data.Length} bytes at offset {off}) exceeds image size.");
-        entry.Data.CopyTo(image.AsSpan(off));
+            $"AmigaPFS: file '{entry.LeafName}' extent ({entry.Payload.Size} bytes at offset {off}) exceeds image size.");
+        deferred.Add(off, entry.Payload);
       }
 
-    return image;
+    return new ImagePlan(image, imageSize, deferred);
   }
 
   /// <summary>
@@ -222,7 +276,7 @@ public sealed class AmigaPfsWriter {
       image[cursor + 0] = (byte)len;
       image[cursor + 1] = entry.TypeByte;
       BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(cursor + 2), entry.AnodeNumber);
-      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(cursor + 6), (uint)entry.Data.Length);
+      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(cursor + 6), (uint)entry.Payload.Size);
       var (date, time1, time2) = ToAmigaDateTime(entry.ModTime ?? DateTime.UtcNow);
       BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(cursor + 10), date);
       BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(cursor + 12), time1);
@@ -267,16 +321,16 @@ public sealed class AmigaPfsWriter {
   /// when packing into dirblocks and when emitting the on-disk bytes.</summary>
   private sealed class DirEntry {
     public string FullName { get; }
-    public byte[] Data { get; }
+    public FilePayload Payload { get; }
     public DateTime? ModTime { get; }
     public bool IsDirectory { get; }
     public string LeafName { get; }
     public byte[] LeafNameBytes { get; }
     public uint AnodeNumber { get; set; }
 
-    public DirEntry(string fullName, byte[] data, DateTime? modTime, bool isDirectory) {
+    public DirEntry(string fullName, FilePayload payload, DateTime? modTime, bool isDirectory) {
       this.FullName = fullName.Replace('\\', '/').TrimStart('/');
-      this.Data = data;
+      this.Payload = payload;
       this.ModTime = modTime;
       this.IsDirectory = isDirectory;
       // Stage 1 reader flattens nested paths into the root dirblock by keeping
