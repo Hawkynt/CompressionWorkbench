@@ -202,13 +202,23 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var volumeName = options.GetOption("VolumeLabel", options.GetOption("VolumeName", "Untitled"));
 
     var w = new HfsPlusWriter(caseSensitive, journal, journalSize, volumeName);
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
 
     // "BlockSize" → bytes (0 = Auto). The writer's optimizer confirms or bumps.
     var blockSize = FilesystemSchemaPresets.ParseSize(
       options.FormatSpecific?.GetValueOrDefault("BlockSize"));
-    output.Write(w.BuildAutoSized(blockSize));
+    if (output.CanSeek) w.BuildToStreamingAutoSized(output, blockSize);
+    else output.Write(w.BuildAutoSized(blockSize));
   }
 
   /// <summary>
@@ -263,6 +273,30 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// values converge on a clean repack.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A volume too large to materialise goes through the streaming rebuilder;
+    // buildImage returns a byte[] of the whole volume, which Build refuses to
+    // produce once it passes the array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      HfsPlusWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new HfsPlusReader(stream, leaveOpen: true);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FullPath, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => { streamWriter = new HfsPlusWriter(); target = s2; },
+        // As a stream factory, not inline: an inline payload is materialised
+        // inside the volume buffer, which is what a large volume cannot afford.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => streamWriter!.BuildToStreamingAutoSized(target!));
+      return;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new HfsPlusReader(stream, leaveOpen: true);
@@ -274,4 +308,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
         return w.Build();
       });
   }
+
+  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 }

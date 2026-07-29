@@ -77,6 +77,12 @@ public sealed class HfsPlusWriter {
   /// </summary>
   private List<(uint StartBlock, uint BlockCount, long Size, Func<Stream> Opener)>? _streamingSink;
 
+  /// <summary>Declared size of the volume the last build laid out.</summary>
+  private long DeclaredImageBytes { get; set; }
+
+  /// <summary>Where the alternate volume header belongs, and its bytes, on a streaming build.</summary>
+  private (long Offset, byte[] Bytes)? AlternateVolumeHeader { get; set; }
+
   /// <summary>
   /// Adds a file to be included in the volume image.
   /// </summary>
@@ -181,9 +187,19 @@ public sealed class HfsPlusWriter {
 
     var minBlocks = CatalogStartBlock + catalogBlockCount + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVHB
     var totalBlocks = Math.Max((uint)DefaultImageBlocks, minBlocks);
-    var imageSize = (int)(totalBlocks * blockSize);
+    var imageSize = (long)totalBlocks * blockSize;
+    this.DeclaredImageBytes = imageSize;
 
-    var disk = new byte[imageSize];
+    // Building for a stream materialises only what is not user file data: every
+    // payload sits at or past userDataStartBlock and is placed by seek. The
+    // alternate volume header at the tail is written separately.
+    var bufferBytes = this._streamingSink != null
+      ? Math.Min(imageSize, (long)userDataStartBlock * blockSize)
+      : imageSize;
+    if (bufferBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"HFS+: a {imageSize:N0}-byte volume exceeds the array limit; write it to a seekable stream instead.");
+    var disk = new byte[bufferBytes];
 
     // HFS+ requires the volume header at sector 2 (offset 1024) AND a byte-
     // identical alternate volume header at sector (totalSectors-2). For an
@@ -312,9 +328,17 @@ public sealed class HfsPlusWriter {
     // ── Write user file data into its allocation blocks ───────────────────
     foreach (var (startBlock, data) in catalog.FileData) {
       if (data.Length == 0) continue;
-      var destOffset = (int)((long)startBlock * blockSize);
+      var destOffset = (long)startBlock * blockSize;
+      if (this._streamingSink != null) {
+        // Inline payloads go through the same post-pass when building for a
+        // stream: they sit past the materialised prefix.
+        var payload = data;
+        this._streamingSink.Add(((uint)startBlock, 0u, payload.LongLength,
+          () => new MemoryStream(payload, writable: false)));
+        continue;
+      }
       if (destOffset + data.Length <= disk.Length)
-        data.CopyTo(disk, destOffset);
+        data.CopyTo(disk, (int)destOffset);
     }
 
     // ── Allocation bitmap at AllocBlock ──────────────────────────────────
@@ -350,7 +374,14 @@ public sealed class HfsPlusWriter {
     // 512-byte block at (imageSize - 1024). Must match the primary so fsck's
     // cross-check passes. We copy the entire 512-byte sector starting at the
     // primary VHB offset (1024..1535).
-    disk.AsSpan(VolumeHeaderOffset, 512).CopyTo(disk.AsSpan(alternateVhOffset, 512));
+    // The alternate header lands past the materialised prefix on a streaming
+    // build, so it travels with the deferred writes instead.
+    if (this._streamingSink != null) {
+      var mirror = disk.AsSpan(VolumeHeaderOffset, 512).ToArray();
+      this.AlternateVolumeHeader = (alternateVhOffset, mirror);
+    } else {
+      disk.AsSpan(VolumeHeaderOffset, 512).CopyTo(disk.AsSpan((int)alternateVhOffset, 512));
+    }
 
     return disk;
   }
@@ -390,9 +421,16 @@ public sealed class HfsPlusWriter {
     } finally {
       this._streamingSink = null;
     }
-    output.SetLength(disk.Length);
+    // The buffer is only the metadata prefix now; the volume's declared size is
+    // what the stream has to be extended to, and the alternate volume header
+    // lands past that prefix.
     output.Position = 0;
     output.Write(disk);
+    output.SetLength(this.DeclaredImageBytes);
+    if (this.AlternateVolumeHeader is { } alt) {
+      output.Position = alt.Offset;
+      output.Write(alt.Bytes, 0, alt.Bytes.Length);
+    }
 
     var buf = new byte[64 * 1024];
     foreach (var (startBlock, _, size, opener) in sink) {
@@ -432,9 +470,16 @@ public sealed class HfsPlusWriter {
     } finally {
       this._streamingSink = null;
     }
-    output.SetLength(disk.Length);
+    // The buffer is only the metadata prefix now; the volume's declared size is
+    // what the stream has to be extended to, and the alternate volume header
+    // lands past that prefix.
     output.Position = 0;
     output.Write(disk);
+    output.SetLength(this.DeclaredImageBytes);
+    if (this.AlternateVolumeHeader is { } alt) {
+      output.Position = alt.Offset;
+      output.Write(alt.Bytes, 0, alt.Bytes.Length);
+    }
 
     var buf = new byte[64 * 1024];
     foreach (var (startBlock, _, size, opener) in sink) {

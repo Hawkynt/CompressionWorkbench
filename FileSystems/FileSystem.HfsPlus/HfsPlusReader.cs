@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.HfsPlus;
@@ -11,7 +12,11 @@ namespace FileSystem.HfsPlus;
 public sealed class HfsPlusReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the volume. Copying it into a byte[] capped the
+  /// reader at the array limit, which HFS+'s 64-bit fork sizes do not.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private bool _disposed;
 
   // Volume header fields.
@@ -42,15 +47,13 @@ public sealed class HfsPlusReader : IDisposable {
     _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     _leaveOpen = leaveOpen;
 
-    // Read entire image into memory.
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    if (stream.CanSeek) stream.Position = 0;
+    _data = new ImageAccessor(stream, leaveOpen: true);
 
     if (_data.Length < VolumeHeaderOffset + VolumeHeaderSize)
       throw new InvalidDataException("Stream too small for an HFS+ volume header.");
 
-    var vh = _data.AsSpan(VolumeHeaderOffset);
+    var vh = _data.Read(VolumeHeaderOffset, VolumeHeaderSize).AsSpan();
 
     // Validate signature.
     var sig = BinaryPrimitives.ReadUInt16BigEndian(vh);
@@ -95,7 +98,7 @@ public sealed class HfsPlusReader : IDisposable {
     var nodeBase = catalogOffset;
     if (nodeBase + 14 + 30 > _data.Length) return;
 
-    var nodeSpan = _data.AsSpan((int)nodeBase);
+    var nodeSpan = _data.Read(nodeBase, (int)Math.Min(4096, _data.Length - nodeBase)).AsSpan();
 
     // Node descriptor fields.
     // var fLink = BinaryPrimitives.ReadUInt32BigEndian(nodeSpan);
@@ -133,7 +136,7 @@ public sealed class HfsPlusReader : IDisposable {
       var nodeOffset = catalogOffset + (long)currentNode * nodeSize;
       if (nodeOffset + nodeSize > _data.Length) break;
 
-      var nd = _data.AsSpan((int)nodeOffset);
+      var nd = _data.Read(nodeOffset, (int)Math.Min(nodeSize, _data.Length - nodeOffset)).AsSpan();
       var ndKind = (sbyte)nd[8];
       if (ndKind != -1) {
         // Not a leaf node; stop.
@@ -167,7 +170,7 @@ public sealed class HfsPlusReader : IDisposable {
 
         var name = "";
         if (nameLength > 0 && recOffset + 8 + nameByteLen <= nodeSize) {
-          var nameBytes = _data.AsSpan((int)nodeOffset + recOffset + 8, nameByteLen);
+          var nameBytes = _data.Read(nodeOffset + recOffset + 8, nameByteLen).AsSpan();
           name = Encoding.BigEndianUnicode.GetString(nameBytes);
         }
 
@@ -306,7 +309,7 @@ public sealed class HfsPlusReader : IDisposable {
     if (offset < 0 || offset + length > _data.Length)
       length = (int)Math.Max(0, _data.Length - offset);
     if (length <= 0) return "";
-    return Encoding.UTF8.GetString(_data, (int)offset, length);
+    return Encoding.UTF8.GetString(_data.Read(offset, length));
   }
 
   // ── File extraction ─────────────────────────────────────────────────────
@@ -330,7 +333,7 @@ public sealed class HfsPlusReader : IDisposable {
 
     var result = new byte[entry.Size];
     var toCopy = (int)Math.Min(length, entry.Size);
-    Buffer.BlockCopy(_data, (int)offset, result, 0, toCopy);
+    _data.Read(offset, toCopy).CopyTo(result, 0);
     return result;
   }
 
