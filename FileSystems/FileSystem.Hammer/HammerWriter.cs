@@ -136,6 +136,22 @@ public sealed class HammerWriter {
     this._files.Add((name, content ?? []));
   }
 
+  /// <summary>
+  /// Smallest volume that holds the added files: the ~1 GB the UNDO FIFO and
+  /// freemap need, plus the payload and its B-Tree, rounded to a big-block.
+  /// </summary>
+  public long ComputeAutoSize() {
+    var payload = 0L;
+    foreach (var (_, content) in this._files)
+      payload += content.LongLength;
+
+    // Records are power-of-two blocks up to 16 KB, and every 16 KB of file needs
+    // a B-Tree element; a fifth again covers the rounding, the tree and the
+    // blockmap layers.
+    var needed = 1024L * 1024 * 1024 + payload + payload / 5;
+    return (needed + BigblockSize - 1) / BigblockSize * BigblockSize;
+  }
+
   // ===== Volume layout state (poor-man's allocator, mirrors newfs) =====
   private long _volBotBeg, _volMemBeg, _volBufBeg, _volBufEnd;
   private long _volFreeOff, _volFreeEnd;       // zone-2 raw-buffer offsets

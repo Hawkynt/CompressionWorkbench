@@ -249,13 +249,17 @@ public sealed class ReiserFsWriter {
     const int journalHeaderBlock = journalFirstBlock + journalSize;    // 8210
     var firstTreeBlock = journalHeaderBlock + 1;                       // 8211
     var leafCount = leaves.Count;
-    var hasInternal = leafCount > 1;
-    // Leaves occupy [firstTreeBlock .. firstTreeBlock+leafCount-1]; the internal
-    // block (when present) follows them and becomes the tree root.
-    var internalBlockNum = firstTreeBlock + leafCount;                 // valid only if hasInternal
-    var rootBlockNum = hasInternal ? internalBlockNum : firstTreeBlock;
-    var treeHeight = (ushort)(hasInternal ? 3 : 2);
-    var lastTreeBlock = hasInternal ? internalBlockNum : firstTreeBlock + leafCount - 1;
+    // Leaves occupy [firstTreeBlock .. firstTreeBlock+leafCount-1]. An internal
+    // node holds at most MaxInternalChildren children, so several levels are
+    // stacked above the leaves until one root remains; each level's blocks follow
+    // the level below it.
+    var internalLevels = PlanInternalLevels(leaves, firstTreeBlock);
+    var hasInternal = internalLevels.Count > 0;
+    var rootBlockNum = hasInternal ? internalLevels[^1][0].Block : firstTreeBlock;
+    var treeHeight = (ushort)(2 + internalLevels.Count);
+    var lastTreeBlock = hasInternal
+      ? internalLevels[^1][^1].Block
+      : firstTreeBlock + leafCount - 1;
     // Data blocks for INDIRECT-item file bodies live immediately AFTER the tree.
     // Each INDIRECT placeholder reserved its block-pointer count; the global
     // running counter dataBlocksTotal sums them.
@@ -445,10 +449,50 @@ public sealed class ReiserFsWriter {
     // (struct disk_child = le32 dc_block_number + le16 dc_size + le16 reserved).
     // key[i] is the left-delimiting key of child[i+1]; comp_keys ordering across
     // the children is therefore preserved by the leaf order from PackLeaves.
-    if (hasInternal)
-      WriteInternal(image.AsSpan(internalBlockNum * BlockSize, BlockSize), leaves, firstTreeBlock);
+    foreach (var level in internalLevels)
+      foreach (var node in level)
+        WriteInternal(image.AsSpan(node.Block * BlockSize, BlockSize), node);
 
     return image;
+  }
+
+  /// <summary>
+  /// Children one internal node can index: <c>k</c> keys and <c>k+1</c> disk_child
+  /// pointers have to fit the block past its block_head.
+  /// </summary>
+  private const int MaxInternalChildren = (BlockSize - BlockHeadSize - 8) / (16 + 8) + 1;
+
+  /// <summary>One internal node: the block it lives at, its children, and its own left key.</summary>
+  private sealed record InternalNode(int Block, List<(int Block, byte[] Key, int UsedSpace)> Children, byte[] Key);
+
+  /// <summary>
+  /// Stacks internal levels over the leaves until a single root remains, assigning
+  /// each node the next block after the level below it. Returns the levels bottom-up;
+  /// empty when a single leaf is the whole tree.
+  /// </summary>
+  private static List<List<InternalNode>> PlanInternalLevels(List<List<LeafItem>> leaves, int firstLeafBlock) {
+    var levels = new List<List<InternalNode>>();
+    if (leaves.Count <= 1) return levels;
+
+    var level = new List<(int Block, byte[] Key, int UsedSpace)>(leaves.Count);
+    for (var i = 0; i < leaves.Count; ++i)
+      level.Add((firstLeafBlock + i, KeyOf(leaves[i][0]),
+        leaves[i].Sum(it => it.Body.Length + ItemHeaderSize)));
+
+    var nextBlock = firstLeafBlock + leaves.Count;
+    while (level.Count > 1) {
+      var nodes = new List<InternalNode>();
+      for (var i = 0; i < level.Count; i += MaxInternalChildren) {
+        var count = Math.Min(MaxInternalChildren, level.Count - i);
+        nodes.Add(new InternalNode(nextBlock++, level.GetRange(i, count), level[i].Key));
+      }
+      levels.Add(nodes);
+      // An internal node's own used space is what reiserfsck's B_CHILD_SIZE
+      // computes: its keys plus its disk_child array.
+      level = nodes.ConvertAll(n =>
+        (n.Block, n.Key, (n.Children.Count - 1) * 16 + n.Children.Count * 8));
+    }
+    return levels;
   }
 
   /// <summary>Block number of the first bitmap, immediately after the superblock.</summary>
@@ -538,8 +582,8 @@ public sealed class ReiserFsWriter {
   /// Serialises the internal block above the leaves: block_head (blk_level = 2)
   /// + a key for every child after the first + one disk_child per child.
   /// </summary>
-  private static void WriteInternal(Span<byte> blk, List<List<LeafItem>> leaves, int firstLeafBlock) {
-    var childCount = leaves.Count;
+  private static void WriteInternal(Span<byte> blk, InternalNode node) {
+    var childCount = node.Children.Count;
     var keyCount = childCount - 1; // blk_nr_item for an internal node
 
     BinaryPrimitives.WriteUInt16LittleEndian(blk[0..], 2);              // blk_level (internal)
@@ -548,10 +592,10 @@ public sealed class ReiserFsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(blk[6..], 0);             // blk_reserved
     MaxKey.CopyTo(blk[8..]);                                            // right-delim key (tree root)
 
-    // Keys: key[i] = left-delimiting key of child[i+1] = first item of leaf i+1.
+    // Keys: key[i] = left-delimiting key of child[i+1].
     var keysOff = BlockHeadSize;
     for (var i = 0; i < keyCount; i++)
-      KeyOf(leaves[i + 1][0]).CopyTo(blk[(keysOff + i * 16)..]);
+      node.Children[i + 1].Key.CopyTo(blk[(keysOff + i * 16)..]);
 
     // disk_child pointers (8 bytes each) follow the keys. dc_size is the child's
     // USED space in bytes — reiserfsprogs B_CHILD_SIZE = MAX_CHILD_SIZE - free =
@@ -560,10 +604,9 @@ public sealed class ReiserFsWriter {
     // value.
     var ptrsOff = keysOff + keyCount * 16;
     for (var i = 0; i < childCount; i++) {
-      var usedSpace = leaves[i].Sum(it => it.Body.Length + ItemHeaderSize);
       var dc = blk[(ptrsOff + i * 8)..];
-      BinaryPrimitives.WriteUInt32LittleEndian(dc[0..], (uint)(firstLeafBlock + i)); // dc_block_number
-      BinaryPrimitives.WriteUInt16LittleEndian(dc[4..], (ushort)usedSpace);          // dc_size (used bytes)
+      BinaryPrimitives.WriteUInt32LittleEndian(dc[0..], (uint)node.Children[i].Block); // dc_block_number
+      BinaryPrimitives.WriteUInt16LittleEndian(dc[4..], (ushort)node.Children[i].UsedSpace); // dc_size
       BinaryPrimitives.WriteUInt16LittleEndian(dc[6..], 0);                          // dc reserved/padding
     }
   }

@@ -145,6 +145,9 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       writer.AddFile(input.ArchiveName, input.ReadContent());
     }
 
+    // The default 1 GB is the UNDO-FIFO floor, not a ceiling: grow the volume to
+    // whatever the payload needs or the blockmap runs out of big-blocks.
+    writer.VolumeSize = Math.Max(writer.VolumeSize, writer.ComputeAutoSize());
     writer.WriteTo(output);
   }
 
