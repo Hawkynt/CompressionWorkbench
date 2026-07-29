@@ -104,6 +104,14 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    // A seekable domain is walked in place: ReadAllBounded stops at FullReadCap,
+    // so buffering silently truncated anything larger -- and FULL.advfs would
+    // double the image in memory on top of that.
+    if (stream.CanSeek && stream.Length > FullReadCapBytes) {
+      ExtractStreaming(stream, outputDir, files);
+      return;
+    }
+
     byte[] image;
     try {
       image = ReadAllBounded(stream);
@@ -130,6 +138,33 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       WriteIfMatch(outputDir, f.Name, reader.ExtractFile(f), files);
   }
 
+  /// <summary>Largest domain this descriptor will hold in memory while extracting.</summary>
+  private const long FullReadCapBytes = 64L * 1024 * 1024;
+
+  /// <summary>
+  /// Extraction for a domain too large to buffer: FULL.advfs is copied through
+  /// and each payload is streamed straight out of the image.
+  /// </summary>
+  private static void ExtractStreaming(Stream stream, string outputDir, string[]? files) {
+    stream.Position = 0;
+    var reader = new AdvFsReader(stream);
+
+    if (files == null || files.Length == 0 || MatchesFilter("FULL.advfs", files)) {
+      stream.Position = 0;
+      using var full = CreateEntryFile(outputDir, "FULL.advfs");
+      stream.CopyTo(full);
+    }
+    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(reader), files);
+    if (reader.Valid)
+      WriteIfMatch(outputDir, "rbmt_page0.bin", reader.HeaderRaw, files);
+
+    foreach (var f in reader.FileTableEntries) {
+      if (files != null && files.Length > 0 && !MatchesFilter(f.Name, files)) continue;
+      using var target = CreateEntryFile(outputDir, f.Name);
+      reader.ExtractFileTo(f, target);
+    }
+  }
+
   /// <summary>
   /// WORM-emits a fresh AdvFS storage-domain image carrying the supplied
   /// <paramref name="inputs"/>. Layout: zero-filled bootstrap pages 0..15,
@@ -144,8 +179,17 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
       w.SetVolumeTag(label);
-    foreach (var (name, data) in FilesOnly(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the domain out; reading a large input
+      // into a byte[] would cap it at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
     w.Finish();
   }
 
@@ -168,8 +212,33 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A domain too large to materialise goes through the streaming rebuilder;
+    // BuildImage returns a byte[] of the whole image, and ReadEntries buffers
+    // the source, both of which stop at the array limit.
+    if (archive.CanSeek && archive.Length > FullReadCapBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      AdvFsWriter? streamWriter = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          stream.Position = 0;
+          var r = new AdvFsReader(stream);
+          return r.FileTableEntries.Select(f => (f.Name, r.ExtractFile(f))).ToList();
+        },
+        beginWrite: s2 => streamWriter = new AdvFsWriter(s2, leaveOpen: true),
+        // As a stream factory, not inline: an inline payload would go back into
+        // the buffer this path exists to avoid.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => { streamWriter!.Finish(); streamWriter.Dispose(); });
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  }
 
   // ── Shared rebuild delegates ────────────────────────────────────────
 

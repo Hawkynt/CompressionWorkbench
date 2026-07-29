@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.AdvFs;
 
@@ -85,12 +86,41 @@ public sealed class AdvFsReader {
 
   public List<AdvFsEntry> Entries { get; } = new();
 
+  /// <summary>
+  /// Random-access view over the source, kept when it is seekable. The buffered
+  /// copy stops at FullReadCap, so a payload past it can only be reached this way.
+  /// </summary>
+  private readonly ImageAccessor? _source;
+
   public AdvFsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) {
+      stream.Position = 0;
+      this._source = new ImageAccessor(stream, leaveOpen: true);
+    }
     var image = ReadAllBounded(stream);
     this.ImageBytes = image;
     Parse(image);
     BuildEntries();
+  }
+
+  /// <summary>
+  /// Copies a payload into <paramref name="destination" /> by absolute
+  /// offset/length, straight from the source when it is seekable.
+  /// </summary>
+  public void ExtractFileTo(AdvFsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.Offset < 0 || entry.Size <= 0) return;
+
+    if (this._source is { } source) {
+      if (entry.Offset + entry.Size > source.Length) return;
+      source.CopyTo(entry.Offset, destination, entry.Size);
+      return;
+    }
+
+    var bytes = this.ExtractFile(entry);
+    destination.Write(bytes, 0, bytes.Length);
   }
 
   private void Parse(ReadOnlySpan<byte> image) {
@@ -211,7 +241,11 @@ public sealed class AdvFsReader {
       var nameBytes = body.Slice(cursor, nameLen);
       cursor += nameLen;
       var name = Encoding.UTF8.GetString(nameBytes);
-      if (offset < 0 || length < 0 || offset + length > image.Length) return;
+      // Validate against the real image, not the buffered prefix: ReadAllBounded
+      // stops at FullReadCap, so checking against it silently dropped every row
+      // whose payload starts past that point.
+      var imageLength = this._source?.Length ?? image.Length;
+      if (offset < 0 || length < 0 || offset + length > imageLength) return;
       this.FileTableEntries.Add(new AdvFsEntry {
         Name = name,
         Size = length,
@@ -231,7 +265,14 @@ public sealed class AdvFsReader {
   public byte[] ExtractFile(AdvFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset < 0 || entry.Size <= 0) return [];
-    if (entry.Offset + entry.Size > this.ImageBytes.LongLength) return [];
+    if (entry.Offset + entry.Size > this.ImageBytes.LongLength) {
+      // Past the buffered prefix: read it from the source instead.
+      if (this._source is not { } source || entry.Offset + entry.Size > source.Length) return [];
+      if (entry.Size > Array.MaxLength)
+        throw new InvalidOperationException(
+          $"AdvFs: a {entry.Size:N0}-byte payload exceeds the array limit; use ExtractFileTo.");
+      return source.Read(entry.Offset, (int)entry.Size);
+    }
     var buf = new byte[entry.Size];
     Array.Copy(this.ImageBytes, entry.Offset, buf, 0, entry.Size);
     return buf;

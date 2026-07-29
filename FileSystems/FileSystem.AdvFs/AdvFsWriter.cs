@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.AdvFs;
 
@@ -55,7 +56,7 @@ public sealed class AdvFsWriter : IDisposable {
 
   private readonly Stream _output;
   private readonly bool _leaveOpen;
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
   private string _volumeTag = "CWB-ADVFS";
 
   public AdvFsWriter(Stream output, bool leaveOpen = false) {
@@ -80,7 +81,22 @@ public sealed class AdvFsWriter : IDisposable {
     var nameBytes = Encoding.UTF8.GetBytes(path);
     if (nameBytes.Length > 255)
       throw new ArgumentException($"AdvFs: file name '{path}' exceeds 255 UTF-8 bytes.", nameof(path));
-    this._files.Add((path, data));
+    this._files.Add((path, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Registers a file whose bytes are produced on demand. <paramref name="size" />
+  /// must match what <paramref name="openStream" /> yields; the layout is settled
+  /// from it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string path, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(path);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (path.Length == 0) throw new ArgumentException("AdvFs: file name is empty.", nameof(path));
+    var nameBytes = Encoding.UTF8.GetBytes(path);
+    if (nameBytes.Length > 255)
+      throw new ArgumentException($"AdvFs: file name '{path}' exceeds 255 UTF-8 bytes.", nameof(path));
+    this._files.Add((path, FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>Convenience: builds the image to a byte array.</summary>
@@ -100,19 +116,22 @@ public sealed class AdvFsWriter : IDisposable {
     // 1. Compute payload offsets. The data area begins immediately after the
     //    RBMT page. Each file's payload runs back-to-back, no alignment beyond
     //    1-byte granularity — read by absolute offset/length from the file table.
-    var fileEntries = new List<(byte[] NameBytes, byte[] Data, long Offset, long Length)>(this._files.Count);
+    var fileEntries = new List<(byte[] NameBytes, FilePayload Payload, long Offset, long Length)>(this._files.Count);
     var nextDataOffset = DataAreaOffset;
-    foreach (var (name, data) in this._files) {
+    foreach (var (name, payload) in this._files) {
       var nameBytes = Encoding.UTF8.GetBytes(name);
-      fileEntries.Add((nameBytes, data, nextDataOffset, data.LongLength));
-      nextDataOffset += data.LongLength;
+      fileEntries.Add((nameBytes, payload, nextDataOffset, payload.Size));
+      nextDataOffset += payload.Size;
     }
     var totalSize = nextDataOffset;
     if (totalSize < DataAreaOffset) totalSize = DataAreaOffset;
 
     // 2. Allocate the image buffer. Bootstrap pages stay zero; the RBMT page
     //    gets the cookie + parsed fields + file table.
-    var image = new byte[totalSize];
+    // Only the metadata prefix is materialised: every payload sits in the data
+    // area past it and is placed by seek, so a domain larger than a byte[] can
+    // address costs its metadata rather than its size.
+    var image = new byte[DataAreaOffset];
 
     // 3. Write the RBMT page header at offset 131072.
     var rbmt = image.AsSpan((int)RbmtPageOffset, PageSize);
@@ -176,14 +195,28 @@ public sealed class AdvFsWriter : IDisposable {
       cursor += nameBytes.Length;
     }
 
-    // 5. Copy each file's payload into the data area.
-    foreach (var (_, data, offset, _) in fileEntries) {
-      if (data.Length == 0) continue;
-      data.CopyTo(image, offset);
-    }
+    // 5. Emit: the prefix, the declared length, then each payload at its offset.
+    var payloads = new DeferredPayloads();
+    foreach (var (_, payload, offset, _) in fileEntries)
+      payloads.Add(offset, payload);
 
-    // 6. Flush to output.
-    this._output.Write(image);
+    if (this._output.CanSeek) {
+      var basePosition = this._output.Position;
+      this._output.Write(image);
+      this._output.SetLength(basePosition + totalSize);
+      payloads.FlushTo(this._output, basePosition);
+      this._output.Position = basePosition + totalSize;
+    } else {
+      if (totalSize > Array.MaxLength)
+        throw new InvalidOperationException(
+          $"AdvFs: a {totalSize:N0}-byte domain exceeds the array limit; write it to a seekable stream instead.");
+      var full = new byte[totalSize];
+      image.CopyTo(full, 0);
+      using var target = new MemoryStream(full, writable: true);
+      payloads.FlushTo(target);
+      this._output.Write(full);
+    }
+    this._output.Flush();
   }
 
   /// <summary>
@@ -191,7 +224,7 @@ public sealed class AdvFsWriter : IDisposable {
   /// list. Same inputs → same UUID, which keeps round-trip tests stable
   /// without leaking the host clock.
   /// </summary>
-  private static byte[] DeriveDomainUuid(string volumeTag, List<(byte[] NameBytes, byte[] Data, long Offset, long Length)> files) {
+  private static byte[] DeriveDomainUuid(string volumeTag, List<(byte[] NameBytes, FilePayload Payload, long Offset, long Length)> files) {
     var seed = new List<byte>();
     seed.AddRange(Encoding.ASCII.GetBytes(volumeTag));
     foreach (var (n, _, _, length) in files) {
