@@ -88,8 +88,19 @@ public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var image = Qnx6Writer.Build(FlatFiles(inputs).ToList());
-    output.Write(image, 0, image.Length);
+    var files = new List<(string Name, Compression.Core.DiskImage.FilePayload Payload)>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the image out; reading a large input
+      // into a byte[] would cap it at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      files.Add((name, info.InMemoryContent is { } bytes
+        ? Compression.Core.DiskImage.FilePayload.FromBytes(bytes)
+        : Compression.Core.DiskImage.FilePayload.FromStream(
+            new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath))));
+    }
+    Qnx6Writer.WriteTo(output, files);
   }
 
   /// <summary>

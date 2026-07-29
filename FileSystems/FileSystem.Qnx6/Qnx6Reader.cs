@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Qnx6;
@@ -54,7 +55,11 @@ namespace FileSystem.Qnx6;
 /// </summary>
 public sealed class Qnx6Reader : IDisposable {
 
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the image. Copying it into a byte[] capped the
+  /// reader at the array limit, which QNX6's block addresses do not.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<Qnx6Entry> _entries = [];
 
   public IReadOnlyList<Qnx6Entry> Entries => this._entries;
@@ -68,10 +73,8 @@ public sealed class Qnx6Reader : IDisposable {
 
   public Qnx6Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+    this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
   }
 
@@ -79,7 +82,7 @@ public sealed class Qnx6Reader : IDisposable {
     if (this._data.Length < SuperblockOffset + 0x48 + 40)
       throw new InvalidDataException("QNX6: image too small for superblock.");
 
-    var sb = this._data.AsSpan(SuperblockOffset);
+    var sb = this._data.Read(SuperblockOffset, 512).AsSpan();
     this.Magic = BinaryPrimitives.ReadUInt32LittleEndian(sb);
     if (this.Magic != MagicQnx6)
       throw new InvalidDataException($"QNX6: invalid magic 0x{this.Magic:X8} (expected 0x{MagicQnx6:X8}).");
@@ -106,7 +109,7 @@ public sealed class Qnx6Reader : IDisposable {
   private void WalkDirectoryFromInode(long inodeTableOffset, uint inodeNumber, string path) {
     var inodeOff = inodeTableOffset + (long)(inodeNumber - 1) * InodeSize;
     if (inodeOff + InodeSize > this._data.Length) return;
-    var inode = this._data.AsSpan((int)inodeOff, InodeSize);
+    var inode = this._data.Read(inodeOff, InodeSize).AsSpan();
     var size = BinaryPrimitives.ReadUInt64LittleEndian(inode);
     var mode = BinaryPrimitives.ReadUInt16LittleEndian(inode.Slice(0x20));
     var isDir = (mode & 0xF000) == 0x4000;
@@ -121,7 +124,7 @@ public sealed class Qnx6Reader : IDisposable {
     const int entrySize = 32;
     var bytesToScan = (int)Math.Min(size, (ulong)this.BlockSize);
     for (var off = 0; off + entrySize <= bytesToScan; off += entrySize) {
-      var entry = this._data.AsSpan((int)blockOff + off, entrySize);
+      var entry = this._data.Read(blockOff + off, entrySize).AsSpan();
       var childInum = BinaryPrimitives.ReadUInt32LittleEndian(entry);
       if (childInum == 0) continue;
       var nameLen = entry[4];
@@ -131,7 +134,7 @@ public sealed class Qnx6Reader : IDisposable {
 
       var childOff = inodeTableOffset + (long)(childInum - 1) * InodeSize;
       if (childOff + InodeSize > this._data.Length) continue;
-      var childInode = this._data.AsSpan((int)childOff, InodeSize);
+      var childInode = this._data.Read(childOff, InodeSize).AsSpan();
       var childSize = BinaryPrimitives.ReadUInt64LittleEndian(childInode);
       var childMode = BinaryPrimitives.ReadUInt16LittleEndian(childInode.Slice(0x20));
       var childIsDir = (childMode & 0xF000) == 0x4000;
@@ -148,19 +151,19 @@ public sealed class Qnx6Reader : IDisposable {
   public byte[] Extract(Qnx6Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
-    var sb = this._data.AsSpan(SuperblockOffset);
+    var sb = this._data.Read(SuperblockOffset, 512).AsSpan();
     var inodeTablePtr = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x48 + 8));
     if (inodeTablePtr == 0) return [];
     var inodeTableOffset = (long)inodeTablePtr * this.BlockSize;
     var inodeOff = inodeTableOffset + (long)(entry.InodeNumber - 1) * InodeSize;
     if (inodeOff + InodeSize > this._data.Length) return [];
-    var inode = this._data.AsSpan((int)inodeOff, InodeSize);
+    var inode = this._data.Read(inodeOff, InodeSize).AsSpan();
     var firstBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.Slice(0x24));
     if (firstBlock == 0) return [];
     var blockOff = (long)firstBlock * this.BlockSize;
     if (blockOff < 0 || blockOff >= this._data.Length) return [];
     var take = (int)Math.Min(entry.Size, this._data.Length - blockOff);
-    return this._data.AsSpan((int)blockOff, take).ToArray();
+    return this._data.Read(blockOff, take).AsSpan().ToArray();
   }
 
   public void Dispose() { }

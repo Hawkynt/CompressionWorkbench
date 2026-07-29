@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Vdfs;
@@ -9,15 +10,19 @@ public sealed class VdfsReader : IDisposable {
   private const int HeaderSize = 16;
   private const int EntrySize = 80;
 
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the container. Copying it into a byte[] capped the
+  /// reader at the array limit, which the 32-bit entry offsets do not.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<VdfsEntry> _entries = [];
 
   public IReadOnlyList<VdfsEntry> Entries => _entries;
 
   public VdfsReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
@@ -25,11 +30,11 @@ public sealed class VdfsReader : IDisposable {
     if (_data.Length < HeaderSize + 20)
       throw new InvalidDataException("VDFS: file too small.");
 
-    if (!_data.AsSpan(0, Magic.Length).SequenceEqual(Magic))
+    if (!_data.Read(0, Magic.Length).AsSpan().SequenceEqual(Magic))
       throw new InvalidDataException("VDFS: invalid magic.");
 
-    var entryCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(16));
-    var rootOffset = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(32));
+    var entryCount = (int)_data.ReadUInt32(16);
+    var rootOffset = (int)_data.ReadUInt32(32);
 
     // Entries start at rootOffset (or at offset 36 if rootOffset is 0)
     var entriesStart = rootOffset > 0 ? rootOffset : 36;
@@ -42,16 +47,16 @@ public sealed class VdfsReader : IDisposable {
       var nameEnd = off + 64;
       var nameLen = 64;
       for (int j = 0; j < 64; j++) {
-        if (_data[off + j] == 0 || _data[off + j] == 0x20 && (j + 1 >= 64 || _data[off + j + 1] == 0)) {
+        if (_data.ReadByte(off + j) == 0 || _data.ReadByte(off + j) == 0x20 && (j + 1 >= 64 || _data.ReadByte(off + j + 1) == 0)) {
           nameLen = j;
           break;
         }
       }
-      var name = Encoding.ASCII.GetString(_data, off, nameLen).TrimEnd();
+      var name = Encoding.ASCII.GetString(_data.Read(off, nameLen)).TrimEnd();
 
-      var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(off + 64));
-      var size = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(off + 68));
-      var type = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(off + 72));
+      var dataOffset = _data.ReadUInt32(off + 64);
+      var size = _data.ReadUInt32(off + 68);
+      var type = _data.ReadUInt32(off + 72);
 
       var isDir = (type & 0x01) != 0 && (type & 0x02) == 0;
       // Some VDFS implementations use: type & 0x01 for directory, rest are files
@@ -72,7 +77,19 @@ public sealed class VdfsReader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.DataOffset + entry.Size > _data.Length) return [];
-    return _data.AsSpan((int)entry.DataOffset, (int)entry.Size).ToArray();
+    return _data.Read(entry.DataOffset, (int)entry.Size);
+  }
+
+  /// <summary>
+  /// Copies an entry's bytes into <paramref name="destination" /> a block at a
+  /// time, so an entry larger than a byte[] can hold is extracted like any other.
+  /// </summary>
+  public void ExtractTo(VdfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return;
+    if (entry.DataOffset + entry.Size > _data.Length) return;
+    _data.CopyTo(entry.DataOffset, destination, entry.Size);
   }
 
   public void Dispose() { }

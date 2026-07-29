@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Qnx6;
@@ -10,7 +11,7 @@ namespace FileSystem.Qnx6;
 /// mirror at the last 512 bytes of the volume. The dual-superblock pairing is
 /// the safety contract — a torn write to one copy leaves the other intact.
 ///
-/// On-disk image laid down by <see cref="Build"/>:
+/// On-disk image laid down by <see cref="Build(IReadOnlyList{ValueTuple{string,byte[]}})"/>:
 ///   <code>
 ///   0x0000..0x1FFF                      boot region (zeroed)
 ///   0x2000..0x21FF                      primary superblock (qnx6_super_block, 512 B)
@@ -53,7 +54,7 @@ public sealed class Qnx6Writer {
   private const int MaxNameLen = 27;
   internal const int MaxDirents = BlockSize / DirentSize;          // 32
 
-  private sealed record FileEntry(string Name, byte[] Data, uint InodeNumber, uint FirstBlock, uint BlockCount);
+  private sealed record FileEntry(string Name, FilePayload Payload, uint InodeNumber, uint FirstBlock, uint BlockCount);
 
   /// <summary>
   /// Builds a complete QNX6 image holding <paramref name="files"/>. Order of
@@ -67,9 +68,44 @@ public sealed class Qnx6Writer {
   /// <exception cref="ArgumentNullException">If <paramref name="files"/> is null.</exception>
   public static byte[] Build(IReadOnlyList<(string Name, byte[] Data)> files) {
     ArgumentNullException.ThrowIfNull(files);
+    return Build(files.Select(f => (f.Name, FilePayload.FromBytes(f.Data))).ToList());
+  }
+
+  /// <summary>Materialises an image from payloads that may be streamed.</summary>
+  public static byte[] Build(IReadOnlyList<(string Name, FilePayload Payload)> files) {
+    var image = BuildCore(files, out var payloads);
+    return payloads.Materialise(image);
+  }
+
+  /// <summary>
+  /// Writes the image into <paramref name="output" />: the blocks the filesystem
+  /// populates, then each file's bytes at the block it was allocated. Only a
+  /// non-seekable target has to materialise the image, so a seekable one is
+  /// bounded by the disk rather than by what a byte[] can address.
+  /// </summary>
+  public static void WriteTo(Stream output, IReadOnlyList<(string Name, FilePayload Payload)> files) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(files);
+    if (!output.CanSeek) {
+      var full = Build(files);
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = BuildCore(files, out var payloads);
+    image.WriteTo(output);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + image.TotalBytes;
+    output.Flush();
+  }
+
+  private static SparseBlockImage BuildCore(IReadOnlyList<(string Name, FilePayload Payload)> files,
+                                            out DeferredPayloads payloads) {
+    ArgumentNullException.ThrowIfNull(files);
 
     // Filter to writable entries: name in 1..27 ASCII bytes, no slashes.
-    var accepted = new List<(string Name, byte[] Data)>(files.Count);
+    var accepted = new List<(string Name, FilePayload Payload)>(files.Count);
     foreach (var (n, d) in files) {
       if (string.IsNullOrEmpty(n)) continue;
       // Flatten path: QNX6 reader walks a single directory only — collapse
@@ -81,7 +117,7 @@ public sealed class Qnx6Writer {
       if (string.IsNullOrEmpty(leaf)) continue;
       var nameBytes = Encoding.ASCII.GetByteCount(leaf);
       if (nameBytes is 0 or > MaxNameLen) continue;
-      accepted.Add((leaf, d ?? []));
+      accepted.Add((leaf, d));
       if (accepted.Count >= MaxDirents) break;
     }
 
@@ -106,10 +142,10 @@ public sealed class Qnx6Writer {
     // Assign file extents (contiguous, one run per file).
     var planned = new List<FileEntry>(accepted.Count);
     for (var i = 0; i < accepted.Count; i++) {
-      var (name, data) = accepted[i];
-      var blocks = data.Length == 0 ? 0u : (uint)((data.Length + BlockSize - 1) / BlockSize);
+      var (name, payload) = accepted[i];
+      var blocks = payload.Size == 0 ? 0u : (uint)((payload.Size + BlockSize - 1) / BlockSize);
       var firstBlock = blocks == 0 ? 0u : dataBlockCursor;
-      planned.Add(new FileEntry(name, data, InodeNumber: (uint)(i + 2), firstBlock, BlockCount: blocks));
+      planned.Add(new FileEntry(name, payload, InodeNumber: (uint)(i + 2), firstBlock, BlockCount: blocks));
       dataBlockCursor += blocks;
     }
 
@@ -124,11 +160,15 @@ public sealed class Qnx6Writer {
     // Round up to the next block boundary so the image is block-aligned.
     var rem = totalSizeBytes % BlockSize;
     if (rem != 0) totalSizeBytes += BlockSize - rem;
-    var image = new byte[totalSizeBytes];
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so an image past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(BlockSize, totalSizeBytes);
+    payloads = new DeferredPayloads();
 
     // ── Primary superblock ─────────────────────────────────────────────────
     WriteSuperblock(
-      image.AsSpan(SuperblockOffset, SuperblockSize),
+      image.At(SuperblockOffset, SuperblockSize),
       inodeTablePtr: InodeTableBlock,
       numInodes: (uint)totalInodes,
       numBlocks: (uint)(totalSizeBytes / BlockSize),
@@ -143,7 +183,7 @@ public sealed class Qnx6Writer {
     // Root directory inode (inode 1, offset 0 in inode table).
     var dirSize = (ulong)(accepted.Count * DirentSize);
     WriteInode(
-      image.AsSpan(inodeTableOff, InodeSize),
+      image.At(inodeTableOff, InodeSize),
       size: dirSize,
       mode: 0x41ED, // S_IFDIR | 0755
       firstBlock: rootDirBlockActual);
@@ -152,8 +192,8 @@ public sealed class Qnx6Writer {
     foreach (var entry in planned) {
       var inodeOff = inodeTableOff + (entry.InodeNumber - 1) * InodeSize;
       WriteInode(
-        image.AsSpan((int)inodeOff, InodeSize),
-        size: (ulong)entry.Data.LongLength,
+        image.At(inodeOff, InodeSize),
+        size: (ulong)entry.Payload.Size,
         mode: 0x81A4, // S_IFREG | 0644
         firstBlock: entry.FirstBlock);
     }
@@ -163,7 +203,7 @@ public sealed class Qnx6Writer {
     for (var i = 0; i < planned.Count; i++) {
       var entry = planned[i];
       var direntOff = dirOff + i * DirentSize;
-      var dirent = image.AsSpan((int)direntOff, DirentSize);
+      var dirent = image.At(direntOff, DirentSize);
       BinaryPrimitives.WriteUInt32LittleEndian(dirent, entry.InodeNumber);
       var nameBytes = Encoding.ASCII.GetBytes(entry.Name);
       dirent[4] = (byte)nameBytes.Length;
@@ -173,18 +213,16 @@ public sealed class Qnx6Writer {
 
     // ── File data extents ──────────────────────────────────────────────────
     foreach (var entry in planned) {
-      if (entry.Data.Length == 0) continue;
-      var off = (long)entry.FirstBlock * BlockSize;
-      entry.Data.CopyTo(image.AsSpan((int)off));
+      if (entry.Payload.Size == 0) continue;
+      payloads.Add((long)entry.FirstBlock * BlockSize, entry.Payload);
     }
 
     // ── Secondary superblock mirror ────────────────────────────────────────
     // Mirror identical bytes at the tail. This is the power-safe contract:
     // primary and secondary are byte-identical, so torn-write detection just
     // diffs the two halves.
-    var secondaryOff = image.Length - SuperblockSize;
-    image.AsSpan(SuperblockOffset, SuperblockSize)
-      .CopyTo(image.AsSpan(secondaryOff, SuperblockSize));
+    var secondaryOff = image.TotalBytes - SuperblockSize;
+    image.Write(secondaryOff, image.At(SuperblockOffset, SuperblockSize));
 
     return image;
   }

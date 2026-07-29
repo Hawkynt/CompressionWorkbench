@@ -45,7 +45,9 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      // Streamed, not buffered: an entry may be larger than a byte[] can hold.
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.ExtractTo(e, target);
     }
   }
 
@@ -85,9 +87,18 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new VdfsWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
-    output.Write(w.Build());
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed for the entry table; reading a large input into
+      // a byte[] would cap the container at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
+    w.WriteTo(output);
   }
 
   // ── IArchiveModifiable ─────────────────────────────────────────────────
@@ -124,10 +135,34 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A container too large to materialise goes through the streaming rebuilder;
+    // BuildImage returns a byte[] of the whole thing.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      VdfsWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => ReadEntries(stream).ToList(),
+        beginWrite: s2 => { streamWriter = new VdfsWriter(); target = s2; },
+        // As a stream factory, not inline: an inline payload would go back into
+        // the buffer this path exists to avoid.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => streamWriter!.WriteTo(target!));
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options,
       readEntries: ReadEntries,
       buildImage: BuildImage);
+  }
+
+  /// <summary>Largest container a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   // ── IFilesystemExtentMap ───────────────────────────────────────────────
 
