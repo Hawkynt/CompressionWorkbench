@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Bfs;
@@ -193,8 +194,18 @@ internal sealed class BfsWriter {
     public int ParentInodeBlock;
   }
 
+  /// <summary>Declared size of the volume the last build laid out.</summary>
+  private long TotalImageBytes { get; set; }
+
+  private DeferredPayloads? _payloads;
+
   /// <summary>Builds the BFS image and returns the raw bytes.</summary>
   public byte[] Build() {
+    var image = this.BuildSparse();
+    return this._payloads!.Materialise(image);
+  }
+
+  private SparseBlockImage BuildSparse() {
     // 1) Build the directory tree from the flat file list. The synthetic root
     //    uses the fixed root-dir inode/B+ tree blocks (11/12).
     var root = new TreeNode { Name = string.Empty, IsDir = true, InodeBlock = RootDirInodeBlock, BtreeBlock = RootDirBtreeBlock };
@@ -241,7 +252,13 @@ internal sealed class BfsWriter {
 
     var totalUsedBlocks = nextBlock;
     var numBlocks = Math.Max(DefaultImageBlocks, totalUsedBlocks);
-    var image = new byte[numBlocks * BlockSize];
+    this.TotalImageBytes = (long)numBlocks * BlockSize;
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size. The layout is untouched, so the
+    // bytes are the same either way.
+    var image = new SparseBlockImage(BlockSize, this.TotalImageBytes);
+    this._payloads = new DeferredPayloads();
 
     // --- Superblock at block 0 (offset 0) ---
     WriteSuperblock(image, numBlocks, totalUsedBlocks);
@@ -280,16 +297,16 @@ internal sealed class BfsWriter {
 
     var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
     this._streamingSink = sink;
-    byte[] image;
+    SparseBlockImage image;
     try {
-      image = Build();
+      image = this.BuildSparse();
     } finally {
       this._streamingSink = null;
     }
 
-    output.SetLength(image.Length);
     output.Position = 0;
-    output.Write(image);
+    image.WriteTo(output);
+    this._payloads!.FlushTo(output);
 
     var buf = new byte[64 * 1024];
     foreach (var (byteOffset, size, opener) in sink) {
@@ -382,7 +399,7 @@ internal sealed class BfsWriter {
   private static int CountLeafBlocks(TreeNode dir) => PartitionEntries(dir).Count;
 
   /// <summary>Writes every non-root node (inodes, B+ trees, file data) depth-first.</summary>
-  private void WriteNode(byte[] image, TreeNode dir) {
+  private void WriteNode(SparseBlockImage image, TreeNode dir) {
     foreach (var child in dir.Children.Values) {
       if (child.IsDir) {
         WriteDirectoryInode(image, child.InodeBlock, child.BtreeBlock, child.ParentInodeBlock, 0);
@@ -397,9 +414,11 @@ internal sealed class BfsWriter {
           if (this._streamingSink != null && length > 0)
             this._streamingSink.Add(((long)child.DataStartBlock * BlockSize, length, child.StreamOpener));
         } else {
+          // Inline payloads are placed by seek like streamed ones: the image
+          // buffer holds metadata, never file contents.
           var data = child.Data ?? [];
           if (data.Length > 0)
-            data.CopyTo(image.AsSpan(child.DataStartBlock * BlockSize));
+            this._payloads!.Add((long)child.DataStartBlock * BlockSize, data);
         }
       }
     }
@@ -409,61 +428,61 @@ internal sealed class BfsWriter {
         WriteNode(image, child);
   }
 
-  private static void WriteSuperblock(byte[] image, int numBlocks, int usedBlocks) {
+  private static void WriteSuperblock(SparseBlockImage image, int numBlocks, int usedBlocks) {
     // Superblock at offset 0 (block 0). Some BFS implementations use offset 512;
     // we use offset 0 for simplicity (our reader checks both locations).
     var off = 0;
 
     // name[32] — volume name "BFS Volume"
-    Encoding.ASCII.GetBytes("BFS Volume").CopyTo(image.AsSpan(off));
+    image.Write(off, Encoding.ASCII.GetBytes("BFS Volume"));
 
     // magic1 at 32
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 32), Magic1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 32, 4), Magic1);
 
     // fs_byte_order at 36 = BIGE (0x42494745) — standard BFS byte order marker
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 36), 0x42494745u);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 36, 4), 0x42494745u);
 
     // block_size at 40
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 40), BlockSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 40, 4), BlockSize);
 
     // block_shift at 44
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 44), BlockShift);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 44, 4), BlockShift);
 
     // num_blocks at 48
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 48), numBlocks);
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 48, 8), numBlocks);
 
     // used_blocks at 56
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 56), usedBlocks);
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 56, 8), usedBlocks);
 
     // inode_size at 64
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 64), InodeSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 64, 4), InodeSize);
 
     // magic2 at 68
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 68), Magic2);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 68, 4), Magic2);
 
     // blocks_per_ag at 72 — all blocks in one AG
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 72), (uint)numBlocks);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 72, 4), (uint)numBlocks);
 
     // ag_shift at 76 — log2 of blocks_per_ag
     var agShift = (uint)Math.Ceiling(Math.Log2(numBlocks));
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 76), agShift);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 76, 4), agShift);
 
     // num_ags at 80
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 80), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 80, 4), 1);
 
     // flags at 84 = 0 (clean)
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 84), 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 84, 4), 0);
 
     // log_blocks block_run at 88: AG=0, start=LogStartBlock, len=LogBlocks
     WriteBlockRun(image, off + 88, 0, (ushort)LogStartBlock, (ushort)LogBlocks);
 
     // log_start at 96 = log_end (clean journal: no pending transactions)
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 96), 0);
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 96, 8), 0);
     // log_end at 104
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 104), 0);
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 104, 8), 0);
 
     // magic3 at 112
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 112), Magic3);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 112, 4), Magic3);
 
     // root_dir block_run at 116: AG=0, start=RootDirInodeBlock, len=1
     WriteBlockRun(image, off + 116, 0, RootDirInodeBlock, 1);
@@ -472,8 +491,8 @@ internal sealed class BfsWriter {
     WriteBlockRun(image, off + 124, 0, IndicesInodeBlock, 1);
   }
 
-  private static void WriteAgBitmap(byte[] image, int usedBlocks) {
-    var bitmapOffset = AgBitmapBlock * BlockSize;
+  private static void WriteAgBitmap(SparseBlockImage image, int usedBlocks) {
+    var bitmapOffset = (long)AgBitmapBlock * BlockSize;
     // Set bits 0..usedBlocks-1 as allocated (1 = used)
     for (var i = 0; i < usedBlocks; i++) {
       var byteIdx = i / 8;
@@ -482,18 +501,18 @@ internal sealed class BfsWriter {
     }
   }
 
-  private static void WriteDirectoryInode(byte[] image, int inodeBlock, int btreeBlock, int parentBlock, int inodeNum) {
+  private static void WriteDirectoryInode(SparseBlockImage image, int inodeBlock, int btreeBlock, int parentBlock, int inodeNum) {
     var off = inodeBlock * BlockSize;
 
     // magic1
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off), InodeMagic);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off, 4), InodeMagic);
 
     // inode_num (block_run): AG=0, start=inodeBlock, len=1
     WriteBlockRun(image, off + 4, 0, (ushort)inodeBlock, 1);
 
     // uid=0, gid=0
     // mode = S_IFDIR | S_IRWXU
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 20), S_IFDIR | S_IRWXU);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 20, 4), S_IFDIR | S_IRWXU);
 
     // flags = 0
     // create_time at 28 = 0
@@ -505,19 +524,19 @@ internal sealed class BfsWriter {
     // attributes (block_run) at 52 = 0,0,0
     // type at 60 = 0 (directory)
     // inode_size at 64
-    BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(off + 64), InodeSize);
+    BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 64, 4), InodeSize);
 
     // data_stream at 72: one direct block_run pointing at btree leaf
     WriteBlockRun(image, off + InodeDataStreamOffset, 0, (ushort)btreeBlock, 1);
 
     // max_direct_range at 72 + 96 = 168
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + InodeDataStreamOffset + NumDirectBlocks * 8), BlockSize);
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + NumDirectBlocks * 8, 8), BlockSize);
 
     // size at 72 + 136 = 208
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + InodeDataStreamOffset + 136), BlockSize);
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + 136, 8), BlockSize);
   }
 
-  private static void WriteDirBtreeLeaf(byte[] image, TreeNode dir) {
+  private static void WriteDirBtreeLeaf(SparseBlockImage image, TreeNode dir) {
     // Children are already ordered (SortedDictionary, ordinal). The BFS B+ tree
     // requires entries sorted by key; this provides a stable, sorted order. When
     // they do not all fit in one 1024-byte leaf the entries spill across several
@@ -533,7 +552,7 @@ internal sealed class BfsWriter {
     }
   }
 
-  private static void WriteBtreeLeaf(byte[] image, int btreeBlock, List<(string Name, int InodeBlock)> entries, long leftLink, long rightLink) {
+  private static void WriteBtreeLeaf(SparseBlockImage image, int btreeBlock, List<(string Name, int InodeBlock)> entries, long leftLink, long rightLink) {
     var off = btreeBlock * BlockSize;
 
     // BFS B+ tree header (node header):
@@ -547,10 +566,10 @@ internal sealed class BfsWriter {
 
     // B+ tree node header. left_link/right_link chain sibling leaves so the
     // reader can walk every leaf of an over-large directory in key order.
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off), leftLink);      // left_link
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 8), rightLink); // right_link
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 16), -1L);      // overflow_link
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 24), (ushort)entries.Count); // all_key_count
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off, 8), leftLink);      // left_link
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 8, 8), rightLink); // right_link
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 16, 8), -1L);      // overflow_link
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 24, 2), (ushort)entries.Count); // all_key_count
     // all_key_length computed below
 
     // After the 28-byte header:
@@ -588,44 +607,44 @@ internal sealed class BfsWriter {
         $"BFS B+ tree leaf overflow: {totalUsed} bytes needed but block size is {BlockSize} (partitioning invariant violated).");
 
     // Write all_key_length
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 26), (ushort)keyBytes.Count);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 26, 2), (ushort)keyBytes.Count);
 
     // Write key length table (cumulative)
     for (var i = 0; i < cumulativeLengths.Count; i++)
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(keyLenTableOffset + i * 2), cumulativeLengths[i]);
+      BinaryPrimitives.WriteUInt16LittleEndian(image.At(keyLenTableOffset + i * 2, 2), cumulativeLengths[i]);
 
     // Write key data
-    keyBytes.CopyTo(0, image, keyDataOffset, keyBytes.Count);
+    image.Write(keyDataOffset, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(keyBytes));
 
     // Write values from the END of the block (growing downward)
     // Values are at: block_end - (key_count * 8) + (i * 8)
     var valuesStart = off + BlockSize - valuesSize;
     for (var i = 0; i < entries.Count; i++) {
       // off_t = block number for single-AG (AG=0, shift irrelevant when AG=0)
-      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(valuesStart + i * 8), entries[i].InodeBlock);
+      BinaryPrimitives.WriteInt64LittleEndian(image.At(valuesStart + i * 8, 8), entries[i].InodeBlock);
     }
   }
 
-  private static void WriteEmptyBtreeLeaf(byte[] image, int block) {
+  private static void WriteEmptyBtreeLeaf(SparseBlockImage image, int block) {
     var off = block * BlockSize;
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off), -1L);      // left_link
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 8), -1L);  // right_link
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 16), -1L); // overflow_link
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off, 8), -1L);      // left_link
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 8, 8), -1L);  // right_link
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 16, 8), -1L); // overflow_link
     // all_key_count = 0, all_key_length = 0 — already zero
   }
 
-  private static void WriteFileInode(byte[] image, int inodeBlock, int parentInodeBlock, int dataStartBlock, int dataBlocks, int fileSize) {
+  private static void WriteFileInode(SparseBlockImage image, int inodeBlock, int parentInodeBlock, int dataStartBlock, int dataBlocks, int fileSize) {
     var off = inodeBlock * BlockSize;
 
     // magic1
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off), InodeMagic);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off, 4), InodeMagic);
 
     // inode_num (block_run): AG=0, start=inodeBlock, len=1
     WriteBlockRun(image, off + 4, 0, (ushort)inodeBlock, 1);
 
     // uid=0, gid=0
     // mode = S_IFREG | S_IRWXU
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 20), S_IFREG | S_IRWXU);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 20, 4), S_IFREG | S_IRWXU);
 
     // flags = 0
     // create_time at 28 = 0
@@ -635,27 +654,38 @@ internal sealed class BfsWriter {
     WriteBlockRun(image, off + 44, 0, (ushort)parentInodeBlock, 1);
 
     // inode_size at 64
-    BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(off + 64), InodeSize);
+    BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 64, 4), InodeSize);
 
     // data_stream at 72
     if (dataBlocks > 0) {
       // direct[0]: AG=0, start=dataStartBlock, len=dataBlocks
       WriteBlockRun(image, off + InodeDataStreamOffset, 0, (ushort)dataStartBlock, (ushort)dataBlocks);
       // max_direct_range = dataBlocks * BlockSize
-      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + InodeDataStreamOffset + NumDirectBlocks * 8),
+      BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + NumDirectBlocks * 8, 8),
         (long)dataBlocks * BlockSize);
     }
 
     // size at offset 72 + 136 = 208
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + InodeDataStreamOffset + 136), fileSize);
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + 136, 8), fileSize);
   }
 
   /// <summary>
   /// Writes a block_run (allocation_group: u32, start: u16, length: u16) at the given offset.
   /// </summary>
-  private static void WriteBlockRun(byte[] image, int offset, uint ag, int start, int length) {
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset), ag);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(offset + 4), (ushort)start);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(offset + 6), (ushort)length);
+  private static void WriteBlockRun(SparseBlockImage image, int offset, uint ag, int start, int length) {
+    // A block_run addresses its start and length as uint16 within one allocation
+    // group. Silently truncating them produced a volume that listed its files
+    // and returned the wrong bytes, so say what the writer cannot express: it
+    // emits a single allocation group and one run per file, which caps a file
+    // (and the volume) at 65535 blocks.
+    if (start > ushort.MaxValue || length > ushort.MaxValue)
+      throw new InvalidOperationException(
+        $"BFS writer: block_run start/length are uint16 within one allocation group, so a run cannot " +
+        $"exceed {ushort.MaxValue} blocks (got start={start}, length={length}). Multiple allocation " +
+        "groups and multi-run data streams are not implemented.");
+
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset, 4), ag);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(offset + 4, 2), (ushort)start);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(offset + 6, 2), (ushort)length);
   }
 }

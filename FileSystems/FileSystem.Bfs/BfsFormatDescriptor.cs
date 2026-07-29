@@ -110,9 +110,21 @@ public sealed class BfsFormatDescriptor
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new BfsWriter();
-    foreach (var (name, data) in FilesOnly(inputs))
-      w.AddFile(name, data);
-    output.Write(w.Build());
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      // Full path, not the leaf: BFS nests directories, and flattening made a
+      // streamed create diverge from the buffered one.
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(info.ArchiveName, bytes);
+      else
+        w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length,
+                           () => File.OpenRead(info.FullPath));
+    }
+    if (output.CanSeek) w.BuildToStreaming(output);
+    else output.Write(w.Build());
   }
 
   /// <summary>

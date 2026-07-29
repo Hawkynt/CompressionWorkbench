@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Bfs;
@@ -20,18 +21,22 @@ internal sealed class BfsReader {
   private const uint S_IFMT = 0xF000;
   private const int MaxDirectoryDepth = 64; // guard against cyclic/corrupt trees
 
-  private readonly byte[] _image;
+  /// <summary>
+  /// Random-access view over the volume. Copying it into a byte[] capped the
+  /// reader at the array limit, which BFS's 64-bit block runs do not.
+  /// </summary>
+  private readonly ImageAccessor _image;
   private readonly int _blockSize;
   private readonly int _superblockOffset;
 
   public IReadOnlyList<BfsFileEntry> Entries { get; }
 
   public BfsReader(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _image = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    _image = new ImageAccessor(stream, leaveOpen: true);
 
-    var sb = BfsSuperblock.TryParse(_image);
+    var sb = BfsSuperblock.TryParse(_image.Read(0, (int)Math.Min(_image.Length, 64 * 1024)));
     if (!sb.Valid)
       throw new InvalidDataException("BFS: no valid superblock found.");
 
@@ -41,14 +46,14 @@ internal sealed class BfsReader {
       throw new InvalidDataException($"BFS: invalid block size {_blockSize}.");
 
     // Read root dir inode to find the B+ tree leaf
-    var rootDirRun = ReadBlockRun(_image, _superblockOffset + 116);
+    var rootDirRun = ReadBlockRun(_image.Read(_superblockOffset + 116, 16), 0);
     var rootDirInodeOffset = rootDirRun.Start * _blockSize;
 
     // Verify inode magic
     if (rootDirInodeOffset + InodeDataStreamOffset + NumDirectBlocks * 8 > _image.Length)
       throw new InvalidDataException("BFS: root dir inode extends past image.");
 
-    var inodeMagic = BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(rootDirInodeOffset));
+    var inodeMagic = _image.ReadUInt32(rootDirInodeOffset);
     if (inodeMagic != InodeMagic)
       throw new InvalidDataException($"BFS: root dir inode magic mismatch: 0x{inodeMagic:X8}.");
 
@@ -67,9 +72,9 @@ internal sealed class BfsReader {
 
     var dirInodeOffset = dirInodeBlock * _blockSize;
     if (dirInodeOffset < 0 || dirInodeOffset + InodeDataStreamOffset + 8 > _image.Length) return;
-    if (BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(dirInodeOffset)) != InodeMagic) return;
+    if (_image.ReadUInt32(dirInodeOffset) != InodeMagic) return;
 
-    var btreeRun = ReadBlockRun(_image, dirInodeOffset + InodeDataStreamOffset);
+    var btreeRun = ReadBlockRun(_image.Read(dirInodeOffset + InodeDataStreamOffset, 16), 0);
 
     foreach (var (name, inodeBlock) in ReadAllBtreeEntries(btreeRun.Start)) {
       var fullName = prefix.Length == 0 ? name : prefix + "/" + name;
@@ -86,13 +91,13 @@ internal sealed class BfsReader {
   /// <summary>Reads an inode's mode/size; returns whether it is a directory and its logical size.</summary>
   private (bool IsDir, long Size) ReadInodeKindAndSize(int inodeOffset) {
     if (inodeOffset < 0 || inodeOffset + InodeDataStreamOffset + 136 + 8 > _image.Length) return (false, 0);
-    if (BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(inodeOffset)) != InodeMagic) return (false, 0);
+    if (_image.ReadUInt32(inodeOffset) != InodeMagic) return (false, 0);
 
-    var mode = BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(inodeOffset + 20));
+    var mode = _image.ReadUInt32(inodeOffset + 20);
     var isDir = (mode & S_IFMT) == S_IFDIR;
     var size = isDir
       ? 0L
-      : BinaryPrimitives.ReadInt64LittleEndian(_image.AsSpan(inodeOffset + InodeDataStreamOffset + 136));
+      : _image.ReadInt64(inodeOffset + InodeDataStreamOffset + 136);
     if (size < 0 || size > _image.Length) size = 0;
     return (isDir, size);
   }
@@ -106,13 +111,12 @@ internal sealed class BfsReader {
     if (inodeOffset + InodeDataStreamOffset + NumDirectBlocks * 8 + 8 > _image.Length)
       throw new InvalidDataException($"BFS: file inode for '{entry.Name}' extends past image.");
 
-    var magic = BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(inodeOffset));
+    var magic = _image.ReadUInt32(inodeOffset);
     if (magic != InodeMagic)
       throw new InvalidDataException($"BFS: file inode magic mismatch for '{entry.Name}'.");
 
     // Read file size from data_stream.size
-    var fileSize = BinaryPrimitives.ReadInt64LittleEndian(
-      _image.AsSpan(inodeOffset + InodeDataStreamOffset + 136));
+    var fileSize = _image.ReadInt64(inodeOffset + InodeDataStreamOffset + 136);
     if (fileSize < 0 || fileSize > _image.Length)
       throw new InvalidDataException($"BFS: invalid file size {fileSize} for '{entry.Name}'.");
 
@@ -120,7 +124,7 @@ internal sealed class BfsReader {
     var result = new byte[fileSize];
     var destOffset = 0L;
     for (var i = 0; i < NumDirectBlocks && destOffset < fileSize; i++) {
-      var run = ReadBlockRun(_image, inodeOffset + InodeDataStreamOffset + i * 8);
+      var run = ReadBlockRun(_image.Read(inodeOffset + InodeDataStreamOffset + i * 8, 16), 0);
       if (run.Length == 0) break;
 
       var srcOffset = run.Start * _blockSize;
@@ -130,7 +134,7 @@ internal sealed class BfsReader {
       if (srcOffset + toCopy > _image.Length)
         throw new InvalidDataException($"BFS: data run for '{entry.Name}' extends past image.");
 
-      _image.AsSpan((int)srcOffset, (int)toCopy).CopyTo(result.AsSpan((int)destOffset));
+      _image.Read(srcOffset, (int)toCopy).CopyTo(result.AsSpan((int)destOffset));
       destOffset += toCopy;
     }
 
@@ -155,7 +159,7 @@ internal sealed class BfsReader {
       all.AddRange(ParseBtreeLeafEntries(leafOffset));
 
       // right_link (i64) at leaf offset +8 points at the next sibling leaf, or -1.
-      leafBlock = BinaryPrimitives.ReadInt64LittleEndian(_image.AsSpan(leafOffset + 8));
+      leafBlock = _image.ReadInt64(leafOffset + 8);
     }
 
     return all;
@@ -174,8 +178,8 @@ internal sealed class BfsReader {
     // 24: all_key_count (u16)
     // 26: all_key_length (u16)
 
-    var keyCount = BinaryPrimitives.ReadUInt16LittleEndian(_image.AsSpan(leafOffset + 24));
-    var totalKeyLength = BinaryPrimitives.ReadUInt16LittleEndian(_image.AsSpan(leafOffset + 26));
+    var keyCount = _image.ReadUInt16(leafOffset + 24);
+    var totalKeyLength = _image.ReadUInt16(leafOffset + 26);
 
     if (keyCount == 0) return entries;
 
@@ -190,7 +194,7 @@ internal sealed class BfsReader {
     // Read cumulative key lengths
     var cumulativeLengths = new ushort[keyCount];
     for (var i = 0; i < keyCount; i++)
-      cumulativeLengths[i] = BinaryPrimitives.ReadUInt16LittleEndian(_image.AsSpan(keyLenTableOffset + i * 2));
+      cumulativeLengths[i] = _image.ReadUInt16(keyLenTableOffset + i * 2);
 
     // Read values from end of block
     var valuesStart = leafOffset + _blockSize - keyCount * 8;
@@ -200,10 +204,10 @@ internal sealed class BfsReader {
     var prevLen = 0;
     for (var i = 0; i < keyCount; i++) {
       var nameLen = cumulativeLengths[i] - prevLen;
-      var name = Encoding.UTF8.GetString(_image, keyDataOffset + prevLen, nameLen);
+      var name = Encoding.UTF8.GetString(_image.Read(keyDataOffset + prevLen, nameLen));
       prevLen = cumulativeLengths[i];
 
-      var inodeBlockOffT = BinaryPrimitives.ReadInt64LittleEndian(_image.AsSpan(valuesStart + i * 8));
+      var inodeBlockOffT = _image.ReadInt64(valuesStart + i * 8);
       // For single-AG with AG=0: off_t = block number
       var inodeBlock = (int)inodeBlockOffT;
 
