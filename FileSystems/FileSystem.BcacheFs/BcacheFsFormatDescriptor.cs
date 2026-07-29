@@ -80,11 +80,34 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       return entries;
     }
 
+    // A volume that carries files lists exactly those. Surfacing the synthetic
+    // header entries alongside them would make every rebuild (shrink, defrag)
+    // fold them back in as real files, so they stay on the carver path — empty
+    // or foreign images, where the header IS all we can offer.
+    var payload = ReadPayload(stream);
+    if (payload.Count > 0) {
+      var idx = 0;
+      foreach (var e in payload)
+        entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", false, false, null));
+      return entries;
+    }
+
     entries.Add(new ArchiveEntryInfo(0, "FULL.bcachefs", image.LongLength, image.LongLength, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
     if (sb.Valid)
       entries.Add(new ArchiveEntryInfo(2, "superblock.bin", sb.RawBytes.LongLength, sb.RawBytes.LongLength, "stored", false, false, null));
     return entries;
+  }
+
+  /// <summary>Files the CWB-BCH-WB payload area holds. Never throws — empty when there are none.</summary>
+  private static IReadOnlyList<BcacheFsReader.Entry> ReadPayload(Stream stream) {
+    try {
+      if (stream.CanSeek) stream.Position = 0;
+      using var reader = new BcacheFsReader(stream);
+      return reader.Entries;
+    } catch {
+      return [];
+    }
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -105,6 +128,21 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       return;
     }
 
+    // A volume that carries files extracts exactly those, mirroring List.
+    if (stream.CanSeek) stream.Position = 0;
+    using (var reader = new BcacheFsReader(stream)) {
+      if (reader.Entries.Count > 0) {
+        foreach (var e in reader.Entries) {
+          if (files is { Length: > 0 } && !MatchesFilter(e.Name, files)) continue;
+          var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+          Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+          using var output = File.Create(target);
+          reader.ExtractTo(e, output);
+        }
+        return;
+      }
+    }
+
     WriteIfMatch(outputDir, "FULL.bcachefs", image, files);
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(sb), files);
     if (sb.Valid)
@@ -112,13 +150,12 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
-  /// Emits a WORM-minimal BcacheFS image. The resulting image carries a
-  /// spec-compliant <c>struct bch_sb</c> + four-copy <c>bch_sb_layout</c> +
-  /// <c>BCH_SB_FIELD_members_v2</c> describing the single device. File
-  /// content is NOT recoverable from the resulting image — there is no
-  /// B-tree (extents / dirents / inodes are the multi-week follow-up).
-  /// <c>bcachefs show-super</c> accepts the result; <c>bcachefs fsck</c>
-  /// will still complain about the empty trees.
+  /// Emits a BcacheFS image carrying a spec-compliant <c>struct bch_sb</c> +
+  /// four-copy <c>bch_sb_layout</c> + <c>BCH_SB_FIELD_members_v2</c> describing
+  /// the single device, plus the input files in the CWB-BCH-WB payload area.
+  /// <c>bcachefs show-super</c> accepts the result; the payload is not a b-tree,
+  /// so the kernel driver does not see the files — the scope
+  /// <see cref="BcacheFsWriter" /> documents.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -127,17 +164,24 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
       w.SetLabel(label);
-    var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
-    if (sizeBytes >= BcacheFsWriter.MinImageSize)
-      w.SetImageSize(sizeBytes);
+
+    var sizes = new List<long>();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      // We surface the file list in metadata only — no content goes into the
-      // image. Reading the file is therefore optional, but we honour it so
-      // future scope expansion has the bytes available.
-      try { w.AddFile(i.ArchiveName, i.ReadContent()); }
-      catch { /* unreadable input — skip silently, image is SB-only anyway */ }
+      var length = i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
+      sizes.Add(length);
+      if (i.InMemoryContent is { } bytes) {
+        w.AddFile(i.ArchiveName, bytes);
+        continue;
+      }
+      var path = i.FullPath;
+      w.AddStreamingFile(i.ArchiveName, length, () => File.OpenRead(path));
     }
+
+    // The requested size is a floor: the image has to be at least large enough
+    // for the payload's directory chain and data blocks.
+    var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
+    w.SetImageSize(Math.Max(sizeBytes, BcacheFsWriter.EstimateSize(sizes)));
     w.WriteTo(output);
   }
 
@@ -164,9 +208,55 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// path is not viable. Per project policy, the descriptor still advertises
   /// the capability so capability surfaces stay honest.
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) =>
-    throw new NotSupportedException(
-      "BcacheFS defragment requires a b-tree reader that can extract user files; the current writer is SB-only WORM with no reader.");
+  /// <summary>
+  /// Rewrites the image with every file laid out contiguously from the start of
+  /// the payload area. Each entry is spilled to scratch and the writer pulls it
+  /// back, so the rebuild is not bounded by what a byte[] can hold.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new NotSupportedException(
+        $"BcacheFS defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+
+    Stream? target = null;
+    var spill = new List<(string Name, string Path, long Size)>();
+    DefragRebuilder.RebuildStreaming(archive, options,
+      readEntries: ReadEntries,
+      beginWrite: s => target = s,
+      writeEntry: (name, data) => {
+        // The image has to be sized before the first byte is written, so the
+        // entries are collected first and the writer is built in finishWrite.
+        var path = Path.GetTempFileName();
+        File.WriteAllBytes(path, data);
+        spill.Add((name, path, data.LongLength));
+      },
+      finishWrite: () => {
+        try {
+          var w = new BcacheFsWriter();
+          w.SetImageSize(BcacheFsWriter.EstimateSize(spill.ConvertAll(e => e.Size)));
+          foreach (var (name, path, size) in spill) {
+            var captured = path;
+            w.AddStreamingFile(name, size, () => File.OpenRead(captured));
+          }
+          w.WriteTo(target!);
+        } finally {
+          foreach (var (_, path, _) in spill)
+            try { File.Delete(path); } catch { /* scratch file already gone */ }
+        }
+      });
+  }
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    using var reader = new BcacheFsReader(stream);
+    foreach (var e in reader.Entries) {
+      using var buffer = new MemoryStream();
+      reader.ExtractTo(e, buffer);
+      yield return (e.Name, buffer.ToArray());
+    }
+  }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;

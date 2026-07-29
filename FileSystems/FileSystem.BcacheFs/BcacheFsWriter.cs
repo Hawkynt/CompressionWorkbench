@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.BcacheFs;
@@ -129,7 +130,68 @@ public sealed class BcacheFsWriter {
 
   // ── State ─────────────────────────────────────────────────────────
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
+
+  // ── Payload area (CWB-BCH-WB) ───────────────────────────────────────────
+  //
+  // This writer emits the superblock set and its layout, not a b-tree: bcachefs
+  // stores everything — inodes, dirents, extents — in b-trees whose keys are
+  // varint-packed bkeys, and reproducing those is not attempted here. Files
+  // therefore live in a workbench-owned area between the front superblock slots
+  // and the end-of-device backups, announced by a marker in the reserved sectors
+  // ahead of the layout and described by a chained directory.
+  //
+  // What this layout is NOT is a bcachefs b-tree, so the payload is invisible to
+  // the kernel driver — the same honest scope the workbench's OpenVMS, AmigaPFS
+  // and Reiser4 writers declare.
+
+  /// <summary>Marker written at <see cref="PayloadMarkerOffset" />.</summary>
+  internal static readonly byte[] PayloadMarker = "CWB-BCH-WB"u8.ToArray();
+
+  /// <summary>
+  /// Byte offset of the marker: sector 6, inside the reserved sectors the kernel
+  /// skips on its way to the layout at sector 7.
+  /// </summary>
+  internal const long PayloadMarkerOffset = 6 * 512;
+
+  /// <summary>Offset of the first directory block number (d64), after the marker.</summary>
+  internal const long PayloadDirOffset = PayloadMarkerOffset + 16;
+
+  /// <summary>Payload block size.</summary>
+  internal const int PayloadBlockSize = 4096;
+
+  /// <summary>First payload block: past the layout sector and the two front superblock slots.</summary>
+  internal const long FirstPayloadBlock = 3;
+
+  /// <summary>Magic at the head of every payload directory block.</summary>
+  internal static readonly byte[] DirMagic = "CWBBCHDR"u8.ToArray();
+
+  /// <summary>Directory block head: magic, next-block link, entry count.</summary>
+  internal const int DirHeadSize = 8 + 8 + 4;
+
+  /// <summary>One directory entry: a 224-byte name, then the first data block and the byte length.</summary>
+  internal const int DirNameLength = 224;
+  internal const int DirEntrySize = DirNameLength + 8 + 8;
+  internal const int DirEntriesPerBlock = (PayloadBlockSize - DirHeadSize) / DirEntrySize;
+
+  /// <summary>
+  /// Smallest image that holds <paramref name="fileSizes" />: the front superblock
+  /// slots, the directory chain, every file's data blocks, and the end-of-device
+  /// backup superblock area. Rounded up to a megabyte.
+  /// </summary>
+  public static long EstimateSize(IEnumerable<long> fileSizes) {
+    ArgumentNullException.ThrowIfNull(fileSizes);
+    var sizes = fileSizes as IReadOnlyCollection<long> ?? [.. fileSizes];
+    var blocks = FirstPayloadBlock;
+    blocks += (sizes.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock);
+    foreach (var size in sizes)
+      blocks += (size + PayloadBlockSize - 1) / PayloadBlockSize;
+
+    // The end-of-device backups sit 256 KB and 128 KB from the end, so leave a
+    // megabyte of tail clear of the payload.
+    var bytes = blocks * PayloadBlockSize + (1L << 20);
+    return Math.Max(MinImageSize, (bytes + (1L << 20) - 1) & ~((1L << 20) - 1));
+  }
   private string _label = "cwb-bcachefs";
   private long _imageSize = MinImageSize;
   private Guid _internalUuid = Guid.NewGuid();
@@ -155,24 +217,30 @@ public sealed class BcacheFsWriter {
     this._imageSize = bytes;
   }
 
-  /// <summary>
-  /// Records a file to surface in metadata only. The current writer does not
-  /// emit B-tree nodes — file content is NOT recoverable from the resulting
-  /// image, but the file list is captured so future scope expansion can pick
-  /// up where this writer leaves off.
-  /// </summary>
+  /// <summary>Records a file to store in the CWB-BCH-WB payload area.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    if (this._files.Count >= 100)
-      throw new InvalidOperationException("WORM-minimal BcacheFs writer caps at 100 files (no real B-tree yet).");
-    this._files.Add((name, data));
+    this._files.Add((name, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>Records a file whose bytes are pulled from <paramref name="openStream" /> as the image is written.</summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    this._files.Add((name, FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>Emits the spec-compliant image to <paramref name="output"/>.</summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
-    var image = new byte[this._imageSize];
+
+    // The superblock set and the payload directory form a prefix; the file bodies
+    // follow it and are copied into place, so a multi-gigabyte image is never
+    // held in memory.
+    var dirBlockCount = (this._files.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock);
+    var prefixBlocks = FirstPayloadBlock + dirBlockCount;
+    var image = new byte[prefixBlocks * PayloadBlockSize];
 
     // Build the canonical 4-slot layout. Slot 0 holds the primary SB; slots
     // 1..3 are the backup SBs that fsck looks for after a corrupted primary.
@@ -200,21 +268,88 @@ public sealed class BcacheFsWriter {
 
     // Stamp the SB at every advertised slot. Each copy carries its own
     // self-describing offset field so bch2_sb_validate() can cross-check.
+    // The end-of-device backups are written past the prefix, so they go with the
+    // payload rather than into the prefix buffer.
+    var tailSuperblocks = new List<(long ByteOffset, byte[] Bytes)>();
     foreach (var sectorOff in sbOffsetsSectors) {
       var byteOff = sectorOff * 512;
-      if (byteOff + sb.Length > image.LongLength)
+      if (byteOff + sb.Length > this._imageSize)
         throw new InvalidOperationException(
-          $"Image too small for backup superblock at sector {sectorOff} (byte {byteOff}, image {image.LongLength}).");
+          $"Image too small for backup superblock at sector {sectorOff} (byte {byteOff}, image {this._imageSize}).");
 
       // Re-stamp the offset field (bytes 104..112) with this slot's sector
       // address — the kernel rejects an SB whose sb->offset disagrees with
       // the sector it was read from.
       var slotCopy = (byte[])sb.Clone();
       BinaryPrimitives.WriteUInt64LittleEndian(slotCopy.AsSpan(104, 8), (ulong)sectorOff);
-      Array.Copy(slotCopy, 0, image, byteOff, slotCopy.Length);
+      if (byteOff + slotCopy.Length <= image.LongLength)
+        Array.Copy(slotCopy, 0, image, byteOff, slotCopy.Length);
+      else
+        tailSuperblocks.Add((byteOff, slotCopy));
     }
 
+    // ── Payload: the directory chain, then each file's data blocks ────────
+    // The last megabyte is left clear so the end-of-device backup superblocks
+    // never land on top of a file.
+    var payloadLimit = (this._imageSize - (1L << 20)) / PayloadBlockSize;
+    var cursor = FirstPayloadBlock + dirBlockCount;
+    var payloads = new DeferredPayloads();
+    var entries = new List<(string Name, long Block, long Size)>(this._files.Count);
+    foreach (var (name, payload) in this._files) {
+      var need = (payload.Size + PayloadBlockSize - 1) / PayloadBlockSize;
+      if (cursor + need > payloadLimit)
+        throw new IOException(
+          $"BcacheFS: a {this._imageSize:N0}-byte image has no room left for '{name}'.");
+      var first = need > 0 ? cursor : 0;
+      if (need > 0) {
+        payloads.Add(cursor * PayloadBlockSize, payload);
+        cursor += need;
+      }
+      entries.Add((name, first, payload.Size));
+    }
+
+    // ── Directory chain ──────────────────────────────────────────────────
+    for (var i = 0; i < dirBlockCount; ++i) {
+      var o = (int)((FirstPayloadBlock + i) * PayloadBlockSize);
+      DirMagic.CopyTo(image.AsSpan(o, DirMagic.Length));
+      var next = i + 1 < dirBlockCount ? FirstPayloadBlock + i + 1 : 0;
+      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(o + 8, 8), next);
+      var take = Math.Min(DirEntriesPerBlock, entries.Count - i * DirEntriesPerBlock);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(o + 16, 4), (uint)take);
+      for (var j = 0; j < take; ++j) {
+        var (name, first, size) = entries[i * DirEntriesPerBlock + j];
+        var e = o + DirHeadSize + j * DirEntrySize;
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        nameBytes.AsSpan(0, Math.Min(nameBytes.Length, DirNameLength - 1)).CopyTo(image.AsSpan(e, DirNameLength - 1));
+        BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(e + DirNameLength, 8), first);
+        BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(e + DirNameLength + 8, 8), size);
+      }
+    }
+
+    if (dirBlockCount > 0) {
+      PayloadMarker.CopyTo(image.AsSpan((int)PayloadMarkerOffset, PayloadMarker.Length));
+      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan((int)PayloadDirOffset, 8), FirstPayloadBlock);
+    }
+
+    // ── Emit ─────────────────────────────────────────────────────────────
+    var basePosition = output.CanSeek ? output.Position : 0;
     output.Write(image);
+    output.Flush();
+    if (!output.CanSeek) {
+      var zero = new byte[PayloadBlockSize];
+      for (var b = prefixBlocks * PayloadBlockSize; b < this._imageSize; b += PayloadBlockSize)
+        output.Write(zero, 0, (int)Math.Min(PayloadBlockSize, this._imageSize - b));
+      return;
+    }
+
+    output.SetLength(basePosition + this._imageSize);
+    foreach (var (byteOff, bytes) in tailSuperblocks) {
+      output.Position = basePosition + byteOff;
+      output.Write(bytes);
+    }
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + this._imageSize;
+    output.Flush();
   }
 
   // ── Superblock ────────────────────────────────────────────────────
