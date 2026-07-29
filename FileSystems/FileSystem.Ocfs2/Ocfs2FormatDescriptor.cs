@@ -106,6 +106,13 @@ public sealed class Ocfs2FormatDescriptor
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    // A volume too large to buffer is walked from its metadata head and each
+    // file streamed out of the extent its dinode records.
+    if (stream.CanSeek && stream.Length > MaxBufferedImageBytes) {
+      ExtractStreaming(stream, outputDir, files);
+      return;
+    }
+
     // Try the writer-produced image path first
     try {
       var image = ReadAllFull(stream);
@@ -133,8 +140,17 @@ public sealed class Ocfs2FormatDescriptor
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
       w.SetLabel(label);
-    foreach (var (name, data) in FilesOnly(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the volume out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
     w.WriteTo(output);
   }
 
@@ -191,32 +207,58 @@ public sealed class Ocfs2FormatDescriptor
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A volume too large to materialise goes through the streaming rebuilder;
+    // BuildImage returns a byte[] of the whole volume and ReadFileEntries
+    // buffers the source, both of which stop at the array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      Ocfs2Writer? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => ReadFileEntries(stream).ToList(),
+        beginWrite: s2 => { streamWriter = new Ocfs2Writer(); target = s2; },
+        // As a stream factory, not inline: an inline payload would go back into
+        // the buffer this path exists to avoid.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => streamWriter!.WriteTo(target!));
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
+  }
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    byte[] data;
+    ArgumentNullException.ThrowIfNull(image);
+    byte[] head;
     try {
+      // The head carries the superblock, dinodes and directory blocks. Buffering
+      // the whole volume capped the wipe at the array limit, and the empty list
+      // that came back on failure reads as "the volume is entirely free".
       image.Position = 0;
-      using var ms = new MemoryStream();
-      image.CopyTo(ms);
-      data = ms.ToArray();
+      head = new byte[(int)Math.Min(image.Length, MaxBufferedImageBytes)];
+      image.ReadExactly(head, 0, head.Length);
+      image.Position = 0;
     } catch {
       return [];
     }
 
-    return EnumerateExtentsCore(data);
+    return EnumerateExtentsCore(head, image.Length);
   }
 
-  private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data) {
+  private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data, long imageLength) {
     var result = new List<DefragBlockInfo>();
     const int blockSize = Ocfs2Writer.BlockSize;
 
     if (data.Length < (Ocfs2Writer.SuperBlockBlkno + 1) * blockSize) return result;
 
-    var totalBlocks = data.Length / blockSize;
+    var totalBlocks = imageLength / blockSize;
 
     // Identify each regular file's data-cluster run so it can surface as a Used
     // extent (clamped to logical size, leaving the cluster tip as a free gap),
@@ -290,8 +332,66 @@ public sealed class Ocfs2FormatDescriptor
   // ── Shared helpers ────────────────────────────────────────────────────
 
   private static IEnumerable<(string Name, byte[] Data)> ReadFileEntries(Stream stream) {
+    // A volume too large to buffer is walked from its metadata head, with each
+    // file's bytes read straight out of the extent its dinode records.
+    if (stream.CanSeek && stream.Length > MaxBufferedImageBytes)
+      return ReadFileEntriesStreaming(stream);
+
     var image = ReadAllFull(stream);
     return ReadFilesFromImage(image);
+  }
+
+  private static List<(string Name, byte[] Data)> ReadFileEntriesStreaming(Stream stream) {
+    stream.Position = 0;
+    var head = new byte[(int)Math.Min(stream.Length, MaxBufferedImageBytes)];
+    stream.ReadExactly(head, 0, head.Length);
+
+    var blockSize = Ocfs2Reader.ReadBlockSize(head);
+    if (blockSize <= 0) return [];
+
+    stream.Position = 0;
+    using var accessor = new Compression.Core.DiskImage.ImageAccessor(stream, leaveOpen: true);
+    var result = new List<(string Name, byte[] Data)>();
+    foreach (var p in Ocfs2Reader.ReadFilePlacements(head)) {
+      if (p.Size <= 0) { result.Add((p.Name, [])); continue; }
+      if (p.Size > Array.MaxLength)
+        throw new InvalidOperationException(
+          $"OCFS2: '{p.Name}' is {p.Size:N0} bytes, more than a byte[] can hold.");
+      var offset = p.Inline
+        ? p.DinodeBlkno * blockSize + Ocfs2Reader.Id2Offset + Ocfs2Reader.InlineHeaderLen
+        : p.DataBlkno * blockSize;
+      result.Add((p.Name, accessor.Read(offset, (int)p.Size)));
+    }
+    return result;
+  }
+
+  /// <summary>Largest volume this descriptor will hold in memory.</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
+
+  /// <summary>
+  /// Extraction for a volume too large to buffer: only the metadata head is read,
+  /// and each file's bytes are streamed straight out of the volume at the extent
+  /// its dinode records.
+  /// </summary>
+  private static void ExtractStreaming(Stream stream, string outputDir, string[]? files) {
+    stream.Position = 0;
+    var head = new byte[(int)Math.Min(stream.Length, MaxBufferedImageBytes)];
+    stream.ReadExactly(head, 0, head.Length);
+
+    var placements = Ocfs2Reader.ReadFilePlacements(head);
+    stream.Position = 0;
+    using var accessor = new Compression.Core.DiskImage.ImageAccessor(stream, leaveOpen: true);
+    var blockSize = Ocfs2Reader.ReadBlockSize(head);
+
+    foreach (var p in placements) {
+      if (files != null && files.Length > 0 && !MatchesFilter(p.Name, files)) continue;
+      using var target = CreateEntryFile(outputDir, p.Name);
+      if (p.Size <= 0) continue;
+      var offset = p.Inline
+        ? p.DinodeBlkno * blockSize + Ocfs2Reader.Id2Offset + Ocfs2Reader.InlineHeaderLen
+        : p.DataBlkno * blockSize;
+      accessor.CopyTo(offset, target, p.Size);
+    }
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {

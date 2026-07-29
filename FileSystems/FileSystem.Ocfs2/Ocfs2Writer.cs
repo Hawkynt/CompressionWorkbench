@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ocfs2;
@@ -41,7 +42,7 @@ namespace FileSystem.Ocfs2;
 /// </summary>
 internal sealed class Ocfs2Writer {
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, FilePayload Payload)> _files = [];
 
   /// <summary>Volume label written into <c>s_label</c> (64-byte field, NUL-padded). Capped at 63 ASCII bytes.</summary>
   private string _label = "OCFS2VOL";
@@ -147,7 +148,21 @@ internal sealed class Ocfs2Writer {
     var normalized = name.Replace('\\', '/').Trim('/');
     if (string.IsNullOrEmpty(Path.GetFileName(normalized)))
       throw new ArgumentException("File name must not be empty.", nameof(name));
-    _files.Add((normalized, data));
+    _files.Add((normalized, data, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    var normalized = name.Replace('\\', '/').Trim('/');
+    if (string.IsNullOrEmpty(Path.GetFileName(normalized)))
+      throw new ArgumentException("File name must not be empty.", nameof(name));
+    _files.Add((normalized, [], FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>A node in the directory tree assembled from the added file paths.</summary>
@@ -155,6 +170,8 @@ internal sealed class Ocfs2Writer {
     public required string Name;
     public bool IsDir;
     public byte[] Data = [];
+    /// <summary>A file's content, which may be produced on demand.</summary>
+    public FilePayload Payload = FilePayload.Empty;
     public readonly Dictionary<string, TreeNode> Children = new(StringComparer.Ordinal);
     public readonly List<TreeNode> Order = [];
 
@@ -168,7 +185,7 @@ internal sealed class Ocfs2Writer {
 
   private TreeNode BuildTree() {
     var root = new TreeNode { Name = "", IsDir = true };
-    foreach (var (path, data) in _files) {
+    foreach (var (path, data, payload) in _files) {
       var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       var cur = root;
       for (var i = 0; i < parts.Length; i++) {
@@ -181,7 +198,7 @@ internal sealed class Ocfs2Writer {
           cur.Children[part] = child;
           cur.Order.Add(child);
         }
-        if (isLeaf && !child.IsDir) child.Data = data;
+        if (isLeaf && !child.IsDir) { child.Data = data; child.Payload = payload; }
         cur = child;
       }
     }
@@ -271,8 +288,8 @@ internal sealed class Ocfs2Writer {
     // Files: allocate data clusters (extent-backed). Inline-small files keep data
     // in the dinode; only files larger than the inline area need clusters.
     foreach (var f in files) {
-      if (f.Data.Length > MaxInline) {
-        var clusters = (f.Data.Length + ClusterSize - 1) / ClusterSize;
+      if (f.Payload.Size > MaxInline) {
+        var clusters = (int)((f.Payload.Size + ClusterSize - 1) / ClusterSize);
         f.DataBlkno = nextData;
         f.DataClusters = clusters;
         nextData += clusters;
@@ -319,7 +336,38 @@ internal sealed class Ocfs2Writer {
   /// <summary>Builds the OCFS2 image and returns the raw bytes.</summary>
   public byte[] Build() {
     var plan = BuildPlan();
-    var image = new byte[plan.TotalBlocks * BlockSize];
+    var image = this.BuildCore(plan, out var payloads);
+    return payloads.Materialise(image);
+  }
+
+  /// <summary>
+  /// Writes the volume into <paramref name="output" />: the blocks the filesystem
+  /// populates, then each file's bytes at the block it was allocated. Only a
+  /// non-seekable target has to materialise the volume, so a seekable one is
+  /// bounded by the disk rather than by what a byte[] can address.
+  /// </summary>
+  public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = this.Build();
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = this.BuildCore(this.BuildPlan(), out var payloads);
+    image.WriteTo(output);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + image.TotalBytes;
+    output.Flush();
+  }
+
+  private SparseBlockImage BuildCore(Plan plan, out DeferredPayloads payloads) {
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(BlockSize, (long)plan.TotalBlocks * BlockSize);
+    payloads = new DeferredPayloads();
 
     WriteSuperblock(image, plan);
     WriteGlobalBitmap(image, plan);
@@ -342,61 +390,56 @@ internal sealed class Ocfs2Writer {
       WriteDirDinode(image, dir);
     foreach (var dir in plan.Dirs.Prepend(plan.Root))
       if (dir.DataClusters > 0 && dir.Data.Length > 0)
-        Buffer.BlockCopy(dir.Data, 0, image, (int)(dir.DataBlkno * BlockSize), dir.Data.Length);
+        image.Write((long)dir.DataBlkno * BlockSize, dir.Data);
 
     foreach (var f in plan.Files) {
       WriteFileDinode(image, f);
-      if (f.DataClusters > 0 && f.Data.Length > 0)
-        Buffer.BlockCopy(f.Data, 0, image, (int)(f.DataBlkno * BlockSize), f.Data.Length);
+      if (f.DataClusters > 0 && f.Payload.Size > 0)
+        payloads.Add((long)f.DataBlkno * BlockSize, f.Payload);
     }
 
     return image;
   }
 
-  public void WriteTo(Stream output) {
-    var data = Build();
-    output.Write(data, 0, data.Length);
-  }
-
   // ───────────────────────── dinode header ─────────────────────────
 
   private static void WriteDinodeHeader(
-      byte[] image, long blkno, uint mode, uint flags, long size, ushort links,
+      SparseBlockImage image, long blkno, uint mode, uint flags, long size, ushort links,
       int suballocSlot, int suballocBit) {
     var off = (int)(blkno * BlockSize);
-    InodeSignature.CopyTo(image.AsSpan(off, InodeSignature.Length));
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x08, 4), FsGeneration);
-    BinaryPrimitives.WriteInt16LittleEndian(image.AsSpan(off + 0x0C, 2), (short)suballocSlot);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x0E, 2), (ushort)suballocBit);
+    InodeSignature.CopyTo(image.At(off, InodeSignature.Length));
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x08, 4), FsGeneration);
+    BinaryPrimitives.WriteInt16LittleEndian(image.At(off + 0x0C, 2), (short)suballocSlot);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0E, 2), (ushort)suballocBit);
 
     var clusters = size > 0 ? (uint)((size + ClusterSize - 1) / ClusterSize) : 0;
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x14, 4), clusters);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x14, 4), clusters);
 
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x20, 8), (ulong)size);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x28, 2), (ushort)mode);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x2A, 2), links);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x2C, 4), flags);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x20, 8), (ulong)size);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x28, 2), (ushort)mode);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x2A, 2), links);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x2C, 4), flags);
 
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x30, 8), MkTime); // atime
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x38, 8), MkTime); // ctime
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x40, 8), MkTime); // mtime
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x30, 8), MkTime); // atime
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x38, 8), MkTime); // ctime
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x40, 8), MkTime); // mtime
 
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x50, 8), (ulong)blkno);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x60, 4), FsGeneration);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x50, 8), (ulong)blkno);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x60, 4), FsGeneration);
   }
 
-  private static void SetExtentRecord(byte[] image, long blkno, int recIdx, uint cpos, ushort clusters, long dataBlkno) {
+  private static void SetExtentRecord(SparseBlockImage image, long blkno, int recIdx, uint cpos, ushort clusters, long dataBlkno) {
     var rec = (int)(blkno * BlockSize) + Id2Offset + ListHeaderLen + recIdx * 16;
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(rec + 0, 4), cpos);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(rec + 4, 2), clusters);
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(rec + 8, 8), (ulong)dataBlkno);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(rec + 0, 4), cpos);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(rec + 4, 2), clusters);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(rec + 8, 8), (ulong)dataBlkno);
   }
 
-  private static void SetExtentListHeader(byte[] image, long blkno, ushort count, ushort nextFree) {
+  private static void SetExtentListHeader(SparseBlockImage image, long blkno, ushort count, ushort nextFree) {
     var off = (int)(blkno * BlockSize) + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0, 2), 0);        // l_tree_depth
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 2, 2), count);    // l_count
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 4, 2), nextFree); // l_next_free_rec
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0, 2), 0);        // l_tree_depth
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 2, 2), count);    // l_count
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 4, 2), nextFree); // l_next_free_rec
   }
 
   // l_count for a leaf extent list inline in a dinode: (4096-0xC0-0x10)/16 = 243.
@@ -404,34 +447,34 @@ internal sealed class Ocfs2Writer {
 
   // ───────────────────────── superblock ─────────────────────────
 
-  private void WriteSuperblock(byte[] image, Plan plan) {
+  private void WriteSuperblock(SparseBlockImage image, Plan plan) {
     WriteDinodeHeader(image, SuperBlockBlkno, 0, FlValid | FlSystem | FlSuperBlock, 0, 0, -1, 0xFFFF);
     var dinodeOff = (int)(SuperBlockBlkno * BlockSize);
-    image.AsSpan(dinodeOff, 8).Clear();
-    SuperSignature.CopyTo(image.AsSpan(dinodeOff, SuperSignature.Length));
+    image.At(dinodeOff, 8).Clear();
+    SuperSignature.CopyTo(image.At(dinodeOff, SuperSignature.Length));
 
     // i_clusters = total clusters; i_blkno stays 2; i_size 0.
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + 0x14, 4), (uint)plan.TotalBlocks);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + 0x14, 4), (uint)plan.TotalBlocks);
 
     var off = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x00, 2), 0);    // s_major_rev_level
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x02, 2), 90);   // s_minor_rev_level
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x06, 2), 20);   // s_max_mnt_count
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x10, 8), MkTime); // s_lastcheck
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x1C, 4), 0x0002);   // s_feature_compat: JBD2_SB
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x20, 4), 0x8148);   // s_feature_incompat: append-dio|extended-slotmap|inline-data|local
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x24, 4), 0);        // s_feature_ro_compat
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x28, 8), RootDirBlkno);
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x30, 8), SystemDirBlkno);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x38, 4), BlockSizeBits);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x3C, 4), ClusterSizeBits);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x40, 2), 1);        // s_max_slots
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x48, 8), GlobalBitmapGroupBlkno); // s_first_cluster_group
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x00, 2), 0);    // s_major_rev_level
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x02, 2), 90);   // s_minor_rev_level
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x06, 2), 20);   // s_max_mnt_count
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x10, 8), MkTime); // s_lastcheck
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x1C, 4), 0x0002);   // s_feature_compat: JBD2_SB
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x20, 4), 0x8148);   // s_feature_incompat: append-dio|extended-slotmap|inline-data|local
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x24, 4), 0);        // s_feature_ro_compat
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x28, 8), RootDirBlkno);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x30, 8), SystemDirBlkno);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x38, 4), BlockSizeBits);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x3C, 4), ClusterSizeBits);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x40, 2), 1);        // s_max_slots
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x48, 8), GlobalBitmapGroupBlkno); // s_first_cluster_group
     // s_label[64] @ +0x50 — NUL-padded ASCII. The field is zeroed by the
     // image allocation, so a short label leaves the tail clean for the reader.
     var labelBytes = Encoding.ASCII.GetBytes(this._label);
-    labelBytes.AsSpan(0, Math.Min(labelBytes.Length, 64)).CopyTo(image.AsSpan(off + 0x50, 64));
-    Uuid.CopyTo(image.AsSpan(off + 0x90, 16)); // s_uuid
+    labelBytes.AsSpan(0, Math.Min(labelBytes.Length, 64)).CopyTo(image.At(off + 0x50, 64));
+    Uuid.CopyTo(image.At(off + 0x90, 16)); // s_uuid
   }
 
   // ───────────────────────── group descriptors ─────────────────────────
@@ -441,21 +484,21 @@ internal sealed class Ocfs2Writer {
   /// <paramref name="bits"/> total bits in the group, <paramref name="usedBits"/>
   /// the count marked used (bits 0..usedBits-1 set in the bitmap).
   /// </summary>
-  private static void WriteGroupDesc(byte[] image, long blkno, int bits, int usedBits, long parentInode) {
+  private static void WriteGroupDesc(SparseBlockImage image, long blkno, int bits, int usedBits, long parentInode) {
     var off = (int)(blkno * BlockSize);
-    GroupSignature.CopyTo(image.AsSpan(off, GroupSignature.Length));
+    GroupSignature.CopyTo(image.At(off, GroupSignature.Length));
     // bg_size: bytes available for the bitmap = blocksize - header(0x40), capped.
     var bgSize = BlockSize - 0x40; // 4032
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x08, 2), (ushort)bgSize);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x0A, 2), (ushort)bits);          // bg_bits
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x08, 2), (ushort)bgSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0A, 2), (ushort)bits);          // bg_bits
     var freeBits = bits - usedBits;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x0C, 2), (ushort)freeBits);      // bg_free_bits_count
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x0E, 2), 0);                     // bg_chain
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x10, 4), FsGeneration);          // bg_generation
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x14, 2), (ushort)freeBits);      // bg_contig_free_bits
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0C, 2), (ushort)freeBits);      // bg_free_bits_count
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0E, 2), 0);                     // bg_chain
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x10, 4), FsGeneration);          // bg_generation
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x14, 2), (ushort)freeBits);      // bg_contig_free_bits
     // bg_next_group @0x18 = 0
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x20, 8), (ulong)parentInode);    // bg_parent_dinode
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x28, 8), (ulong)blkno);          // bg_blkno
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x20, 8), (ulong)parentInode);    // bg_parent_dinode
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x28, 8), (ulong)blkno);          // bg_blkno
 
     // bg_bitmap @0x40: set bits [0, usedBits).
     var bmp = off + 0x40;
@@ -463,33 +506,33 @@ internal sealed class Ocfs2Writer {
       image[bmp + (i >> 3)] |= (byte)(1 << (i & 7));
   }
 
-  private static void WriteGlobalBitmap(byte[] image, Plan plan) {
+  private static void WriteGlobalBitmap(SparseBlockImage image, Plan plan) {
     // Dinode (chain allocator over all clusters).
     WriteDinodeHeader(image, GlobalBitmapBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain,
       plan.TotalBlocks * ClusterSize, 1, -1, GlobalBitmapBlkno);
 
     var dinodeOff = (int)(GlobalBitmapBlkno * BlockSize);
     // id1.bitmap1 { i_used @0xB8, i_total @0xBC }
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + Id1UsedOffset, 4), (uint)plan.UsedClusters);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + Id1TotalOffset, 4), (uint)plan.TotalBlocks);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1UsedOffset, 4), (uint)plan.UsedClusters);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1TotalOffset, 4), (uint)plan.TotalBlocks);
 
     // id2.i_chain
     var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x00, 2), (ushort)ClustersPerGroup); // cl_cpg (fixed 32256)
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x02, 2), 1);                        // cl_bpc
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x04, 2), ChainListCount);           // cl_count
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x06, 2), 1);                        // cl_next_free_rec
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), (ushort)ClustersPerGroup); // cl_cpg (fixed 32256)
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);                        // cl_bpc
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);           // cl_count
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 1);                        // cl_next_free_rec
     // chain rec 0 @0x10: c_free, c_total, c_blkno
     var free = (int)plan.TotalBlocks - plan.UsedClusters;
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ch + 0x10, 4), (uint)free);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ch + 0x14, 4), (uint)plan.TotalBlocks);
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(ch + 0x18, 8), GlobalBitmapGroupBlkno);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x10, 4), (uint)free);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x14, 4), (uint)plan.TotalBlocks);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(ch + 0x18, 8), GlobalBitmapGroupBlkno);
 
     // Group descriptor at block 3: covers all clusters, used = plan.UsedClusters.
     WriteGroupDesc(image, GlobalBitmapGroupBlkno, (int)plan.TotalBlocks, plan.UsedClusters, GlobalBitmapBlkno);
   }
 
-  private static void WriteGlobalInodeAlloc(byte[] image, Plan plan) {
+  private static void WriteGlobalInodeAlloc(SparseBlockImage image, Plan plan) {
     var bits = plan.InodeAllocGroupBits;
     var used = SystemDinodeCount; // every system dinode block 4..17
     var size = (long)bits * BlockSize;
@@ -497,17 +540,17 @@ internal sealed class Ocfs2Writer {
       size, 1, -1, GlobalInodeAllocBlkno - InodeAllocGroupBlkno);
 
     var dinodeOff = (int)(GlobalInodeAllocBlkno * BlockSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + Id1UsedOffset, 4), (uint)used);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + Id1TotalOffset, 4), (uint)bits);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1UsedOffset, 4), (uint)used);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1TotalOffset, 4), (uint)bits);
 
     var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x00, 2), (ushort)bits); // cl_cpg
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x02, 2), 1);            // cl_bpc
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x04, 2), ChainListCount);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x06, 2), 1);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ch + 0x10, 4), (uint)(bits - used)); // c_free
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ch + 0x14, 4), (uint)bits);          // c_total
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(ch + 0x18, 8), InodeAllocGroupBlkno);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), (ushort)bits); // cl_cpg
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);            // cl_bpc
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x10, 4), (uint)(bits - used)); // c_free
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x14, 4), (uint)bits);          // c_total
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(ch + 0x18, 8), InodeAllocGroupBlkno);
 
     WriteGroupDesc(image, InodeAllocGroupBlkno, bits, used, GlobalInodeAllocBlkno);
     // The system dinodes are blocks 4..17. The group descriptor IS block 4, and it
@@ -516,7 +559,7 @@ internal sealed class Ocfs2Writer {
 
   // ───────────────────────── system directories & files ─────────────────────────
 
-  private void WriteRootDir(byte[] image, Plan plan) {
+  private void WriteRootDir(SparseBlockImage image, Plan plan) {
     var node = plan.Root;
     var links = (ushort)(2 + node.Order.Count(c => c.IsDir) + 1); // +1 for lost+found
 
@@ -529,7 +572,7 @@ internal sealed class Ocfs2Writer {
     WriteInlineDir(image, RootDirBlkno, inline, links, FlValid | FlSystem, RootDirBlkno - InodeAllocGroupBlkno);
   }
 
-  private void WriteSystemDir(byte[] image, Plan plan) {
+  private void WriteSystemDir(SparseBlockImage image, Plan plan) {
     var entries = new List<(long Inode, string Name, byte Type)> {
       (SystemDirBlkno, ".", FtDir),
       (SystemDirBlkno, "..", FtDir), // system dir is its own parent
@@ -550,12 +593,12 @@ internal sealed class Ocfs2Writer {
     WriteInlineDir(image, SystemDirBlkno, inline, 3, FlValid | FlSystem, SystemDirBlkno - InodeAllocGroupBlkno);
   }
 
-  private static void WriteBadBlocks(byte[] image) {
+  private static void WriteBadBlocks(SparseBlockImage image) {
     WriteDinodeHeader(image, BadBlocksBlkno, ModeFile, FlValid | FlSystem, 0, 1, -1, BadBlocksBlkno - InodeAllocGroupBlkno);
     SetExtentListHeader(image, BadBlocksBlkno, ExtentListCount, 0);
   }
 
-  private static void WriteSlotMap(byte[] image, Plan plan) {
+  private static void WriteSlotMap(SparseBlockImage image, Plan plan) {
     // slot_map is a regular file with one cluster of data; extended-slotmap means
     // the data is ocfs2_extended_slot[] — all zero (no node mounted) is valid.
     WriteDinodeHeader(image, SlotMapBlkno, ModeFile, FlValid | FlSystem, ClusterSize, 1, -1, SlotMapBlkno - InodeAllocGroupBlkno);
@@ -564,14 +607,14 @@ internal sealed class Ocfs2Writer {
     // data left zeroed: es_valid=0 for the single slot.
   }
 
-  private static void WriteHeartbeat(byte[] image, Plan plan) {
+  private static void WriteHeartbeat(SparseBlockImage image, Plan plan) {
     var size = (long)HeartbeatClusters * ClusterSize;
     WriteDinodeHeader(image, HeartbeatBlkno, ModeFile, FlValid | FlSystem | FlHeartbeat, size, 1, -1, HeartbeatBlkno - InodeAllocGroupBlkno);
     SetExtentListHeader(image, HeartbeatBlkno, ExtentListCount, 1);
     SetExtentRecord(image, HeartbeatBlkno, 0, 0, (ushort)HeartbeatClusters, plan.HeartbeatData);
   }
 
-  private static void WriteOrphanDir(byte[] image) {
+  private static void WriteOrphanDir(SparseBlockImage image) {
     var entries = new List<(long Inode, string Name, byte Type)> {
       (OrphanDirBlkno, ".", FtDir),
       (SystemDirBlkno, "..", FtDir),
@@ -580,18 +623,18 @@ internal sealed class Ocfs2Writer {
     WriteInlineDir(image, OrphanDirBlkno, inline, 2, FlValid | FlSystem, OrphanDirBlkno - InodeAllocGroupBlkno);
   }
 
-  private static void WriteExtentAlloc(byte[] image) {
+  private static void WriteExtentAlloc(SparseBlockImage image) {
     // Empty chain allocator for extent blocks.
     WriteDinodeHeader(image, ExtentAllocBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain, 0, 1, -1, ExtentAllocBlkno - InodeAllocGroupBlkno);
     var dinodeOff = (int)(ExtentAllocBlkno * BlockSize);
     var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x00, 2), 1024); // cl_cpg
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x02, 2), 1);    // cl_bpc
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x04, 2), ChainListCount);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x06, 2), 0);    // cl_next_free_rec = empty
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), 1024); // cl_cpg
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);    // cl_bpc
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 0);    // cl_next_free_rec = empty
   }
 
-  private static void WritePerSlotInodeAlloc(byte[] image, Plan plan) {
+  private static void WritePerSlotInodeAlloc(SparseBlockImage image, Plan plan) {
     var bits = plan.PerSlotGroupBits;
     var used = plan.PerSlotUsedBits;
     var size = (long)bits * BlockSize;
@@ -599,22 +642,22 @@ internal sealed class Ocfs2Writer {
       size, 1, -1, InodeAllocBlkno - InodeAllocGroupBlkno);
 
     var dinodeOff = (int)(InodeAllocBlkno * BlockSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + Id1UsedOffset, 4), (uint)used);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + Id1TotalOffset, 4), (uint)bits);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1UsedOffset, 4), (uint)used);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1TotalOffset, 4), (uint)bits);
 
     var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x00, 2), (ushort)Math.Min(bits, 1024)); // cl_cpg
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x02, 2), 1);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x04, 2), ChainListCount);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ch + 0x06, 2), 1);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ch + 0x10, 4), (uint)(bits - used));
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ch + 0x14, 4), (uint)bits);
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(ch + 0x18, 8), (ulong)plan.PerSlotGroupBlock);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), (ushort)Math.Min(bits, 1024)); // cl_cpg
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x10, 4), (uint)(bits - used));
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x14, 4), (uint)bits);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(ch + 0x18, 8), (ulong)plan.PerSlotGroupBlock);
 
     WriteGroupDesc(image, plan.PerSlotGroupBlock, bits, used, InodeAllocBlkno);
   }
 
-  private static void WriteJournal(byte[] image, Plan plan) {
+  private static void WriteJournal(SparseBlockImage image, Plan plan) {
     var size = (long)JournalClusters * ClusterSize;
     WriteDinodeHeader(image, JournalBlkno, ModeFile, FlValid | FlSystem | FlJournal, size, 1, -1, JournalBlkno - InodeAllocGroupBlkno);
     SetExtentListHeader(image, JournalBlkno, ExtentListCount, 1);
@@ -622,36 +665,36 @@ internal sealed class Ocfs2Writer {
 
     // JBD2 journal superblock (big-endian) in the first journal data block.
     var jb = (int)(plan.JournalData * BlockSize);
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x00, 4), 0xC03B3998u); // h_magic
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x04, 4), 4);            // h_blocktype = JBD2_SUPERBLOCK_V2
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x00, 4), 0xC03B3998u); // h_magic
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x04, 4), 4);            // h_blocktype = JBD2_SUPERBLOCK_V2
     // h_sequence @0x08 = 0
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x0C, 4), BlockSize);    // s_blocksize
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x10, 4), (uint)JournalClusters); // s_maxlen
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x14, 4), 1);            // s_first
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x18, 4), 1);            // s_sequence
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x1C, 4), 1);            // s_start
-    Uuid.CopyTo(image.AsSpan(jb + 0x30, 16));                                        // s_uuid
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(jb + 0x40, 4), 1);            // s_nr_users
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x0C, 4), BlockSize);    // s_blocksize
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x10, 4), (uint)JournalClusters); // s_maxlen
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x14, 4), 1);            // s_first
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x18, 4), 1);            // s_sequence
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x1C, 4), 1);            // s_start
+    Uuid.CopyTo(image.At(jb + 0x30, 16));                                        // s_uuid
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x40, 4), 1);            // s_nr_users
   }
 
-  private static void WriteLocalAlloc(byte[] image) {
+  private static void WriteLocalAlloc(SparseBlockImage image) {
     WriteDinodeHeader(image, LocalAllocBlkno, ModeFile, FlValid | FlSystem | FlLocalAlloc | FlBitmap, 0, 1, -1, LocalAllocBlkno - InodeAllocGroupBlkno);
     var off = (int)(LocalAllocBlkno * BlockSize) + Id2Offset;
     // ocfs2_local_alloc header is 16 bytes (la_bm_off u32 + la_size u16 +
     // la_reserved1 u16 + la_reserved2 u64); la_bitmap follows.
     var laSize = BlockSize - Id2Offset - 16; // 3888
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x04, 2), (ushort)laSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x04, 2), (ushort)laSize);
   }
 
-  private static void WriteTruncateLog(byte[] image) {
+  private static void WriteTruncateLog(SparseBlockImage image) {
     WriteDinodeHeader(image, TruncateLogBlkno, ModeFile, FlValid | FlSystem | FlDealloc, 0, 1, -1, TruncateLogBlkno - InodeAllocGroupBlkno);
     var off = (int)(TruncateLogBlkno * BlockSize) + Id2Offset;
     // ocfs2_truncate_log: tl_count @0x00 = max records that fit, tl_used @0x02 = 0.
     var tlCount = (BlockSize - Id2Offset - 8) / 8; // (4096-0xC0-8)/sizeof(rec=8)
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x00, 2), (ushort)tlCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x00, 2), (ushort)tlCount);
   }
 
-  private static void WriteLostFound(byte[] image, Plan plan) {
+  private static void WriteLostFound(SparseBlockImage image, Plan plan) {
     var entries = new List<(long Inode, string Name, byte Type)> {
       (plan.LostFoundBlkno, ".", FtDir),
       (RootDirBlkno, "..", FtDir),
@@ -664,7 +707,7 @@ internal sealed class Ocfs2Writer {
 
   // ───────────────────────── user dir/file dinodes ─────────────────────────
 
-  private void WriteDirDinode(byte[] image, TreeNode node) {
+  private void WriteDirDinode(SparseBlockImage image, TreeNode node) {
     var links = (ushort)(2 + node.Order.Count(c => c.IsDir));
     if (node.DataClusters > 0) {
       WriteExtentDir(image, node, node.DinodeBlkno, (long)node.DataClusters * ClusterSize, links, FlValid, node.InodeAllocBit, slot: 0);
@@ -674,17 +717,19 @@ internal sealed class Ocfs2Writer {
     WriteInlineDirWithSlot(image, node.DinodeBlkno, inline, links, FlValid, 0, node.InodeAllocBit);
   }
 
-  private static void WriteFileDinode(byte[] image, TreeNode f) {
-    var size = f.Data.Length;
+  private static void WriteFileDinode(SparseBlockImage image, TreeNode f) {
+    // The real size: clamping it to the inline limit sent every large file down
+    // the inline branch, where its bytes do not exist.
+    var size = f.Payload.Size;
     if (size <= MaxInline) {
       WriteDinodeHeaderWithSlot(image, f.DinodeBlkno, ModeFile, FlValid, size, 1, 0, f.InodeAllocBit);
       var dinodeOff = (int)(f.DinodeBlkno * BlockSize);
       // Inline files keep their bytes in the dinode → i_clusters must be 0.
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + 0x14, 4), 0);
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(dinodeOff + DynFeaturesOffset, 2), DynInlineData);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + 0x14, 4), 0);
+      BinaryPrimitives.WriteUInt16LittleEndian(image.At(dinodeOff + DynFeaturesOffset, 2), DynInlineData);
       var off = dinodeOff + Id2Offset;
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off, 2), MaxInline); // id_count
-      if (size > 0) Buffer.BlockCopy(f.Data, 0, image, off + InlineHeaderLen, size);
+      BinaryPrimitives.WriteUInt16LittleEndian(image.At(off, 2), MaxInline); // id_count
+      if (size > 0) image.Write(off + InlineHeaderLen, f.Data.AsSpan(0, (int)size));
       return;
     }
     WriteDinodeHeaderWithSlot(image, f.DinodeBlkno, ModeFile, FlValid, size, 1, 0, f.InodeAllocBit);
@@ -694,31 +739,31 @@ internal sealed class Ocfs2Writer {
 
   // Header variant that takes an explicit suballoc slot (for inodes allocated
   // from the per-slot inode_alloc, slot 0).
-  private static void WriteDinodeHeaderWithSlot(byte[] image, long blkno, uint mode, uint flags, long size, ushort links, int slot, int bit) {
+  private static void WriteDinodeHeaderWithSlot(SparseBlockImage image, long blkno, uint mode, uint flags, long size, ushort links, int slot, int bit) {
     WriteDinodeHeader(image, blkno, mode, flags, size, links, slot, bit);
   }
 
-  private static void WriteExtentDir(byte[] image, TreeNode node, long blkno, long size, ushort links, uint flags, int bit, int slot = -1) {
+  private static void WriteExtentDir(SparseBlockImage image, TreeNode node, long blkno, long size, ushort links, uint flags, int bit, int slot = -1) {
     WriteDinodeHeader(image, blkno, ModeDir, flags, size, links, slot, bit);
     SetExtentListHeader(image, blkno, ExtentListCount, 1);
     SetExtentRecord(image, blkno, 0, 0, (ushort)node.DataClusters, node.DataBlkno);
   }
 
-  private static void WriteInlineDir(byte[] image, long blkno, byte[] inline, ushort links, uint flags, int bit) =>
+  private static void WriteInlineDir(SparseBlockImage image, long blkno, byte[] inline, ushort links, uint flags, int bit) =>
     WriteInlineDirWithSlot(image, blkno, inline, links, flags, -1, bit);
 
-  private static void WriteInlineDirWithSlot(byte[] image, long blkno, byte[] inline, ushort links, uint flags, int slot, int bit) {
+  private static void WriteInlineDirWithSlot(SparseBlockImage image, long blkno, byte[] inline, ushort links, uint flags, int slot, int bit) {
     WriteDinodeHeader(image, blkno, ModeDir, flags, MaxInline, links, slot, bit);
     var dinodeOff = (int)(blkno * BlockSize);
     // i_size for inline dirs == id_count (full inline area), matching mkfs.
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(dinodeOff + 0x20, 8), MaxInline);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(dinodeOff + 0x14, 4), 0); // i_clusters = 0
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(dinodeOff + DynFeaturesOffset, 2), DynInlineData);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(dinodeOff + 0x20, 8), MaxInline);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + 0x14, 4), 0); // i_clusters = 0
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(dinodeOff + DynFeaturesOffset, 2), DynInlineData);
     var off = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off, 2), MaxInline); // id_count
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off, 2), MaxInline); // id_count
     if (inline.Length > MaxInline)
       throw new InvalidOperationException("Inline dir overflow not planned as extent-backed.");
-    if (inline.Length > 0) Buffer.BlockCopy(inline, 0, image, off + InlineHeaderLen, inline.Length);
+    if (inline.Length > 0) image.Write(off + InlineHeaderLen, inline);
   }
 
   // ───────────────────────── directory entry builders ─────────────────────────

@@ -35,7 +35,7 @@ internal static class Ocfs2Reader {
   private const int OffSize = 0x20;          // i_size (u64)
   private const int OffFlags = 0x2C;         // i_flags (u32)
   private const int OffDynFeatures = 0x76;   // i_dyn_features (u16)
-  private const int Id2Offset = 0xC0;        // id2 union
+  internal const int Id2Offset = 0xC0;        // id2 union
 
   // ocfs2_super_block field offsets relative to id2 (dinode + 0xC0).
   private const int SbRootBlkno = 0x28;
@@ -46,7 +46,7 @@ internal static class Ocfs2Reader {
 
   // ocfs2_inline_data: id_count (u16) + id_reserved0 (u16) + id_reserved1 (u32)
   // == 8 bytes of header, then id_data[].
-  private const int InlineHeaderLen = 8;
+  internal const int InlineHeaderLen = 8;
 
   // Directory entry file types.
   private const byte FtRegFile = 1;
@@ -125,6 +125,10 @@ internal static class Ocfs2Reader {
   public readonly record struct FilePlacement(string Name, long DinodeBlkno, long DataBlkno, long Size, bool Inline);
 
   /// <summary>Walks the tree and returns the on-disk placement of every regular file.</summary>
+  /// <summary>Block size recorded in the superblock, or 0 when it is unreadable.</summary>
+  public static int ReadBlockSize(byte[] image)
+    => TryReadSuperblock(image, out var blockSize, out _) ? blockSize : 0;
+
   public static List<FilePlacement> ReadFilePlacements(byte[] image) {
     var result = new List<FilePlacement>();
     if (!TryReadSuperblock(image, out var blockSize, out var rootBlkno)) return result;
