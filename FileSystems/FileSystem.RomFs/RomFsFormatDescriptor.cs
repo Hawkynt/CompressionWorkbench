@@ -93,8 +93,17 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new RomFsWriter(output, leaveOpen: true);
-    foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the image out; reading a large input
+      // into a byte[] would cap the image at what a list can address.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
     var volumeName = options?.GetOption("VolumeLabel", "");
     w.Finish(string.IsNullOrEmpty(volumeName) ? "romfs" : volumeName);
   }
@@ -152,13 +161,39 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Defragments a RomFs image. Falls back to rebuild since ROMFS entries
   /// are tightly packed with inline data — in-place reordering is complex.
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // An image too large to materialise goes through the streaming rebuilder;
+    // BuildImage assembles the whole thing in a MemoryStream.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      RomFsWriter? streamWriter = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new RomFsReader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => streamWriter = new RomFsWriter(s2, leaveOpen: true),
+        // As a stream factory, not inline: an inline payload would go back into
+        // the buffer this path exists to avoid.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => { streamWriter!.Finish(); streamWriter.Dispose(); });
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new RomFsReader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
       },
       buildImage: BuildImage);
+  }
+
+  /// <summary>Largest image a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
     using var ms = new MemoryStream();

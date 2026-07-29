@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.RomFs;
 
@@ -11,7 +12,7 @@ namespace FileSystem.RomFs;
 public sealed class RomFsWriter : IDisposable {
   private readonly Stream _output;
   private readonly bool _leaveOpen;
-  private readonly List<(string Path, byte[] Data)> _files = [];
+  private readonly List<(string Path, FilePayload Payload)> _files = [];
   private bool _disposed;
 
   /// <summary>Initializes a new writer targeting <paramref name="output"/>.</summary>
@@ -23,13 +24,24 @@ public sealed class RomFsWriter : IDisposable {
   /// <summary>Adds a file at the given path (forward-slash separated, no leading slash).</summary>
   public void AddFile(string path, byte[] data) {
     path = path.Replace('\\', '/').TrimStart('/');
-    _files.Add((path, data));
+    _files.Add((path, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string path, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(path);
+    ArgumentNullException.ThrowIfNull(openStream);
+    _files.Add((path.Replace('\\', '/').TrimStart('/'), FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>Builds the ROMFS image and writes it to the output stream.</summary>
   public void Finish(string volumeName = "romfs") {
     // Build the in-memory image into a List<byte> (simpler than pre-computing sizes).
-    var buf = new List<byte>(4096);
+    var buf = new ImageBuilder();
 
     // ---- Superblock ----
     // [0..7]   magic "-rom1fs-"
@@ -73,7 +85,7 @@ public sealed class RomFsWriter : IDisposable {
     var firstFileOffset = buf.Count; // offset of first entry in root directory
 
     // Represent tree nodes
-    var nodeOffsets = new Dictionary<string, int>(); // dir path -> offset of its first child entry
+    var nodeOffsets = new Dictionary<string, long>(); // dir path -> offset of its first child entry
 
     // We do a single-pass layout by writing entries and back-patching.
     // Layout order: root children, then each subdirectory's children recursively.
@@ -91,18 +103,18 @@ public sealed class RomFsWriter : IDisposable {
     // sum of all uint32 words = 0 mod 2^32.
     PatchSuperblockChecksum(buf, namePadded);
 
-    _output.Write(buf.ToArray());
+    buf.WriteTo(_output);
   }
 
   // Writes all entries for a single directory level into buf.
   // Returns the offset where this directory's first child entry starts (for specInfo of parent's
   // "." entry) or -1 if the directory has no children.
-  private static int WriteDirectory(
-      List<byte> buf,
+  private static long WriteDirectory(
+      ImageBuilder buf,
       string dirPath,
       SortedSet<string> allDirs,
-      List<(string Path, byte[] Data)> allFiles,
-      Dictionary<string, int> nodeOffsets) {
+      List<(string Path, FilePayload Payload)> allFiles,
+      Dictionary<string, long> nodeOffsets) {
 
     // Collect children of this directory
     var childDirs  = allDirs.Where(d => d.Length > 0 && GetParent(d) == dirPath)
@@ -119,20 +131,20 @@ public sealed class RomFsWriter : IDisposable {
     // Enumerate all child entries (dirs first, then files) to build the list
     // We need to know offsets ahead of time for "next" pointers, so we compute sizes first.
 
-    var entryList = new List<(string Name, int Type, int Size, string FullPath)>();
+    var entryList = new List<(string Name, int Type, long Size, string FullPath)>();
     foreach (var d in childDirs)
       entryList.Add((GetLeaf(d), 1, 0, d));
-    foreach (var (path, data) in childFiles)
-      entryList.Add((GetLeaf(path), 2, data.Length, path));
+    foreach (var (path, payload) in childFiles)
+      entryList.Add((GetLeaf(path), 2, payload.Size, path));
 
     // Compute the byte size of each entry header (16 + padded name), excluding data
     var headerSizes = entryList.Select(e => 16 + Align16(Encoding.ASCII.GetByteCount(e.Name) + 1)).ToArray();
 
     // Compute data sizes for files (padded to 16 bytes)
-    var dataSizes = entryList.Select((e, i) => e.Type == 2 ? Align16(e.Size) : 0).ToArray();
+    var dataSizes = entryList.Select((e, i) => e.Type == 2 ? Align16Long(e.Size) : 0L).ToArray();
 
     // Compute the start offset of each entry
-    var entryOffsets = new int[entryList.Count];
+    var entryOffsets = new long[entryList.Count];
     var cur = firstChildOffset;
     for (var i = 0; i < entryList.Count; i++) {
       entryOffsets[i] = cur;
@@ -172,10 +184,10 @@ public sealed class RomFsWriter : IDisposable {
       // Write file data (for regular files)
       if (type == 2) {
         // Find file data
-        var fileData = allFiles.First(f => f.Path == fullPath).Data;
-        buf.AddRange(fileData);
-        var paddedData = Align16(fileData.Length);
-        for (var j = fileData.Length; j < paddedData; j++) buf.Add(0);
+        var payload = allFiles.First(f => f.Path == fullPath).Payload;
+        buf.AddPayload(payload);
+        var paddedData = Align16Long(payload.Size);
+        for (var j = payload.Size; j < paddedData; j++) buf.Add(0);
       }
 
       // Store specInfo offset for back-patching (dirs only)
@@ -230,7 +242,7 @@ public sealed class RomFsWriter : IDisposable {
   // Compute and write the checksum for a single file/dir entry header.
   // The checksum field is at offset+12; the checksum covers the entire header
   // (16 bytes + padded name; NOT the file data), with checksum field = 0.
-  private static void PatchEntryChecksum(List<byte> buf, int entryOffset, int headerSize) {
+  private static void PatchEntryChecksum(ImageBuilder buf, long entryOffset, int headerSize) {
     // checksum field at entryOffset + 12; already 0 from initial write
     uint sum = 0;
     for (var i = 0; i < headerSize; i += 4)
@@ -240,7 +252,7 @@ public sealed class RomFsWriter : IDisposable {
 
   // Superblock checksum: sum of all uint32 words in the superblock (magic+fullSize+checksum+volname)
   // with checksum field = 0, must total 0 mod 2^32.
-  private static void PatchSuperblockChecksum(List<byte> buf, int namePaddedLen) {
+  private static void PatchSuperblockChecksum(ImageBuilder buf, int namePaddedLen) {
     // Superblock = 16 bytes fixed header + namePaddedLen bytes volume name
     var sbLen = 16 + namePaddedLen;
     // checksum at offset 12 is already 0
@@ -262,21 +274,23 @@ public sealed class RomFsWriter : IDisposable {
 
   private static int Align16(int len) => (len + 15) & ~15;
 
-  private static void WriteUInt32BEToList(List<byte> buf, uint value) {
+  private static long Align16Long(long len) => (len + 15) & ~15L;
+
+  private static void WriteUInt32BEToList(ImageBuilder buf, uint value) {
     buf.Add((byte)(value >> 24));
     buf.Add((byte)(value >> 16));
     buf.Add((byte)(value >> 8));
     buf.Add((byte)value);
   }
 
-  private static void WriteUInt32BE(List<byte> buf, int offset, uint value) {
+  private static void WriteUInt32BE(ImageBuilder buf, long offset, uint value) {
     buf[offset]     = (byte)(value >> 24);
     buf[offset + 1] = (byte)(value >> 16);
     buf[offset + 2] = (byte)(value >> 8);
     buf[offset + 3] = (byte)value;
   }
 
-  private static uint ReadUInt32BEFromList(List<byte> buf, int offset) =>
+  private static uint ReadUInt32BEFromList(ImageBuilder buf, long offset) =>
     ((uint)buf[offset] << 24) | ((uint)buf[offset + 1] << 16) |
     ((uint)buf[offset + 2] << 8) | buf[offset + 3];
 
@@ -286,4 +300,96 @@ public sealed class RomFsWriter : IDisposable {
     _disposed = true;
     if (!_leaveOpen) _output.Dispose();
   }
+  /// <summary>
+  /// Image under construction: metadata bytes are held, file payloads are only
+  /// recorded with the offset they belong at. Appending the payloads themselves
+  /// is what capped ROMFS at what a List&lt;byte&gt; can address, and the format's
+  /// 32-bit size field allows four times that.
+  /// </summary>
+  private sealed class ImageBuilder {
+
+    private readonly List<byte> _meta = [];
+    private readonly List<(long ImageOffset, int MetaStart, int Length)> _segments = [];
+    private readonly List<(long ImageOffset, FilePayload Payload)> _payloads = [];
+    private long _position;
+    private long _segmentStart = -1;
+
+    /// <summary>Current offset within the finished image.</summary>
+    public long Count => this._position;
+
+    public void Add(byte value) {
+      this.EnsureSegment();
+      this._meta.Add(value);
+      ++this._position;
+    }
+
+    public void AddRange(ReadOnlySpan<byte> bytes) {
+      this.EnsureSegment();
+      foreach (var b in bytes) this._meta.Add(b);
+      this._position += bytes.Length;
+    }
+
+    /// <summary>Records a payload at the current offset without holding its bytes.</summary>
+    public void AddPayload(FilePayload payload) {
+      this.CloseSegment();
+      if (payload.Size > 0) this._payloads.Add((this._position, payload));
+      this._position += payload.Size;
+    }
+
+    /// <summary>Metadata byte at an image offset. Only header bytes are addressed this way.</summary>
+    public byte this[long imageOffset] {
+      get => this._meta[this.MetaIndex(imageOffset)];
+      set => this._meta[this.MetaIndex(imageOffset)] = value;
+    }
+
+    /// <summary>Writes the image: metadata segments and payloads in offset order.</summary>
+    public void WriteTo(Stream output) {
+      this.CloseSegment();
+      var basePosition = output.CanSeek ? output.Position : 0;
+      foreach (var (imageOffset, metaStart, length) in this._segments) {
+        if (output.CanSeek) output.Position = basePosition + imageOffset;
+        for (var i = 0; i < length; ++i) output.WriteByte(this._meta[metaStart + i]);
+      }
+
+      var buffer = new byte[64 * 1024];
+      foreach (var (imageOffset, payload) in this._payloads) {
+        if (output.CanSeek) output.Position = basePosition + imageOffset;
+        using var src = payload.Open();
+        var remaining = payload.Size;
+        while (remaining > 0) {
+          var n = src.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+          if (n <= 0) break;
+          output.Write(buffer, 0, n);
+          remaining -= n;
+        }
+      }
+      if (output.CanSeek) output.Position = basePosition + this._position;
+      output.Flush();
+    }
+
+    private void EnsureSegment() {
+      if (this._segmentStart >= 0) return;
+      this._segmentStart = this._position;
+      this._segments.Add((this._position, this._meta.Count, 0));
+    }
+
+    private void CloseSegment() {
+      // Only an open segment has a length to settle. Closing a closed one again
+      // would stretch it over the payload that followed it.
+      if (this._segments.Count == 0 || this._segmentStart < 0) return;
+      var last = this._segments[^1];
+      this._segments[^1] = (last.ImageOffset, last.MetaStart, (int)(this._position - last.ImageOffset));
+      this._segmentStart = -1;
+    }
+
+    private int MetaIndex(long imageOffset) {
+      this.CloseSegment();
+      foreach (var (segOffset, metaStart, length) in this._segments)
+        if (imageOffset >= segOffset && imageOffset < segOffset + length)
+          return metaStart + (int)(imageOffset - segOffset);
+      throw new ArgumentOutOfRangeException(nameof(imageOffset),
+        "ROMFS: that offset is inside a file payload, which the builder does not hold.");
+    }
+  }
+
 }

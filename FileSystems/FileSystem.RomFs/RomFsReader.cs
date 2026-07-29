@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.RomFs;
 
@@ -11,7 +12,11 @@ namespace FileSystem.RomFs;
 public sealed class RomFsReader {
   private static readonly byte[] Magic = "-rom1fs-"u8.ToArray();
 
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the image. Copying it into a byte[] capped the
+  /// reader at the array limit, which ROMFS's 32-bit sizes do not.
+  /// </summary>
+  private readonly ImageAccessor _data;
 
   /// <summary>All entries (files and directories) discovered in the image.</summary>
   public IReadOnlyList<RomFsEntry> Entries { get; }
@@ -27,15 +32,12 @@ public sealed class RomFsReader {
     if (stream.Length < 16)
       throw new InvalidDataException("Stream too small to be a ROMFS image.");
 
-    _data = new byte[stream.Length];
     stream.Position = 0;
-    var bytesRead = stream.Read(_data, 0, _data.Length);
-    if (bytesRead < 16)
-      throw new InvalidDataException("Stream too small to be a ROMFS image.");
+    _data = new ImageAccessor(stream, leaveOpen: true);
 
     // Validate magic "-rom1fs-"
     for (var i = 0; i < Magic.Length; i++) {
-      if (_data[i] != Magic[i])
+      if (_data.ReadByte(i) != Magic[i])
         throw new InvalidDataException("Not a ROMFS image: invalid magic bytes.");
     }
 
@@ -56,9 +58,9 @@ public sealed class RomFsReader {
     // Volume name starts at offset 16, null-terminated, padded to 16-byte alignment
     var nameStart = 16;
     var nameEnd = nameStart;
-    while (nameEnd < _data.Length && _data[nameEnd] != 0)
+    while (nameEnd < _data.Length && _data.ReadByte(nameEnd) != 0)
       nameEnd++;
-    var volumeName = Encoding.ASCII.GetString(_data, nameStart, nameEnd - nameStart);
+    var volumeName = Encoding.ASCII.GetString(_data.Read(nameStart, nameEnd - nameStart));
 
     // The name field (including null terminator) is padded to a 16-byte boundary
     // measured from offset 16 (the start of the name field).
@@ -89,9 +91,9 @@ public sealed class RomFsReader {
       // Name starts at offset+16, null-terminated, padded to 16-byte boundary from entry start
       var nameOffset = offset + 16;
       var nameEnd = nameOffset;
-      while (nameEnd < _data.Length && _data[nameEnd] != 0)
+      while (nameEnd < _data.Length && _data.ReadByte(nameEnd) != 0)
         nameEnd++;
-      var name = Encoding.ASCII.GetString(_data, (int)nameOffset, (int)(nameEnd - nameOffset));
+      var name = Encoding.ASCII.GetString(_data.Read(nameOffset, (int)(nameEnd - nameOffset)));
 
       // Data follows the name field (padded to 16-byte boundary from entry start)
       var nameFieldLen = nameEnd - nameOffset + 1; // include null terminator
@@ -137,12 +139,12 @@ public sealed class RomFsReader {
     if (entry.DataOffset < 0 || entry.DataOffset + entry.Size > _data.Length)
       throw new InvalidDataException($"Entry '{entry.Name}' data is out of bounds.");
     var result = new byte[entry.Size];
-    _data.AsSpan((int)entry.DataOffset, entry.Size).CopyTo(result);
+    _data.Read(entry.DataOffset, entry.Size).CopyTo(result, 0);
     return result;
   }
 
   private uint ReadUInt32BE(long offset) =>
-    BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan((int)offset, 4));
+    BinaryPrimitives.ReadUInt32BigEndian(_data.Read(offset, 4));
 
   // Pad length to next multiple of 16 (or same value if already aligned)
   private static int Align16(int len) => (len + 15) & ~15;

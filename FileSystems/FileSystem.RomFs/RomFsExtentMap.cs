@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using Compression.Registry;
 
 namespace FileSystem.RomFs;
@@ -27,19 +28,20 @@ public static class RomFsExtentMap {
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    var data = ms.ToArray();
+    // The header region carries every entry record; file payloads follow them.
+    // Buffering the whole image capped the wipe at the array limit, and the empty
+    // list that came back on failure reads as "the image is entirely free".
+    var data = new ImageAccessor(image, leaveOpen: true);
     if (data.Length < 16) yield break;
 
     for (var i = 0; i < Magic.Length; i++)
-      if (data[i] != Magic[i]) yield break;
+      if (data.ReadByte(i) != Magic[i]) yield break;
 
     // Superblock: 16-byte fixed header + null-terminated, 16-byte-aligned name.
     var nameStart = 16;
     var nameEnd = nameStart;
-    while (nameEnd < data.Length && data[nameEnd] != 0) nameEnd++;
-    var sbLen = nameStart + Align16(nameEnd - nameStart + 1);
+    while (nameEnd < data.Length && data.ReadByte(nameEnd) != 0) nameEnd++;
+    var sbLen = (long)nameStart + Align16((int)(nameEnd - nameStart + 1));
     if (sbLen > data.Length) sbLen = data.Length;
     yield return new DefragBlockInfo(0, sbLen, DefragBlockKind.MetadataReserved, "superblock");
 
@@ -50,7 +52,7 @@ public static class RomFsExtentMap {
       yield return block;
   }
 
-  private static IEnumerable<DefragBlockInfo> WalkChain(byte[] data, long firstOffset, HashSet<long> visited) {
+  private static IEnumerable<DefragBlockInfo> WalkChain(ImageAccessor data, long firstOffset, HashSet<long> visited) {
     var offset = firstOffset;
     while (offset != 0 && offset + 16 <= data.Length) {
       if (!visited.Add(offset)) break;
@@ -64,7 +66,7 @@ public static class RomFsExtentMap {
 
       var nameOffset = offset + 16;
       var nameEnd = nameOffset;
-      while (nameEnd < data.Length && data[nameEnd] != 0) nameEnd++;
+      while (nameEnd < data.Length && data.ReadByte(nameEnd) != 0) nameEnd++;
       var nameFieldLen = Align16((int)(nameEnd - nameOffset + 1));
       var dataOffset = nameOffset + nameFieldLen;
 
@@ -87,8 +89,8 @@ public static class RomFsExtentMap {
     }
   }
 
-  private static uint ReadUInt32BE(byte[] data, long offset)
-    => BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan((int)offset, 4));
+  private static uint ReadUInt32BE(ImageAccessor data, long offset)
+    => BinaryPrimitives.ReadUInt32BigEndian(data.Read(offset, 4));
 
   private static int Align16(int len) => (len + 15) & ~15;
 }
