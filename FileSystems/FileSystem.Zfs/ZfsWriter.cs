@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Zfs;
 
@@ -19,18 +20,55 @@ namespace FileSystem.Zfs;
 /// </para>
 /// </summary>
 public sealed class ZfsWriter {
-  private readonly List<(string Name, byte[] Data)> _files = new();
+  private readonly List<(string Name, FilePayload Payload)> _files = new();
   private string _poolName = "compworkbench";
   private string _datasetName = "data";
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, data));
+    this._files.Add((name, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are pulled from <paramref name="openStream" /> block by
+  /// block as the pool is written, so the content never has to fit in memory.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    this._files.Add((name, FilePayload.FromStream(size, openStream)));
   }
 
   public void SetPoolName(string name) { this._poolName = name; }
   public void SetDatasetName(string name) { this._datasetName = name; }
+
+  /// <summary>
+  /// Smallest pool that holds the added files: the four vdev labels, every file's
+  /// records, the indirect blocks above them, and headroom for the object sets and
+  /// ZAPs. Rounded up to a megabyte.
+  /// </summary>
+  public long ComputeAutoSize() {
+    var pointersPerIndirect = IndirectBlockSize / BlockPointer.Size;
+    var payload = 0L;
+    foreach (var (_, file) in this._files) {
+      var records = (file.Size + MaxRecordSize - 1) / MaxRecordSize;
+      payload += records * MaxRecordSize;
+      // Every level of indirection above the records, until one pointer is left.
+      for (var count = records; count > 1;) {
+        count = (count + pointersPerIndirect - 1) / pointersPerIndirect;
+        payload += count * IndirectBlockSize;
+      }
+    }
+
+    // Labels plus a megabyte of object-set, ZAP and dnode-array blocks, then a
+    // twentieth again so the allocator never runs the data area right to its end.
+    var overhead = 4L * ZfsConstants.LabelSize + 4L * 1024 * 1024;
+    var total = payload + overhead;
+    total += total / 20;
+    total = (total + (1L << 20) - 1) & ~((1L << 20) - 1);
+    return Math.Max(total, 64L * 1024 * 1024);
+  }
 
   public void WriteTo(Stream output, long imageSize = 64L * 1024 * 1024) {
     const int labelSize = ZfsConstants.LabelSize;
@@ -182,9 +220,9 @@ public sealed class ZfsWriter {
   /// </summary>
   private sealed class DirectoryTree {
     public readonly SortedDictionary<string, DirectoryTree> SubDirs = new(StringComparer.Ordinal);
-    public readonly SortedDictionary<string, byte[]> Files = new(StringComparer.Ordinal);
+    public readonly SortedDictionary<string, FilePayload> Files = new(StringComparer.Ordinal);
 
-    public static DirectoryTree Build(IEnumerable<(string Name, byte[] Data)> files) {
+    public static DirectoryTree Build(IEnumerable<(string Name, FilePayload Payload)> files) {
       var root = new DirectoryTree();
       foreach (var (name, data) in files) {
         var parts = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -226,9 +264,9 @@ public sealed class ZfsWriter {
         (ZfsConstants.ZfsDirentTypeDir << ZfsConstants.ZfsDirentTypeShift) | childObjId));
     }
 
-    foreach (var (fileName, data) in dir.Files) {
+    foreach (var (fileName, payload) in dir.Files) {
       var fileObjId = (ulong)dnodes.Count;
-      dnodes.Add(BuildFileDnode(data, alloc, output, txg));
+      dnodes.Add(BuildFileDnode(payload, alloc, output, txg));
       zapEntries.Add((fileName,
         (ZfsConstants.ZfsDirentTypeReg << ZfsConstants.ZfsDirentTypeShift) | fileObjId));
     }
@@ -329,46 +367,122 @@ public sealed class ZfsWriter {
     };
   }
 
-  /// <summary>Builds a file dnode and writes its data block(s).</summary>
+  /// <summary>Largest data block a file dnode uses (ZFS recordsize default).</summary>
+  private const int MaxRecordSize = 128 * 1024;
+
+  /// <summary>Indirect block size — dn_indblkshift 14, i.e. 128 block pointers per level.</summary>
+  private const int IndirectBlockSize = 1 << 14;
+
+  /// <summary>
+  /// Builds a file dnode and writes its data blocks. A file up to one record is a
+  /// single direct pointer; anything longer is split into record-sized blocks with
+  /// levels of indirect blocks above them, each holding
+  /// <c>IndirectBlockSize / sizeof(blkptr_t)</c> pointers, exactly as dn_nlevels
+  /// describes the tree to a reader.
+  /// </summary>
   private static Dnode.Builder BuildFileDnode(
-    byte[] data, SectorAllocator alloc, Stream output, ulong txg) {
+    FilePayload payload, SectorAllocator alloc, Stream output, ulong txg) {
 
-    // Simple: one data block of size rounded up to a sector, single direct pointer.
-    // For >8 KB we use a larger data block (still single level, up to 128 KB).
-    var blockSize = Math.Max((int)ZfsConstants.SectorSize, NextPow2Ge(data.Length));
-    if (blockSize > 128 * 1024) blockSize = 128 * 1024;
-
-    // If data > blockSize, we would need L1 indirect blocks — keep it simple by
-    // enlarging block size up to 1 MB if necessary.
-    while (blockSize < data.Length && blockSize < 1024 * 1024)
-      blockSize *= 2;
-    if (blockSize < data.Length)
-      throw new NotSupportedException("File > 1 MB not supported in this WORM writer.");
-
-    var block = new byte[blockSize];
-    data.CopyTo(block, 0);
-    var bp = WriteBlock(block, alloc, output, txg,
-      ZfsConstants.ZioChecksumFletcher4,
-      logicalSizeBytes: blockSize,
-      type: ZfsConstants.DmuOtPlainFileContents);
-
-    // Set the logical size to actual data length in the dnode — but ZFS dnode_phys doesn't
-    // store file size directly in v28 (that goes in znode_phys bonus). For our reader we
-    // encode file size in the bonus area as a simple u64.
+    var size = payload.Size;
     var bonus = new byte[8];
-    BinaryPrimitives.WriteUInt64LittleEndian(bonus, (ulong)data.Length);
+    BinaryPrimitives.WriteUInt64LittleEndian(bonus, (ulong)size);
+
+    // A file that fits one block keeps the block sized to its content, which is
+    // what the pool would do for a small file.
+    if (size <= MaxRecordSize) {
+      var blockSize = Math.Max((int)ZfsConstants.SectorSize, NextPow2Ge((int)size));
+      var only = new byte[blockSize];
+      ReadExactly(payload, 0, only.AsSpan(0, (int)size));
+      var singleBp = WriteBlock(only, alloc, output, txg,
+        ZfsConstants.ZioChecksumFletcher4,
+        logicalSizeBytes: blockSize,
+        type: ZfsConstants.DmuOtPlainFileContents);
+
+      return new Dnode.Builder {
+        Type = ZfsConstants.DmuOtPlainFileContents,
+        Levels = 1,
+        NumBlkPtr = 1,
+        DataBlockSizeInSectors = (uint)(blockSize / ZfsConstants.SectorSize),
+        UsedBytes = (ulong)blockSize,
+        MaxBlockId = 0,
+        BlkPtr0 = singleBp,
+        Bonus = bonus,
+        BonusLen = 8,
+      };
+    }
+
+    var record = MaxRecordSize;
+    var blockCount = (int)((size + record - 1) / record);
+    var level = new List<BlockPointer.Builder>(blockCount);
+
+    var buffer = new byte[record];
+    using (var source = payload.Open()) {
+      long done = 0;
+      while (done < size) {
+        var want = (int)Math.Min(record, size - done);
+        var got = 0;
+        while (got < want) {
+          var n = source.Read(buffer, got, want - got);
+          if (n <= 0) break;
+          got += n;
+        }
+        if (got <= 0)
+          throw new IOException($"ZFS: file ended after {done:N0} of {size:N0} bytes.");
+        // The block is a whole record; the tail of a short final block is zero.
+        Array.Clear(buffer, got, record - got);
+        level.Add(WriteBlock(buffer, alloc, output, txg,
+          ZfsConstants.ZioChecksumFletcher4,
+          logicalSizeBytes: record,
+          type: ZfsConstants.DmuOtPlainFileContents));
+        done += got;
+      }
+    }
+
+    // Collapse levels of indirect blocks until one pointer remains. dn_nlevels
+    // counts the data level, so a file with one level of indirection is 2.
+    var pointersPerIndirect = IndirectBlockSize / BlockPointer.Size;
+    byte levels = 1;
+    while (level.Count > 1) {
+      var next = new List<BlockPointer.Builder>((level.Count + pointersPerIndirect - 1) / pointersPerIndirect);
+      for (var i = 0; i < level.Count; i += pointersPerIndirect) {
+        var count = Math.Min(pointersPerIndirect, level.Count - i);
+        var indirect = new byte[IndirectBlockSize];
+        for (var j = 0; j < count; ++j)
+          BlockPointer.Write(indirect.AsSpan(j * BlockPointer.Size, BlockPointer.Size), level[i + j]);
+        next.Add(WriteBlock(indirect, alloc, output, txg,
+          ZfsConstants.ZioChecksumFletcher4,
+          logicalSizeBytes: IndirectBlockSize,
+          type: ZfsConstants.DmuOtPlainFileContents));
+      }
+      level = next;
+      ++levels;
+    }
 
     return new Dnode.Builder {
       Type = ZfsConstants.DmuOtPlainFileContents,
-      Levels = 1,
+      Levels = levels,
       NumBlkPtr = 1,
-      DataBlockSizeInSectors = (uint)(blockSize / ZfsConstants.SectorSize),
-      UsedBytes = (ulong)blockSize,
-      MaxBlockId = 0,
-      BlkPtr0 = bp,
+      IndirectBlockShift = 14,
+      DataBlockSizeInSectors = (uint)(record / ZfsConstants.SectorSize),
+      UsedBytes = (ulong)blockCount * (ulong)record,
+      MaxBlockId = (ulong)(blockCount - 1),
+      BlkPtr0 = level[0],
       Bonus = bonus,
       BonusLen = 8,
     };
+  }
+
+  /// <summary>Reads exactly <paramref name="destination" />.Length bytes from the payload.</summary>
+  private static void ReadExactly(FilePayload payload, long offset, Span<byte> destination) {
+    if (destination.IsEmpty) return;
+    using var source = payload.Open();
+    if (offset > 0 && source.CanSeek) source.Position = offset;
+    var read = 0;
+    while (read < destination.Length) {
+      var n = source.Read(destination[read..]);
+      if (n <= 0) break;
+      read += n;
+    }
   }
 
   private static Dnode.Builder BuildZapDnode(byte[] zapBlock, SectorAllocator alloc, Stream output, ulong txg,

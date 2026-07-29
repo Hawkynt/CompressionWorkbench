@@ -54,7 +54,14 @@ public sealed class ZfsFormatDescriptor :
   public string DefaultExtension => ".zfs";
   public IReadOnlyList<string> Extensions => [".zfs", ".zpool"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  // A ZFS vdev label carries no signature at offset 0 — the first 8 KB are a
+  // VTOC pad. The uberblock array starts 128 KB in, and slot 0 begins with
+  // UBERBLOCK_MAGIC (0x00bab10c, little-endian). Without this the detector has
+  // nothing to go on and a pool image named ".img" falls through to FAT.
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new([0x0C, 0xB1, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00],
+      Offset: ZfsConstants.UberblockArrayOffset, Confidence: 0.9),
+  ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
@@ -92,11 +99,14 @@ public sealed class ZfsFormatDescriptor :
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new ZfsReader(stream);
+    using var r = new ZfsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -107,13 +117,19 @@ public sealed class ZfsFormatDescriptor :
       w.SetPoolName(poolName);
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, i.ReadContent());
+      if (i.InMemoryContent is { } bytes) {
+        w.AddFile(i.ArchiveName, bytes);
+        continue;
+      }
+      // Sized from disk and opened only while its records are being written, so
+      // the pool is bounded by the target rather than by what a byte[] can hold.
+      var path = i.FullPath;
+      w.AddStreamingFile(i.ArchiveName, new FileInfo(path).Length, () => File.OpenRead(path));
     }
+
     long sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
-    if (sizeBytes >= (MinTotalArchiveSize ?? 0))
-      w.WriteTo(output, sizeBytes);
-    else
-      w.WriteTo(output);
+    var needed = w.ComputeAutoSize();
+    w.WriteTo(output, Math.Max(sizeBytes, needed));
   }
 
   public void Defragment(Stream archive)

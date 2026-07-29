@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Zfs;
 
@@ -10,7 +11,7 @@ namespace FileSystem.Zfs;
 /// dnodes. Validates Fletcher-4 checksums on all traversed blocks.
 /// </summary>
 public sealed class ZfsReader : IDisposable {
-  private readonly byte[] _data;
+  private readonly ImageAccessor _data;
   private readonly List<ZfsEntry> _entries = new();
   private readonly Dictionary<ulong, Dnode.Builder> _datasetDnodesById = new();
   private string? _poolName;
@@ -18,13 +19,17 @@ public sealed class ZfsReader : IDisposable {
   public IReadOnlyList<ZfsEntry> Entries => this._entries;
   public string? PoolName => this._poolName;
 
-  public ZfsReader(Stream stream, bool leaveOpen = false) {
+  public ZfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+    if (stream.CanSeek) stream.Position = 0;
+    // Blocks are pulled on demand: a pool's metadata is a small fraction of the
+    // vdev however many gigabytes of file records follow it.
+    this._data = new ImageAccessor(stream, leaveOpen);
     this.Parse();
   }
+
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._data.Length;
 
   private void Parse() {
     if (this._data.Length < ZfsConstants.LabelSize)
@@ -162,7 +167,7 @@ public sealed class ZfsReader : IDisposable {
   private (Uberblock.Builder? Ub, byte[] NvBytes) ReadLabel(long labelOffset) {
     if (labelOffset + ZfsConstants.LabelSize > this._data.Length) return (null, []);
 
-    var labelSpan = this._data.AsSpan((int)labelOffset, ZfsConstants.LabelSize);
+    var labelSpan = this._data.Read(labelOffset, ZfsConstants.LabelSize).AsSpan();
     var nvBytes = labelSpan.Slice(ZfsConstants.NvListOffset, ZfsConstants.NvListSize).ToArray();
 
     Uberblock.Builder? best = null;
@@ -184,8 +189,7 @@ public sealed class ZfsReader : IDisposable {
     var offset = (long)bp.OffsetSectors * ZfsConstants.SectorSize;
     if (offset < 0 || offset + psize > this._data.Length)
       throw new InvalidDataException($"ZFS: blkptr offset {offset} + {psize} out of range.");
-    var block = new byte[psize];
-    Array.Copy(this._data, offset, block, 0, psize);
+    var block = this._data.Read(offset, psize);
 
     if (bp.Checksum == ZfsConstants.ZioChecksumFletcher4) {
       var actual = Fletcher4.Compute(block);
@@ -238,13 +242,25 @@ public sealed class ZfsReader : IDisposable {
     if (dnode.Levels <= 1)
       return this.ReadBlock(dnode.BlkPtr0);
 
-    // Single level of indirection: BlkPtr0 references an L1 block of blkptr_t entries.
-    var indirect = this.ReadBlock(dnode.BlkPtr0);
-    var ptrOffset = (int)(blockId * (ulong)BlockPointer.Size);
-    if (ptrOffset + BlockPointer.Size > indirect.Length)
-      throw new InvalidDataException("ZFS: dnode block id out of range of indirect block.");
-    var childBp = BlockPointer.Read(indirect.AsSpan(ptrOffset, BlockPointer.Size));
-    return this.ReadBlock(childBp);
+    // Walk down dn_nlevels - 1 levels of indirect blocks. Each level's block
+    // holds indirect_block_size / sizeof(blkptr_t) pointers, so the entry to
+    // follow at a given level is the block id divided by how many data blocks
+    // each of that level's children covers.
+    var indirectSize = 1 << dnode.IndirectBlockShift;
+    var pointersPerIndirect = (ulong)(indirectSize / BlockPointer.Size);
+
+    var bp = dnode.BlkPtr0;
+    for (var level = dnode.Levels; level > 1; --level) {
+      var indirect = this.ReadBlock(bp);
+      var span = 1UL;
+      for (var i = 0; i < level - 2; ++i) span *= pointersPerIndirect;
+      var index = blockId / span % pointersPerIndirect;
+      var ptrOffset = (int)(index * (ulong)BlockPointer.Size);
+      if (ptrOffset + BlockPointer.Size > indirect.Length)
+        throw new InvalidDataException("ZFS: dnode block id out of range of indirect block.");
+      bp = BlockPointer.Read(indirect.AsSpan(ptrOffset, BlockPointer.Size));
+    }
+    return this.ReadBlock(bp);
   }
 
   /// <summary>Concatenates all logical data blocks of a dnode into one contiguous buffer.</summary>
@@ -263,17 +279,37 @@ public sealed class ZfsReader : IDisposable {
 
   public byte[] Extract(ZfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    if (!this._datasetDnodesById.TryGetValue(entry.ObjectId, out var dnode))
-      throw new InvalidOperationException($"ZFS: dnode {entry.ObjectId} not found.");
-    if (dnode.BlkPtr0 == null)
-      return [];
-    var block = this.ReadBlock(dnode.BlkPtr0);
-    var size = entry.Size > 0 && entry.Size <= block.Length ? (int)entry.Size : block.Length;
-    if (size == block.Length) return block;
-    var result = new byte[size];
-    Array.Copy(block, 0, result, 0, size);
-    return result;
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"ZFS: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    using var ms = new MemoryStream();
+    this.ExtractTo(entry, ms);
+    return ms.ToArray();
   }
 
-  public void Dispose() { }
+  /// <summary>
+  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />,
+  /// one record at a time through the dnode's indirect tree. Returns the byte count.
+  /// </summary>
+  public long ExtractTo(ZfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (!this._datasetDnodesById.TryGetValue(entry.ObjectId, out var dnode))
+      throw new InvalidOperationException($"ZFS: dnode {entry.ObjectId} not found.");
+    if (dnode.BlkPtr0 == null) return 0;
+
+    var size = entry.Size;
+    long written = 0;
+    for (ulong blockId = 0; blockId <= dnode.MaxBlockId; ++blockId) {
+      if (size > 0 && written >= size) break;
+      var block = this.ReadDnodeDataBlock(dnode, blockId);
+      var take = size > 0 ? (int)Math.Min(block.Length, size - written) : block.Length;
+      if (take <= 0) break;
+      destination.Write(block, 0, take);
+      written += take;
+    }
+    return written;
+  }
+
+  public void Dispose() => this._data.Dispose();
 }
