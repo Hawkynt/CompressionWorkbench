@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Jfs;
@@ -307,7 +308,24 @@ public sealed class JfsWriter {
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
-    output.Write(this.BuildImageBytes());
+    if (!output.CanSeek) {
+      var full = this.Build();
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var image = this.BuildImageBytes();
+    image.WriteTo(output);
+    this._payloads!.FlushTo(output, basePosition);
+    output.Position = basePosition + image.TotalBytes;
+    output.Flush();
+  }
+
+  /// <summary>Materialises the whole aggregate.</summary>
+  public byte[] Build() {
+    var image = this.BuildImageBytes();
+    return this._payloads!.Materialise(image);
   }
 
   /// <summary>
@@ -316,7 +334,9 @@ public sealed class JfsWriter {
   /// <see cref="_streamingSink"/> is set, record their (offset, size, opener)
   /// for the post-fill pass in <see cref="BuildToStreaming"/>.
   /// </summary>
-  private byte[] BuildImageBytes() {
+  private DeferredPayloads? _payloads;
+
+  private SparseBlockImage BuildImageBytes() {
     this._writeTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     // ── lay out the directory tree and assign inodes ──────────────────────
@@ -366,7 +386,11 @@ public sealed class JfsWriter {
     const int InlineLogBlocks = 256;
     var usableBlocks = Math.Max(MinUsableBlocks, nextBlock + 4);
     var totalBlocks = usableBlocks + FsckWspBlocks + InlineLogBlocks;
-    var image = new byte[(long)totalBlocks * BlockSize];
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var image = new SparseBlockImage(BlockSize, (long)totalBlocks * BlockSize);
+    this._payloads = new DeferredPayloads();
 
     WriteSuperblock(image, usableBlocks, FsckWspBlocks, InlineLogBlocks);
 
@@ -422,7 +446,7 @@ public sealed class JfsWriter {
       }
       var data = file.Data!;
       if (data.Length > 0)
-        data.CopyTo(image, byteOffset);
+        this._payloads.Add(byteOffset, data);
     }
 
     return image;
@@ -443,16 +467,16 @@ public sealed class JfsWriter {
 
     var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
     this._streamingSink = sink;
-    byte[] image;
+    SparseBlockImage image;
     try {
       image = this.BuildImageBytes();
     } finally {
       this._streamingSink = null;
     }
 
-    output.SetLength(image.Length);
     output.Position = 0;
-    output.Write(image);
+    image.WriteTo(output);
+    this._payloads!.FlushTo(output);
 
     var buf = new byte[64 * 1024];
     foreach (var (byteOffset, size, opener) in sink) {
@@ -479,14 +503,14 @@ public sealed class JfsWriter {
   }
 
   // ── superblock (jfs_superblock, le) ──────────────────────────────────────
-  private void WriteSuperblock(byte[] image, int usableBlocks, int fsckWspBlocks, int logBlocks) {
+  private void WriteSuperblock(SparseBlockImage image, int usableBlocks, int fsckWspBlocks, int logBlocks) {
     WriteSuperblockAt(image, SuperblockOffset, usableBlocks, fsckWspBlocks, logBlocks);
     var super2Offset = Super2Block * BlockSize;
     WriteSuperblockAt(image, super2Offset, usableBlocks, fsckWspBlocks, logBlocks);
   }
 
-  private void WriteSuperblockAt(byte[] image, int offset, int usableBlocks, int fsckWspBlocks, int logBlocks) {
-    var sb = image.AsSpan(offset);
+  private void WriteSuperblockAt(SparseBlockImage image, int offset, int usableBlocks, int fsckWspBlocks, int logBlocks) {
+    var sb = image.At(offset, BlockSize);
     "JFS1"u8.CopyTo(sb);
     BinaryPrimitives.WriteUInt32LittleEndian(sb[4..], 1);                                  // s_version
     BinaryPrimitives.WriteUInt64LittleEndian(sb[8..], (ulong)usableBlocks * (BlockSize / SectorSize)); // s_size in HW blocks
@@ -540,12 +564,12 @@ public sealed class JfsWriter {
   // wmap[0] = pmap[0] = bits for inodes 0..4 (high bits) + bit for inode 16
   //                   = 0xF8000000 | 0x00008000 = 0xF8008000
   // The bit ordering in JFS bitmaps is MSB=lowest inode, LSB=highest.
-  private static void WriteAggregateInodeMap(byte[] image, int aimBlock, long agStart, int inoextBlock) {
+  private static void WriteAggregateInodeMap(SparseBlockImage image, int aimBlock, long agStart, int inoextBlock) {
     var dinomapOff = (long)aimBlock * BlockSize;
     var iagOff = dinomapOff + BlockSize;
 
     // ── dinomap (control page) ──────────────────────────────────────────
-    var dm = image.AsSpan((int)dinomapOff, BlockSize);
+    var dm = image.At(dinomapOff, BlockSize);
     dm.Clear();
     BinaryPrimitives.WriteInt32LittleEndian(dm[0..], -1);            // in_freeiag
     BinaryPrimitives.WriteInt32LittleEndian(dm[4..], 1);             // in_nextiag
@@ -569,7 +593,7 @@ public sealed class JfsWriter {
     }
 
     // ── IAG #0 ──────────────────────────────────────────────────────────
-    var iag = image.AsSpan((int)iagOff, BlockSize);
+    var iag = image.At(iagOff, BlockSize);
     iag.Clear();
     BinaryPrimitives.WriteInt64LittleEndian(iag[0..], agStart);      // agstart
     BinaryPrimitives.WriteInt32LittleEndian(iag[8..], 0);            // iagnum
@@ -608,7 +632,7 @@ public sealed class JfsWriter {
   // ── fileset inode map: block FilesetAimBlock=dinomap, +1=IAG #0 ─────────
   // Fileset AIM has FILESET_RSVD_I (0), FILESET_EXT_I (1), ROOT_I (2), ACL_I (3)
   // always allocated, plus user file inodes at index 4+.
-  private void WriteFilesetInodeMap(byte[] image, int aimBlock, int nodeCount) {
+  private void WriteFilesetInodeMap(SparseBlockImage image, int aimBlock, int nodeCount) {
     var dinomapOff = (long)aimBlock * BlockSize;
     var iagOff = dinomapOff + BlockSize;
     var inodesUsed = 4 + nodeCount;                                  // 0,1,2(root),3(acl) + dir/file nodes
@@ -616,7 +640,7 @@ public sealed class JfsWriter {
     var backedInodes = nExtents * InodesPerExtent;                   // total dinodes the table can hold
     var freeInodes = backedInodes - inodesUsed;
 
-    var dm = image.AsSpan((int)dinomapOff, BlockSize);
+    var dm = image.At(dinomapOff, BlockSize);
     dm.Clear();
     BinaryPrimitives.WriteInt32LittleEndian(dm[0..], -1);
     BinaryPrimitives.WriteInt32LittleEndian(dm[4..], 1);
@@ -636,7 +660,7 @@ public sealed class JfsWriter {
       BinaryPrimitives.WriteInt32LittleEndian(dm[(off + 4)..], -1);
     }
 
-    var iag = image.AsSpan((int)iagOff, BlockSize);
+    var iag = image.At(iagOff, BlockSize);
     iag.Clear();
     BinaryPrimitives.WriteInt64LittleEndian(iag[0..], 0);
     BinaryPrimitives.WriteInt32LittleEndian(iag[8..], 0);
@@ -693,7 +717,7 @@ public sealed class JfsWriter {
   // at: fsck's AIM_check requires the secondary AGGREGATE_I's xad to equal
   // s_aim2 (the secondary AIM), while BMAP_I/LOG_I/BADBLOCK_I/FILESYSTEM_I
   // xtrees must stay byte-identical between the two copies.
-  private void WriteAggregateInodeTable(byte[] image, int aitBlock, int ixpxdBlock, int aimBlock) {
+  private void WriteAggregateInodeTable(SparseBlockImage image, int aitBlock, int ixpxdBlock, int aimBlock) {
     var aitOff = (long)aitBlock * BlockSize;
 
     // Inode 0: AGGR_RESERVED_I (di_nlink=1, IFJOURNAL|IFREG, no data)
@@ -734,7 +758,7 @@ public sealed class JfsWriter {
   // Holds: 0=FILESET_RSVD_I, 1=FILESET_EXT_I, 2=ROOT_I (dtroot inline),
   // 3=ACL_I, 4+=directory and user file inodes (one xtree extent per file,
   // inline dtree per directory).
-  private void WriteFilesetInodeTable(byte[] image, List<Node> nodes) {
+  private void WriteFilesetInodeTable(SparseBlockImage image, List<Node> nodes) {
     var fsitOff = (long)FsitBlock * BlockSize;
 
     // FILESET_RSVD_I (0)
@@ -779,7 +803,7 @@ public sealed class JfsWriter {
   // - offsetof(di_inlinedata)); fsck enforces di_size <= IDATASIZE when there
   // are no out-of-line blocks. di_nlink = 2 (self + ".") plus one for each
   // child subdirectory's ".." back-link. idotdot is set to the parent inode.
-  private void WriteDirectoryInode(byte[] image, int inoOff, Node dir, int parentIno) {
+  private void WriteDirectoryInode(SparseBlockImage image, int inoOff, Node dir, int parentIno) {
     const int IdataSize = 256;
     var subdirs = dir.Children.Count(c => c.IsDirectory);
 
@@ -790,7 +814,7 @@ public sealed class JfsWriter {
         size: IdataSize, nblocks: 0,
         hasXtreeData: false, xtreeEntries: null,
         nlink: (uint)(2 + subdirs), nextIndex: 2);
-      WriteInlineDtree(image.AsSpan(inoOff + XtreeDataOffset, DiDataSize), dir.Children, parentIno);
+      WriteInlineDtree(image.At(inoOff + XtreeDataOffset, DiDataSize), dir.Children, parentIno);
       return;
     }
 
@@ -808,11 +832,11 @@ public sealed class JfsWriter {
       size: IdataSize, nblocks: dir.DtreePages.Count,
       hasXtreeData: false, xtreeEntries: null,
       nlink: (uint)(2 + subdirs), nextIndex: 2);
-    WriteRouterDtree(image.AsSpan(inoOff + XtreeDataOffset, DiDataSize), dir, parentIno);
+    WriteRouterDtree(image.At(inoOff + XtreeDataOffset, DiDataSize), dir, parentIno);
   }
 
   // ── helpers: writing inodes ──────────────────────────────────────────────
-  private void WriteAitInode(byte[] image, int ioff, uint ino, uint mode, int aitBlock,
+  private void WriteAitInode(SparseBlockImage image, int ioff, uint ino, uint mode, int aitBlock,
       long size, long nblocks, bool hasXtreeData,
       (ulong offset, uint length, ulong address)[]? xtreeEntries,
       uint gengen = 0) {
@@ -822,15 +846,15 @@ public sealed class JfsWriter {
 
     if (gengen != 0) {
       // di_gengen lives in di_data union at u._file._u1._imap._gengen, offset 128 + 4 = 132.
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ioff + 132), gengen);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.At(ioff + 132, 4), gengen);
     }
 
     if (hasXtreeData) {
-      WriteXtreeRoot(image.AsSpan(ioff + XtreeDataOffset, DiDataSize), xtreeEntries ?? []);
+      WriteXtreeRoot(image.At(ioff + XtreeDataOffset, DiDataSize), xtreeEntries ?? []);
     }
   }
 
-  private void WriteFsitInode(byte[] image, int ioff, uint ino, int fileset, uint mode,
+  private void WriteFsitInode(SparseBlockImage image, int ioff, uint ino, int fileset, uint mode,
       long size, long nblocks, bool hasXtreeData,
       (ulong offset, uint length, ulong address)[]? xtreeEntries,
       uint nlink = 1, uint nextIndex = 2) {
@@ -844,14 +868,14 @@ public sealed class JfsWriter {
       size: size, nblocks: nblocks, nlink: nlink, nextIndex: nextIndex);
 
     if (hasXtreeData) {
-      WriteXtreeRoot(image.AsSpan(ioff + XtreeDataOffset, DiDataSize), xtreeEntries ?? []);
+      WriteXtreeRoot(image.At(ioff + XtreeDataOffset, DiDataSize), xtreeEntries ?? []);
     }
   }
 
-  private void WriteCommonInodeHeader(byte[] image, int ioff, int fileset, uint ino,
+  private void WriteCommonInodeHeader(SparseBlockImage image, int ioff, int fileset, uint ino,
       uint mode, uint ixpxdLength, ulong ixpxdAddress, long size, long nblocks,
       uint nlink, uint nextIndex) {
-    var di = image.AsSpan(ioff, InodeSize);
+    var di = image.At(ioff, InodeSize);
     di.Clear();
     BinaryPrimitives.WriteInt32LittleEndian(di[0..], InostampFixed);
     BinaryPrimitives.WriteInt32LittleEndian(di[4..], fileset);
@@ -1198,9 +1222,9 @@ public sealed class JfsWriter {
   //   ExternalFirstEntrySlot onward. Leaf pages carry ldtentry, internal pages
   //   carry idtentry. A full-tree traversal by the reader follows every entry,
   //   so router keys need not be search-exact.
-  private static void WriteExternalDtreePage(byte[] image, DtreePage page) {
+  private static void WriteExternalDtreePage(SparseBlockImage image, DtreePage page) {
     var pageOff = page.Block * BlockSize;
-    var data = image.AsSpan(pageOff, BlockSize);
+    var data = image.At(pageOff, BlockSize);
     data.Clear();
 
     var count = page.Entries.Count;
@@ -1267,7 +1291,7 @@ public sealed class JfsWriter {
   // image any usableBlocks ≤ Dmap_Bperdmap = 8192 needs 1 dmap; up to 16384
   // needs 2. The BMAP_I xtree always claims `BmapTotalBlocks = 6` blocks
   // (16..21) so the layout after BMAP is fixed.
-  private static void WriteBlockMap(byte[] image, int usableBlocks, bool[] allocated) {
+  private static void WriteBlockMap(SparseBlockImage image, int usableBlocks, bool[] allocated) {
     var ndmaps = (usableBlocks + Dmap_Bperdmap - 1) / Dmap_Bperdmap;
     if (ndmaps < 1) ndmaps = 1;
     if (ndmaps > 2)
@@ -1287,9 +1311,9 @@ public sealed class JfsWriter {
   }
 
   /// <summary>Writes one dmap page; returns the maximum free-buddy exponent (root of dmaptree).</summary>
-  private static sbyte WriteDmap(byte[] image, int pageBlock, long startBlk, int nblocks, bool[] allocated) {
+  private static sbyte WriteDmap(SparseBlockImage image, int pageBlock, long startBlk, int nblocks, bool[] allocated) {
     var off = (int)((long)pageBlock * BlockSize);
-    var page = image.AsSpan(off, BlockSize);
+    var page = image.At(off, BlockSize);
     page.Clear();
 
     // dmap header
@@ -1358,9 +1382,9 @@ public sealed class JfsWriter {
   }
 
   /// <summary>Writes one dmapctl page covering up to LPERCTL leaves.</summary>
-  private static sbyte WriteDmapctl(byte[] image, int pageBlock, int level, sbyte[] childMaxes, int usableBlocks) {
+  private static sbyte WriteDmapctl(SparseBlockImage image, int pageBlock, int level, sbyte[] childMaxes, int usableBlocks) {
     var off = (int)((long)pageBlock * BlockSize);
-    var page = image.AsSpan(off, BlockSize);
+    var page = image.At(off, BlockSize);
     page.Clear();
 
     BinaryPrimitives.WriteInt32LittleEndian(page[0..], Dmapctl_Lperctl);                  // nleafs = 1024
@@ -1383,10 +1407,10 @@ public sealed class JfsWriter {
   }
 
   /// <summary>Writes the dbmap (BMAP control_page).</summary>
-  private static void WriteDbmap(byte[] image, int pageBlock, int usableBlocks, bool[] allocated,
+  private static void WriteDbmap(SparseBlockImage image, int pageBlock, int usableBlocks, bool[] allocated,
       int agl2size, sbyte maxfreebud) {
     var off = (int)((long)pageBlock * BlockSize);
-    var page = image.AsSpan(off, BlockSize);
+    var page = image.At(off, BlockSize);
     page.Clear();
 
     var nfree = 0;

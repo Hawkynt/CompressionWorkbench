@@ -140,9 +140,17 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (options.HasOption("VolumeLabel")) w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, i.ReadContent());
+      var info = i;
+      // Only the length is needed to lay the aggregate out; reading a large
+      // input into a byte[] would cap it at what an array can hold.
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(info.ArchiveName, bytes);
+      else
+        w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length,
+                           () => File.OpenRead(info.FullPath));
     }
-    w.WriteTo(output);
+    if (output.CanSeek) w.BuildToStreaming(output);
+    else w.WriteTo(output);
   }
 
   /// <summary>
