@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Gfs2;
@@ -33,7 +34,7 @@ namespace FileSystem.Gfs2;
 ///   <item><description>Red Hat Cluster Suite / Resilient Storage Add-On docs</description></item>
 /// </list>
 /// </summary>
-public sealed class Gfs2Reader {
+public sealed class Gfs2Reader : IDisposable {
 
   /// <summary>GFS2 metadata magic — <c>mh_magic</c> at start of every metadata block.</summary>
   public const uint MetaMagic = 0x01161970u;
@@ -61,7 +62,7 @@ public sealed class Gfs2Reader {
   /// </summary>
   public const int MetaHeaderSize = 24;
 
-  private readonly byte[] _image;
+  private readonly ImageAccessor _image;
   private readonly List<Gfs2Entry> _entries = new();
 
   public bool SuperblockValid { get; private set; }
@@ -78,18 +79,33 @@ public sealed class Gfs2Reader {
   public IReadOnlyList<Gfs2Entry> Entries => this._entries;
 
   public Gfs2Reader(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    this._image = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    // Blocks are pulled on demand: a volume's metadata is a small fraction of a
+    // device whose data area may run to gigabytes.
+    this._image = new ImageAccessor(stream);
     this.Parse();
+  }
+
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._image.Length;
+
+  public void Dispose() => this._image.Dispose();
+
+  /// <summary>Reads one whole block, or an empty span when it falls outside the image.</summary>
+  private byte[] Block(long blockNumber) {
+    var bs = (long)this.BlockSize;
+    var off = blockNumber * bs;
+    if (blockNumber <= 0 || off + bs > this._image.Length) return [];
+    return this._image.Read(off, (int)bs);
   }
 
   private void Parse() {
     // Need at least superblock + a bit more.
-    if (this._image.LongLength < SbByteOffset + 256)
+    if (this._image.Length < SbByteOffset + 1024)
       return;
 
-    var sb = this._image.AsSpan((int)SbByteOffset);
+    var sb = this._image.Read(SbByteOffset, 1024).AsSpan();
 
     // Meta header check.
     var mhMagic = BinaryPrimitives.ReadUInt32BigEndian(sb[..4]);
@@ -141,11 +157,10 @@ public sealed class Gfs2Reader {
 
   private void WalkRoot() {
     var bs = (long)this.BlockSize;
-    var rootOff = (long)this.RootInodeBlock * bs;
-    if (rootOff <= 0 || rootOff + bs > this._image.LongLength)
+    var rootBlock = this.Block((long)this.RootInodeBlock).AsSpan();
+    if (rootBlock.IsEmpty)
       return;
-
-    var rootBlock = this._image.AsSpan((int)rootOff, (int)bs);
+    _ = bs;
     var mhMagic = BinaryPrimitives.ReadUInt32BigEndian(rootBlock[..4]);
     var mhType = BinaryPrimitives.ReadUInt32BigEndian(rootBlock[4..8]);
     if (mhMagic != MetaMagic || mhType != MetaTypeDinode)
@@ -276,10 +291,10 @@ public sealed class Gfs2Reader {
     size = 0;
     mtimeBe = 0;
     var bs = (long)this.BlockSize;
-    var off = (long)block * bs;
-    if (off <= 0 || off + 232 > this._image.LongLength)
+    var b = this.Block((long)block).AsSpan();
+    if (b.Length < 232)
       return false;
-    var b = this._image.AsSpan((int)off);
+    _ = bs;
     var magic = BinaryPrimitives.ReadUInt32BigEndian(b[..4]);
     var type = BinaryPrimitives.ReadUInt32BigEndian(b.Slice(4, 4));
     if (magic != MetaMagic || type != MetaTypeDinode) return false;
@@ -288,34 +303,88 @@ public sealed class Gfs2Reader {
     return true;
   }
 
-  /// <summary>
-  /// Attempts to read file content for a regular-file entry. Only supports
-  /// inline data (di_height == 0) — files stored entirely in the dinode block
-  /// after the 232-byte header. Returns empty array if anything is off.
-  /// </summary>
+  /// <summary>Reads a regular file's content. Only valid below the array limit.</summary>
   public byte[] Extract(Gfs2Entry entry) {
-    if (entry.IsDirectory) return [];
-    var bs = (long)this.BlockSize;
-    var off = (long)entry.InodeBlock * bs;
-    if (off <= 0 || off + 232 > this._image.LongLength)
-      return [];
-    var b = this._image.AsSpan((int)off, (int)Math.Min(bs, this._image.LongLength - off));
-    var magic = BinaryPrimitives.ReadUInt32BigEndian(b[..4]);
-    var type = BinaryPrimitives.ReadUInt32BigEndian(b.Slice(4, 4));
-    if (magic != MetaMagic || type != MetaTypeDinode) return [];
-
-    var diSize = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(56, 8));
-    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(b.Slice(138, 2));
-    if (diHeight != 0) return []; // multi-level indirection not supported
-
-    const int dinodeHeaderSize = 232;
-    if (b.Length <= dinodeHeaderSize) return [];
-
-    var available = b.Length - dinodeHeaderSize;
-    var n = (int)Math.Min((long)diSize, available);
-    if (n <= 0) return [];
-    return b.Slice(dinodeHeaderSize, n).ToArray();
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"GFS2: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    using var buffer = new MemoryStream();
+    this.ExtractTo(entry, buffer);
+    return buffer.ToArray();
   }
+
+  /// <summary>
+  /// Writes <paramref name="entry" />'s content into <paramref name="destination" />.
+  /// A body up to <c>blocksize - 232</c> is stuffed in the dinode; a longer one hangs
+  /// off a metadata tree whose depth di_height gives — the dinode's own pointer area
+  /// at the top, then <c>di_height - 1</c> levels of indirect blocks. Returns the
+  /// number of bytes written.
+  /// </summary>
+  public long ExtractTo(Gfs2Entry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
+
+    var dinode = this.Block((long)entry.InodeBlock);
+    if (dinode.Length < DinodeHeaderSize) return 0;
+    var magic = BinaryPrimitives.ReadUInt32BigEndian(dinode.AsSpan(0, 4));
+    var type = BinaryPrimitives.ReadUInt32BigEndian(dinode.AsSpan(4, 4));
+    if (magic != MetaMagic || type != MetaTypeDinode) return 0;
+
+    var diSize = (long)BinaryPrimitives.ReadUInt64BigEndian(dinode.AsSpan(56, 8));
+    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(dinode.AsSpan(138, 2));
+    if (diSize <= 0) return 0;
+
+    if (diHeight == 0) {
+      var n = (int)Math.Min(diSize, dinode.Length - DinodeHeaderSize);
+      if (n <= 0) return 0;
+      destination.Write(dinode, DinodeHeaderSize, n);
+      return n;
+    }
+
+    var bs = (int)this.BlockSize;
+    var hole = new byte[bs];
+    long written = 0;
+    foreach (var dataBlock in this.WalkTree(dinode, DinodeHeaderSize, diHeight)) {
+      if (written >= diSize) break;
+      var take = (int)Math.Min(bs, diSize - written);
+      var block = this.Block(dataBlock);
+      // A zero pointer, or one past the image, is a hole and reads back as zeros.
+      if (block.Length == 0)
+        destination.Write(hole, 0, take);
+      else
+        destination.Write(block, 0, take);
+      written += take;
+    }
+    return written;
+  }
+
+  /// <summary>
+  /// Yields the data blocks a pointer area addresses, descending
+  /// <paramref name="levels" /> - 1 levels of indirect blocks on the way.
+  /// </summary>
+  private IEnumerable<long> WalkTree(byte[] block, int pointerBase, int levels) {
+    var capacity = (block.Length - pointerBase) / 8;
+    for (var i = 0; i < capacity; ++i) {
+      var pointer = (long)BinaryPrimitives.ReadUInt64BigEndian(block.AsSpan(pointerBase + i * 8, 8));
+      if (pointer == 0) continue;
+      if (levels <= 1) {
+        yield return pointer;
+        continue;
+      }
+      var child = this.Block(pointer);
+      if (child.Length == 0) continue;
+      foreach (var leaf in this.WalkTree(child, IndPointerBase, levels - 1))
+        yield return leaf;
+    }
+  }
+
+  /// <summary>Bytes of gfs2_dinode before its pointer or stuffed-data area.</summary>
+  private const int DinodeHeaderSize = 232;
+
+  /// <summary>Bytes of gfs2_meta_header before an indirect block's pointer area.</summary>
+  private const int IndPointerBase = 24;
 
   private static DateTime? TryGetTime(ulong gfs2Time) {
     // GFS2 stores seconds since UNIX epoch.
@@ -344,11 +413,9 @@ public sealed class Gfs2Reader {
   public byte[] SuperblockRaw {
     get {
       const int cap = 1024;
-      if (this._image.LongLength < SbByteOffset + cap)
+      if (this._image.Length < SbByteOffset + cap)
         return [];
-      var buf = new byte[cap];
-      Array.Copy(this._image, SbByteOffset, buf, 0, cap);
-      return buf;
+      return this._image.Read(SbByteOffset, cap);
     }
   }
 }

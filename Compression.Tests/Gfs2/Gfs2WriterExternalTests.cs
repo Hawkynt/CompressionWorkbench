@@ -130,19 +130,58 @@ public class Gfs2WriterExternalTests {
   }
 
   [Test, Category("Boundary")]
-  public void Writer_AboveMaximumSize_Throws() {
-    Assert.That(() => new Gfs2Writer(512L * 1024 * 1024),
-      Throws.InstanceOf<ArgumentOutOfRangeException>());
+  public void Writer_LargeVolume_SplitsIntoSeveralResourceGroups() {
+    // gfs2-utils keeps a resource group at or under ~256 MB and splits a larger
+    // device into several; the rindex lists one record per group, so a 512 MB
+    // volume must carry more than the two the fixed first group plus one implies.
+    var image = new Gfs2Writer(512L * 1024 * 1024).Build();
+    using var ms = new MemoryStream(image);
+    var reader = new FileSystem.Gfs2.Gfs2Reader(ms);
+    Assert.That(reader.SuperblockValid, Is.True);
+    Assert.That(image.LongLength, Is.EqualTo(512L * 1024 * 1024));
   }
 
-  [Test, Category("Exceptional")]
-  public void DescriptorCreate_WithFileInput_Throws() {
+  /// <summary>Extracts one entry to a scratch directory and returns its bytes.</summary>
+  private static byte[] ExtractOne(Gfs2FormatDescriptor descriptor, Stream archive, string name) {
+    var outDir = Path.Combine(Path.GetTempPath(), "gfs2_one_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(outDir);
+    try {
+      descriptor.Extract(archive, outDir, null, [name]);
+      return File.ReadAllBytes(Path.Combine(outDir, name));
+    } finally {
+      try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void DescriptorCreate_WithFileInput_RoundTrips() {
     var descriptor = new Gfs2FormatDescriptor();
     using var output = new MemoryStream();
-    var inputs = new[] { ArchiveInputInfo.InMemory("hello.txt", [1, 2, 3]) };
-    Assert.That(() => descriptor.Create(output, inputs, new FormatCreateOptions()),
-      Throws.InstanceOf<NotSupportedException>(),
-      "GFS2 creation produces an empty volume; file inputs must be rejected, not silently dropped.");
+    var payload = new byte[] { 1, 2, 3 };
+    var inputs = new[] { ArchiveInputInfo.InMemory("hello.txt", payload) };
+    descriptor.Create(output, inputs, new FormatCreateOptions());
+
+    output.Position = 0;
+    var entries = descriptor.List(output, null);
+    Assert.That(entries.Select(e => e.Name), Does.Contain("hello.txt"));
+    output.Position = 0;
+    Assert.That(ExtractOne(descriptor, output, "hello.txt"), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath")]
+  public void DescriptorCreate_FileTooBigToStuff_RoundTripsThroughTheMetadataTree() {
+    // Past blocksize - 232 the body cannot live in the dinode, so it hangs off a
+    // metadata tree; more than 483 blocks needs a second level above that.
+    var payload = new byte[600 * 4096];
+    for (var i = 0; i < payload.Length; ++i)
+      payload[i] = (byte)(i * 31 + i / 4096);
+
+    var descriptor = new Gfs2FormatDescriptor();
+    using var output = new MemoryStream();
+    descriptor.Create(output, [ArchiveInputInfo.InMemory("big.bin", payload)], new FormatCreateOptions());
+
+    output.Position = 0;
+    Assert.That(ExtractOne(descriptor, output, "big.bin"), Is.EqualTo(payload));
   }
 
   [Test, Category("HappyPath")]

@@ -102,15 +102,22 @@ public sealed class Gfs2FormatDescriptor
     }
 
     var idx = 0;
+    // A volume that carries files lists exactly those. Surfacing the synthetic
+    // header entries alongside them would make every rebuild (shrink, defrag)
+    // fold them back in as real files, so they stay on the carver path — empty
+    // or foreign images, where the header IS all we can offer.
+    if (r.Entries.Count > 0) {
+      foreach (var e in r.Entries)
+        entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", e.IsDirectory, false, e.LastModified));
+      return entries;
+    }
+
     var imageLen = TryGetImageLen(r);
     entries.Add(new ArchiveEntryInfo(idx++, "FULL.gfs2", imageLen, imageLen, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (r.SuperblockValid) {
       var raw = r.SuperblockRaw;
       entries.Add(new ArchiveEntryInfo(idx++, "superblock.bin", raw.LongLength, raw.LongLength, "stored", false, false, null));
-    }
-    foreach (var e in r.Entries) {
-      entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", e.IsDirectory, false, e.LastModified));
     }
     return entries;
   }
@@ -124,20 +131,27 @@ public sealed class Gfs2FormatDescriptor
       return;
     }
 
-    var imageLen = TryGetImageLen(r);
-    var imageBytes = r.SuperblockValid ? null : ReadBackImageIfSmall(stream);
-    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(r, imageLen), files);
-
-    if (r.SuperblockValid) {
-      WriteIfMatch(outputDir, "superblock.bin", r.SuperblockRaw, files);
-      foreach (var e in r.Entries) {
-        if (e.IsDirectory) continue;
-        if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-        var data = r.Extract(e);
-        WriteFile(outputDir, e.Name, data);
+    using (r) {
+      if (r.Entries.Count > 0) {
+        foreach (var e in r.Entries) {
+          if (e.IsDirectory) continue;
+          if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+          var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+          Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+          using var output = File.Create(target);
+          r.ExtractTo(e, output);
+        }
+        return;
       }
-    } else if (imageBytes != null) {
-      WriteIfMatch(outputDir, "FULL.gfs2", imageBytes, files);
+
+      var imageLen = TryGetImageLen(r);
+      var imageBytes = r.SuperblockValid ? null : ReadBackImageIfSmall(stream);
+      WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(r, imageLen), files);
+
+      if (r.SuperblockValid)
+        WriteIfMatch(outputDir, "superblock.bin", r.SuperblockRaw, files);
+      else if (imageBytes != null)
+        WriteIfMatch(outputDir, "FULL.gfs2", imageBytes, files);
     }
   }
 
@@ -156,17 +170,31 @@ public sealed class Gfs2FormatDescriptor
   /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
-    if (inputs != null) {
-      foreach (var i in inputs) {
-        if (!i.IsDirectory)
-          throw new NotSupportedException(
-            "GFS2 creation produces an empty volume only; adding files is not supported.");
-      }
-    }
 
-    var size = ParseSizeOption(options);
     var lockTable = options?.GetOption("LockTable", "") ?? "";
-    new Gfs2Writer(size, lockTable: lockTable).Build(output);
+    var sizes = new List<long>();
+    var files = new List<(string Name, ArchiveInputInfo Input)>();
+    if (inputs != null)
+      foreach (var i in inputs) {
+        if (i.IsDirectory) continue;
+        var length = i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
+        sizes.Add(length);
+        files.Add((i.ArchiveName, i));
+      }
+
+    // The requested size is a floor: the volume has to be at least large enough
+    // for the payload's dinodes, data blocks and indirect blocks.
+    var size = Math.Max(ParseSizeOption(options), Gfs2Writer.EstimateSize(sizes));
+    var writer = new Gfs2Writer(size, lockTable: lockTable);
+    foreach (var (name, input) in files) {
+      if (input.InMemoryContent is { } bytes) {
+        writer.AddFile(name, bytes);
+        continue;
+      }
+      var path = input.FullPath;
+      writer.AddStreamingFile(name, new FileInfo(path).Length, () => File.OpenRead(path));
+    }
+    writer.Build(output);
   }
 
   private static long ParseSizeOption(FormatCreateOptions? options) {
@@ -175,7 +203,7 @@ public sealed class Gfs2FormatDescriptor
     // as well as the legacy raw "size" key (bytes with optional K/M/G suffix).
     var imageSize = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
     if (imageSize > 0)
-      return Math.Clamp((long)imageSize, 16L * 1024 * 1024, 256L * 1024 * 1024);
+      return Math.Max((long)imageSize, 16L * 1024 * 1024);
 
     var raw = options?.GetOption("size", "");
     if (string.IsNullOrWhiteSpace(raw))
@@ -191,8 +219,7 @@ public sealed class Gfs2FormatDescriptor
     if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
       return defaultSize;
     var bytes = n * mult;
-    // Clamp to the writer's supported single-data-resource-group range.
-    return Math.Clamp(bytes, 16L * 1024 * 1024, 256L * 1024 * 1024);
+    return Math.Max(bytes, 16L * 1024 * 1024);
   }
 
   // ── In-place R/W assessment: LEFT REBUILDING (no CanModify) ───────────────
@@ -212,13 +239,62 @@ public sealed class Gfs2FormatDescriptor
   //     (the CRUD cycle writes 9000-byte payloads) is impossible, so claiming
   //     R/W would be dishonest.
 
-  // Throws NotSupported per project policy — Create makes a fresh empty volume,
-  // but in-place modification (defragmentation) is read-only / unsupported.
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("Gfs2 read-only for in-place edits — defragmentation requires rewrite support.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("Gfs2 read-only for in-place edits — defragmentation requires rewrite support.");
+  /// <summary>
+  /// Rewrites the volume with every file laid out contiguously from the start of
+  /// the data area. Each entry is spilled to scratch and the writer pulls it back
+  /// while laying out the metadata tree, so the rebuild is not bounded by what a
+  /// byte[] can hold.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      Gfs2Writer? writer = null;
+      Stream? target = null;
+      var spill = new List<(string Name, string Path, long Size)>();
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: ReadEntries,
+        beginWrite: s => target = s,
+        writeEntry: (name, data) => {
+          // The volume has to be sized before the first byte is written, so the
+          // entries are collected first and the writer is built in finishWrite.
+          var path = Path.GetTempFileName();
+          File.WriteAllBytes(path, data);
+          spill.Add((name, path, data.LongLength));
+        },
+        finishWrite: () => {
+          try {
+            writer = new Gfs2Writer(Gfs2Writer.EstimateSize(spill.ConvertAll(e => e.Size)));
+            foreach (var (name, path, size) in spill) {
+              var captured = path;
+              writer.AddStreamingFile(name, size, () => File.OpenRead(captured));
+            }
+            writer.Build(target!);
+          } finally {
+            foreach (var (_, path, _) in spill)
+              try { File.Delete(path); } catch { /* scratch file already gone */ }
+          }
+        });
+      return;
+    }
+
+    throw new NotSupportedException(
+      $"GFS2 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+  }
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    using var r = new Gfs2Reader(stream);
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      using var buffer = new MemoryStream();
+      r.ExtractTo(e, buffer);
+      yield return (e.Name, buffer.ToArray());
+    }
+  }
 
   private static long TryGetImageLen(Gfs2Reader r)
     => r.SuperblockRaw.LongLength > 0 ? Gfs2Reader.SbByteOffset + r.SuperblockRaw.LongLength : 0;

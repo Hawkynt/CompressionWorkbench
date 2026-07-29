@@ -151,16 +151,17 @@ public class Gfs2Tests {
   }
 
   [Test, Category("HappyPath")]
-  public void List_EmitsMinimumSurface_AndEntries() {
+  public void List_VolumeWithEntries_ListsThoseAlone() {
+    // A volume that carries files lists exactly those: the header surface would
+    // otherwise be folded back in as real files by every rebuild.
     var img = BuildMinimal();
     using var ms = new MemoryStream(img);
     var d = new FileSystem.Gfs2.Gfs2FormatDescriptor();
     var entries = d.List(ms, null);
     var names = entries.Select(e => e.Name).ToHashSet();
-    Assert.That(names, Does.Contain("FULL.gfs2"));
-    Assert.That(names, Does.Contain("metadata.ini"));
-    Assert.That(names, Does.Contain("superblock.bin"));
     Assert.That(names, Does.Contain("hello"));
+    Assert.That(names, Does.Not.Contain("FULL.gfs2"));
+    Assert.That(names, Does.Not.Contain("superblock.bin"));
   }
 
   [Test, Category("HappyPath")]
@@ -173,20 +174,10 @@ public class Gfs2Tests {
     try {
       d.Extract(ms, outDir, null, null);
 
-      Assert.That(File.Exists(Path.Combine(outDir, "metadata.ini")), Is.True);
-      Assert.That(File.Exists(Path.Combine(outDir, "superblock.bin")), Is.True);
+      // A volume that carries files extracts exactly those; the header surface is
+      // for images that hold none.
       Assert.That(File.Exists(Path.Combine(outDir, "hello")), Is.True);
-
-      var meta = File.ReadAllText(Path.Combine(outDir, "metadata.ini"));
-      Assert.That(meta, Does.Contain("parse_status=ok"));
-      Assert.That(meta, Does.Contain("superblock_valid=True"));
-      Assert.That(meta, Does.Contain("block_size=4096"));
-      Assert.That(meta, Does.Contain("block_size_shift=12"));
-      Assert.That(meta, Does.Contain("root_inode_block=8"));
-      Assert.That(meta, Does.Contain("master_inode_block=5"));
-      Assert.That(meta, Does.Contain("lock_proto=lock_dlm"));
-      Assert.That(meta, Does.Contain("lock_table=mycluster:myfs"));
-      Assert.That(meta, Does.Contain("root_entry_count=1"));
+      Assert.That(File.Exists(Path.Combine(outDir, "metadata.ini")), Is.False);
 
       var body = File.ReadAllText(Path.Combine(outDir, "hello"));
       Assert.That(body, Is.EqualTo("Hello, GFS2!"));
@@ -221,19 +212,41 @@ public class Gfs2Tests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void Defragment_Throws_NotSupported() {
+  public void Defragment_UnsupportedMode_Throws() {
     var d = new FileSystem.Gfs2.Gfs2FormatDescriptor();
-    using var ms = new MemoryStream(BuildMinimal());
-    var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
-    Assert.That(ex!.Message, Does.Contain("read-only"));
+    using var ms = new MemoryStream();
+    ms.Write(BuildMinimal());
+    var ex = Assert.Throws<NotSupportedException>(
+      () => d.Defragment(ms, new DefragOptions { Mode = DefragMode.ConsolidateAtEnd }));
+    Assert.That(ex!.Message, Does.Contain("ConsolidateAtStart"));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void DefragmentWithOptions_Throws_NotSupported() {
-    var d = new FileSystem.Gfs2.Gfs2FormatDescriptor();
-    using var ms = new MemoryStream(BuildMinimal());
-    var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms, new DefragOptions()));
-    Assert.That(ex!.Message, Does.Contain("read-only"));
+  [Test, Category("HappyPath")]
+  public void Defragment_PreservesFiles() {
+    var descriptor = new FileSystem.Gfs2.Gfs2FormatDescriptor();
+    var payload = new byte[9000];
+    for (var i = 0; i < payload.Length; ++i) payload[i] = (byte)(i * 7);
+
+    var path = Path.Combine(Path.GetTempPath(), "gfs2_defrag_" + Guid.NewGuid().ToString("N"));
+    try {
+      using (var create = File.Create(path))
+        descriptor.Create(create, [ArchiveInputInfo.InMemory("data.bin", payload)], new FormatCreateOptions());
+
+      using (var archive = File.Open(path, FileMode.Open, FileAccess.ReadWrite))
+        descriptor.Defragment(archive);
+
+      var outDir = Path.Combine(Path.GetTempPath(), "gfs2_out_" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(outDir);
+      try {
+        using (var read = File.OpenRead(path))
+          descriptor.Extract(read, outDir, null, null);
+        Assert.That(File.ReadAllBytes(Path.Combine(outDir, "data.bin")), Is.EqualTo(payload));
+      } finally {
+        try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
+      }
+    } finally {
+      try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
   }
 
   [Test, Category("HappyPath")]

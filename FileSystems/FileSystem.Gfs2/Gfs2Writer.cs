@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Gfs2;
@@ -79,7 +80,7 @@ public sealed class Gfs2Writer {
   private const int IndPointerBase = 24;    // pointers begin right after meta header
   private const int PointersPerIndirect = (BlockSize - IndPointerBase) / 8; // 509
 
-  private readonly byte[] _img;
+  private readonly SparseBlockImage _img;
   private readonly long _totalBlocks;
   private readonly byte[] _uuid;
   private readonly ulong _baseTime;
@@ -135,6 +136,76 @@ public sealed class Gfs2Writer {
   private readonly SortedSet<long> _dinodeBlocks = [];
   private readonly SortedSet<long> _usedBlocks = [];
 
+  // Caller files and the layout each one gets.
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
+  private readonly List<FilePlan> _filePlans = [];
+  private readonly DeferredPayloads _payloads = new();
+
+  /// <summary>Data blocks one resource group covers. gfs2-utils keeps a group at or under 256 MB.</summary>
+  private const long MaxRgData = 256L * 1024 * 1024 / BlockSize - 4;
+
+  // Data resource groups past the fixed first one: (header, length, data0, data).
+  private readonly List<(long Header, long Length, long Data0, long Data)> _dataRgs = [];
+
+  /// <summary>Block pointers the dinode's own area holds, and one indirect block holds.</summary>
+  private const int PointersPerDinode = (BlockSize - DinodeHeaderSize) / 8; // 483
+
+  /// <summary>What one file gets: its dinode, the tree above its data, and its blocks.</summary>
+  private sealed class FilePlan {
+    public required string Name;
+    public required FilePayload Payload;
+    public required ulong FormalIno;
+    public long Dinode;
+    public ushort Height;
+    public readonly List<long> DataBlocks = [];
+    // Indirect blocks per level, innermost (closest to the data) first.
+    public readonly List<List<long>> Levels = [];
+  }
+
+  /// <summary>
+  /// Adds a regular file to the root directory. Bodies up to
+  /// <c>BlockSize - 232</c> are stuffed in the dinode; longer ones get a
+  /// metadata tree of indirect blocks.
+  /// </summary>
+  public void AddFile(string name, byte[] data) {
+    ArgumentException.ThrowIfNullOrEmpty(name);
+    ArgumentNullException.ThrowIfNull(data);
+    this._files.Add((name, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>Adds a file whose bytes are pulled from <paramref name="openStream" /> as the volume is written.</summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentException.ThrowIfNullOrEmpty(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    this._files.Add((name, FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>
+  /// Smallest volume that holds <paramref name="fileSizes" />: the fixed metadata
+  /// layout, every file's dinode, its data blocks and the indirect blocks above
+  /// them, plus room for the resource-group bitmaps. Rounded up to a megabyte.
+  /// </summary>
+  public static long EstimateSize(IEnumerable<long> fileSizes) {
+    ArgumentNullException.ThrowIfNull(fileSizes);
+    var blocks = (long)Rg2Header + QuotaChangeBlocks + 32; // fixed layout + system inodes
+    foreach (var size in fileSizes) {
+      ++blocks;                                            // the dinode
+      if (size <= BlockSize - DinodeHeaderSize) continue;
+      var data = (size + BlockSize - 1) / BlockSize;
+      blocks += data;
+      for (var count = data; count > PointersPerDinode;) {
+        count = (count + PointersPerIndirect - 1) / PointersPerIndirect;
+        blocks += count;
+      }
+    }
+    // Bitmaps take a block per ~16 000 data blocks, and a twentieth again keeps
+    // the last group from running right to its end.
+    blocks += blocks / (RbBitmapBytes * 4) + 8;
+    blocks += blocks / 20;
+    var bytes = blocks * BlockSize;
+    return Math.Max(32L * 1024 * 1024, (bytes + (1L << 20) - 1) & ~((1L << 20) - 1));
+  }
+
   /// <summary>
   /// Creates a writer for an image of the given total size in bytes. The size is
   /// rounded down to a whole number of 4096-byte blocks; the minimum that yields
@@ -147,15 +218,12 @@ public sealed class Gfs2Writer {
     if (this._totalBlocks < 4096)
       throw new ArgumentOutOfRangeException(nameof(sizeBytes),
         "GFS2 image must be at least 16 MB (4096 blocks) to hold the journal.");
-    // We emit a single data resource group (plus the fixed first RG). gfs2-utils
-    // keeps each RG at or below ~256 MB and splits larger devices into several
-    // evenly-spaced RGs; replicating that spacing exactly is out of scope, so we
-    // cap at the size a single data RG can hold while staying fsck-clean.
-    const long MaxBlocks = 256L * 1024 * 1024 / BlockSize; // 65536 blocks (256 MB)
-    if (this._totalBlocks > MaxBlocks)
-      throw new ArgumentOutOfRangeException(nameof(sizeBytes),
-        "GFS2 writer supports images up to 256 MB (single data resource group).");
-    this._img = new byte[this._totalBlocks * BlockSize];
+    // gfs2-utils keeps each resource group at or below ~256 MB and splits a
+    // larger device into several; the layout below does the same, so the volume
+    // is bounded only by what the rindex can list.
+    // The image is sparse: only blocks actually written are materialised, so a
+    // multi-gigabyte volume costs its metadata rather than its full extent.
+    this._img = new SparseBlockImage(BlockSize, this._totalBlocks * BlockSize);
     this._uuid = uuid ?? Guid.NewGuid().ToByteArray();
     if (this._uuid.Length != 16)
       throw new ArgumentException("UUID must be 16 bytes.", nameof(uuid));
@@ -165,6 +233,17 @@ public sealed class Gfs2Writer {
 
   /// <summary>Builds the image and returns the raw bytes.</summary>
   public byte[] Build() {
+    var image = this.BuildCore();
+    if (image.TotalBytes > Array.MaxLength)
+      throw new IOException(
+        $"GFS2: a {image.TotalBytes:N0}-byte volume exceeds the array limit; use Build(Stream).");
+    var bytes = image.Materialise();
+    using var buffer = new MemoryStream(bytes, writable: true);
+    this._payloads.FlushTo(buffer);
+    return bytes;
+  }
+
+  private SparseBlockImage BuildCore() {
     this.AssignLayout();
     this.WriteSuperblock();
     this.WriteJournal();
@@ -179,6 +258,17 @@ public sealed class Gfs2Writer {
 
   /// <summary>Builds the image and writes it to <paramref name="output"/>.</summary>
   public void Build(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (output.CanSeek) {
+      var basePosition = output.Position;
+      var image = this.BuildCore();
+      image.WriteTo(output);
+      this._payloads.FlushTo(output, basePosition);
+      output.Position = basePosition + image.TotalBytes;
+      output.Flush();
+      return;
+    }
+
     var bytes = this.Build();
     output.Write(bytes, 0, bytes.Length);
   }
@@ -201,55 +291,138 @@ public sealed class Gfs2Writer {
       throw new InvalidOperationException(
         $"RG1 metadata does not fill the fixed first resource group (ended at {b}, expected {Rg2Header}).");
 
-    // Resolve RG2 geometry. RG2 is the single "data" resource group and spans the
-    // remainder of the device. Its 2-bits-per-block bitmap lives in the rgrp
-    // header block plus as many RB blocks as needed (ri_length = header + RBs).
-    //   data0 = Rg2Header + ri_length
-    // fsck.gfs2 requires ri_data to be a multiple of GFS2_NBBY (4), so the bitmap
-    // occupies a whole number of bytes with no partial trailing byte. ri_length
-    // depends on data and vice-versa, so iterate to a fixed point.
-    var riLength = 1L;
-    long rg2Data = 0;
-    for (var iter = 0; iter < 8; iter++) {
-      var data0 = Rg2Header + riLength;
-      var avail = (this._totalBlocks - 1) - data0; // last device block stays unused
-      if (avail < 4)
-        throw new InvalidOperationException("Image too small for the GFS2 layout.");
-      rg2Data = avail - (avail % 4);              // round down to a multiple of 4
-      var bitmapBytes = rg2Data / 4;
-      var need = bitmapBytes <= RgrpBitmapBytes
-        ? 1L
-        : 1L + (bitmapBytes - RgrpBitmapBytes + RbBitmapBytes - 1) / RbBitmapBytes;
-      if (need == riLength) break;
-      riLength = need;
+    // Resolve the data resource groups. Each one's 2-bits-per-block bitmap lives
+    // in the rgrp header block plus as many RB blocks as needed
+    // (ri_length = header + RBs), and covers at most MaxRgData data blocks —
+    // gfs2-utils splits a larger device the same way. fsck.gfs2 requires ri_data
+    // to be a multiple of GFS2_NBBY (4), so the bitmap occupies a whole number of
+    // bytes with no partial trailing byte. ri_length depends on data and
+    // vice-versa, so each group iterates to a fixed point.
+    this._dataRgs.Clear();
+    var header = Rg2Header;
+    while (header < this._totalBlocks - 1) {
+      var riLength = 1L;
+      long data = 0;
+      for (var iter = 0; iter < 8; iter++) {
+        var data0 = header + riLength;
+        var avail = (this._totalBlocks - 1) - data0; // last device block stays unused
+        if (avail < 4) break;
+        data = Math.Min(MaxRgData, avail);
+        data -= data % 4;                            // round down to a multiple of 4
+        var bitmapBytes = data / 4;
+        var need = bitmapBytes <= RgrpBitmapBytes
+          ? 1L
+          : 1L + (bitmapBytes - RgrpBitmapBytes + RbBitmapBytes - 1) / RbBitmapBytes;
+        if (need == riLength) break;
+        riLength = need;
+      }
+      if (data < 4) break;
+      this._dataRgs.Add((header, riLength, header + riLength, data));
+      header = header + riLength + data;
     }
-    this._rg2Length = riLength;
-    this._rg2Data0 = Rg2Header + riLength;
-    this._rg2Data = rg2Data;
 
-    // RG2: header + RB blocks, then remaining system inodes + root.
-    b = this._rg2Data0;
-    this._perNodeDinode = b++;
-    this._inumRangeDinode = b++;
-    this._statfsChangeDinode = b++;
-    this._quotaChangeDinode = b++;
-    this._quotaChangeData0 = b;
-    b += QuotaChangeBlocks;
-    this._inumDinode = b++;
-    this._statfsDinode = b++;
-    this._rindexDinode = b++;
-    this._quotaDinode = b++;
-    this._rootDinode = b++;
+    if (this._dataRgs.Count == 0)
+      throw new InvalidOperationException("Image too small for the GFS2 layout.");
 
-    if (b > this._totalBlocks)
-      throw new InvalidOperationException(
-        "Image too small for the GFS2 metadata layout.");
+    var first = this._dataRgs[0];
+    this._rg2Length = first.Length;
+    this._rg2Data0 = first.Data0;
+    this._rg2Data = first.Data;
+
+    // System inodes, the root, then the caller files — all from a cursor that
+    // walks the data areas in order, stepping over each group's bitmap blocks.
+    this._cursorRg = 0;
+    this._cursorBlock = first.Data0;
+    this._perNodeDinode = this.AllocBlock();
+    this._inumRangeDinode = this.AllocBlock();
+    this._statfsChangeDinode = this.AllocBlock();
+    this._quotaChangeDinode = this.AllocBlock();
+    this._quotaChangeData0 = this.AllocRun(QuotaChangeBlocks);
+    this._inumDinode = this.AllocBlock();
+    this._statfsDinode = this.AllocBlock();
+    this._rindexDinode = this.AllocBlock();
+    this._quotaDinode = this.AllocBlock();
+    this._rootDinode = this.AllocBlock();
+
+    this.PlanFiles();
+  }
+
+  // Allocation cursor over the data resource groups.
+  private int _cursorRg;
+  private long _cursorBlock;
+
+  /// <summary>Hands out the next data block, moving to the next resource group when one fills.</summary>
+  private long AllocBlock() {
+    while (this._cursorRg < this._dataRgs.Count) {
+      var rg = this._dataRgs[this._cursorRg];
+      if (this._cursorBlock < rg.Data0 + rg.Data)
+        return this._cursorBlock++;
+      if (++this._cursorRg >= this._dataRgs.Count) break;
+      this._cursorBlock = this._dataRgs[this._cursorRg].Data0;
+    }
+    throw new InvalidOperationException("GFS2: the volume has no free data blocks left.");
+  }
+
+  /// <summary>
+  /// Hands out <paramref name="count" /> consecutive data blocks, all inside one
+  /// resource group so callers that need a contiguous run get one.
+  /// </summary>
+  private long AllocRun(long count) {
+    while (this._cursorRg < this._dataRgs.Count) {
+      var rg = this._dataRgs[this._cursorRg];
+      if (this._cursorBlock + count <= rg.Data0 + rg.Data) {
+        var start = this._cursorBlock;
+        this._cursorBlock += count;
+        return start;
+      }
+      if (++this._cursorRg >= this._dataRgs.Count) break;
+      this._cursorBlock = this._dataRgs[this._cursorRg].Data0;
+    }
+    throw new InvalidOperationException(
+      $"GFS2: no resource group has {count:N0} consecutive free blocks.");
+  }
+
+  /// <summary>
+  /// Gives every caller file a dinode and, when its body does not fit stuffed in
+  /// that dinode, the data blocks plus the levels of indirect blocks the metadata
+  /// tree needs. di_height counts those levels: at height 1 the dinode's own
+  /// pointer area addresses the data blocks, and each level above multiplies the
+  /// reach by the pointers one indirect block holds.
+  /// </summary>
+  private void PlanFiles() {
+    var formalIno = NextFreeFormalIno;
+    foreach (var (name, payload) in this._files) {
+      var plan = new FilePlan { Name = name, Payload = payload, FormalIno = formalIno++ };
+      plan.Dinode = this.AllocBlock();
+      this._filePlans.Add(plan);
+
+      if (payload.Size <= BlockSize - DinodeHeaderSize)
+        continue;  // stuffed: height 0, body inline in the dinode
+
+      var dataCount = (payload.Size + BlockSize - 1) / BlockSize;
+      for (var i = 0L; i < dataCount; ++i)
+        plan.DataBlocks.Add(this.AllocBlock());
+
+      // Levels are built innermost-first: the level directly above the data, then
+      // the level above that, until one level fits the dinode's own pointers.
+      var below = dataCount;
+      plan.Height = 1;
+      while (below > PointersPerDinode) {
+        var count = (below + PointersPerIndirect - 1) / PointersPerIndirect;
+        var level = new List<long>((int)count);
+        for (var i = 0L; i < count; ++i)
+          level.Add(this.AllocBlock());
+        plan.Levels.Add(level);
+        below = count;
+        ++plan.Height;
+      }
+    }
   }
 
   // ── Superblock ────────────────────────────────────────────────────────────
 
   private void WriteSuperblock() {
-    var o = (int)(this._sbBlock * BlockSize);
+    var o = this._sbBlock * BlockSize;
     WriteMetaHeader(o, MtSb, FmtSb);
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 24, 4), FormatFs);
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 28, 4), FormatMulti);
@@ -292,7 +465,7 @@ public sealed class Gfs2Writer {
       goalData: (ulong)(this._journalData0 + JournalBlocks - 1));
 
     // Top-level dinode pointers reference the indirect blocks.
-    var dinodeOff = (int)(this._journalDinode * BlockSize);
+    var dinodeOff = this._journalDinode * BlockSize;
     for (var i = 0; i < nInd; i++)
       BinaryPrimitives.WriteUInt64BigEndian(
         Span(dinodeOff + DinodeHeaderSize + i * 8, 8), (ulong)(indirect0 + i));
@@ -302,7 +475,7 @@ public sealed class Gfs2Writer {
     for (var i = 0; i < nInd; i++) {
       var ib = indirect0 + i;
       this.MarkUsed(ib);
-      var io = (int)(ib * BlockSize);
+      var io = ib * BlockSize;
       WriteMetaHeader(io, MtIndirect, FmtIndirect);
       var ptr = 0;
       while (ptr < PointersPerIndirect && dataBlk < this._journalData0 + JournalBlocks) {
@@ -327,7 +500,7 @@ public sealed class Gfs2Writer {
   }
 
   private void WriteLogHeader(long block, ulong sequence, int journalRelative, ulong jinode) {
-    var o = (int)(block * BlockSize);
+    var o = block * BlockSize;
     // Block is otherwise zero; write the log header.
     WriteMetaHeader(o, MtLogHeader, FmtLogHeader);
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 24, 8), sequence);        // lh_sequence
@@ -345,11 +518,11 @@ public sealed class Gfs2Writer {
 
     // lh_hash = CRC32 over bytes [0..48) with lh_hash zeroed.
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 44, 4), 0u);
-    var hash = Crc32(this._img.AsSpan(o, 48));
+    var hash = Crc32(this.Span(o, 48));
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 44, 4), hash);
 
     // lh_crc = CRC32C(init=~0, no final xor) over bytes [52..BlockSize).
-    var crc = Crc32cNoFinal(this._img.AsSpan(o + 52, BlockSize - 52));
+    var crc = Crc32cNoFinal(this.Span(o + 52, BlockSize - 52));
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 48, 4), crc);
   }
 
@@ -369,7 +542,7 @@ public sealed class Gfs2Writer {
       fill: _ => { });
 
     // rindex: one gfs2_rindex (96 bytes) per resource group.
-    this.WriteSystemFile(this._rindexDinode, FiRindex, size: 96 * RindexEntryCount,
+    this.WriteSystemFile(this._rindexDinode, FiRindex, size: 96 * this.ResourceGroups.Length,
       payloadFormat: PfRindex, fill: span => this.WriteRindexEntry(span));
 
     // quota: two gfs2_quota (root uid + root gid), 88 bytes each, value=1.
@@ -434,7 +607,7 @@ public sealed class Gfs2Writer {
       goalData: (ulong)this._quotaChangeDinode);
 
     // Top-level dinode pointers reference the data blocks directly (height 1).
-    var dinodeOff = (int)(this._quotaChangeDinode * BlockSize);
+    var dinodeOff = this._quotaChangeDinode * BlockSize;
     for (var i = 0; i < QuotaChangeBlocks; i++)
       BinaryPrimitives.WriteUInt64BigEndian(
         Span(dinodeOff + DinodeHeaderSize + i * 8, 8),
@@ -443,7 +616,7 @@ public sealed class Gfs2Writer {
     for (var i = 0; i < QuotaChangeBlocks; i++) {
       var blk = this._quotaChangeData0 + i;
       this.MarkUsed(blk);
-      WriteMetaHeader((int)(blk * BlockSize), MtQuotaChange, FmtQuotaChange);
+      WriteMetaHeader(blk * BlockSize, MtQuotaChange, FmtQuotaChange);
     }
   }
 
@@ -451,10 +624,8 @@ public sealed class Gfs2Writer {
   // data block, and data-block count. RG1 is a fixed single-block-bitmap group;
   // RG2 absorbs the remainder of the device (less the final unused block) and may
   // use a multi-block bitmap.
-  private (long Header, long Length, long Data0, long Data)[] ResourceGroups => [
-    (Rg1Header, 1L, Rg1Data0, Rg1Data),
-    (Rg2Header, this._rg2Length, this._rg2Data0, this._rg2Data),
-  ];
+  private (long Header, long Length, long Data0, long Data)[] ResourceGroups =>
+    [(Rg1Header, 1L, Rg1Data0, Rg1Data), .. this._dataRgs];
 
   private void WriteRindexEntry(Span<byte> span) {
     // One gfs2_rindex (96 bytes) per resource group.
@@ -472,8 +643,7 @@ public sealed class Gfs2Writer {
     }
   }
 
-  // Number of resource-group rindex records (drives the rindex inode size).
-  private const int RindexEntryCount = 2;
+
 
   private (long Total, long Free, long Dinodes) ComputeStatfs() {
     // Statfs counts span all resource groups (sum of every RG's data blocks).
@@ -488,7 +658,7 @@ public sealed class Gfs2Writer {
 
   private void WriteStatfsPayload() {
     var (total, free, dinodes) = this.ComputeStatfs();
-    var o = (int)(this._statfsDinode * BlockSize) + DinodeHeaderSize;
+    var o = this._statfsDinode * BlockSize + DinodeHeaderSize;
     BinaryPrimitives.WriteUInt64BigEndian(Span(o, 8), (ulong)total);       // sc_total
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 8, 8), (ulong)free);    // sc_free
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 16, 8), (ulong)dinodes); // sc_dinodes
@@ -497,10 +667,122 @@ public sealed class Gfs2Writer {
   // ── Root directory ────────────────────────────────────────────────────────
 
   private void WriteRoot() {
-    // Empty root: only "." and ".." (which point at root itself).
+    // The root names every caller file; "." and ".." point at root itself.
+    var children = new (string Name, ulong Fi, ulong Addr, ushort Type)[this._filePlans.Count];
+    for (var i = 0; i < this._filePlans.Count; ++i) {
+      var plan = this._filePlans[i];
+      children[i] = (LeafName(plan.Name), plan.FormalIno, (ulong)plan.Dinode, DtRegular);
+    }
+
     this.WriteDirectory(this._rootDinode, FiRoot, parentFormalIno: FiRoot,
-      parentAddr: (ulong)this._rootDinode, system: false, children: [],
+      parentAddr: (ulong)this._rootDinode, system: false, children: children,
       nlinkOverride: 2, mode: SIfDir | 0x1ED /* 0755 */);
+
+    foreach (var plan in this._filePlans)
+      this.WriteFile(plan);
+  }
+
+  /// <summary>
+  /// A GFS2 directory here is a single stuffed block, so a nested path is stored
+  /// under its leaf name rather than fabricating a subdirectory tree.
+  /// </summary>
+  private static string LeafName(string name) {
+    var slash = name.LastIndexOfAny(['/', '\\']);
+    return slash < 0 ? name : name[(slash + 1)..];
+  }
+
+  /// <summary>
+  /// Writes one caller file: a dinode, and either its body stuffed inline or the
+  /// metadata tree pointing at its data blocks. Pointers at every level sit
+  /// immediately after that block's header — offset 232 in a dinode, 24 in an
+  /// indirect block.
+  /// </summary>
+  private void WriteFile(FilePlan plan) {
+    var size = plan.Payload.Size;
+    var blocks = 1L + plan.DataBlocks.Count;
+    foreach (var level in plan.Levels) blocks += level.Count;
+
+    this.WriteDinode(
+      block: plan.Dinode, formalIno: plan.FormalIno, mode: SIfReg | 0x1A4 /* 0644 */,
+      nlink: 1, size: (ulong)size, blocks: (ulong)blocks, flags: 0,
+      payloadFormat: 0, height: plan.Height, entries: 0,
+      goalMeta: (ulong)plan.Dinode, goalData: (ulong)plan.Dinode);
+
+    if (plan.Height == 0) {
+      // Stuffed: the body lives in the dinode past its 232-byte header.
+      if (size > 0)
+        this._img.Write((long)plan.Dinode * BlockSize + DinodeHeaderSize, plan.Payload.ToArray());
+      return;
+    }
+
+    // The level immediately below the dinode is the outermost indirect level, or
+    // the data blocks themselves when the tree is only one level deep.
+    var top = plan.Levels.Count > 0 ? plan.Levels[^1] : plan.DataBlocks;
+    WritePointers((long)plan.Dinode * BlockSize + DinodeHeaderSize,
+      PointersPerDinode, top, 0);
+
+    // Each indirect level points at the level below it: the last planned level is
+    // the outermost, so walk them back down toward the data.
+    for (var i = plan.Levels.Count - 1; i >= 0; --i) {
+      var level = plan.Levels[i];
+      var below = i > 0 ? plan.Levels[i - 1] : plan.DataBlocks;
+      for (var j = 0; j < level.Count; ++j) {
+        var block = level[j];
+        this.WriteMetaHeader((long)block * BlockSize, MtIndirect, FmtIndirect);
+        this.MarkUsed(block);
+        WritePointers((long)block * BlockSize + IndPointerBase,
+          PointersPerIndirect, below, j * PointersPerIndirect);
+      }
+    }
+
+    // The data blocks are contiguous within a resource group, so the body is one
+    // forward copy per run rather than a write per block.
+    var offset = 0L;
+    var runStart = 0;
+    while (runStart < plan.DataBlocks.Count) {
+      var runEnd = runStart + 1;
+      while (runEnd < plan.DataBlocks.Count
+          && plan.DataBlocks[runEnd] == plan.DataBlocks[runEnd - 1] + 1)
+        ++runEnd;
+
+      var runBytes = Math.Min((long)(runEnd - runStart) * BlockSize, size - offset);
+      if (runBytes > 0) {
+        var skip = offset;
+        var payload = plan.Payload;
+        this._payloads.Add((long)plan.DataBlocks[runStart] * BlockSize,
+          FilePayload.FromStream(runBytes, () => SkipTo(payload.Open(), skip)));
+      }
+      offset += (long)(runEnd - runStart) * BlockSize;
+      runStart = runEnd;
+    }
+
+    foreach (var block in plan.DataBlocks)
+      this.MarkUsed(block);
+  }
+
+  /// <summary>Fills a pointer area with a slice of the level below it.</summary>
+  private void WritePointers(long areaOffset, int capacity, List<long> below, int firstIndex) {
+    var count = Math.Min(capacity, below.Count - firstIndex);
+    for (var i = 0; i < count; ++i)
+      BinaryPrimitives.WriteUInt64BigEndian(
+        this.Span(areaOffset + i * 8, 8), (ulong)below[firstIndex + i]);
+  }
+
+  /// <summary>Advances <paramref name="source" /> to <paramref name="offset" />, reading through when it cannot seek.</summary>
+  private static Stream SkipTo(Stream source, long offset) {
+    if (offset <= 0) return source;
+    if (source.CanSeek) {
+      source.Position = offset;
+      return source;
+    }
+    var buffer = new byte[64 * 1024];
+    var remaining = offset;
+    while (remaining > 0) {
+      var n = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+      if (n <= 0) break;
+      remaining -= n;
+    }
+    return source;
   }
 
   // ── Resource group + bitmap ─────────────────────────────────────────────--
@@ -523,7 +805,7 @@ public sealed class Gfs2Writer {
       // rg_skip is the distance to the next rgrp header; 0 for the last RG.
       var skip = i + 1 < rgs.Length ? rgs[i + 1].Header - header : 0;
 
-      var o = (int)(header * BlockSize);
+      var o = header * BlockSize;
       WriteMetaHeader(o, MtRg, FmtRg);
       BinaryPrimitives.WriteUInt32BigEndian(Span(o + 24, 4), 0u);              // rg_flags
       BinaryPrimitives.WriteUInt32BigEndian(Span(o + 28, 4), (uint)free);      // rg_free
@@ -538,7 +820,7 @@ public sealed class Gfs2Writer {
       // Bitmap headers for the extra RB blocks (the rgrp block carries the first
       // chunk inline; each subsequent bitmap block is a gfs2_meta_header RB).
       for (var rb = 1; rb < length; rb++)
-        this.WriteMetaHeader((int)((header + rb) * BlockSize), MtRb, FmtRb);
+        this.WriteMetaHeader((header + rb) * BlockSize, MtRb, FmtRb);
 
       // Paint the logically-contiguous bitmap, which is physically split across
       // the rgrp block (offset 128) and the RB blocks (offset 24).
@@ -551,7 +833,7 @@ public sealed class Gfs2Writer {
 
       // rg_crc = CRC32 over the 128-byte gfs2_rgrp header with rg_crc zeroed.
       BinaryPrimitives.WriteUInt32BigEndian(Span(o + 64, 4), 0u);
-      var crc = Crc32(this._img.AsSpan(o, 128));
+      var crc = Crc32(this.Span(o, 128));
       BinaryPrimitives.WriteUInt32BigEndian(Span(o + 64, 4), crc);
     }
   }
@@ -566,14 +848,14 @@ public sealed class Gfs2Writer {
   private void SetRgBitmap(long rgHeader, long dataIndex, int state) {
     var byteOffset = dataIndex / 4;
     var shift = (int)(dataIndex % 4) * 2;
-    int absByte;
+    long absByte;
     if (byteOffset < RgrpBitmapBytes) {
-      absByte = (int)(rgHeader * BlockSize) + 128 + (int)byteOffset;
+      absByte = rgHeader * BlockSize + 128 + byteOffset;
     } else {
       var rest = byteOffset - RgrpBitmapBytes;
       var rbIndex = rest / RbBitmapBytes;       // which RB block (0-based)
       var inRb = rest % RbBitmapBytes;
-      absByte = (int)((rgHeader + 1 + rbIndex) * BlockSize) + IndPointerBase + (int)inRb;
+      absByte = (rgHeader + 1 + rbIndex) * BlockSize + IndPointerBase + inRb;
     }
     this._img[absByte] = (byte)((this._img[absByte] & ~(0x3 << shift)) | ((state & 0x3) << shift));
   }
@@ -587,7 +869,7 @@ public sealed class Gfs2Writer {
       size: (ulong)size, blocks: 1, flags: DifSystem | DifJData,
       payloadFormat: payloadFormat, height: 0, entries: 0,
       goalMeta: (ulong)block, goalData: (ulong)block);
-    var o = (int)(block * BlockSize) + DinodeHeaderSize;
+    var o = block * BlockSize + DinodeHeaderSize;
     fill(Span(o, size));
   }
 
@@ -612,7 +894,7 @@ public sealed class Gfs2Writer {
 
     // Write dirents inline starting at offset 232. Each record is sized to fit
     // its name; the final record's rec_len extends to end-of-block.
-    var areaStart = (int)(block * BlockSize) + DinodeHeaderSize;
+    var areaStart = block * BlockSize + DinodeHeaderSize;
     var areaLen = BlockSize - DinodeHeaderSize;
     var pos = 0;
 
@@ -632,7 +914,7 @@ public sealed class Gfs2Writer {
     }
   }
 
-  private void WriteDirent(int off, ulong fi, ulong addr, string name, int nameLen,
+  private void WriteDirent(long off, ulong fi, ulong addr, string name, int nameLen,
                            ushort recLen, ushort type) {
     WriteInum(off, fi, addr);                                                // de_inum
     BinaryPrimitives.WriteUInt32BigEndian(Span(off + 16, 4), Crc32(Encoding.UTF8.GetBytes(name))); // de_hash
@@ -648,7 +930,7 @@ public sealed class Gfs2Writer {
                            ulong size, ulong blocks, uint flags, uint payloadFormat,
                            ushort height, uint entries,
                            ulong goalMeta, ulong goalData) {
-    var o = (int)(block * BlockSize);
+    var o = block * BlockSize;
     WriteMetaHeader(o, MtDinode, FmtDinode);
     WriteInum(o + 24, formalIno, (ulong)block);                             // di_num
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 40, 4), mode);           // di_mode
@@ -691,10 +973,10 @@ public sealed class Gfs2Writer {
 
   // ── Primitives ──────────────────────────────────────────────────────────--
 
-  private Span<byte> Span(int offset, int length) => this._img.AsSpan(offset, length);
+  private Span<byte> Span(long offset, int length) => this._img.At(offset, length);
 
   /// <summary>Writes the 24-byte gfs2_meta_header at the given absolute offset.</summary>
-  private void WriteMetaHeader(int absOffset, uint type, uint format) {
+  private void WriteMetaHeader(long absOffset, uint type, uint format) {
     BinaryPrimitives.WriteUInt32BigEndian(this.Span(absOffset, 4), MetaMagic); // mh_magic
     BinaryPrimitives.WriteUInt32BigEndian(this.Span(absOffset + 4, 4), type);  // mh_type
     // __pad0 (8) @8 stays zero.
@@ -702,12 +984,12 @@ public sealed class Gfs2Writer {
     // mh_jid @20 stays zero.
   }
 
-  private void WriteInum(int absOffset, ulong formalIno, ulong addr) {
+  private void WriteInum(long absOffset, ulong formalIno, ulong addr) {
     BinaryPrimitives.WriteUInt64BigEndian(this.Span(absOffset, 8), formalIno);
     BinaryPrimitives.WriteUInt64BigEndian(this.Span(absOffset + 8, 8), addr);
   }
 
-  private void WriteCString(int absOffset, string value, int fieldLen) {
+  private void WriteCString(long absOffset, string value, int fieldLen) {
     var bytes = Encoding.ASCII.GetBytes(value);
     var n = Math.Min(bytes.Length, fieldLen - 1);
     bytes.AsSpan(0, n).CopyTo(this.Span(absOffset, n));
