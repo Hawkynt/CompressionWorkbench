@@ -108,10 +108,20 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var checksum = options.GetOptionBool("Checksum", false);
 
     var w = new Nilfs1Writer();
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      w.AddFile(name, data);
-    var img = w.Build(blockSize, segSize, string.IsNullOrEmpty(label) ? null : label, checksum);
-    output.Write(img);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the directory out; reading a large input
+      // into a byte[] would cap the volume at what an array can hold.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
+    var volumeLabel = string.IsNullOrEmpty(label) ? null : label;
+    if (output.CanSeek) w.WriteTo(output, blockSize, segSize, volumeLabel, checksum);
+    else output.Write(w.Build(blockSize, segSize, volumeLabel, checksum));
   }
 
   /// <summary>

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Nilfs1;
 
@@ -90,14 +91,64 @@ public sealed class Nilfs1Writer {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[0x10..], sum);
   }
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
 
   /// <summary>Adds a file to the image. Subdirectory paths are encoded with
   /// '/' separators in <paramref name="name"/>.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentException.ThrowIfNullOrEmpty(name);
     ArgumentNullException.ThrowIfNull(data);
-    _files.Add((name.Replace('\\', '/'), data));
+    _files.Add((name.Replace('\\', '/'), FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the directory is laid out
+  /// from it before a byte is read.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    _files.Add((name.Replace('\\', '/'), FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>When set, Build materialises only the metadata prefix.</summary>
+  private bool _prefixOnly;
+
+  /// <summary>
+  /// Writes the volume into <paramref name="output" />: the superblock and
+  /// directory, then each payload at its recorded offset and the secondary
+  /// superblock at the tail. Only a non-seekable target materialises the volume.
+  /// </summary>
+  public void WriteTo(Stream output, int blockSize = 4096, int segmentSize = 0,
+                      string? volumeLabel = null, bool enableChecksum = false) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var full = this.Build(blockSize, segmentSize, volumeLabel, enableChecksum);
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    this._prefixOnly = true;
+    byte[] prefix;
+    DeferredPayloads payloads;
+    long totalBytes;
+    try {
+      prefix = this.BuildCore(blockSize, segmentSize, volumeLabel, enableChecksum, out payloads, out totalBytes,
+                              out var secondary);
+      output.Write(prefix, 0, prefix.Length);
+      output.SetLength(basePosition + totalBytes);
+      if (secondary is { } sec) {
+        output.Position = basePosition + sec.Offset;
+        output.Write(sec.Bytes, 0, sec.Bytes.Length);
+      }
+    } finally {
+      this._prefixOnly = false;
+    }
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + totalBytes;
+    output.Flush();
   }
 
   /// <summary>Builds the NILFS v1 image. <paramref name="blockSize"/> drives the
@@ -107,6 +158,19 @@ public sealed class Nilfs1Writer {
   /// <paramref name="enableChecksum"/> sets the corresponding feature flag bit.
   /// </summary>
   public byte[] Build(int blockSize = 4096, int segmentSize = 0, string? volumeLabel = null, bool enableChecksum = false) {
+    var image = this.BuildCore(blockSize, segmentSize, volumeLabel, enableChecksum,
+                               out var payloads, out var totalBytes, out _);
+    if (totalBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"NILFS: a {totalBytes:N0}-byte volume exceeds the array limit; write it to a seekable stream instead.");
+    using var target = new MemoryStream(image, writable: true);
+    payloads.FlushTo(target);
+    return image;
+  }
+
+  private byte[] BuildCore(int blockSize, int segmentSize, string? volumeLabel, bool enableChecksum,
+                           out DeferredPayloads payloads, out long totalBytes,
+                           out (long Offset, byte[] Bytes)? secondarySuperblock) {
     if (blockSize < 1024 || blockSize > 65536 || (blockSize & (blockSize - 1)) != 0)
       throw new ArgumentException("blockSize must be a power of two in [1024, 65536].", nameof(blockSize));
     if (segmentSize < 0) throw new ArgumentException("segmentSize must be >= 0.", nameof(segmentSize));
@@ -115,7 +179,7 @@ public sealed class Nilfs1Writer {
     // Compute payload byte count.
     var dirSize = ComputeDirectoryBytes();
     var dataSize = 0L;
-    foreach (var (_, data) in _files) dataSize += data.LongLength;
+    foreach (var (_, payload) in _files) dataSize += payload.Size;
     var bodyBytes = WriterMagic.Length + 8 + dirSize + dataSize;
     // Pad image to at least 64 KB and to a multiple of blockSize so external
     // tools that walk in block units don't read past EOF. Reserve a tail block
@@ -124,7 +188,13 @@ public sealed class Nilfs1Writer {
     var minImageBytes = Math.Max(64 * 1024L, SegmentStart + bodyBytes + tailReserve);
     var imageBytes = (long)((minImageBytes + blockSize - 1) / blockSize) * blockSize;
 
-    var img = new byte[imageBytes];
+    // Only the metadata prefix is materialised: the payload region follows the
+    // directory, and both it and the secondary superblock at the tail are placed
+    // by seek. Allocating the whole volume capped NILFS at the array limit.
+    payloads = new DeferredPayloads();
+    totalBytes = imageBytes;
+    var prefixBytes = SegmentStart + WriterMagic.Length + 8 + dirSize;
+    var img = new byte[this._prefixOnly ? prefixBytes : imageBytes];
 
     var actualSegBlocks = (uint)Math.Max(1, segmentSize > 0 ? segmentSize / blockSize : 8);
     var totalBlocks = (ulong)(imageBytes / blockSize);
@@ -140,9 +210,19 @@ public sealed class Nilfs1Writer {
       actualSegBlocks, enableChecksum, fixedCtime, volumeLabel);
 
     var secondaryOffset = imageBytes - SecondaryBackOffset;
-    if (secondaryOffset >= SegmentStart + bodyBytes)
-      WriteSuperblock(img.AsSpan((int)secondaryOffset), 1u, logBlockSize, nSegments,
-        (ulong)imageBytes, actualSegBlocks, enableChecksum, fixedCtime, volumeLabel);
+    secondarySuperblock = null;
+    if (secondaryOffset >= SegmentStart + bodyBytes) {
+      if (this._prefixOnly) {
+        // Past the materialised prefix: hand it to the caller to place by seek.
+        var mirror = new byte[SuperblockSize];
+        WriteSuperblock(mirror, 1u, logBlockSize, nSegments,
+          (ulong)imageBytes, actualSegBlocks, enableChecksum, fixedCtime, volumeLabel);
+        secondarySuperblock = (secondaryOffset, mirror);
+      } else {
+        WriteSuperblock(img.AsSpan((int)secondaryOffset), 1u, logBlockSize, nSegments,
+          (ulong)imageBytes, actualSegBlocks, enableChecksum, fixedCtime, volumeLabel);
+      }
+    }
 
     // ── Segment / directory / payload at SegmentStart ──────────────────────
     var seg = img.AsSpan(SegmentStart);
@@ -152,7 +232,7 @@ public sealed class Nilfs1Writer {
     var dirOffset = WriterMagic.Length + 8;
     var payloadOffset = dirOffset + (int)dirSize;
     var payloadCursor = 0L;
-    foreach (var (name, data) in _files) {
+    foreach (var (name, payload) in _files) {
       // Directory entry layout (variable-size):
       //   u32 name_len, byte[name_len] name (UTF-8),
       //   u64 payload_offset (relative to start of payload region),
@@ -161,12 +241,13 @@ public sealed class Nilfs1Writer {
       BinaryPrimitives.WriteUInt32LittleEndian(seg[dirOffset..], (uint)nameBytes.Length);
       nameBytes.CopyTo(seg[(dirOffset + 4)..]);
       BinaryPrimitives.WriteInt64LittleEndian(seg[(dirOffset + 4 + nameBytes.Length)..], payloadCursor);
-      BinaryPrimitives.WriteInt64LittleEndian(seg[(dirOffset + 4 + nameBytes.Length + 8)..], data.LongLength);
+      BinaryPrimitives.WriteInt64LittleEndian(seg[(dirOffset + 4 + nameBytes.Length + 8)..], payload.Size);
       dirOffset += 4 + nameBytes.Length + 16;
 
-      // Copy payload.
-      data.CopyTo(seg[(payloadOffset + (int)payloadCursor)..]);
-      payloadCursor += data.LongLength;
+      // The payload belongs after the directory; it is written separately so a
+      // volume larger than a byte[] can address is still producible.
+      payloads.Add(SegmentStart + payloadOffset + payloadCursor, payload);
+      payloadCursor += payload.Size;
     }
 
     return img;
