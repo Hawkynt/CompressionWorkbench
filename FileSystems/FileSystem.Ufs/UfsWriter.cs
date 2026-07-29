@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ufs;
@@ -160,8 +161,24 @@ public sealed class UfsWriter {
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
-    var disk = BuildDisk();
-    output.Write(disk);
+    if (!output.CanSeek) {
+      var full = this.Build();
+      output.Write(full, 0, full.Length);
+      return;
+    }
+
+    var basePosition = output.Position;
+    var disk = this.BuildDisk(out var payloads);
+    disk.WriteTo(output);
+    payloads.FlushTo(output, basePosition);
+    output.Position = basePosition + disk.TotalBytes;
+    output.Flush();
+  }
+
+  /// <summary>Materialises the whole volume.</summary>
+  public byte[] Build() {
+    var disk = this.BuildDisk(out var payloads);
+    return payloads.Materialise(disk);
   }
 
   /// <summary>
@@ -183,16 +200,17 @@ public sealed class UfsWriter {
 
     var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
     this._streamingSink = sink;
-    byte[] disk;
+    SparseBlockImage disk;
+    DeferredPayloads payloads;
     try {
-      disk = BuildDisk();
+      disk = this.BuildDisk(out payloads);
     } finally {
       this._streamingSink = null;
     }
 
-    output.SetLength(disk.Length);
     output.Position = 0;
-    output.Write(disk, 0, disk.Length);
+    disk.WriteTo(output);
+    payloads.FlushTo(output);
 
     var buf = new byte[64 * 1024];
     foreach (var (byteOffset, size, opener) in sink) {
@@ -212,7 +230,7 @@ public sealed class UfsWriter {
     output.Flush();
   }
 
-  private byte[] BuildDisk() {
+  private SparseBlockImage BuildDisk(out DeferredPayloads payloads) {
     var root = BuildTree();
     root.Inode = RootIno;
 
@@ -238,11 +256,15 @@ public sealed class UfsWriter {
     }
 
     // ── pick image size; grow if user data needs more than the 16 MB floor ──
-    var imageBytes = (int)Math.Max(MinImageBytes, EstimateBytes(directories, regularFiles));
-    imageBytes = RoundUp(imageBytes, BlockSize);
-    var totalFrags = imageBytes / FragSize;
+    var imageBytes = Math.Max(MinImageBytes, EstimateBytes(directories, regularFiles));
+    imageBytes = RoundUpLong(imageBytes, BlockSize);
+    var totalFrags = (int)(imageBytes / FragSize);
     var geom = ComputeGeometry(totalFrags);
-    var disk = new byte[imageBytes];
+    // Only the blocks the filesystem populates are held: file payloads are
+    // placed by seek afterwards, so a volume past what a byte[] can address
+    // costs its metadata rather than its size.
+    var disk = new SparseBlockImage(FragSize, imageBytes);
+    payloads = new DeferredPayloads();
 
     // The inode table and data area live inside cylinder group 0; all live
     // inodes (root, .snap, user tree) fit comfortably in cg0's first ipg slots.
@@ -278,7 +300,7 @@ public sealed class UfsWriter {
     foreach (var dir in directories) {
       var img = dirImage[dir];
       var first = nextFrag;
-      var (directBlocks, indirectFrag, fragsUsed) = PlaceObject(disk, img, ref nextFrag);
+      var (directBlocks, indirectFrag, fragsUsed) = PlaceObject(disk, payloads, img, ref nextFrag);
 
       var childDirs = dir.Order.Count(c => c.IsDirectory);
       // di_dirdepth: distance from the root (root=0, its children=1, …). fsck
@@ -299,7 +321,7 @@ public sealed class UfsWriter {
       var firstFrag = nextFrag;
       var (directBlocks, indirectFrag, fragsUsed) = file.StreamOpener != null
         ? PlaceObjectGeometry(disk, (int)file.EffectiveLength, ref nextFrag)
-        : PlaceObject(disk, file.Data, ref nextFrag);
+        : PlaceObject(disk, payloads, file.Data, ref nextFrag);
 
       // Streaming entries leave their data fragments zero; BuildToStreaming
       // post-fills them from the source in 64 KB chunks. The data fragments are
@@ -328,6 +350,9 @@ public sealed class UfsWriter {
     return disk;
   }
 
+  private static long RoundUpLong(long value, int multiple)
+    => (value + multiple - 1) / multiple * multiple;
+
   private static long EstimateBytes(List<TreeNode> directories, List<TreeNode> regularFiles) {
     long frags = 1024;                             // generous slack for metadata
     foreach (var d in directories) frags += Math.Max(1, d.Order.Count / 16 + 1) * Frag + Frag;
@@ -340,7 +365,7 @@ public sealed class UfsWriter {
   // single-indirect fragment (0 if none), and the fragment count for di_blocks.
   // Each fs block before the tail consumes Frag fragments; the tail consumes only
   // as many fragments as it needs (newfs fragment-tail optimisation).
-  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObject(byte[] disk, byte[] payload, ref int nextFrag) {
+  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObject(SparseBlockImage disk, DeferredPayloads payloads, byte[] payload, ref int nextFrag) {
     var length = payload.Length;
     var blocks = Math.Max(1, HowMany(length, BlockSize));
     var fullBlocks = length / BlockSize;
@@ -348,7 +373,7 @@ public sealed class UfsWriter {
     var tailFrags = tailBytes > 0 ? HowMany(tailBytes, FragSize) : (length == 0 ? 1 : 0);
 
     var first = nextFrag;
-    if (length > 0) payload.CopyTo(disk, (long)first * FragSize);
+    if (length > 0) payloads.Add((long)first * FragSize, payload);
 
     // Record the frags each block actually occupies (block-aligned addressing,
     // tail filling only tailFrags).
@@ -381,7 +406,7 @@ public sealed class UfsWriter {
   // direct/indirect block accounting for a file of `length` bytes WITHOUT copying
   // any payload (the data fragments stay zero — BuildToStreaming post-fills them).
   // Byte-for-byte identical placement to PlaceObject(disk, payloadOfLength, ...).
-  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObjectGeometry(byte[] disk, int length, ref int nextFrag) {
+  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObjectGeometry(SparseBlockImage disk, int length, ref int nextFrag) {
     var blocks = Math.Max(1, HowMany(length, BlockSize));
     var fullBlocks = length / BlockSize;
     var tailBytes = length - fullBlocks * BlockSize;
@@ -463,11 +488,11 @@ public sealed class UfsWriter {
         $"'{(dir.Name.Length == 0 ? "/" : dir.Name)}' with {dir.Order.Count} entries needs {blockCount}.");
   }
 
-  private static void WriteIndirectBlock(byte[] disk, int indirectFrag, int[] blockFrags, int firstIndirectBlock) {
+  private static void WriteIndirectBlock(SparseBlockImage disk, int indirectFrag, int[] blockFrags, int firstIndirectBlock) {
     var tableOffset = (long)indirectFrag * FragSize;
     for (var b = firstIndirectBlock; b < blockFrags.Length; b++)
       BinaryPrimitives.WriteInt32LittleEndian(
-        disk.AsSpan((int)(tableOffset + (long)(b - firstIndirectBlock) * 4)), blockFrags[b]);
+        disk.At(tableOffset + (long)(b - firstIndirectBlock) * 4, 4), blockFrags[b]);
   }
 
   private static int DirEntryReclen(string name) {
@@ -478,8 +503,11 @@ public sealed class UfsWriter {
   // ── struct fs (superblock) ────────────────────────────────────────────────
   // Field offsets and values mirror the bytes a real `newfs -O1 -b8192 -f1024`
   // emits for this geometry (verified by byte-comparing a FreeBSD image).
-  private void WriteSuperblock(byte[] disk, Geometry geom, int dirCount, int liveInodes, int cg0DataEndFrag) {
-    var sb = disk.AsSpan(SuperblockOffset, SuperblockSize);
+  private void WriteSuperblock(SparseBlockImage disk, Geometry geom, int dirCount, int liveInodes, int cg0DataEndFrag) {
+    // Built in a local buffer and placed in one go: the record is larger than
+    // the image's addressing granule, so writing it in place would straddle it.
+    var sbBuffer = new byte[SuperblockSize];
+    var sb = sbBuffer.AsSpan();
     sb.Clear();
 
     var totalFrags = geom.TotalFrags;
@@ -578,6 +606,8 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteInt32LittleEndian(sb[1360..], 1);                // fs_old_nrpos
     // fs_magic — last int32 of struct fs at +1372.
     BinaryPrimitives.WriteInt32LittleEndian(sb[FsMagicOffset..], Ufs1Magic);
+
+    disk.Write(SuperblockOffset, sbBuffer);
   }
 
   // fs_dsize: usable data frags. cg0 loses everything below dblkno; cg>0 keeps
@@ -651,18 +681,18 @@ public sealed class UfsWriter {
   // Fragments actually written into cg0's data region (besides metadata/csum).
   private readonly List<int> _placedCg0Frags = [];
 
-  private void WriteCylinderGroups(byte[] disk, Geometry geom, int dirCount, int liveInodes, int cg0DataEndFrag) {
+  private void WriteCylinderGroups(SparseBlockImage disk, Geometry geom, int dirCount, int liveInodes, int cg0DataEndFrag) {
     // Write the cs summary block first (referenced by fs_csaddr): one cs record
     // (ndir, nbfree, nifree, nffree) per cylinder group, 16 bytes each.
     var csOffset = (long)geom.CsAddr * FragSize;
     for (var cg = 0; cg < geom.Ncg; cg++) {
       var c = ComputeCgCounts(geom, cg, dirCount, liveInodes, cg0DataEndFrag);
       // struct csum on-disk order: cs_ndir, cs_nbfree, cs_nifree, cs_nffree.
-      var rec = (int)csOffset + cg * 16;
-      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 0), c.Ndir);
-      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 4), c.Nbfree);
-      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 8), c.Nifree);
-      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 12), c.Nffree);
+      var rec = csOffset + cg * 16;
+      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 0, 4), c.Ndir);
+      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 4, 4), c.Nbfree);
+      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 8, 4), c.Nifree);
+      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 12, 4), c.Nffree);
     }
 
     for (var cg = 0; cg < geom.Ncg; cg++) {
@@ -671,10 +701,13 @@ public sealed class UfsWriter {
     }
   }
 
-  private void WriteOneCylinderGroup(byte[] disk, Geometry geom, int cg, CgCounts c, int liveInodes, int cg0DataEndFrag) {
+  private void WriteOneCylinderGroup(SparseBlockImage disk, Geometry geom, int cg, CgCounts c, int liveInodes, int cg0DataEndFrag) {
     var cgbase = cg * geom.Fpg;
     var cgOffset = (cgbase + CblkNo) * FragSize;
-    var cg0 = disk.AsSpan(cgOffset, BlockSize);
+    // Built in a local buffer and placed in one go: the record is larger than
+    // the image's addressing granule, so writing it in place would straddle it.
+    var cg0Buffer = new byte[BlockSize];
+    var cg0 = cg0Buffer.AsSpan();
     cg0.Clear();
 
     var ndblk = CgNdblk(geom, cg);
@@ -770,9 +803,11 @@ public sealed class UfsWriter {
       BinaryPrimitives.WriteInt32LittleEndian(cg0[(clustersumoff + i * 4)..], clusterSums[i]);
 
     // ── superblock backup at cgbase + fs_sblkno ─────────────────────────────
-    var primarySb = disk.AsSpan(SuperblockOffset, SuperblockSize);
+    var primarySb = disk.Read(SuperblockOffset, SuperblockSize);
     var backupOffset = (cgbase + SblkNo) * FragSize;
-    primarySb.CopyTo(disk.AsSpan(backupOffset, SuperblockSize));
+    disk.Write(backupOffset, primarySb);
+
+    disk.Write(cgOffset, cg0Buffer);
   }
 
   // A maximal run of free whole blocks of length `run` contributes one to the
@@ -802,11 +837,12 @@ public sealed class UfsWriter {
 
   // ── ufs1_dinode (128 bytes) ───────────────────────────────────────────────
   private static void WriteUfs1Inode(
-    byte[] disk, long inodeByteOffset,
+    SparseBlockImage disk, long inodeByteOffset,
     uint mode, ushort nlink, ulong size, uint blocksUsed512,
     ReadOnlySpan<int> directBlocks, int indirectBlock = 0, uint dirDepth = 0
   ) {
-    var di = disk.AsSpan((int)inodeByteOffset, InodeSize);
+    var diBuffer = new byte[InodeSize];
+    var di = diBuffer.AsSpan();
     di.Clear();
     BinaryPrimitives.WriteUInt16LittleEndian(di[0..], (ushort)mode);       // di_mode
     BinaryPrimitives.WriteUInt16LittleEndian(di[2..], nlink);              // di_nlink
@@ -823,6 +859,8 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(di[108..], 1);               // di_gen
     BinaryPrimitives.WriteUInt32LittleEndian(di[112..], 0);               // di_uid
     BinaryPrimitives.WriteUInt32LittleEndian(di[116..], 0);               // di_gid
+
+    disk.Write(inodeByteOffset, diBuffer);
   }
 
   // ── directory entry ───────────────────────────────────────────────────────
