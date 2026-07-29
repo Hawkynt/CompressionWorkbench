@@ -185,8 +185,37 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// contiguous-from-start single-leaf image (superblock at +65536, root SD
   /// + DIRENTRY + per-file SD/DIRECT items, R5-hashed key ordering).
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Buffering the rebuilt image would cap the volume at what a byte[] can
+    // hold, so the packing modes stream: each entry is spilled to scratch and
+    // the writer pulls it back while laying out the tree.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      ReiserFsWriter? writer = null;
+      Stream? target = null;
+      var spill = new List<string>();
+      try {
+        DefragRebuilder.RebuildStreaming(archive, options,
+          readEntries: ReadEntries,
+          beginWrite: s => { writer = new ReiserFsWriter(); target = s; },
+          writeEntry: (name, data) => {
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            File.WriteAllBytes(path, data);
+            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+          },
+          finishWrite: () => writer!.BuildToStreaming(target!));
+      } finally {
+        foreach (var path in spill)
+          try { File.Delete(path); } catch { /* scratch file already gone */ }
+      }
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  }
 
   // ── IArchiveModifiable ────────────────────────────────────────────────
   // Read-modify-rebuild via the multi-leaf writer. Every Add and Remove
