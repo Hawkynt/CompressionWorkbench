@@ -42,7 +42,7 @@ namespace FileSystem.FatPlus;
 /// <see cref="DefragRebuilder"/> rebuild path.</para>
 /// </remarks>
 public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -371,6 +371,43 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       } catch { /* unreadable input — the writer will report it */ }
     }
     return total;
+  }
+
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// FAT+ keeps FAT's on-disk layout — same BPB, same FATs, same cluster
+  /// chains — so the FAT walker maps it as it stands.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => FileSystem.Fat.FatExtentMap.Enumerate(image);
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var imageSize = image.Length;
+
+    // Cluster tips need each file's true length; without it the wiper would
+    // treat a whole cluster as live and leave the slack behind.
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var sizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in this.List(image, null))
+          if (!entry.IsDirectory)
+            sizes[entry.Name] = entry.OriginalSize;
+        fileSizeLookup = n => sizes.TryGetValue(n, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
 }

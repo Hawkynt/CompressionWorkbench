@@ -34,9 +34,22 @@ public sealed class CramFsWriter : IDisposable {
   /// <summary>Adds a regular file with the given path and content.</summary>
   /// <param name="path">Forward-slash-separated path (e.g. "dir/file.txt").</param>
   /// <param name="data">The file content.</param>
+  /// <summary>Largest file cramfs can describe: the inode's size field is 24 bits.</summary>
+  public const int MaxFileBytes = 0x00FFFFFF;
+
+  /// <summary>
+  /// Largest image cramfs can address: the inode's data offset is 26 bits of
+  /// 4-byte units, so nothing may live past 256 MiB.
+  /// </summary>
+  public const long MaxImageBytes = (1L << 26) * 4;
+
   public void AddFile(string path, byte[] data) {
     ArgumentNullException.ThrowIfNull(path);
     ArgumentNullException.ThrowIfNull(data);
+    if (data.LongLength > MaxFileBytes)
+      throw new ArgumentException(
+        $"cramfs stores a file's length in the inode's 24-bit size field, so a file cannot exceed " +
+        $"{MaxFileBytes:N0} bytes ('{path}' is {data.LongLength:N0}).", nameof(data));
     this._pending.Add(new PendingEntry(NormalisePath(path), EntryKind.File, data, null));
   }
 
@@ -423,6 +436,16 @@ public sealed class CramFsWriter : IDisposable {
   // ── Inode encoding ─────────────────────────────────────────────────────────
 
   private static byte[] MakeInode(ushort mode, ushort uid, byte gid, int size, int namelen, int dataOffset) {
+    // Both fields are narrower than the int they arrive in; masking them
+    // silently would write an inode pointing somewhere else entirely.
+    if ((uint)size > MaxFileBytes)
+      throw new InvalidOperationException(
+        $"cramfs: {size:N0} bytes does not fit the inode's 24-bit size field (max {MaxFileBytes:N0}).");
+    if (dataOffset < 0 || dataOffset >= MaxImageBytes)
+      throw new InvalidOperationException(
+        $"cramfs: data at offset {dataOffset:N0} is past the {MaxImageBytes:N0}-byte ceiling the " +
+        "inode's 26-bit offset field can address.");
+
     // word 0: mode[15:0] | uid[31:16]
     var w0 = (uint)mode | ((uint)uid << 16);
 

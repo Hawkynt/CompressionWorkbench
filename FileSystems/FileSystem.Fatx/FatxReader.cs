@@ -88,7 +88,7 @@ public sealed class FatxReader : IDisposable {
 
   private long FatRegionStart => SuperblockSize;
 
-  private long DataRegionStart {
+  internal long DataRegionStart {
     get {
       // FAT length in bytes is rounded up to 4 KiB pages.
       var dataBytes = (long)this._data.Length - SuperblockSize;

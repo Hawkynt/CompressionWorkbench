@@ -19,7 +19,7 @@ namespace FileSystem.Fatx;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's FAT reference, which covers the FATX variant</description></item>
 /// </list>
 /// </summary>
-public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>
   /// Creation knobs surfaced by the Convert dialog / CLI. <c>SectorsPerCluster</c>
@@ -253,4 +253,84 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     target.Write(image);
     options.OnProgress?.Invoke(image.Length, image.Length);
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// Walks the FATX chain of every live entry: the superblock and the FAT are
+  /// structure, each cluster run is the file that owns it, and whatever no
+  /// chain reaches is free.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new FatxReader(image);
+      result.Add(new DefragBlockInfo(0, reader.DataRegionStart, DefragBlockKind.MetadataReserved));
+
+      // The root directory has no entry of its own, so its chain is walked
+      // first — wiping it would take every file's name with it.
+      var rootChain = reader.RootDirCluster;
+      var rootSeen = new HashSet<uint>();
+      while (rootChain >= 1 && !reader.IsEoc(rootChain) && rootSeen.Add(rootChain)) {
+        var rootOffset = reader.ClusterOffset(rootChain);
+        if (rootOffset < 0 || rootOffset >= image.Length) break;
+        result.Add(new DefragBlockInfo(rootOffset,
+          Math.Min(reader.ClusterSize, image.Length - rootOffset), DefragBlockKind.MetadataReserved));
+        rootChain = reader.GetNextCluster(rootChain);
+      }
+
+      foreach (var entry in reader.Entries) {
+        var cluster = entry.FirstCluster;
+        var remaining = entry.IsDirectory ? long.MaxValue : entry.Size;
+        var seen = new HashSet<uint>();
+        while (cluster >= 1 && !reader.IsEoc(cluster) && seen.Add(cluster) && remaining > 0) {
+          var offset = reader.ClusterOffset(cluster);
+          if (offset < 0 || offset >= image.Length) break;
+          var length = Math.Min(reader.ClusterSize, image.Length - offset);
+          if (length <= 0) break;
+          result.Add(new DefragBlockInfo(offset, length,
+            entry.IsDirectory ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used,
+            entry.IsDirectory ? null : entry.Name));
+          if (!entry.IsDirectory) remaining -= length;
+          cluster = reader.GetNextCluster(cluster);
+        }
+      }
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+
+    // A file's last cluster is only partly its own; the tip is slack.
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new FatxReader(image);
+        var sizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in reader.Entries)
+          if (!e.IsDirectory)
+            sizes[e.Name] = e.Size;
+        fileSizeLookup = n => sizes.TryGetValue(n, out var v) ? v : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    // Cluster tips span the whole chain, not one extent, so they are left to
+    // the per-extent lookup only when a file fits inside a single cluster.
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: fileSizeLookup);
+  }
+
 }

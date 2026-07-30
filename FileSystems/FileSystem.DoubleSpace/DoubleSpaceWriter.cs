@@ -154,7 +154,16 @@ public sealed class DoubleSpaceWriter {
     // Minimum cluster count for FAT16 is 4085 per MS BPB rules, so pad with
     // unused clusters to force FAT16 detection on the host side.
     const int minFat16Clusters = 4085;
+    // The inner volume is FAT16, so its cluster numbers stop at 0xFFF4. At a
+    // 4 KB cluster that is what a CVF can hold, and masking past it would point
+    // the FAT chain at a reserved value rather than at data.
+    const int maxFat16Clusters = 65524;
     var innerTotalClusters = Math.Max(minFat16Clusters + 4, innerFileClusters + 2);
+    if (innerTotalClusters > maxFat16Clusters)
+      throw new InvalidOperationException(
+        $"DoubleSpace: the payload needs {innerTotalClusters:N0} inner clusters, past the " +
+        $"{maxFat16Clusters:N0} a FAT16 inner volume can address — a CVF holds at most " +
+        $"{(long)maxFat16Clusters * ClusterBytes:N0} bytes of uncompressed data.");
     var innerFatSize = (innerTotalClusters * 2 + BytesPerSector - 1) / BytesPerSector;
 
     var innerFirstDataSector = ReservedSectors + InnerFatCount * innerFatSize + rootDirSectors;
@@ -191,13 +200,17 @@ public sealed class DoubleSpaceWriter {
     var bitFatStart = mdfatStart + mdfatSectors;
     var dataStart = bitFatStart + bitFatSectors;
 
-    var totalSectors = dataStart + maxDataSectors;
+    var totalSectors = (long)dataStart + maxDataSectors;
     if (totalSectors < 2880) totalSectors = 2880;
 
-    var disk = new byte[totalSectors * BytesPerSector];
+    var totalBytes = totalSectors * BytesPerSector;
+    if (totalBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"DoubleSpace: the planned CVF is {totalBytes:N0} bytes, past what one image can hold.");
+    var disk = new byte[totalBytes];
 
     // Step 3 — emit the MDBPB.
-    WriteMdbpb(disk, totalSectors, innerFatSize, innerTotalClusters,
+    WriteMdbpb(disk, (int)totalSectors, innerFatSize, innerTotalClusters,
       mdfatStart, mdfatSectors, bitFatStart, bitFatSectors, dataStart, maxDataSectors);
 
     // Step 4 — initialize the inner FAT (FAT16) and cluster-2 bootstrap.
