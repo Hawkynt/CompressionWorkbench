@@ -162,11 +162,14 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new UdfReader(stream);
+    using var r = new UdfReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -185,9 +188,13 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
-      return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
-        bytes.Length, leaveOpen: false);
+      // Spilled to scratch that deletes itself on close, so an entry larger than
+      // memory still opens as an ordinary stream.
+      var scratch = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,
+        FileShare.None, 81920, FileOptions.DeleteOnClose);
+      var written = r.ExtractTo(e, scratch);
+      scratch.Position = 0;
+      return new BoundedEntryStream(scratch, written, leaveOpen: false);
     }
     return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
       0, leaveOpen: false);
@@ -243,17 +250,50 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// + root FE and a packed file-data region.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new UdfReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    // Every consolidate mode lands on the same layout here: the writer emits a
+    // fresh volume packed from the first data block, and has no way to place
+    // files against the tail. Carving a hole is the one request it cannot meet.
+    if (options.Mode is DefragMode.CarveHole)
+      throw new NotSupportedException(
+        "UDF defragmentation cannot carve a hole: the rebuild always start-packs the volume.");
+
+    // Files go through scratch rather than a byte[] image, so a volume larger
+    // than an array can hold still defragments.
+    var tempPath = Path.GetTempFileName();
+    var spill = new List<string>();
+    try {
+      using (var temp = File.Open(tempPath, FileMode.Open, FileAccess.ReadWrite)) {
         var w = new UdfWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
+        using (var r = new UdfReader(archive, leaveOpen: true)) {
+          foreach (var e in r.Entries) {
+            if (e.IsDirectory) continue;
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            long size;
+            using (var scratch = File.Create(path))
+              size = r.ExtractTo(e, scratch);
+            var captured = path;
+            w.AddStreamingFile(e.Name, size, () => File.OpenRead(captured));
+          }
+        }
+        w.WriteTo(temp);
+
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "commit", Fraction: 1.0, CurrentReadOffset: archive.Length,
+          CurrentWriteOffset: temp.Length, ImageSize: temp.Length, BlockMap: null));
+
+        temp.Position = 0;
+        archive.Position = 0;
+        temp.CopyTo(archive);
+        archive.SetLength(temp.Length);
+        archive.Flush();
+      }
+    } finally {
+      File.Delete(tempPath);
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
   }
 }

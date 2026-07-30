@@ -193,7 +193,9 @@ public class UdfTests {
     Assert.That(desc.Id, Is.EqualTo("Udf"));
     Assert.That(desc.DefaultExtension, Is.EqualTo(".udf"));
     Assert.That(desc.Extensions, Does.Contain(".udf"));
-    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(2));
+    // BEA01 plus NSR02/NSR03 at both the first and second volume-structure
+    // sectors — a standard sequence puts NSR in the second.
+    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(5));
     Assert.That(desc.Category, Is.EqualTo(Compression.Registry.FormatCategory.Archive));
   }
 

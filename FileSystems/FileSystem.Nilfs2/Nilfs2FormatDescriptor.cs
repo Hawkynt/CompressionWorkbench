@@ -173,9 +173,12 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+    // Every consolidate mode lands on the same layout here: the writer emits a
+    // fresh volume packed from the first data block, and has no way to place
+    // files against the tail. Carving a hole is the one request it cannot meet.
+    if (options.Mode is DefragMode.CarveHole)
       throw new NotSupportedException(
-        $"Nilfs2 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+        "Nilfs2 defragmentation cannot carve a hole: the rebuild always start-packs the volume.");
 
     var tempPath = Path.GetTempFileName();
     try {
@@ -311,9 +314,17 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       foreach (var (offset, length) in reader.MetadataRegions)
         if (length > 0)
           result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.MetadataReserved));
+      var live = new HashSet<string>(StringComparer.Ordinal);
       foreach (var e in reader.Entries
-                 .Where(x => x.Offset >= 0 && x.Size > 0 && !SyntheticEntries.Contains(x.Name)))
+                 .Where(x => x.Offset >= 0 && x.Size > 0 && !SyntheticEntries.Contains(x.Name))) {
         result.Add(new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, e.Name));
+        live.Add(e.Name);
+      }
+      // The checkpoint's copy of an embedded file counts as that file's bytes
+      // only while the file is live; once it is gone, so is its claim on them.
+      foreach (var (offset, length, name) in reader.LogFileRegions)
+        if (live.Contains(name))
+          result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, name));
       if (result.Count == 0 && image.Length > 0)
         result.Add(new DefragBlockInfo(0, Math.Min(4096, image.Length), DefragBlockKind.MetadataReserved));
     } catch {
@@ -332,10 +343,9 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // Records are packed to the byte, so there are no cluster tips to trim —
     // only the slack a removal or a shorter replacement left behind.
     //
-    // A file small enough to be embedded in the kernel checkpoint also has a
-    // copy among the log's data blocks. That copy belongs to the checkpoint, not
-    // to the live file set, and it is reclaimed the way NILFS2 reclaims any
-    // superseded checkpoint: by a cleaner run, which here is Defragment.
+    // A file small enough to be embedded in the kernel checkpoint has a second
+    // copy among the log's data blocks; the extent map claims those blocks only
+    // for files that are still live, so a removed file loses both copies.
     return UnusedSpaceWiper.Wipe(image, extents, image.Length,
       wipeClusterTips: false, fileSizeLookup: null);
   }

@@ -94,6 +94,17 @@ public sealed class Nilfs2Reader : IDisposable {
   /// </summary>
   public IReadOnlyList<(long Offset, long Length)> MetadataRegions => this._metadata;
 
+  private readonly List<(long Offset, long Length, string Name)> _logFiles = [];
+  private long _payloadBase = -1;
+
+  /// <summary>
+  /// The data blocks of files embedded in the kernel checkpoint, with the name
+  /// each belongs to. A file small enough for a direct block map has a copy here
+  /// as well as in the payload region, so a wipe has to know which of those
+  /// blocks still belong to a live file.
+  /// </summary>
+  public IReadOnlyList<(long Offset, long Length, string Name)> LogFileRegions => this._logFiles;
+
   private void Parse() {
     if (_len < SuperblockOffset + 0x80)
       throw new InvalidDataException("Nilfs2: image too small for superblock.");
@@ -147,6 +158,13 @@ public sealed class Nilfs2Reader : IDisposable {
     var payloadEnd = TryParseWriterDirectory(versions);
     if (payloadEnd >= 0) ParseAppendedSegments(versions, payloadEnd);
 
+    // The kernel checkpoint carries its own copy of every embedded file, so the
+    // log is mapped block by block rather than claimed wholesale. If it cannot
+    // be walked, the whole prefix is claimed instead — an unreadable log must
+    // not be mistaken for dead space.
+    if (!MapKernelLog(chosen.LastPseg, 1 << (int)(chosen.LogBlockSize + 10)) && _payloadBase > 0)
+      _metadata.Add((0, Math.Min(_payloadBase, _len)));
+
     // The tail superblock is structure too, wherever the volume happens to end.
     var tailSb = _len - Nilfs2Superblock.SecondaryBackOffset;
     if (tailSb > 0)
@@ -190,9 +208,10 @@ public sealed class Nilfs2Reader : IDisposable {
     if (dirStart + dirSize > _len) return -1;
     var dir = _img.Read(dirStart, (int)dirSize);
 
-    // Everything ahead of the payload — boot area, superblock, private
-    // directory and the kernel log — is structure.
-    this._metadata.Add((0, Math.Min(payloadBase, _len)));
+    // Boot area, superblock and the private directory are structure. The log
+    // between them and the payload is mapped separately, block by block.
+    this._payloadBase = payloadBase;
+    this._metadata.Add((0, Math.Min(dirStart + dirSize, _len)));
 
     var cursor = 0;
     while (cursor + 4 <= dir.Length) {
@@ -287,7 +306,7 @@ public sealed class Nilfs2Reader : IDisposable {
   private readonly record struct ParsedSb(
     ushort Magic, uint RevLevel, ushort SBytes, uint CrcSeed, uint StoredSum,
     bool ChecksumValid, uint LogBlockSize, ulong NumSegments, ulong DevSize,
-    uint BlocksPerSegment, ulong LastCno, ushort State, string Uuid, string VolumeLabel);
+    uint BlocksPerSegment, ulong LastCno, ulong LastPseg, ushort State, string Uuid, string VolumeLabel);
 
   /// <summary>
   /// Decodes the superblock at <paramref name="offset"/>, validating magic and
@@ -326,6 +345,7 @@ public sealed class Nilfs2Reader : IDisposable {
       BinaryPrimitives.ReadUInt64LittleEndian(sb[0x20..]),
       BinaryPrimitives.ReadUInt32LittleEndian(sb[0x30..]),
       BinaryPrimitives.ReadUInt64LittleEndian(sb[0x38..]),
+      sb.Length >= 0x48 ? BinaryPrimitives.ReadUInt64LittleEndian(sb[0x40..]) : 0ul,
       sb.Length >= 0x76 ? BinaryPrimitives.ReadUInt16LittleEndian(sb[0x74..]) : (ushort)0,
       uuid, label);
   }
@@ -352,6 +372,99 @@ public sealed class Nilfs2Reader : IDisposable {
     if (s.LastCno > p.LastCno) { source = "secondary"; return s; }
     source = "primary";
     return p;
+  }
+
+  /// <summary>
+  /// Walks the committed partial segment: its summary lists one finfo per inode
+  /// in physical block order, so the block run behind each embedded user file
+  /// can be recovered — and with it, which log blocks are file data rather than
+  /// structure. The root directory block supplies the inode-to-name mapping.
+  /// </summary>
+  private bool MapKernelLog(ulong lastPseg, int blockSize) {
+    if (lastPseg == 0 || blockSize <= 0) return false;
+    var psegStart = (long)lastPseg;
+    var summaryOffset = psegStart * blockSize;
+    if (summaryOffset < 0 || summaryOffset + blockSize > _len) return false;
+
+    var summary = _img.Read(summaryOffset, blockSize);
+    const uint SegsumMagic = 0x1eaffa11;
+    if (BinaryPrimitives.ReadUInt32LittleEndian(summary.AsSpan(8)) != SegsumMagic) return false;
+
+    var headerBytes = BinaryPrimitives.ReadUInt16LittleEndian(summary.AsSpan(12));
+    var nfinfo = BinaryPrimitives.ReadUInt32LittleEndian(summary.AsSpan(44));
+    var nblocks = BinaryPrimitives.ReadUInt32LittleEndian(summary.AsSpan(40));
+    if (headerBytes < 16 || nblocks == 0) return false;
+
+    // Block 0 of the segment is the summary itself; payload blocks follow in the
+    // order the finfos are listed.
+    var cursor = psegStart + 1;
+    var runs = new List<(ulong Ino, long FirstBlock, long Blocks)>();
+    var pos = (int)headerBytes;
+    for (var i = 0u; i < nfinfo; ++i) {
+      if (pos + 24 > summary.Length) return false;
+      var ino = BinaryPrimitives.ReadUInt64LittleEndian(summary.AsSpan(pos));
+      var fiNblocks = BinaryPrimitives.ReadUInt32LittleEndian(summary.AsSpan(pos + 16));
+      var fiNdatablk = BinaryPrimitives.ReadUInt32LittleEndian(summary.AsSpan(pos + 20));
+      pos += 24 + (int)fiNdatablk * 16;
+      if (fiNblocks == 0) continue;
+      runs.Add((ino, cursor, fiNblocks));
+      cursor += fiNblocks;
+    }
+    if (runs.Count == 0) return false;
+
+    // Everything up to the first payload block, and everything from the end of
+    // the last one, is structure.
+    var firstUser = runs.FindIndex(r => r.Ino >= UserInodeBase);
+    var logEnd = (psegStart + nblocks) * blockSize;
+    if (firstUser < 0) {
+      _metadata.Add((0, Math.Min(logEnd, _len)));
+      return true;
+    }
+
+    var names = ReadRootDirectory(runs[0].FirstBlock, blockSize);
+    var userStart = runs[firstUser].FirstBlock * blockSize;
+    var lastUser = runs.FindLastIndex(r => r.Ino >= UserInodeBase);
+    var userEnd = (runs[lastUser].FirstBlock + runs[lastUser].Blocks) * blockSize;
+
+    _metadata.Add((0, Math.Min(userStart, _len)));
+    if (userEnd < logEnd)
+      _metadata.Add((userEnd, Math.Min(logEnd, _len) - userEnd));
+
+    foreach (var run in runs) {
+      if (run.Ino < UserInodeBase) continue;
+      var offset = run.FirstBlock * blockSize;
+      var length = Math.Min(run.Blocks * blockSize, _len - offset);
+      if (length <= 0) continue;
+      var name = names.TryGetValue(run.Ino, out var n) ? n : "";
+      _logFiles.Add((offset, length, name));
+    }
+    return true;
+  }
+
+  /// <summary>First inode number the writer hands to user files (NILFS_USER_INO).</summary>
+  private const ulong UserInodeBase = 11;
+
+  /// <summary>Reads the flat root directory block into an inode-to-name map.</summary>
+  private Dictionary<ulong, string> ReadRootDirectory(long block, int blockSize) {
+    var result = new Dictionary<ulong, string>();
+    var offset = block * blockSize;
+    if (offset < 0 || offset + blockSize > _len) return result;
+    var dir = _img.Read(offset, blockSize);
+
+    var pos = 0;
+    while (pos + 12 <= dir.Length) {
+      var ino = BinaryPrimitives.ReadUInt64LittleEndian(dir.AsSpan(pos));
+      var recLen = BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(pos + 8));
+      var nameLen = dir[pos + 10];
+      if (recLen < 12 || pos + recLen > dir.Length) break;
+      if (ino != 0 && nameLen > 0 && pos + 12 + nameLen <= dir.Length) {
+        var name = Encoding.UTF8.GetString(dir.AsSpan(pos + 12, nameLen));
+        if (name is not ("." or ".."))
+          result[ino] = name;
+      }
+      pos += recLen;
+    }
+    return result;
   }
 
   private byte[] BuildMetadata() {

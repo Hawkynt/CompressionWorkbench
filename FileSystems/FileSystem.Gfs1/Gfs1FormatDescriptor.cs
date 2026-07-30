@@ -169,9 +169,12 @@ public sealed class Gfs1FormatDescriptor :
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+    // Every consolidate mode lands on the same layout here: the writer emits a
+    // fresh volume packed from the first data block, and has no way to place
+    // files against the tail. Carving a hole is the one request it cannot meet.
+    if (options.Mode is DefragMode.CarveHole)
       throw new NotSupportedException(
-        $"GFS1 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+        "GFS1 defragmentation cannot carve a hole: the rebuild always start-packs the volume.");
 
     var tempPath = Path.GetTempFileName();
     var spill = new List<string>();
