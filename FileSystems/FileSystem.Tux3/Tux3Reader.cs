@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Globalization;
 using System.Text;
 
@@ -43,7 +44,8 @@ namespace FileSystem.Tux3;
 /// </para>
 /// </summary>
 public sealed class Tux3Reader : IDisposable {
-  private readonly byte[] _data;
+  private readonly ImageAccessor _img;
+  private readonly long _len;
   private readonly List<Tux3Entry> _entries = [];
 
   public IReadOnlyList<Tux3Entry> Entries => _entries;
@@ -72,17 +74,23 @@ public sealed class Tux3Reader : IDisposable {
   public const int WormTableOffset = 8192;
 
   public Tux3Reader(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    // Records are located on demand: copying the image in, and then every file's
+    // bytes out of it, held the payload twice over.
+    _img = new ImageAccessor(stream);
+    _len = _img.Length;
     Parse();
   }
 
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
   private void Parse() {
-    if (_data.Length < SuperblockOffset + 0x60)
+    if (_len < SuperblockOffset + 0x60)
       throw new InvalidDataException("Tux3: image too small for superblock.");
 
-    var sb = _data.AsSpan(SuperblockOffset);
+    var sb = _img.Read(SuperblockOffset, Math.Min(512, (int)Math.Min(int.MaxValue, _len - SuperblockOffset))).AsSpan();
     if (!sb.Slice(0, 8).SequenceEqual(Magic))
       throw new InvalidDataException("Tux3: missing TUX3SUPR magic at superblock offset 4096.");
 
@@ -96,9 +104,9 @@ public sealed class Tux3Reader : IDisposable {
     this.VolBlocks  = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x38));
     this.FreeBlocks = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x40));
 
-    var sbBytes = sb.Slice(0, Math.Min(512, _data.Length - SuperblockOffset)).ToArray();
+    var sbBytes = sb.ToArray();
 
-    _entries.Add(new Tux3Entry { Name = "FULL.tux3", Size = _data.Length, Data = _data });
+    _entries.Add(new Tux3Entry { Name = "FULL.tux3", Size = _len, Offset = 0 });
 
     // Probe for the optional WORM table. We add the placeholder for metadata
     // first so it stays at index 1, then walk WORM entries, then finalise
@@ -119,29 +127,29 @@ public sealed class Tux3Reader : IDisposable {
   /// </summary>
   private uint? TryWalkWormTable() {
     // Need at least sentinel (8) + u32 count.
-    if (_data.Length < WormTableOffset + 12) return null;
-    var tbl = _data.AsSpan(WormTableOffset);
-    if (!tbl.Slice(0, 8).SequenceEqual(WormTableMagic)) return null;
+    if (_len < WormTableOffset + 12) return null;
+    var tbl = _img.Read(WormTableOffset, 12).AsSpan();
+    if (!tbl[..8].SequenceEqual(WormTableMagic)) return null;
 
     this.HasWormTable = true;
     var declared = BinaryPrimitives.ReadUInt32LittleEndian(tbl.Slice(8, 4));
     this.WormFileCount = declared;
 
-    var pos = WormTableOffset + 12;
+    var pos = (long)WormTableOffset + 12;
     var count = 0u;
-    while (count < declared && pos + 2 <= _data.Length) {
-      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(pos));
+    while (count < declared && pos + 2 <= _len) {
+      var nameLen = _img.ReadUInt16(pos);
       pos += 2;
-      if (pos + nameLen + 4 > _data.Length) break;
-      var name = Encoding.UTF8.GetString(_data, pos, nameLen);
+      if (pos + nameLen + 4 > _len) break;
+      var name = Encoding.UTF8.GetString(_img.Read(pos, nameLen));
       pos += nameLen;
-      var dataLen = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(pos));
+      var dataLen = _img.ReadUInt32(pos);
       pos += 4;
-      if (dataLen > int.MaxValue || pos + dataLen > _data.Length) break;
-      var data = _data.AsSpan(pos, (int)dataLen).ToArray();
-      pos += (int)dataLen;
+      if (pos + dataLen > _len) break;
 
-      _entries.Add(new Tux3Entry { Name = name, Size = data.Length, Data = data });
+      // The bytes stay where they are; the entry records where to find them.
+      _entries.Add(new Tux3Entry { Name = name, Size = dataLen, Offset = pos });
+      pos += dataLen;
       count++;
     }
     return count;
@@ -175,8 +183,26 @@ public sealed class Tux3Reader : IDisposable {
 
   public byte[] Extract(Tux3Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    return entry.Data;
+    if (entry.Offset < 0) return entry.Data;
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"Tux3: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    return _img.Read(entry.Offset, (int)entry.Size);
   }
 
-  public void Dispose() { }
+  /// <summary>Writes <paramref name="entry" />'s bytes into <paramref name="destination" />.</summary>
+  public long ExtractTo(Tux3Entry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.Offset < 0) {
+      destination.Write(entry.Data);
+      return entry.Data.Length;
+    }
+    var take = Math.Min(entry.Size, _len - entry.Offset);
+    if (take <= 0) return 0;
+    _img.CopyTo(entry.Offset, destination, take);
+    return take;
+  }
+
+  public void Dispose() => this._img.Dispose();
 }

@@ -91,10 +91,35 @@ public class Tux2Tests {
   }
 
   [Test, Category("Sad")]
-  public void Defragment_Throws() {
+  public void Defragment_UnsupportedMode_Throws() {
     var d = new FileSystem.Tux2.Tux2FormatDescriptor();
     using var ms = new MemoryStream(BuildSyntheticImage([]));
-    Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
+    Assert.Throws<NotSupportedException>(
+      () => d.Defragment(ms, new DefragOptions { Mode = DefragMode.CarveHole }));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Defragment_PreservesFiles() {
+    var descriptor = new FileSystem.Tux2.Tux2FormatDescriptor();
+    var payload = new byte[5000];
+    for (var i = 0; i < payload.Length; ++i) payload[i] = (byte)(i * 11);
+
+    var path = Path.Combine(Path.GetTempPath(), "tux2_defrag_" + Guid.NewGuid().ToString("N"));
+    var outDir = path + "_out";
+    try {
+      using (var create = File.Create(path))
+        descriptor.Create(create, [ArchiveInputInfo.InMemory("data.bin", payload)], new FormatCreateOptions());
+      using (var archive = File.Open(path, FileMode.Open, FileAccess.ReadWrite))
+        descriptor.Defragment(archive);
+
+      Directory.CreateDirectory(outDir);
+      using (var read = File.OpenRead(path))
+        descriptor.Extract(read, outDir, null, ["data.bin"]);
+      Assert.That(File.ReadAllBytes(Path.Combine(outDir, "data.bin")), Is.EqualTo(payload));
+    } finally {
+      try { File.Delete(path); } catch { /* scratch file already gone */ }
+      try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
+    }
   }
 
   [Test, Category("HappyPath")]

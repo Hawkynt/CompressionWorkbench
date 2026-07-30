@@ -74,7 +74,9 @@ public class Tux2WriterTests {
 
     var r = new Tux2Reader(ms);
     var entry = r.Entries.First(e => e.Name == "héllo-世界.txt");
-    Assert.That(Encoding.UTF8.GetString(entry.Data), Is.EqualTo("unicode"));
+    // The reader leaves a file's bytes in the image and records where they are,
+    // so the content comes back through Extract rather than off the entry.
+    Assert.That(Encoding.UTF8.GetString(r.Extract(entry)), Is.EqualTo("unicode"));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]

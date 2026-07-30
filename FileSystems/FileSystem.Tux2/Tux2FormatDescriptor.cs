@@ -64,11 +64,14 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new Tux2Reader(stream);
+    using var r = new Tux2Reader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -86,10 +89,48 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("Tux2 single-phase WORM — defragmentation requires a rewriting writer.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("Tux2 single-phase WORM — defragmentation requires a rewriting writer.");
+  /// <summary>
+  /// Rewrites the image with every file laid out contiguously from the start.
+  /// Records are copied straight from the old image into the new one, so a
+  /// multi-gigabyte volume never has to fit in memory — the previous refusal
+  /// was for want of wiring it up, not for want of a writer.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new NotSupportedException(
+        $"Tux2 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+
+    var tempPath = Path.GetTempFileName();
+    try {
+      using (var temp = File.Open(tempPath, FileMode.Open, FileAccess.ReadWrite)) {
+        using (var reader = new Tux2Reader(archive)) {
+          var w = new Tux2Writer();
+          foreach (var entry in reader.Entries) {
+            if (entry.IsDirectory || SyntheticNames.Contains(entry.Name)) continue;
+            var e = entry;
+            w.AddStreamingFile(e.Name, e.Size, s => reader.ExtractTo(e, s));
+          }
+          w.WriteTo(temp);
+        }
+
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "commit", Fraction: 1.0, CurrentReadOffset: archive.Length,
+          CurrentWriteOffset: temp.Length, ImageSize: temp.Length, BlockMap: null));
+
+        temp.Position = 0;
+        archive.Position = 0;
+        temp.CopyTo(archive);
+        archive.SetLength(temp.Length);
+        archive.Flush();
+      }
+    } finally {
+      File.Delete(tempPath);
+    }
+  }
 
   // ── IArchiveModifiable (genuine in-place R/W) ───────────────────────────
   //

@@ -27,20 +27,39 @@ namespace FileSystem.Tux2;
 /// snapshots)". Round-trips through <see cref="Tux2Reader"/>.
 /// </summary>
 public sealed class Tux2Writer {
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<Item> _files = [];
 
   public uint Version { get; init; } = 1;
 
+  /// <summary>One file to emit: either its bytes, or a copier that streams them.</summary>
+  private readonly record struct Item(string Name, long Size, byte[]? Data, Action<Stream>? Copy);
+
   public void AddFile(string name, byte[] data) {
-    ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    if (name.Length == 0) throw new ArgumentException("Name cannot be empty.", nameof(name));
-    var nameBytes = Encoding.UTF8.GetBytes(name);
-    if (nameBytes.Length > ushort.MaxValue)
-      throw new ArgumentException("Name UTF-8 length exceeds 65535 bytes.", nameof(name));
+    this._files.Add(new Item(CheckName(name), data.LongLength, data, null));
     if (data.LongLength > uint.MaxValue)
       throw new ArgumentException("File data length exceeds 4 GiB.", nameof(data));
-    this._files.Add((name, data));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are written straight into the output by
+  /// <paramref name="copy" />. Nothing is buffered, so a record may be as large
+  /// as the record header's u32 length field allows.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Action<Stream> copy) {
+    ArgumentNullException.ThrowIfNull(copy);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    if (size > uint.MaxValue)
+      throw new ArgumentException("File data length exceeds 4 GiB.", nameof(size));
+    this._files.Add(new Item(CheckName(name), size, null, copy));
+  }
+
+  private static string CheckName(string name) {
+    ArgumentNullException.ThrowIfNull(name);
+    if (name.Length == 0) throw new ArgumentException("Name cannot be empty.", nameof(name));
+    if (Encoding.UTF8.GetByteCount(name) > ushort.MaxValue)
+      throw new ArgumentException("Name UTF-8 length exceeds 65535 bytes.", nameof(name));
+    return name;
   }
 
   public void WriteTo(Stream output) {
@@ -55,14 +74,26 @@ public sealed class Tux2Writer {
     Span<byte> u16 = stackalloc byte[2];
     Span<byte> u32 = stackalloc byte[4];
 
-    foreach (var (name, data) in this._files) {
-      var nameBytes = Encoding.UTF8.GetBytes(name);
+    foreach (var file in this._files) {
+      var nameBytes = Encoding.UTF8.GetBytes(file.Name);
       BinaryPrimitives.WriteUInt16LittleEndian(u16, (ushort)nameBytes.Length);
       output.Write(u16);
       output.Write(nameBytes);
-      BinaryPrimitives.WriteUInt32LittleEndian(u32, (uint)data.Length);
+      BinaryPrimitives.WriteUInt32LittleEndian(u32, (uint)file.Size);
       output.Write(u32);
-      if (data.Length > 0) output.Write(data);
+      if (file.Size <= 0) continue;
+
+      var before = output.Position;
+      if (file.Data != null)
+        output.Write(file.Data);
+      else
+        file.Copy!(output);
+
+      var written = output.Position - before;
+      if (written != file.Size)
+        throw new InvalidOperationException(
+          $"'{file.Name}' was announced as {file.Size:N0} bytes but {written:N0} were written; " +
+          "the record length and the record body would disagree.");
     }
   }
 

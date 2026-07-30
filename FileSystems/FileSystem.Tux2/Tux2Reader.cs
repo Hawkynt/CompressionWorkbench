@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Globalization;
 using System.Text;
 
@@ -32,7 +33,8 @@ namespace FileSystem.Tux2;
 ///                   data (data_len bytes)
 /// </summary>
 public sealed class Tux2Reader : IDisposable {
-  private readonly byte[] _data;
+  private readonly ImageAccessor _img;
+  private readonly long _len;
   private readonly List<Tux2Entry> _entries = [];
 
   public IReadOnlyList<Tux2Entry> Entries => _entries;
@@ -44,44 +46,50 @@ public sealed class Tux2Reader : IDisposable {
   public static readonly byte[] Magic = "TUX2FS\0\0"u8.ToArray();
 
   public Tux2Reader(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    // Records are located on demand: copying the image in, and then every file's
+    // bytes out of it, held the payload twice over.
+    _img = new ImageAccessor(stream);
+    _len = _img.Length;
     Parse();
   }
 
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
   private void Parse() {
-    if (_data.Length < 16)
+    if (_len < 16)
       throw new InvalidDataException("Tux2: image too small for header.");
 
-    if (!_data.AsSpan(0, 8).SequenceEqual(Magic))
+    if (!_img.Read(0, 8).AsSpan().SequenceEqual(Magic))
       throw new InvalidDataException("Tux2: missing TUX2FS magic at offset 0.");
 
-    this.Version = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(8));
-    this.FileCount = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(12));
+    this.Version = _img.ReadUInt32(8);
+    this.FileCount = _img.ReadUInt32(12);
     this.ValidHeader = true;
 
     // Always emit metadata + raw image so the descriptor is useful even on
     // images we can't fully parse (research-grade).
-    _entries.Add(new Tux2Entry { Name = "FULL.tux2", Size = _data.Length, Data = _data });
+    _entries.Add(new Tux2Entry { Name = "FULL.tux2", Size = _len, Offset = 0 });
     _entries.Add(new Tux2Entry { Name = "metadata.ini", Data = BuildMetadata() });
 
     // Walk synthetic per-file records if the file_count looks sane.
-    var pos = 16;
+    var pos = 16L;
     var count = 0u;
-    while (count < this.FileCount && pos + 2 <= _data.Length) {
-      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(pos));
+    while (count < this.FileCount && pos + 2 <= _len) {
+      var nameLen = _img.ReadUInt16(pos);
       pos += 2;
-      if (pos + nameLen + 4 > _data.Length) break;
-      var name = Encoding.UTF8.GetString(_data, pos, nameLen);
+      if (pos + nameLen + 4 > _len) break;
+      var name = Encoding.UTF8.GetString(_img.Read(pos, nameLen));
       pos += nameLen;
-      var dataLen = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(pos));
+      var dataLen = _img.ReadUInt32(pos);
       pos += 4;
-      if (dataLen > int.MaxValue || pos + dataLen > _data.Length) break;
-      var data = _data.AsSpan(pos, (int)dataLen).ToArray();
-      pos += (int)dataLen;
+      if (pos + dataLen > _len) break;
 
-      _entries.Add(new Tux2Entry { Name = name, Size = data.Length, Data = data });
+      // The bytes stay where they are; the entry records where to find them.
+      _entries.Add(new Tux2Entry { Name = name, Size = dataLen, Offset = pos });
+      pos += dataLen;
       count++;
     }
 
@@ -103,8 +111,26 @@ public sealed class Tux2Reader : IDisposable {
 
   public byte[] Extract(Tux2Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    return entry.Data;
+    if (entry.Offset < 0) return entry.Data;
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"Tux2: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    return _img.Read(entry.Offset, (int)entry.Size);
   }
 
-  public void Dispose() { }
+  /// <summary>Writes <paramref name="entry" />'s bytes into <paramref name="destination" />.</summary>
+  public long ExtractTo(Tux2Entry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.Offset < 0) {
+      destination.Write(entry.Data);
+      return entry.Data.Length;
+    }
+    var take = Math.Min(entry.Size, _len - entry.Offset);
+    if (take <= 0) return 0;
+    _img.CopyTo(entry.Offset, destination, take);
+    return take;
+  }
+
+  public void Dispose() => this._img.Dispose();
 }
