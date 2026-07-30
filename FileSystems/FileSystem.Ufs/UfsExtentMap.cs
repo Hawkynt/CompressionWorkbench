@@ -182,7 +182,82 @@ public static class UfsExtentMap {
       if (runStartByte.HasValue) {
         yield return new DefragBlockInfo(runStartByte.Value, runByteLen, DefragBlockKind.Used, emitName,
           Classification: isDir ? DefragBlockClass.Directory : null);
+        runStartByte = null;
+        runByteLen = 0;
       }
+
+      // Anything past the twelve direct pointers hangs off di_ib[]: a single-,
+      // double- and triple-indirect block, each holding fragSize/4 pointers to the
+      // level below. Reporting only the direct blocks left the rest looking free,
+      // and the wiper then zeroed live file data.
+      var pointersPerBlock = blockSize / 4;
+      for (var level = 1; level <= 3 && remaining > 0; ++level) {
+        var root = BinaryPrimitives.ReadInt32LittleEndian(
+          inodeBuf.AsSpan(40 + MaxDirectBlocks * 4 + (level - 1) * 4));
+        if (root == 0) continue;
+
+        foreach (var (blk, isPointerBlock) in WalkIndirect(cache, root, level, blockSize, fragSize, pointersPerBlock)) {
+          if (remaining <= 0) break;
+          var byteOff = (long)blk * fragSize;
+          if (isPointerBlock) {
+            // The pointer block itself is metadata, not file content.
+            if (runStartByte.HasValue) {
+              yield return new DefragBlockInfo(runStartByte.Value, runByteLen, DefragBlockKind.Used, emitName,
+                Classification: isDir ? DefragBlockClass.Directory : null);
+              runStartByte = null;
+              runByteLen = 0;
+            }
+            yield return new DefragBlockInfo(byteOff, blockSize, DefragBlockKind.MetadataReserved,
+              $"Indirect: {emitName}");
+            continue;
+          }
+
+          var byteLen = Math.Min((long)blockSize, remaining);
+          if (byteOff + byteLen > cache.Length) byteLen = Math.Max(0, cache.Length - byteOff);
+          if (byteLen <= 0) { remaining -= blockSize; continue; }
+
+          if (runStartByte == null) {
+            runStartByte = byteOff;
+            runByteLen = byteLen;
+          } else if (byteOff == runStartByte.Value + runByteLen) {
+            runByteLen += byteLen;
+          } else {
+            yield return new DefragBlockInfo(runStartByte.Value, runByteLen, DefragBlockKind.Used, emitName,
+              Classification: isDir ? DefragBlockClass.Directory : null);
+            runStartByte = byteOff;
+            runByteLen = byteLen;
+          }
+          remaining -= blockSize;
+        }
+      }
+
+      if (runStartByte.HasValue)
+        yield return new DefragBlockInfo(runStartByte.Value, runByteLen, DefragBlockKind.Used, emitName,
+          Classification: isDir ? DefragBlockClass.Directory : null);
+    }
+  }
+
+  /// <summary>
+  /// Walks an indirect block tree <paramref name="level" /> deep, yielding every
+  /// block it touches: the pointer blocks it descends through and, at the bottom,
+  /// the data blocks they address.
+  /// </summary>
+  private static IEnumerable<(int Block, bool IsPointerBlock)> WalkIndirect(
+      SectorCache cache, int root, int level, int blockSize, int fragSize, int pointersPerBlock) {
+    yield return (root, true);
+    var offset = (long)root * fragSize;
+    if (offset < 0 || offset + blockSize > cache.Length) yield break;
+    var table = cache.Read(offset, blockSize);
+
+    for (var i = 0; i < pointersPerBlock; ++i) {
+      var child = BinaryPrimitives.ReadInt32LittleEndian(table.AsSpan(i * 4));
+      if (child == 0) continue;
+      if (level <= 1) {
+        yield return (child, false);
+        continue;
+      }
+      foreach (var entry in WalkIndirect(cache, child, level - 1, blockSize, fragSize, pointersPerBlock))
+        yield return entry;
     }
   }
 

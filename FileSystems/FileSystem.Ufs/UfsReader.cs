@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ufs;
@@ -24,7 +25,8 @@ public sealed class UfsReader : IDisposable {
   private const int RootInode = 2;
   private const int MaxDirectBlocks = 12;
 
-  private readonly byte[] _data;
+  private readonly ImageAccessor _img;
+  private readonly long _len;
   private readonly List<UfsEntry> _entries = [];
 
   private int _blockSize;
@@ -41,27 +43,38 @@ public sealed class UfsReader : IDisposable {
   /// NUL-terminated ASCII), or empty when unset.</summary>
   public string VolumeName {
     get {
-      if (_data.Length < SuperblockOffset + 680 + 32) return "";
-      var span = _data.AsSpan(SuperblockOffset + 680, 32);
+      if (_len < SuperblockOffset + 680 + 32) return "";
+      var span = _img.Read(SuperblockOffset + 680, 32).AsSpan();
       var nul = span.IndexOf((byte)0);
       var len = nul < 0 ? 32 : nul;
       return len == 0 ? "" : System.Text.Encoding.ASCII.GetString(span[..len]);
     }
   }
 
-  public UfsReader(Stream stream, bool leaveOpen = false) {
+  public UfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    if (stream.CanSeek) stream.Position = 0;
+    // Blocks are pulled on demand: the metadata is a small fraction of a volume
+    // whose data area may run to gigabytes.
+    _img = new ImageAccessor(stream, leaveOpen);
+    _len = _img.Length;
     Parse();
   }
 
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
+  private ushort U16(long off) => this._len >= off + 2 ? this._img.ReadUInt16(off) : (ushort)0;
+  private uint U32(long off) => this._len >= off + 4 ? this._img.ReadUInt32(off) : 0u;
+  private ulong U64(long off) => this._len >= off + 8 ? this._img.ReadUInt64(off) : 0UL;
+  private byte B(long off) => off >= 0 && off < this._len ? this._img.ReadByte(off) : (byte)0;
+  private string Str(long off, int len) => Encoding.ASCII.GetString(this._img.Read(off, len));
+
   private void Parse() {
-    if (_data.Length < SuperblockOffset + SuperblockSize)
+    if (_len < SuperblockOffset + SuperblockSize)
       throw new InvalidDataException("UFS: image too small to contain a UFS1 superblock.");
 
-    var sb = _data.AsSpan(SuperblockOffset);
+    var sb = _img.Read(SuperblockOffset, SuperblockSize).AsSpan();
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(sb[FsMagicOffset..]);
     if (magic != Ufs1Magic)
       throw new InvalidDataException($"UFS: invalid superblock magic 0x{magic:X8} (expected 0x{Ufs1Magic:X8}).");
@@ -95,7 +108,7 @@ public sealed class UfsReader : IDisposable {
 
   private void ReadDirectory(int ino, string basePath) {
     var inodeOff = InodeOffset(ino);
-    if (inodeOff + InodeSize > _data.Length) return;
+    if (inodeOff + InodeSize > _len) return;
 
     var dirData = ReadInodeData(inodeOff);
     if (dirData == null || dirData.Length == 0) return;
@@ -118,12 +131,12 @@ public sealed class UfsReader : IDisposable {
           long size = 0;
           DateTime? mtime = null;
 
-          if (childInodeOff + InodeSize <= _data.Length) {
-            var mode = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan((int)childInodeOff));
+          if (childInodeOff + InodeSize <= _len) {
+            var mode = U16(((int)childInodeOff));
             isDir = (mode & 0xF000) == 0x4000;
             isSymlink = (mode & 0xF000) == 0xA000;
-            size = (long)BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan((int)(childInodeOff + 8)));
-            var mt = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan((int)(childInodeOff + 24)));
+            size = (long)U64(((int)(childInodeOff + 8)));
+            var mt = U32(((int)(childInodeOff + 24)));
             if (mt > 0) mtime = DateTimeOffset.FromUnixTimeSeconds(mt).UtcDateTime;
             if (isSymlink) linkTarget = ReadSymlinkTarget(childInodeOff, size);
           }
@@ -147,47 +160,73 @@ public sealed class UfsReader : IDisposable {
   }
 
   private byte[]? ReadInodeData(long inodeOff) {
-    if (inodeOff + InodeSize > _data.Length) return null;
-    var ioff = (int)inodeOff;
-    var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ioff + 8));
+    var size = this.InodeSizeOf(inodeOff);
     if (size <= 0 || size > 256L * 1024 * 1024) return null;
-
     using var ms = new MemoryStream();
-
-    // Direct blocks (di_db[0..11]).
-    for (var i = 0; i < MaxDirectBlocks && ms.Length < size; i++) {
-      var blk = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(ioff + 40 + i * 4));
-      AppendBlock(ms, blk, size);
-    }
-
-    // Single-indirect block (di_ib[0]): a table of block pointers immediately
-    // following the 12 direct pointers.
-    if (ms.Length < size) {
-      var indirect = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(ioff + 40 + MaxDirectBlocks * 4));
-      if (indirect != 0) {
-        var tableOff = (long)indirect * _fragSize;
-        var ptrs = _blockSize / 4;
-        for (var i = 0; i < ptrs && ms.Length < size; i++) {
-          var ptrOff = tableOff + (long)i * 4;
-          if (ptrOff + 4 > _data.Length) break;
-          var blk = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan((int)ptrOff));
-          if (blk == 0) break;
-          AppendBlock(ms, blk, size);
-        }
-      }
-    }
+    this.WriteInodeData(inodeOff, ms);
     return ms.ToArray();
   }
 
+  /// <summary>The logical size an inode declares, or 0 when it is out of range.</summary>
+  private long InodeSizeOf(long inodeOff) {
+    if (inodeOff < 0 || inodeOff + InodeSize > _len) return 0;
+    return (long)U64(inodeOff + 8);
+  }
+
+  /// <summary>
+  /// Writes an inode's contents into <paramref name="destination" />: the twelve
+  /// direct blocks, then di_ib[0..2] — a single-, double- and triple-indirect
+  /// root, each level's pointer block addressing the level below. Following only
+  /// di_ib[0] stopped at 16 MB per file.
+  /// </summary>
+  private long WriteInodeData(long inodeOff, Stream destination) {
+    var size = this.InodeSizeOf(inodeOff);
+    if (size <= 0) return 0;
+
+    long written = 0;
+    for (var i = 0; i < MaxDirectBlocks && written < size; i++)
+      written += this.AppendBlock(destination, (int)U32(inodeOff + 40 + i * 4), size, written);
+
+    var pointersPerBlock = _blockSize / 4;
+    for (var level = 1; level <= 3 && written < size; ++level) {
+      var root = (int)U32(inodeOff + 40 + MaxDirectBlocks * 4 + (level - 1) * 4);
+      if (root == 0) continue;
+      written += this.WriteIndirect(destination, root, level, pointersPerBlock, size, written);
+    }
+    return written;
+  }
+
+  private long WriteIndirect(Stream destination, int pointerBlock, int level,
+      int pointersPerBlock, long size, long already) {
+    var tableOff = (long)pointerBlock * _fragSize;
+    if (tableOff < 0 || tableOff + _blockSize > _len) return 0;
+    var table = _img.Read(tableOff, _blockSize);
+
+    long written = 0;
+    for (var i = 0; i < pointersPerBlock && already + written < size; i++) {
+      var blk = BinaryPrimitives.ReadInt32LittleEndian(table.AsSpan(i * 4));
+      if (blk == 0) continue;
+      written += level <= 1
+        ? this.AppendBlock(destination, blk, size, already + written)
+        : this.WriteIndirect(destination, blk, level - 1, pointersPerBlock, size, already + written);
+    }
+    return written;
+  }
+
   // Appends up to one block of payload from frag-block `blk`, stopping at `size`.
-  private void AppendBlock(MemoryStream ms, int blk, long size) {
-    if (blk == 0) return;
-    var off = (long)blk * _fragSize;
-    var remaining = size - ms.Length;
-    if (remaining <= 0) return;
+  private long AppendBlock(Stream destination, int blk, long size, long already) {
+    var remaining = size - already;
+    if (remaining <= 0) return 0;
     var chunk = (int)Math.Min(_blockSize, remaining);
-    if (off + chunk <= _data.Length)
-      ms.Write(_data, (int)off, chunk);
+    if (blk == 0) {
+      // A hole reads back as zeros.
+      destination.Write(new byte[chunk]);
+      return chunk;
+    }
+    var off = (long)blk * _fragSize;
+    if (off < 0 || off + chunk > _len) return 0;
+    _img.CopyTo(off, destination, chunk);
+    return chunk;
   }
 
   // UFS1 MAXSYMLINKLEN = (NDADDR + NIADDR) * sizeof(ufs1_daddr_t) = (12 + 3) * 4 = 60.
@@ -201,9 +240,9 @@ public sealed class UfsReader : IDisposable {
     if (size < 0 || size > 4096) return null;
     if (size < MaxFastSymlinkLen) {
       var start = (int)inodeOff + 40;
-      var len = (int)Math.Min(size, _data.Length - start);
+      var len = (int)Math.Min(size, _len - start);
       if (len <= 0) return "";
-      return Encoding.ASCII.GetString(_data, start, len);
+      return Str(start, len);
     }
     var data = ReadInodeData(inodeOff);
     if (data == null || data.Length == 0) return "";
@@ -213,15 +252,30 @@ public sealed class UfsReader : IDisposable {
 
   public byte[] Extract(UfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    if (entry.IsDirectory) return [];
-    // A symlink's honest content is its target path text.
-    if (entry.IsSymlink) return Encoding.ASCII.GetBytes(entry.LinkTarget ?? "");
-    var inodeOff = InodeOffset(entry.Inode);
-    var data = ReadInodeData(inodeOff);
-    if (data == null) return [];
-    if (data.Length > entry.Size) return data.AsSpan(0, (int)entry.Size).ToArray();
-    return data;
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"UFS: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    using var buffer = new MemoryStream();
+    this.ExtractTo(entry, buffer);
+    return buffer.ToArray();
   }
 
-  public void Dispose() { }
+  /// <summary>
+  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />,
+  /// one block at a time through the inode's indirect tree. Returns the byte count.
+  /// </summary>
+  public long ExtractTo(UfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
+    // A symlink's honest content is its target path text.
+    if (entry.IsSymlink) {
+      var target = Encoding.ASCII.GetBytes(entry.LinkTarget ?? "");
+      destination.Write(target);
+      return target.Length;
+    }
+    return this.WriteInodeData(InodeOffset(entry.Inode), destination);
+  }
+
+  public void Dispose() => this._img.Dispose();
 }

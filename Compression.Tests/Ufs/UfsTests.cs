@@ -91,9 +91,15 @@ public class UfsTests {
     // the previous single-cg value of 1 encoded the old non-newfs writer).
     Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(sb[44..]), Is.EqualTo(4u), "fs_ncg");
     // fs_ipg at offset 184 — inodes per group for the 16 MB newfs profile.
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(sb[184..]), Is.EqualTo(2112u), "fs_ipg");
-    // fs_fpg at offset 188 — fragments per group for the 16 MB newfs profile.
-    Assert.That(BinaryPrimitives.ReadInt32LittleEndian(sb[188..]), Is.EqualTo(4104), "fs_fpg");
+    // fs_ipg follows from the group size, which now scales with the volume, so it
+    // is read from the superblock rather than pinned to the old four-group value.
+    var ipg = BinaryPrimitives.ReadUInt32LittleEndian(sb[184..]);
+    Assert.That(ipg, Is.GreaterThan(0u), "fs_ipg");
+    // fs_fpg at offset 188 — fragments per group. It scales with the volume, and a
+    // group's bitmaps have to fit the one block its header occupies, which caps it.
+    var fpg = BinaryPrimitives.ReadInt32LittleEndian(sb[188..]);
+    Assert.That(fpg, Is.GreaterThan(0), "fs_fpg");
+    Assert.That(fpg, Is.LessThanOrEqualTo(32768 + 8), "fs_fpg stays inside one header block");
   }
 
   [Test, Category("HappyPath")]
@@ -116,7 +122,8 @@ public class UfsTests {
     // assertion of 2048 encoded the previous writer's bug — niblk lives in the
     // historic cg_old_niblk@18 instead, which is fs_ipg = 2112).
     Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(cg[116..]), Is.EqualTo(0u), "cg_niblk (UFS1: 0)");
-    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(cg[18..]), Is.EqualTo((ushort)2112), "cg_old_niblk = fs_ipg");
+    var sbIpg = BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(8192 + 184));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(cg[18..]), Is.EqualTo((ushort)sbIpg), "cg_old_niblk = fs_ipg");
   }
 
   [Test, Category("HappyPath")]
@@ -137,14 +144,17 @@ public class UfsTests {
     // newfs emits two directories: the root and the synthetic /.snap (the old
     // single value of 1 predated faithful newfs emulation).
     Assert.That(ndir, Is.EqualTo(2), "root + /.snap directories");
-    // 4 cgs × 2112 ipg − 6 used inodes (0,1 reserved + root + .snap + f1 + f2).
-    Assert.That(nifree, Is.EqualTo(4 * 2112 - 6), "free inodes across all cylinder groups");
+    // ncg × ipg − 6 used inodes (0,1 reserved + root + .snap + f1 + f2). Both come
+    // from the superblock: the group count scales with the volume.
+    var ncg = BinaryPrimitives.ReadInt32LittleEndian(img.AsSpan(8192 + 44));
+    var ipgAll = (int)BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(8192 + 184));
+    Assert.That(nifree, Is.EqualTo(ncg * ipgAll - 6), "free inodes across all cylinder groups");
 
     // CG0's cg_cs echoes the cg-local summary. CG 0 header at 24 KiB.
     var cg = img.AsSpan(24 * 1024);
     var cgNdir = BinaryPrimitives.ReadInt32LittleEndian(cg[24..]);
     var cgNifree = BinaryPrimitives.ReadInt32LittleEndian(cg[32..]);
     Assert.That(cgNdir, Is.EqualTo(2), "cg0 holds both directories");
-    Assert.That(cgNifree, Is.EqualTo(2112 - 6), "cg0 holds every live inode");
+    Assert.That(cgNifree, Is.EqualTo(ipgAll - 6), "cg0 holds every live inode");
   }
 }

@@ -97,8 +97,18 @@ public sealed class UfsWriter {
 
   // newfs sizing: ncg = 4 (small-fs heuristic), fpg = roundup(size/ncg, frag)+frag,
   // ipg = inopb * inode-blocks-per-cg where blocks-per-cg = (bpg-1)/16 + 1.
+  /// <summary>
+  /// Largest fragments-per-group this layout uses. A cylinder group's header —
+  /// inode-used bitmap, free-fragment bitmap and cluster maps — has to fit one
+  /// filesystem block, and those bitmaps scale with the group, so a group past
+  /// roughly this size overran the header buffer.
+  /// </summary>
+  private const int MaxFragsPerGroup = 32768;
+
   private static Geometry ComputeGeometry(int totalFrags) {
-    var ncg = NumCylinderGroups;
+    // newfs picks four groups for a small filesystem; a larger device needs more,
+    // or each group's bitmaps outgrow the one block its header occupies.
+    var ncg = Math.Max(NumCylinderGroups, HowMany(totalFrags, MaxFragsPerGroup));
     var fpg = RoundUp(HowMany(totalFrags, ncg), Frag) + Frag;
     var bpg = fpg / Frag;                                   // blocks per group
     var inodeBlocksPerCg = (bpg - 1) / 16 + 1;
@@ -258,8 +268,25 @@ public sealed class UfsWriter {
     // ── pick image size; grow if user data needs more than the 16 MB floor ──
     var imageBytes = Math.Max(MinImageBytes, EstimateBytes(directories, regularFiles));
     imageBytes = RoundUpLong(imageBytes, BlockSize);
+    var geom = ComputeGeometry((int)(imageBytes / FragSize));
+
+    // Each cylinder group past the first reserves the fragments up to its first
+    // data block for the superblock backup, group header and inode table, and the
+    // allocator steps over them — so the volume has to be that much larger, and
+    // growing it can add a group. Two passes settle it.
+    // Every group reserves the fragments up to its first data block, which the
+    // allocator steps over, so the volume has to be that much larger — and
+    // growing it can add a group. The reserve is recomputed from the payload each
+    // pass rather than accumulated, or the size runs away.
+    var payloadBytes = imageBytes;
+    for (var pass = 0; pass < 6; ++pass) {
+      var needed = RoundUpLong(
+        payloadBytes + (long)geom.Ncg * geom.Dblkno * FragSize + payloadBytes / 32, BlockSize);
+      if (needed <= imageBytes) break;
+      imageBytes = needed;
+      geom = ComputeGeometry((int)(imageBytes / FragSize));
+    }
     var totalFrags = (int)(imageBytes / FragSize);
-    var geom = ComputeGeometry(totalFrags);
     // Only the blocks the filesystem populates are held: file payloads are
     // placed by seek afterwards, so a volume past what a byte[] can address
     // costs its metadata rather than its size.
@@ -277,6 +304,7 @@ public sealed class UfsWriter {
     // fragments it needs but the next object still starts block-aligned.
     var nextFrag = geom.Dblkno + Frag;             // skip the csum block
     _placedCg0Frags.Clear();
+    this._geom = geom;
 
     // Render every directory's on-disk byte image (DIRBLKSIZ-chunk packed).
     var dirImage = new Dictionary<TreeNode, byte[]>();
@@ -286,13 +314,19 @@ public sealed class UfsWriter {
       EnsureDirectoryAddressable(dir, HowMany(img.Length, BlockSize));
       dirImage[dir] = img;
     }
-    const int MaxAddressableBlocks = MaxDirectBlocks + PointersPerBlock;
+    // Twelve direct pointers, then di_ib[0..2]: a single-, double- and
+    // triple-indirect block, each level multiplying the reach by the pointers one
+    // block holds. A single-indirect block alone stopped at 16 MB per file.
+    var maxAddressableBlocks = MaxDirectBlocks
+      + (long)PointersPerBlock
+      + (long)PointersPerBlock * PointersPerBlock
+      + (long)PointersPerBlock * PointersPerBlock * PointersPerBlock;
     foreach (var file in regularFiles) {
       var blocks = HowMany((int)file.EffectiveLength, BlockSize);
-      if (blocks > MaxAddressableBlocks)
+      if (blocks > maxAddressableBlocks)
         throw new InvalidOperationException(
-          $"UFS writer supports direct blocks plus one single-indirect block " +
-          $"(max {(long)MaxAddressableBlocks * BlockSize} bytes per file); " +
+          $"UFS: a file is addressed by twelve direct blocks plus three levels of " +
+          $"indirection (max {maxAddressableBlocks * BlockSize} bytes); " +
           $"'{file.Name}' needs {file.EffectiveLength} bytes.");
     }
 
@@ -312,7 +346,7 @@ public sealed class UfsWriter {
         mode: dir == snap ? (uint)0x41FD : 0x41ED, nlink: (ushort)(2 + childDirs),
         size: (ulong)img.Length,
         blocksUsed512: (uint)((long)fragsUsed * FragSize / 512),
-        directBlocks: directBlocks, indirectBlock: indirectFrag, dirDepth: (uint)depth);
+        directBlocks: directBlocks, indirectBlocks: indirectFrag, dirDepth: (uint)depth);
       _ = first;
     }
 
@@ -323,17 +357,18 @@ public sealed class UfsWriter {
         ? PlaceObjectGeometry(disk, (int)file.EffectiveLength, ref nextFrag)
         : PlaceObject(disk, payloads, file.Data, ref nextFrag);
 
-      // Streaming entries leave their data fragments zero; BuildToStreaming
-      // post-fills them from the source in 64 KB chunks. The data fragments are
-      // contiguous from `firstFrag`, so the file's bytes occupy
-      // [firstFrag*FragSize, +EffectiveLength).
-      if (file.StreamOpener != null && this._streamingSink != null && file.EffectiveLength > 0)
-        this._streamingSink.Add(((long)firstFrag * FragSize, file.EffectiveLength, file.StreamOpener));
+      // A streaming entry's bytes are placed the same way a buffered one's are:
+      // one copy per contiguous run of the blocks it was given. The blocks are
+      // contiguous only within a cylinder group, so a single span from the first
+      // fragment would put the bytes where the pointers do not look.
+      if (file.StreamOpener != null && file.EffectiveLength > 0)
+        AddPayloadRuns(payloads, FilePayload.FromStream(file.EffectiveLength, file.StreamOpener),
+          this._lastBlockFrags, file.EffectiveLength);
 
       WriteUfs1Inode(disk, inodeTableOffset + file.Inode * InodeSize,
         mode: 0x81A4, nlink: 1, size: (ulong)file.EffectiveLength,
         blocksUsed512: (uint)((long)fragsUsed * FragSize / 512),
-        directBlocks: directBlocks, indirectBlock: indirectFrag);
+        directBlocks: directBlocks, indirectBlocks: indirectFrag);
     }
 
     // The highest data frag consumed in cg0 (relative to image start).
@@ -356,7 +391,19 @@ public sealed class UfsWriter {
   private static long EstimateBytes(List<TreeNode> directories, List<TreeNode> regularFiles) {
     long frags = 1024;                             // generous slack for metadata
     foreach (var d in directories) frags += Math.Max(1, d.Order.Count / 16 + 1) * Frag + Frag;
-    foreach (var f in regularFiles) frags += (long)(HowMany((int)f.EffectiveLength, BlockSize) + 1) * Frag;
+    foreach (var f in regularFiles) {
+      var blocks = (long)HowMany((int)f.EffectiveLength, BlockSize);
+      frags += blocks * Frag;
+      // Every level of the indirect tree costs pointer blocks of its own: one per
+      // PointersPerBlock entries at the level below. Allowing a single block per
+      // file undersized the volume and the last file ran past its end.
+      var rest = Math.Max(0, blocks - MaxDirectBlocks);
+      while (rest > 0) {
+        rest = (rest + PointersPerBlock - 1) / PointersPerBlock;
+        frags += rest * Frag;
+        if (rest <= 1) break;
+      }
+    }
     return frags * FragSize;
   }
 
@@ -365,79 +412,50 @@ public sealed class UfsWriter {
   // single-indirect fragment (0 if none), and the fragment count for di_blocks.
   // Each fs block before the tail consumes Frag fragments; the tail consumes only
   // as many fragments as it needs (newfs fragment-tail optimisation).
-  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObject(SparseBlockImage disk, DeferredPayloads payloads, byte[] payload, ref int nextFrag) {
+  private (int[] DirectBlocks, int[] IndirectFrags, int FragsUsed) PlaceObject(SparseBlockImage disk, DeferredPayloads payloads, byte[] payload, ref int nextFrag) {
     var length = payload.Length;
     var blocks = Math.Max(1, HowMany(length, BlockSize));
     var fullBlocks = length / BlockSize;
     var tailBytes = length - fullBlocks * BlockSize;
     var tailFrags = tailBytes > 0 ? HowMany(tailBytes, FragSize) : (length == 0 ? 1 : 0);
 
-    var first = nextFrag;
-    if (length > 0) payloads.Add((long)first * FragSize, payload);
-
     // Record the frags each block actually occupies (block-aligned addressing,
-    // tail filling only tailFrags).
-    var blockFrags = new int[blocks];
-    var fragsUsed = 0;
-    for (var b = 0; b < blocks; b++) {
-      var blockBase = first + b * Frag;
-      blockFrags[b] = blockBase;
-      var fragsInBlock = b < fullBlocks ? Frag : tailFrags;
-      for (var f = 0; f < fragsInBlock; f++) _placedCg0Frags.Add(blockBase + f);
-      fragsUsed += fragsInBlock;
-    }
-    nextFrag += blocks * Frag;
+    // tail filling only tailFrags). The cursor steps over each cylinder group's
+    // own metadata, so the blocks are contiguous only within a group.
+    var blockFrags = this.AllocateBlocks(blocks, fullBlocks, tailFrags, ref nextFrag, out var fragsUsed);
+
+    // The payload follows those blocks, one copy per contiguous run: writing it as
+    // a single span made the bytes and the block pointers disagree wherever a run
+    // stepped over a group's metadata.
+    if (length > 0)
+      AddPayloadRuns(payloads, FilePayload.FromBytes(payload), blockFrags, length);
 
     var directBlocks = new int[MaxDirectBlocks];
     for (var b = 0; b < blocks && b < MaxDirectBlocks; b++) directBlocks[b] = blockFrags[b];
 
-    var indirectFrag = 0;
-    if (blocks > MaxDirectBlocks) {
-      indirectFrag = nextFrag;
-      WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
-      for (var f = 0; f < Frag; f++) _placedCg0Frags.Add(indirectFrag + f);
-      nextFrag += Frag;
-      fragsUsed += Frag;
-    }
-    return (directBlocks, indirectFrag, fragsUsed);
+    var indirectFrags = this.BuildIndirectTree(disk, blockFrags, ref nextFrag, ref fragsUsed);
+    return (directBlocks, indirectFrags, fragsUsed);
   }
 
   // Streaming-file geometry: replicates PlaceObject's fragment allocation and
   // direct/indirect block accounting for a file of `length` bytes WITHOUT copying
   // any payload (the data fragments stay zero — BuildToStreaming post-fills them).
   // Byte-for-byte identical placement to PlaceObject(disk, payloadOfLength, ...).
-  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObjectGeometry(SparseBlockImage disk, int length, ref int nextFrag) {
+  private (int[] DirectBlocks, int[] IndirectFrags, int FragsUsed) PlaceObjectGeometry(SparseBlockImage disk, int length, ref int nextFrag) {
     var blocks = Math.Max(1, HowMany(length, BlockSize));
     var fullBlocks = length / BlockSize;
     var tailBytes = length - fullBlocks * BlockSize;
     var tailFrags = tailBytes > 0 ? HowMany(tailBytes, FragSize) : (length == 0 ? 1 : 0);
 
-    var first = nextFrag;
     // No payload copy — fragments remain zero until BuildToStreaming streams them.
-
-    var blockFrags = new int[blocks];
-    var fragsUsed = 0;
-    for (var b = 0; b < blocks; b++) {
-      var blockBase = first + b * Frag;
-      blockFrags[b] = blockBase;
-      var fragsInBlock = b < fullBlocks ? Frag : tailFrags;
-      for (var f = 0; f < fragsInBlock; f++) _placedCg0Frags.Add(blockBase + f);
-      fragsUsed += fragsInBlock;
-    }
-    nextFrag += blocks * Frag;
+    var blockFrags = this.AllocateBlocks(blocks, fullBlocks, tailFrags, ref nextFrag, out var fragsUsed);
+    this._lastBlockFrags = blockFrags;
 
     var directBlocks = new int[MaxDirectBlocks];
     for (var b = 0; b < blocks && b < MaxDirectBlocks; b++) directBlocks[b] = blockFrags[b];
 
-    var indirectFrag = 0;
-    if (blocks > MaxDirectBlocks) {
-      indirectFrag = nextFrag;
-      WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
-      for (var f = 0; f < Frag; f++) _placedCg0Frags.Add(indirectFrag + f);
-      nextFrag += Frag;
-      fragsUsed += Frag;
-    }
-    return (directBlocks, indirectFrag, fragsUsed);
+    var indirectFrags = this.BuildIndirectTree(disk, blockFrags, ref nextFrag, ref fragsUsed);
+    return (directBlocks, indirectFrags, fragsUsed);
   }
 
   // Builds a directory's on-disk byte image: entries packed into DIRBLKSIZ
@@ -488,11 +506,49 @@ public sealed class UfsWriter {
         $"'{(dir.Name.Length == 0 ? "/" : dir.Name)}' with {dir.Order.Count} entries needs {blockCount}.");
   }
 
-  private static void WriteIndirectBlock(SparseBlockImage disk, int indirectFrag, int[] blockFrags, int firstIndirectBlock) {
-    var tableOffset = (long)indirectFrag * FragSize;
-    for (var b = firstIndirectBlock; b < blockFrags.Length; b++)
-      BinaryPrimitives.WriteInt32LittleEndian(
-        disk.At(tableOffset + (long)(b - firstIndirectBlock) * 4, 4), blockFrags[b]);
+  /// <summary>
+  /// Builds the indirect tree over the blocks past the inode's twelve direct
+  /// pointers and returns di_ib[0..2]: a single-, double- and triple-indirect
+  /// root. Each pointer block holds <see cref="PointersPerBlock" /> entries, so a
+  /// level's reach is the level below it multiplied by that.
+  /// </summary>
+  private int[] BuildIndirectTree(SparseBlockImage disk, int[] blockFrags, ref int nextFrag, ref int fragsUsed) {
+    var result = new int[3];
+    var state = new IndirectState { NextFrag = nextFrag, FragsUsed = fragsUsed, Index = MaxDirectBlocks };
+    if (blockFrags.Length > state.Index)
+      for (var level = 1; level <= 3 && state.Index < blockFrags.Length; ++level)
+        result[level - 1] = this.BuildPointerBlock(disk, blockFrags, level, state);
+    nextFrag = state.NextFrag;
+    fragsUsed = state.FragsUsed;
+    return result;
+  }
+
+  /// <summary>Walking state for the indirect tree, so the recursion can share one cursor.</summary>
+  private sealed class IndirectState {
+    public int NextFrag;
+    public int FragsUsed;
+    public int Index;
+  }
+
+  /// <summary>Fills one pointer block at the given depth and returns its fragment.</summary>
+  private int BuildPointerBlock(SparseBlockImage disk, int[] blockFrags, int depth, IndirectState state) {
+    state.NextFrag = this.SkipGroupMetadata(state.NextFrag);
+    if (this._geom != null && state.NextFrag + Frag > this._geom.TotalFrags)
+      throw new InvalidOperationException(
+        $"UFS: the indirect tree needs fragment {state.NextFrag + Frag} but the volume has {this._geom.TotalFrags}.");
+    var frag = state.NextFrag;
+    for (var f = 0; f < Frag; f++) this._placedCg0Frags.Add(frag + f);
+    state.NextFrag += Frag;
+    state.FragsUsed += Frag;
+
+    var table = (long)frag * FragSize;
+    for (var slot = 0; slot < PointersPerBlock && state.Index < blockFrags.Length; ++slot) {
+      var child = depth <= 1
+        ? blockFrags[state.Index++]
+        : this.BuildPointerBlock(disk, blockFrags, depth - 1, state);
+      BinaryPrimitives.WriteInt32LittleEndian(disk.At(table + slot * 4, 4), child);
+    }
+    return frag;
   }
 
   private static int DirEntryReclen(string name) {
@@ -640,7 +696,7 @@ public sealed class UfsWriter {
     // Build the per-cg used-frag map to count free whole blocks vs free frags.
     var used = new bool[ndblk];
     MarkCgMetadata(geom, cg, used);
-    if (cg == 0) MarkCg0Data(geom, used, cg0DataEndFrag);
+    this.MarkCgData(geom, cg, used, cg0DataEndFrag);
 
     var nbfree = 0;
     var nffree = 0;
@@ -667,19 +723,119 @@ public sealed class UfsWriter {
     for (var f = firstMeta; f < geom.Dblkno && f < used.Length; f++) used[f] = true;
   }
 
-  // Marks cg0's allocated data frags (csum summary fragments + directory/file data).
-  private void MarkCg0Data(Geometry geom, bool[] used, int cg0DataEndFrag) {
-    // The cs summary occupies howmany(cssize, fsize) FRAGMENTS at fs_csaddr; the
-    // rest of that block stays free (newfs marks only the populated fragments).
-    var csumFrags = HowMany(geom.CsSizeBytes, FragSize);
-    for (var f = 0; f < csumFrags && geom.Dblkno + f < used.Length; f++) used[geom.Dblkno + f] = true;
-    // Plus every fragment the layout actually placed for directories/files.
-    foreach (var f in _placedCg0Frags) if (f < used.Length) used[f] = true;
+  /// <summary>
+  /// Marks the allocated data fragments that fall inside cylinder group
+  /// <paramref name="cg" />: the cs summary (cg 0 only) plus every fragment the
+  /// layout placed, translated from its absolute number into this group's span.
+  /// </summary>
+  private void MarkCgData(Geometry geom, int cg, bool[] used, int cg0DataEndFrag) {
+    if (cg == 0) {
+      // The cs summary occupies howmany(cssize, fsize) FRAGMENTS at fs_csaddr; the
+      // rest of that block stays free (newfs marks only the populated fragments).
+      var csumFrags = HowMany(geom.CsSizeBytes, FragSize);
+      for (var f = 0; f < csumFrags && geom.Dblkno + f < used.Length; f++) used[geom.Dblkno + f] = true;
+    }
+
+    var groupStart = (long)cg * geom.Fpg;
+    foreach (var f in _placedCg0Frags) {
+      var within = f - groupStart;
+      if (within >= 0 && within < used.Length) used[(int)within] = true;
+    }
     _ = cg0DataEndFrag;
   }
 
-  // Fragments actually written into cg0's data region (besides metadata/csum).
+  // Every fragment the layout placed, as an absolute number. Data no longer lives
+  // only in cg0: a volume larger than one group's worth spills into the groups
+  // after it, and each group's bitmap marks whatever falls inside it.
   private readonly List<int> _placedCg0Frags = [];
+
+  private Geometry? _geom;
+
+  /// <summary>The blocks the last geometry pass allocated, for the streaming sink.</summary>
+  private int[] _lastBlockFrags = [];
+
+  /// <summary>
+  /// Allocates the fragments a file's blocks occupy, stepping the cursor over each
+  /// cylinder group's metadata so a block never lands on the group header or its
+  /// inode table.
+  /// </summary>
+  private int[] AllocateBlocks(int blocks, int fullBlocks, int tailFrags, ref int nextFrag, out int fragsUsed) {
+    var blockFrags = new int[blocks];
+    fragsUsed = 0;
+    for (var b = 0; b < blocks; b++) {
+      nextFrag = this.SkipGroupMetadata(nextFrag);
+      // Running past the volume used to truncate silently: the blocks were still
+      // recorded, so a file listed at full length and read back short.
+      if (this._geom != null && nextFrag + Frag > this._geom.TotalFrags)
+        throw new InvalidOperationException(
+          $"UFS: the layout needs fragment {nextFrag + Frag} but the volume has {this._geom.TotalFrags}.");
+      var blockBase = nextFrag;
+      blockFrags[b] = blockBase;
+      var fragsInBlock = b < fullBlocks ? Frag : tailFrags;
+      for (var f = 0; f < fragsInBlock; f++) this._placedCg0Frags.Add(blockBase + f);
+      fragsUsed += fragsInBlock;
+      nextFrag += Frag;
+    }
+    return blockFrags;
+  }
+
+  /// <summary>
+  /// Records a payload as one copy per contiguous run of the blocks it occupies.
+  /// </summary>
+  private static void AddPayloadRuns(DeferredPayloads payloads, FilePayload payload, int[] blockFrags, long length) {
+    var i = 0;
+    long written = 0;
+    while (i < blockFrags.Length && written < length) {
+      var j = i + 1;
+      while (j < blockFrags.Length && blockFrags[j] == blockFrags[j - 1] + Frag) ++j;
+      var runBytes = Math.Min((long)(j - i) * BlockSize, length - written);
+      if (runBytes > 0) {
+        var skip = written;
+        var source = payload;
+        payloads.Add((long)blockFrags[i] * FragSize,
+          FilePayload.FromStream(runBytes, () => SkipTo(source.Open(), skip)));
+      }
+      written += (long)(j - i) * BlockSize;
+      i = j;
+    }
+  }
+
+  /// <summary>Advances <paramref name="source" /> to <paramref name="offset" />, reading through when it cannot seek.</summary>
+  private static Stream SkipTo(Stream source, long offset) {
+    if (offset <= 0) return source;
+    if (source.CanSeek) {
+      source.Position = offset;
+      return source;
+    }
+    var buffer = new byte[64 * 1024];
+    var remaining = offset;
+    while (remaining > 0) {
+      var n = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+      if (n <= 0) break;
+      remaining -= n;
+    }
+    return source;
+  }
+
+  /// <summary>
+  /// Advances a fragment cursor past any cylinder-group metadata it would land on.
+  /// Group <c>n &gt; 0</c> reserves [sblkno, dblkno) of its own span for the
+  /// superblock backup, group header and inode table.
+  /// </summary>
+  private int SkipGroupMetadata(int frag) {
+    var geom = this._geom;
+    if (geom == null) return frag;
+    while (true) {
+      var cg = frag / geom.Fpg;
+      if (cg == 0) return frag;
+      var within = frag - cg * geom.Fpg;
+      if (within >= SblkNo && within < geom.Dblkno) {
+        frag = cg * geom.Fpg + geom.Dblkno;
+        continue;
+      }
+      return frag;
+    }
+  }
 
   private void WriteCylinderGroups(SparseBlockImage disk, Geometry geom, int dirCount, int liveInodes, int cg0DataEndFrag) {
     // Write the cs summary block first (referenced by fs_csaddr): one cs record
@@ -752,7 +908,7 @@ public sealed class UfsWriter {
     // Build the per-cg used-frag map.
     var used = new bool[ndblk];
     MarkCgMetadata(geom, cg, used);
-    if (cg == 0) MarkCg0Data(geom, used, cg0DataEndFrag);
+    this.MarkCgData(geom, cg, used, cg0DataEndFrag);
 
     // inode-used bitmap (bit i = inode (cgbase-relative) i used).
     for (var ino = 0; ino < usedInodes && ino < geom.Ipg; ino++)
@@ -839,7 +995,7 @@ public sealed class UfsWriter {
   private static void WriteUfs1Inode(
     SparseBlockImage disk, long inodeByteOffset,
     uint mode, ushort nlink, ulong size, uint blocksUsed512,
-    ReadOnlySpan<int> directBlocks, int indirectBlock = 0, uint dirDepth = 0
+    ReadOnlySpan<int> directBlocks, int[]? indirectBlocks = null, uint dirDepth = 0
   ) {
     var diBuffer = new byte[InodeSize];
     var di = diBuffer.AsSpan();
@@ -854,7 +1010,10 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(di[32..], now);               // di_ctime
     for (var i = 0; i < MaxDirectBlocks && i < directBlocks.Length; i++)
       BinaryPrimitives.WriteInt32LittleEndian(di[(40 + i * 4)..], directBlocks[i]);
-    BinaryPrimitives.WriteInt32LittleEndian(di[(40 + MaxDirectBlocks * 4)..], indirectBlock); // di_ib[0]
+    // di_ib[0..2]: the single-, double- and triple-indirect roots.
+    var ib = indirectBlocks ?? [];
+    for (var i = 0; i < 3 && i < ib.Length; i++)
+      BinaryPrimitives.WriteInt32LittleEndian(di[(40 + MaxDirectBlocks * 4 + i * 4)..], ib[i]);
     BinaryPrimitives.WriteUInt32LittleEndian(di[104..], blocksUsed512);    // di_blocks (512-sectors)
     BinaryPrimitives.WriteUInt32LittleEndian(di[108..], 1);               // di_gen
     BinaryPrimitives.WriteUInt32LittleEndian(di[112..], 0);               // di_uid
