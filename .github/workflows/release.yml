@@ -111,73 +111,9 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
-      # Trusted Publishing: nuget.org exchanges a GitHub OIDC token for an API key valid one hour,
-      # so no long-lived secret has to exist. It needs a policy on nuget.org (your username ▸ Trusted
-      # Publishing) naming owner `Hawkynt`, repository `CompressionWorkbench` and workflow file
-      # `release.yml`. Until that policy exists this step fails and the push below falls back to
-      # NUGET_TOKEN, so adopting it is a nuget.org-side change that needs no second commit here.
-      - name: NuGet login (OIDC → short-lived key)
-        id: nugetlogin
-        continue-on-error: true
-        uses: NuGet/login@v1
+      - name: Publish to NuGet.org (Trusted Publishing + acceptance check)
+        uses: Hawkynt/RepositoryTemplate/nuget-publish@v1
         with:
+          packages-path: dist-nuget
           user: ${{ secrets.NUGET_USER }}
-
-      - name: Push to NuGet.org
-        env:
-          OIDC_KEY: ${{ steps.nugetlogin.outputs.NUGET_API_KEY }}
-          NUGET_TOKEN: ${{ secrets.NUGET_TOKEN }}
-        run: |
-          if [ -n "$OIDC_KEY" ]; then
-            echo "Publishing with a short-lived Trusted Publishing key."
-            KEY="$OIDC_KEY"
-          elif [ -n "$NUGET_TOKEN" ]; then
-            echo "::warning::Trusted Publishing is not configured; falling back to the stored NUGET_TOKEN."
-            KEY="$NUGET_TOKEN"
-          else
-            # This workflow is manual-dispatch only, so there is no PR or fork case to skip for: no
-            # credential means the release is about to be cut with nothing published, which is the
-            # failure this step exists to prevent rather than to wave through.
-            echo "::error::No publishing credential — configure Trusted Publishing or set NUGET_TOKEN."
-            exit 1
-          fi
-
-          for pkg in dist-nuget/*.nupkg; do
-            echo "Pushing $(basename "$pkg")"
-            dotnet nuget push "$pkg" \
-              --api-key "$KEY" \
-              --source https://api.nuget.org/v3/index.json \
-              --skip-duplicate
-          done
-
-      # "Your package was pushed" only means nuget.org accepted it for validation. A package can be
-      # accepted and then never become available — it fails validation later — while the push still
-      # exited 0. Without this wait a rejected package produces a green release.
-      - name: Wait for the packages to become available
-        run: |
-          fail=0
-          for pkg in dist-nuget/*.nupkg; do
-            base=$(basename "$pkg" .nupkg)
-            # "Id.1.2.3.4" -> id, version. The version is the trailing dotted-numeric run.
-            version=$(echo "$base" | grep -oE '[0-9]+(\.[0-9]+)*$')
-            id=${base%.$version}
-            lower=$(echo "$id" | tr '[:upper:]' '[:lower:]')
-
-            echo "Waiting for $id $version…"
-            found=0
-            for _ in $(seq 1 60); do
-              if curl -sf "https://api.nuget.org/v3-flatcontainer/$lower/index.json" \
-                   | grep -q "\"$version\""; then
-                echo "  available"
-                found=1
-                break
-              fi
-              sleep 15
-            done
-
-            if [ "$found" -ne 1 ]; then
-              echo "::error::$id $version was pushed but never became available on nuget.org — it likely failed validation. Check the rejection mail on the nuget.org account."
-              fail=1
-            fi
-          done
-          exit $fail
+          nuget-token: ${{ secrets.NUGET_TOKEN }}
