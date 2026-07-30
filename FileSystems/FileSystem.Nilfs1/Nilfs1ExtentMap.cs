@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using Compression.Registry;
 
 namespace FileSystem.Nilfs1;
@@ -22,6 +23,10 @@ namespace FileSystem.Nilfs1;
 /// <para>For images we did not write ourselves (no <see cref="Nilfs1Writer.WriterMagic"/>
 /// marker) we emit a coarse map: metadata-reserved for the boot+superblock area,
 /// free for the rest. NILFS v1's true segment-usage walk is out of scope.</para>
+///
+/// <para>The image is read through an <see cref="ImageAccessor"/> rather than
+/// copied in: the directories are a few kilobytes however many gigabytes of
+/// payload they describe.</para>
 /// </summary>
 public static class Nilfs1ExtentMap {
 
@@ -29,34 +34,31 @@ public static class Nilfs1ExtentMap {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < 2048) yield break;
 
-    image.Position = 0;
-    var data = new byte[image.Length];
-    var got = 0;
-    while (got < data.Length) {
-      var n = image.Read(data, got, data.Length - got);
-      if (n <= 0) break;
-      got += n;
-    }
+    if (image.CanSeek) image.Position = 0;
+    using var img = new ImageAccessor(image);
+    var length = img.Length;
 
     // Boot sector + superblock = first 2048 bytes (boot 0..1023, superblock 1024..2047).
     yield return new DefragBlockInfo(0, 2048, DefragBlockKind.MetadataReserved);
 
     // Detect our writer's directory marker.
-    var segStart = Nilfs1Writer.SegmentStart;
-    if (segStart + Nilfs1Writer.WriterMagic.Length + 8 > data.Length) yield break;
-    if (!data.AsSpan(segStart, Nilfs1Writer.WriterMagic.Length).SequenceEqual(Nilfs1Writer.WriterMagic))
+    var segStart = (long)Nilfs1Writer.SegmentStart;
+    if (segStart + Nilfs1Writer.WriterMagic.Length + 8 > length) yield break;
+    var head = img.Read(segStart, Nilfs1Writer.WriterMagic.Length + 8);
+    if (!head.AsSpan(0, Nilfs1Writer.WriterMagic.Length).SequenceEqual(Nilfs1Writer.WriterMagic))
       yield break;
 
     var baseDirSize = BinaryPrimitives.ReadInt64LittleEndian(
-      data.AsSpan(segStart + Nilfs1Writer.WriterMagic.Length));
-    if (baseDirSize < 0 || segStart + Nilfs1Writer.WriterMagic.Length + 8 + baseDirSize > data.Length)
+      head.AsSpan(Nilfs1Writer.WriterMagic.Length));
+    if (baseDirSize < 0 || baseDirSize > int.MaxValue
+        || segStart + Nilfs1Writer.WriterMagic.Length + 8 + baseDirSize > length)
       yield break;
     var baseDirStart = segStart + Nilfs1Writer.WriterMagic.Length + 8;
-    var basePayloadStart = baseDirStart + (int)baseDirSize;
+    var basePayloadStart = baseDirStart + baseDirSize;
 
     // Resolve the winning (offset, size) per live name across the base directory
     // and every appended segment, so only live payload bytes become Used extents.
-    var winners = ResolveLiveExtents(data, segStart, baseDirStart, (int)baseDirSize, basePayloadStart);
+    var winners = ResolveLiveExtents(img, length, baseDirStart, (int)baseDirSize, basePayloadStart);
 
     // The base segment header + directory is metadata-reserved.
     yield return new DefragBlockInfo(segStart, basePayloadStart - segStart, DefragBlockKind.MetadataReserved);
@@ -82,63 +84,68 @@ public static class Nilfs1ExtentMap {
   }
 
   private static ResolveResult ResolveLiveExtents(
-      byte[] data, int segStart, int baseDirStart, int baseDirSize, int basePayloadStart) {
+      ImageAccessor img, long length, long baseDirStart, int baseDirSize, long basePayloadStart) {
     var result = new ResolveResult();
 
     // Base directory entries are the cno=1 checkpoint.
-    var cursor = baseDirStart;
-    var dirEnd = baseDirStart + baseDirSize;
-    while (cursor + 4 <= dirEnd) {
-      var nameLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(cursor));
+    var baseDir = img.Read(baseDirStart, baseDirSize);
+    var cursor = 0;
+    var basePayloadEnd = basePayloadStart;
+    while (cursor + 4 <= baseDir.Length) {
+      var nameLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(baseDir.AsSpan(cursor));
       cursor += 4;
-      if (nameLen <= 0 || cursor + nameLen + 16 > dirEnd) break;
-      var name = System.Text.Encoding.UTF8.GetString(data, cursor, nameLen);
+      if (nameLen <= 0 || cursor + nameLen + 16 > baseDir.Length) break;
+      var name = System.Text.Encoding.UTF8.GetString(baseDir, cursor, nameLen);
       cursor += nameLen;
-      var off = BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan(cursor));
+      var off = BinaryPrimitives.ReadInt64LittleEndian(baseDir.AsSpan(cursor));
       cursor += 8;
-      var size = BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan(cursor));
+      var size = BinaryPrimitives.ReadInt64LittleEndian(baseDir.AsSpan(cursor));
       cursor += 8;
-      if (size < 0 || off < 0 || basePayloadStart + off + size > data.Length) break;
+      if (size < 0 || off < 0 || basePayloadStart + off + size > length) break;
       result.ByName[name] = new LiveExtent(name, basePayloadStart + off, size, 1ul);
+      basePayloadEnd = Math.Max(basePayloadEnd, basePayloadStart + off + size);
     }
 
     // Appended "NILFS1SG" segments supersede with higher cno; tombstones mark dead.
+    // They can only live past the base payload, which is where the scan starts.
     var magic = Nilfs1Writer.SegmentMagic;
-    var p = segStart;
-    while (p + magic.Length + 24 <= data.Length) {
-      if (!data.AsSpan(p, magic.Length).SequenceEqual(magic)) { ++p; continue; }
-      var cno = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(p + magic.Length));
-      var entryCount = BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan(p + magic.Length + 8));
-      var dirSize = BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan(p + magic.Length + 16));
+    var p = basePayloadEnd;
+    while (p + magic.Length + 24 <= length) {
+      if (!img.Read(p, magic.Length).AsSpan().SequenceEqual(magic)) { ++p; continue; }
+      var hdr = img.Read(p + magic.Length, 24);
+      var cno = BinaryPrimitives.ReadUInt64LittleEndian(hdr.AsSpan(0));
+      var entryCount = BinaryPrimitives.ReadInt64LittleEndian(hdr.AsSpan(8));
+      var dirSize = BinaryPrimitives.ReadInt64LittleEndian(hdr.AsSpan(16));
       var dStart = p + magic.Length + 24;
-      if (dirSize < 0 || dStart + dirSize > data.Length || entryCount < 0 || entryCount > data.Length) {
+      if (dirSize < 0 || dirSize > int.MaxValue || dStart + dirSize > length
+          || entryCount < 0 || entryCount > length) {
         ++p; continue;
       }
-      var payloadStart = dStart + (int)dirSize;
-      var c = dStart;
-      var dEnd = dStart + (int)dirSize;
+      var dir = img.Read(dStart, (int)dirSize);
+      var payloadStart = dStart + dirSize;
+      var c = 0;
       var consumedPayload = 0L;
       var parsedOk = true;
       var pending = new List<LiveExtent>();
       var pendingTomb = new List<string>();
       for (var i = 0L; i < entryCount; ++i) {
-        if (c + 4 > dEnd) { parsedOk = false; break; }
-        var nameLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(c));
+        if (c + 4 > dir.Length) { parsedOk = false; break; }
+        var nameLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(c));
         c += 4;
-        if (nameLen <= 0 || c + nameLen + 1 + 16 > dEnd) { parsedOk = false; break; }
-        var name = System.Text.Encoding.UTF8.GetString(data, c, nameLen);
+        if (nameLen <= 0 || c + nameLen + 1 + 16 > dir.Length) { parsedOk = false; break; }
+        var name = System.Text.Encoding.UTF8.GetString(dir, c, nameLen);
         c += nameLen;
-        var tombstone = data[c] != 0;
+        var tombstone = dir[c] != 0;
         c += 1;
-        var off = BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan(c));
+        var off = BinaryPrimitives.ReadInt64LittleEndian(dir.AsSpan(c));
         c += 8;
-        var size = BinaryPrimitives.ReadInt64LittleEndian(data.AsSpan(c));
+        var size = BinaryPrimitives.ReadInt64LittleEndian(dir.AsSpan(c));
         c += 8;
         if (size < 0 || off < 0) { parsedOk = false; break; }
         if (tombstone || size == 0) {
           pendingTomb.Add(name);
         } else {
-          if (payloadStart + off + size > data.Length) { parsedOk = false; break; }
+          if (payloadStart + off + size > length) { parsedOk = false; break; }
           pending.Add(new LiveExtent(name, payloadStart + off, size, cno));
           consumedPayload = Math.Max(consumedPayload, off + size);
         }
@@ -154,7 +161,7 @@ public static class Nilfs1ExtentMap {
         if (!result.ByName.TryGetValue(name, out var prev) || cno >= prev.Cno)
           result.ByName[name] = new LiveExtent(name, -1, 0, cno); // tombstone marker
 
-      p = payloadStart + (int)consumedPayload;
+      p = payloadStart + consumedPayload;
     }
 
     return result;

@@ -32,6 +32,10 @@ namespace FileSystem.Nilfs1;
 public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <summary>Synthetic surface entries the reader injects for an unparsable image.</summary>
+  private static readonly HashSet<string> SyntheticEntries =
+    new(StringComparer.Ordinal) { "FULL.nilfs", "metadata.ini", "superblock.bin" };
+
   public string Id => "Nilfs1";
   public string DisplayName => "NILFS v1";
   public FormatCategory Category => FormatCategory.Archive;
@@ -43,9 +47,15 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<string> Extensions => [".nilfs1", ".nilfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // NILFS_SUPER_MAGIC == 0x3434, little-endian at superblock+6 (file offset 1030).
-    // Same magic as NILFS2 — Nilfs1Reader gates on s_rev_level == 1 to distinguish.
-    // Lowered confidence so NILFS2 wins the tie when rev>=2.
+    // NILFS_SUPER_MAGIC == 0x3434 at superblock+6 (file offset 1030) is shared with
+    // NILFS2, so on its own it made every v1 image detect as NILFS2 — whose reader
+    // then rejected it for s_rev_level < 2. The discriminating signature spans
+    // s_rev_level (u32 at 1024) as well, masking out the minor revision between
+    // them, and outranks NILFS2's bare magic on a v1 volume.
+    new([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34, 0x34],
+      Offset: 1024, Confidence: 0.92,
+      Mask: [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF]),
+    // Bare magic, below NILFS2's confidence so a v2 volume still goes there.
     new([0x34, 0x34], Offset: 1030, Confidence: 0.80),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
@@ -87,11 +97,14 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new Nilfs1Reader(stream);
+    using var r = new Nilfs1Reader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -154,10 +167,58 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     => Nilfs1ExtentMap.Enumerate(image);
 
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("Nilfs1 R/W is log-structured (append-only segments) — defragmentation would re-pack snapshots, which violates the continuous-snapshot invariant.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("Nilfs1 R/W is log-structured (append-only segments) — defragmentation would re-pack snapshots, which violates the continuous-snapshot invariant.");
+  /// <summary>
+  /// Rewrites the volume as a single checkpoint holding the live state — the
+  /// reclamation a segment cleaner performs, which is what frees the space that
+  /// superseded and tombstoned records still occupy. Older checkpoints are what
+  /// a cleaner run reclaims, so they do not survive it; the live file set does,
+  /// byte for byte.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new NotSupportedException(
+        $"Nilfs1 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+
+    var tempPath = Path.GetTempFileName();
+    var spill = new List<string>();
+    try {
+      using (var temp = File.Open(tempPath, FileMode.Open, FileAccess.ReadWrite)) {
+        var w = new Nilfs1Writer();
+        using (var reader = new Nilfs1Reader(archive)) {
+          foreach (var e in reader.Entries) {
+            if (e.IsDirectory || SyntheticEntries.Contains(e.Name)) continue;
+            // Spilled to scratch so the new image streams the bytes back rather
+            // than holding the whole live set while it is assembled.
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            using (var scratch = File.Create(path))
+              reader.ExtractTo(e, scratch);
+            var captured = path;
+            w.AddStreamingFile(e.Name, e.Size, () => File.OpenRead(captured));
+          }
+        }
+        w.WriteTo(temp);
+
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "commit", Fraction: 1.0, CurrentReadOffset: archive.Length,
+          CurrentWriteOffset: temp.Length, ImageSize: temp.Length, BlockMap: null));
+
+        temp.Position = 0;
+        archive.Position = 0;
+        temp.CopyTo(archive);
+        archive.SetLength(temp.Length);
+        archive.Flush();
+      }
+    } finally {
+      File.Delete(tempPath);
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
+  }
 
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);

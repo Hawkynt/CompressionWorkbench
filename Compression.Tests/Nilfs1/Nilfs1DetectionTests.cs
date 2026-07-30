@@ -28,9 +28,13 @@ public class Nilfs1DetectionTests {
     Assert.That(d.Extensions, Does.Contain(".nilfs1"));
     Assert.That(d.Extensions, Does.Contain(".nilfs"));
     Assert.That(d.Category, Is.EqualTo(FormatCategory.Archive));
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
-    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(1030));
-    Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo(new byte[] { 0x34, 0x34 }));
+    // Two signatures: the rev-1-discriminating one that beats NILFS2 on a v1
+    // volume, and the bare shared magic below NILFS2's confidence.
+    Assert.That(d.MagicSignatures, Has.Count.EqualTo(2));
+    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(1024));
+    Assert.That(d.MagicSignatures[0].Mask, Is.Not.Null);
+    Assert.That(d.MagicSignatures[1].Offset, Is.EqualTo(1030));
+    Assert.That(d.MagicSignatures[1].Bytes, Is.EqualTo(new byte[] { 0x34, 0x34 }));
     // Nilfs1 now ships a minimal writer (single segment + compact directory
     // index) so the descriptor advertises IArchiveCreatable. External NILFS v1
     // images that we didn't write ourselves still fall back to the surface-

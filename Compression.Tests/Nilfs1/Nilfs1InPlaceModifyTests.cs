@@ -74,7 +74,7 @@ public class Nilfs1InPlaceModifyTests {
     var names = r.Entries.Select(e => e.Name).ToHashSet();
     Assert.That(names, Does.Contain("alpha.txt"));
     Assert.That(names, Does.Contain("beta.bin"));
-    Assert.That(r.Entries.First(e => e.Name == "beta.bin").Data, Is.EqualTo(new byte[] { 9, 8, 7 }));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "beta.bin")), Is.EqualTo(new byte[] { 9, 8, 7 }));
   }
 
   [Test, Category("HappyPath")]
@@ -99,7 +99,7 @@ public class Nilfs1InPlaceModifyTests {
 
     ms.Position = 0;
     using var r = new Nilfs1Reader(ms);
-    Assert.That(r.Entries.First(e => e.Name == "alpha.txt").Data, Is.EqualTo("alpha-replaced!"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "alpha.txt")), Is.EqualTo("alpha-replaced!"u8.ToArray()));
   }
 
   [Test, Category("Sad")]
@@ -194,6 +194,6 @@ public class Nilfs1InPlaceModifyTests {
     ms.Position = 0;
     using var r = new Nilfs1Reader(ms);
     Assert.That(r.LastCheckpoint, Is.EqualTo(startCno + 3));
-    Assert.That(r.Entries.First(e => e.Name == "alpha.txt").Data, Is.EqualTo("alphaX"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "alpha.txt")), Is.EqualTo("alphaX"u8.ToArray()));
   }
 }

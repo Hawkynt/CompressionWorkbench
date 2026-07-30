@@ -21,7 +21,26 @@ public class Nilfs1DefragTests {
   }
 
   [Test]
-  public void Defragment_RefusedAsLogStructured() {
+  public void Defragment_ReclaimsToASingleCheckpoint() {
+    var d = new Nilfs1FormatDescriptor();
+    var w = new Nilfs1Writer();
+    var payload = Encoding.UTF8.GetBytes(new string('A', 5000));
+    w.AddFile("a.txt", payload);
+    using var ms = new MemoryStream();
+    ms.Write(w.Build());
+    ms.Position = 0;
+
+    d.Defragment(ms);
+
+    ms.Position = 0;
+    using var r = new Nilfs1Reader(ms);
+    var entry = r.Entries.Single(e => e.Name == "a.txt");
+    Assert.That(r.Extract(entry), Is.EqualTo(payload),
+      "A cleaner run keeps the live file set byte for byte.");
+  }
+
+  [Test, Category("Sad")]
+  public void Defragment_UnsupportedMode_Throws() {
     var d = new Nilfs1FormatDescriptor();
     var w = new Nilfs1Writer();
     w.AddFile("a.txt", Encoding.UTF8.GetBytes(new string('A', 5000)));
@@ -29,8 +48,7 @@ public class Nilfs1DefragTests {
     ms.Write(w.Build());
     ms.Position = 0;
 
-    Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
     Assert.Throws<NotSupportedException>(
-      () => d.Defragment(ms, new DefragOptions { Mode = DefragMode.ConsolidateAtStart }));
+      () => d.Defragment(ms, new DefragOptions { Mode = DefragMode.CarveHole }));
   }
 }
