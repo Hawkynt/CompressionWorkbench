@@ -51,7 +51,7 @@ namespace FileSystem.Gfs2;
 /// </list>
 /// </summary>
 public sealed class Gfs2FormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -343,4 +343,26 @@ public sealed class Gfs2FormatDescriptor
       b.Append(ic, $"approx_image_size={imageSize}\n");
     return Encoding.UTF8.GetBytes(b.ToString());
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => Gfs2ExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zero-fills every block the resource-group bitmaps report as free — which
+  /// is where a removed file's bytes stay until something else claims them.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = Gfs2ExtentMap.Enumerate(image).ToList();
+    if (extents.Count == 0) return 0;
+    // The bitmap is per block and says nothing about where a file ends inside
+    // its last one, so there are no cluster tips to trim from it.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

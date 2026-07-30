@@ -40,6 +40,25 @@ public sealed class LittleFsReader : IDisposable {
   public IReadOnlyList<LittleFsFileEntry> Files => this._files;
   public uint BlockSize => this._blockSize;
 
+  private readonly HashSet<uint> _metadataBlocks = [];
+
+  /// <summary>
+  /// Blocks holding metadata pairs — the superblock pair and every directory's
+  /// commit log. A wipe must leave these alone.
+  /// </summary>
+  public IReadOnlyCollection<uint> MetadataBlocks => this._metadataBlocks;
+
+  /// <summary>
+  /// The blocks of an entry's CTZ skip-list, in file order. An inline file
+  /// lives inside its directory's commit and yields nothing.
+  /// </summary>
+  public IEnumerable<uint> FileBlocks(LittleFsFileEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (!entry.IsCtz || entry.Size <= 0) yield break;
+    foreach (var block in this.CtzChain(entry.CtzHead, (uint)entry.Size))
+      yield return block;
+  }
+
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._length;
 
@@ -101,6 +120,8 @@ public sealed class LittleFsReader : IDisposable {
   private void WalkDirectory(uint blockA, uint blockB, string parentPath, HashSet<ulong> visited) {
     var key = ((ulong)blockA << 32) | blockB;
     if (!visited.Add(key)) return;
+    this._metadataBlocks.Add(blockA);
+    this._metadataBlocks.Add(blockB);
 
     // Pick the valid half with the higher revision (both halves carry the same
     // commit here, but honour the ping-pong rule for robustness).
@@ -193,13 +214,13 @@ public sealed class LittleFsReader : IDisposable {
     return false; // ran off the block without a terminating CRC tag
   }
 
-  private long CopyCtz(uint head, uint size, Stream destination) {
-    if (size == 0) return 0;
+  /// <summary>
+  /// The skip-list's blocks in file order. The head is its LAST block, so the
+  /// walk follows the first back-pointer (which always points at index-1) down
+  /// to block 0 and then reverses.
+  /// </summary>
+  private List<uint> CtzChain(uint head, uint size) {
     var blockSize = (int)this._blockSize;
-
-    // The head is the LAST block of the skip-list (highest file-order index).
-    // Walk back via the first back-pointer (which always points to index-1) until
-    // block 0, then reverse into file order.
     var indices = new List<uint>();
     var blockCountForFile = CtzBlockCount(size, (uint)blockSize);
     var cur = head;
@@ -211,6 +232,13 @@ public sealed class LittleFsReader : IDisposable {
       cur = this._image.ReadUInt32(bStart);
     }
     indices.Reverse(); // now in file order: index 0 .. n-1
+    return indices;
+  }
+
+  private long CopyCtz(uint head, uint size, Stream destination) {
+    if (size == 0) return 0;
+    var blockSize = (int)this._blockSize;
+    var indices = this.CtzChain(head, size);
 
     var written = 0L;
     for (var i = 0; i < indices.Count; ++i) {

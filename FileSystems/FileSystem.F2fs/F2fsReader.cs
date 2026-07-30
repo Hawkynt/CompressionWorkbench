@@ -132,6 +132,83 @@ public sealed class F2fsReader : IDisposable {
     }
   }
 
+  /// <summary>Block size of the volume, from the superblock.</summary>
+  public int BlockSize => this._blockSize;
+
+  /// <summary>First block of the main area; everything below it is metadata.</summary>
+  public long MainAreaStart => (long)this._mainBlkAddr * this._blockSize;
+
+  /// <summary>
+  /// The blocks the root directory occupies: its inode and, when its dentries
+  /// do not fit inline, the blocks holding them. Nothing in the listing points
+  /// at these, so they have to be claimed on their own account.
+  /// </summary>
+  public IEnumerable<long> RootBlocks() {
+    var inodeBlock = this.LookupNat(RootNodeId);
+    if (inodeBlock <= 0) yield break;
+    yield return inodeBlock;
+
+    var inode = this.ReadBlock(inodeBlock);
+    if (inode == null) yield break;
+    for (var slot = 0; slot < 5; ++slot) {
+      var nid = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(InodeINidOff + slot * 4));
+      if (nid == 0) continue;
+      var levels = slot switch { 0 or 1 => 1, 2 or 3 => 2, _ => 3 };
+      foreach (var node in this.EnumerateNodeBlocks(nid, levels))
+        yield return node;
+    }
+    foreach (var block in this.EnumerateDataBlocks(inode))
+      if (block > 0) yield return block;
+  }
+
+  /// <summary>
+  /// Where an entry's blocks are: its data blocks, and the node blocks that
+  /// address them. Both have to survive a wipe — the node blocks are what turn
+  /// the data back into a file.
+  /// </summary>
+  public IEnumerable<(long Block, bool IsData)> EnumerateBlocks(F2fsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    var inodeBlock = this.LookupNat(entry.NodeId);
+    if (inodeBlock <= 0) yield break;
+    yield return (inodeBlock, false);
+
+    var inode = this.ReadBlock(inodeBlock);
+    if (inode == null) yield break;
+    if (entry.IsDirectory) {
+      foreach (var block in this.EnumerateDataBlocks(inode))
+        if (block > 0) yield return (block, false);
+      yield break;
+    }
+
+    for (var slot = 0; slot < 5; ++slot) {
+      var nid = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(InodeINidOff + slot * 4));
+      if (nid == 0) continue;
+      var levels = slot switch { 0 or 1 => 1, 2 or 3 => 2, _ => 3 };
+      foreach (var node in this.EnumerateNodeBlocks(nid, levels))
+        yield return (node, false);
+    }
+
+    foreach (var block in this.EnumerateDataBlocks(inode))
+      if (block > 0) yield return (block, true);
+  }
+
+  /// <summary>The node blocks of a subtree, the root of it included.</summary>
+  private IEnumerable<long> EnumerateNodeBlocks(uint nid, int levels) {
+    var block = this.LookupNat(nid);
+    if (block <= 0) yield break;
+    yield return block;
+    if (levels <= 1) yield break;
+
+    var node = this.ReadBlock(block);
+    if (node == null) yield break;
+    for (var i = 0; i < NidsPerBlock; ++i) {
+      var child = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(i * 4));
+      if (child == 0) continue;
+      foreach (var descendant in this.EnumerateNodeBlocks(child, levels - 1))
+        yield return descendant;
+    }
+  }
+
   /// <summary>
   /// Yields a file's data-block addresses in logical order: the inode's own 923
   /// addresses, then the blocks reached through i_nid[] — two direct nodes, two

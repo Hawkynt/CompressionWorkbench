@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -15,7 +16,7 @@ namespace FileSystem.ReiserFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/ReiserFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -257,4 +258,76 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     w.WriteTo(ms);
     return ms.ToArray();
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>Byte offset of the ReiserFS superblock.</summary>
+  private const int SuperblockOffset = 65536;
+
+  /// <summary>First bitmap block; the rest sit every <c>block_size * 8</c> blocks.</summary>
+  private const int FirstBitmapBlock = 17;
+
+  /// <summary>
+  /// Reads the on-disk block bitmap and reports every allocated run. ReiserFS
+  /// records allocation for the whole volume there — boot area, superblock,
+  /// bitmaps, journal, tree and data alike — so what the bitmap leaves clear is
+  /// exactly the free space, whatever a file once wrote into it.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var accessor = new ImageAccessor(image);
+      if (accessor.Length < SuperblockOffset + 64) return [];
+
+      var sb = accessor.Read(SuperblockOffset, 64);
+      var blockCount = (long)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(0));
+      var blockSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(44));
+      if (blockSize == 0) blockSize = 4096;
+      if (blockCount <= 0 || blockCount * blockSize > accessor.Length + blockSize) return [];
+
+      var blocksPerBitmap = (long)blockSize * 8;
+      long runStart = -1;
+      for (var block = 0L; block < blockCount; ++block) {
+        var bitmapIndex = block / blocksPerBitmap;
+        var bitmapBlock = bitmapIndex == 0 ? FirstBitmapBlock : bitmapIndex * blocksPerBitmap;
+        var bit = block % blocksPerBitmap;
+        var byteOffset = bitmapBlock * blockSize + (bit >> 3);
+        if (byteOffset >= accessor.Length) break;
+        var allocated = (accessor.ReadByte(byteOffset) & (1 << (int)(bit & 7))) != 0;
+
+        if (allocated) {
+          if (runStart < 0) runStart = block;
+          continue;
+        }
+        if (runStart >= 0) {
+          result.Add(new DefragBlockInfo(runStart * blockSize, (block - runStart) * blockSize,
+            DefragBlockKind.MetadataReserved));
+          runStart = -1;
+        }
+      }
+      if (runStart >= 0)
+        result.Add(new DefragBlockInfo(runStart * blockSize, (blockCount - runStart) * blockSize,
+          DefragBlockKind.MetadataReserved));
+    } catch {
+      // An image we cannot read the bitmap from claims nothing; wiping it would
+      // zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    // The bitmap is per block and says nothing about where a file ends inside
+    // its last one, so there are no cluster tips to trim from it.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

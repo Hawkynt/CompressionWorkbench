@@ -12,7 +12,7 @@ namespace FileSystem.F2fs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/F2FS</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // A F2FS segment is 2 MiB; image size in bytes = segment count × 2 MiB.
   private const long SegmentSizeBytes = 2L * 1024 * 1024;
@@ -330,4 +330,79 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // rebuild of anything larger would run out of main-area segments.
     return w.BuildAutoSized();
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// Everything below the main area — superblocks, checkpoints, SIT, NAT and
+  /// SSA — is structure, and inside the main area each live file claims both its
+  /// data blocks and the node blocks that address them. Blocks nothing claims
+  /// still hold whatever was last written to them.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new F2fsReader(image);
+      var blockSize = (long)reader.BlockSize;
+      if (blockSize <= 0) return [];
+
+      result.Add(new DefragBlockInfo(0, Math.Min(reader.MainAreaStart, image.Length),
+        DefragBlockKind.MetadataReserved));
+
+      // The root directory is in the main area but in no listing, so it is
+      // claimed here — wiping it would take every name with it.
+      foreach (var block in reader.RootBlocks()) {
+        var offset = block * blockSize;
+        if (offset < 0 || offset >= image.Length) continue;
+        result.Add(new DefragBlockInfo(offset, Math.Min(blockSize, image.Length - offset),
+          DefragBlockKind.MetadataReserved));
+      }
+
+      foreach (var entry in reader.Entries)
+        foreach (var (block, isData) in reader.EnumerateBlocks(entry)) {
+          var offset = block * blockSize;
+          if (offset < 0 || offset >= image.Length) continue;
+          var length = Math.Min(blockSize, image.Length - offset);
+          result.Add(new DefragBlockInfo(offset, length,
+            isData ? DefragBlockKind.Used : DefragBlockKind.MetadataReserved,
+            isData ? entry.Name : null));
+        }
+
+      if (result.Count <= 1 && reader.Entries.Count > 0) return [];
+    } catch {
+      // A volume we cannot walk claims nothing; wiping it would zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new F2fsReader(image);
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var e in reader.Entries)
+          if (!e.IsDirectory)
+            sizes[e.Name] = reader.SizeOf(e);
+        // Only a file that fits in one block maps to a single extent, so the
+        // lookup is what tells the wiper where such a file really ends.
+        fileSizeLookup = n => sizes.TryGetValue(n, out var v) && v < 4096 ? v : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length, wipeClusterTips, fileSizeLookup);
+  }
+
 }

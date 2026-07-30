@@ -19,7 +19,7 @@ namespace FileSystem.LittleFs;
 ///   <item><description><c>https://github.com/littlefs-project/littlefs/blob/master/DESIGN.md</c> — design document (metadata pairs, CTZ skip-lists)</description></item>
 /// </list>
 /// </summary>
-public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -248,4 +248,57 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     using var output = File.Create(target);
     stream.CopyTo(output);
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// Metadata pairs — the superblock pair and every directory's commit log —
+  /// are structure; a file's CTZ blocks are its own. littlefs never erases a
+  /// block it stops using, so what no live file or directory claims still
+  /// holds whatever was written there last.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new LittleFsReader(image);
+      var blockSize = (long)reader.BlockSize;
+      if (blockSize <= 0) return [];
+
+      foreach (var block in reader.MetadataBlocks) {
+        var offset = block * blockSize;
+        if (offset < 0 || offset >= image.Length) continue;
+        result.Add(new DefragBlockInfo(offset, Math.Min(blockSize, image.Length - offset),
+          DefragBlockKind.MetadataReserved));
+      }
+
+      foreach (var file in reader.Files)
+        foreach (var block in reader.FileBlocks(file)) {
+          var offset = block * blockSize;
+          if (offset < 0 || offset >= image.Length) continue;
+          result.Add(new DefragBlockInfo(offset, Math.Min(blockSize, image.Length - offset),
+            DefragBlockKind.Used, file.Path));
+        }
+
+      if (result.Count == 0) return [];
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    // A CTZ block carries pointers as well as data, so its tail is not slack
+    // that maps to the file's length — only whole free blocks are wiped.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }
