@@ -95,11 +95,14 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new JfsReader(stream);
+    using var r = new JfsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -197,8 +200,37 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// contiguous-from-start single-aggregate image with FILESYSTEM_I → AIM →
   /// IAG → FSIT, dual superblocks, dmap+dmapctl, and an inline-dtroot.
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Buffering the rebuilt image would cap the aggregate at what a byte[] can
+    // hold, so the packing modes stream: each entry is spilled to scratch and
+    // the writer pulls it back while laying out the extents.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      JfsWriter? writer = null;
+      Stream? target = null;
+      var spill = new List<string>();
+      try {
+        DefragRebuilder.RebuildStreaming(archive, options,
+          readEntries: ReadEntries,
+          beginWrite: s => { writer = new JfsWriter(); target = s; },
+          writeEntry: (name, data) => {
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            File.WriteAllBytes(path, data);
+            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+          },
+          finishWrite: () => writer!.BuildToStreaming(target!));
+      } finally {
+        foreach (var path in spill)
+          try { File.Delete(path); } catch { /* scratch file already gone */ }
+      }
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  }
 
   // ── IArchiveModifiable (extended-scope in-place mutation) ──────────────
   // Routes Add/Remove through JfsMutator. The mutator now supports:

@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Jfs;
@@ -18,31 +19,44 @@ public sealed class JfsReader : IDisposable {
   private const int XtreeDataOffset = 224;
   private const int DiDataSize = 288;
 
-  private readonly byte[] _data;
+  private readonly ImageAccessor _img;
+  private readonly long _len;
   private readonly List<JfsEntry> _entries = [];
   private int _blockSize;
   private long _filesetInodeTableOffset;
 
   public IReadOnlyList<JfsEntry> Entries => _entries;
 
-  public JfsReader(Stream stream, bool leaveOpen = false) {
+  private ushort U16(long off) => this._len >= off + 2 ? this._img.ReadUInt16(off) : (ushort)0;
+  private uint U32(long off) => this._len >= off + 4 ? this._img.ReadUInt32(off) : 0u;
+  private ulong U64(long off) => this._len >= off + 8 ? this._img.ReadUInt64(off) : 0UL;
+  private byte B(long off) => off >= 0 && off < this._len ? this._img.ReadByte(off) : (byte)0;
+  private string StrU(long off, int len) => Encoding.Unicode.GetString(this._img.Read(off, len));
+  private string StrA(long off, int len) => Encoding.ASCII.GetString(this._img.Read(off, len));
+
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
+  public JfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    if (stream.CanSeek) stream.Position = 0;
+    // Blocks are pulled on demand: the metadata is a small fraction of an
+    // aggregate whose data extents may run to gigabytes.
+    _img = new ImageAccessor(stream, leaveOpen);
+    _len = _img.Length;
     Parse();
   }
 
   private void Parse() {
-    if (_data.Length < SuperblockOffset + 200)
+    if (_len < SuperblockOffset + 200)
       throw new InvalidDataException("JFS: image too small.");
 
-    var magic = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(SuperblockOffset));
+    var magic = U32((SuperblockOffset));
     if (magic != JfsMagic)
       throw new InvalidDataException("JFS: invalid superblock magic.");
 
     // s_bsize is at superblock offset 16 (le32).
-    _blockSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(SuperblockOffset + 16));
+    _blockSize = (int)U32((SuperblockOffset + 16));
     if (_blockSize <= 0 || _blockSize > 64 * 1024) _blockSize = 4096;
 
     // Kernel jfs_filsys.h fixed physical block address: AITBL_OFF = 0xB000 (block 11 @ 4 KB).
@@ -51,16 +65,16 @@ public sealed class JfsReader : IDisposable {
     // written by older versions of this library that mis-used s_ait2 as primary).
     ulong aitAddr = 0xB000UL / (ulong)_blockSize;
     // Safety: if this fixed location is outside the image, try the secondary pxd as a fallback.
-    if ((long)aitAddr * _blockSize >= _data.Length) {
-      aitAddr = ReadPxdAddress(_data.AsSpan(SuperblockOffset + 48));
-      if (aitAddr == 0 || (long)aitAddr * _blockSize >= _data.Length)
+    if ((long)aitAddr * _blockSize >= _len) {
+      aitAddr = ReadPxdAddress(_img.Read(SuperblockOffset + 48, 8));
+      if (aitAddr == 0 || (long)aitAddr * _blockSize >= _len)
         aitAddr = 9; // legacy fallback
     }
 
     var aitByteOff = (long)aitAddr * _blockSize;
     // FILESYSTEM_I = inode 16 of the aggregate inode table.
     var fsinoOff = aitByteOff + FilesetIno * InodeSize;
-    if (fsinoOff + InodeSize > _data.Length)
+    if (fsinoOff + InodeSize > _len)
       throw new InvalidDataException("JFS: aggregate inode table truncated.");
 
     // FILESYSTEM_I's xtree root at di_data offset 224. First xad_t points to
@@ -70,25 +84,25 @@ public sealed class JfsReader : IDisposable {
     //   FILESYSTEM_I.xtree[0] → fileset AIM block
     //   fileset AIM block + 1 (IAG #0) at offset 3072 → inoext[0] pxd → FSIT block
     var xtRootOff = (int)fsinoOff + XtreeDataOffset;
-    var filesetAimByteOff = ReadFirstExtentByteOffset(_data.AsSpan(xtRootOff), _blockSize);
-    if (filesetAimByteOff <= 0 || filesetAimByteOff + 2L * _blockSize > _data.Length) {
+    var filesetAimByteOff = ReadFirstExtentByteOffset(_img.Read(xtRootOff, 64), _blockSize);
+    if (filesetAimByteOff <= 0 || filesetAimByteOff + 2L * _blockSize > _len) {
       // Legacy images where FILESYSTEM_I directly addresses the FSIT.
       _filesetInodeTableOffset = filesetAimByteOff;
     } else {
       // Try indirect path (real mkfs.jfs layout): IAG #0 at AIM + 1 block.
       var iagOff = filesetAimByteOff + _blockSize;
       // inoext[0] at IAG offset 3072.
-      var inoextPxd = _data.AsSpan((int)iagOff + 3072, 8);
+      var inoextPxd = _img.Read(iagOff + 3072, 8);
       var inoextLen = ReadPxdLength(inoextPxd);
       var inoextAddr = ReadPxdAddress(inoextPxd);
-      if (inoextLen >= 4 && inoextAddr > 0 && (long)inoextAddr * _blockSize < _data.Length) {
+      if (inoextLen >= 4 && inoextAddr > 0 && (long)inoextAddr * _blockSize < _len) {
         _filesetInodeTableOffset = (long)inoextAddr * _blockSize;
       } else {
         // Fall back to legacy direct-pointer behaviour.
         _filesetInodeTableOffset = filesetAimByteOff;
       }
     }
-    if (_filesetInodeTableOffset <= 0 || _filesetInodeTableOffset >= _data.Length)
+    if (_filesetInodeTableOffset <= 0 || _filesetInodeTableOffset >= _len)
       throw new InvalidDataException("JFS: fileset inode table not reachable.");
 
     ReadDirectory(RootIno, "");
@@ -103,20 +117,20 @@ public sealed class JfsReader : IDisposable {
 
   private void ReadDirectory(int ino, string basePath) {
     var inodeOff = InodeOffset(ino);
-    if (inodeOff < 0 || inodeOff + InodeSize > _data.Length) return;
+    if (inodeOff < 0 || inodeOff + InodeSize > _len) return;
     var ioff = (int)inodeOff;
 
     // di_mode (le32) at 52
-    var mode = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ioff + 52));
+    var mode = U32((ioff + 52));
     if ((mode & 0xF000) != 0x4000) return; // not directory
 
     // Directory data: inline dtroot at di_data offset +224. First 32 bytes = header:
     //   DASD(16) + flag(1) + nextindex(1) + freecnt(1) + freelist(1) + idotdot(le32) + stbl[8]
     var dtOff = ioff + XtreeDataOffset;
-    if (dtOff + 32 > _data.Length) return;
+    if (dtOff + 32 > _len) return;
 
-    var flag = _data[dtOff + 16];
-    var nextIndex = _data[dtOff + 17];
+    var flag = B(dtOff + 16);
+    var nextIndex = B(dtOff + 17);
 
     if ((flag & BtInternal) != 0 && (flag & BtLeaf) == 0) {
       // Router root: each stbl idtentry addresses an external dtree page.
@@ -124,11 +138,11 @@ public sealed class JfsReader : IDisposable {
       // pxd to the child page and walk the subtree.
       var stblOff = dtOff + 24;
       for (var i = 0; i < nextIndex && i < 8; i++) {
-        var slotIdx = (sbyte)_data[stblOff + i];
+        var slotIdx = (sbyte)B(stblOff + i);
         if (slotIdx <= 0 || slotIdx > 8) continue;
         var slotOff = dtOff + slotIdx * 32;
-        if (slotOff + 8 > _data.Length) continue;
-        var childBlock = (long)ReadPxdAddress(_data.AsSpan(slotOff));
+        if (slotOff + 8 > _len) continue;
+        var childBlock = (long)ReadPxdAddress(_img.Read(slotOff, 64));
         ReadExternalDtreePage(childBlock, basePath);
       }
       return;
@@ -137,10 +151,10 @@ public sealed class JfsReader : IDisposable {
     // Inline leaf dtroot: stbl slots are ldtentry heads directly in di_data.
     var inlineStblOff = dtOff + 24;
     for (var i = 0; i < nextIndex && i < 8; i++) {
-      var slotIdx = (sbyte)_data[inlineStblOff + i];
+      var slotIdx = (sbyte)B(inlineStblOff + i);
       if (slotIdx <= 0 || slotIdx > 8) continue;
       var slotOff = dtOff + slotIdx * 32;
-      if (slotOff + 32 > _data.Length) continue;
+      if (slotOff + 32 > _len) continue;
       AddLeafEntry(dtOff, slotOff, basePath);
     }
   }
@@ -151,27 +165,27 @@ public sealed class JfsReader : IDisposable {
   // header's stblindex field.
   private void ReadExternalDtreePage(long pageBlock, string basePath) {
     var pageOff = pageBlock * _blockSize;
-    if (pageOff <= 0 || pageOff + _blockSize > _data.Length) return;
+    if (pageOff <= 0 || pageOff + _blockSize > _len) return;
     var p = (int)pageOff;
 
-    var flag = _data[p + 16];
-    var nextIndex = _data[p + 17];
-    var stblIndex = _data[p + 21];
+    var flag = B(p + 16);
+    var nextIndex = B(p + 17);
+    var stblIndex = B(p + 21);
     var stblOff = p + stblIndex * 32;
     var isLeaf = (flag & BtLeaf) != 0;
 
     var guard = 0;
     for (var i = 0; i < nextIndex && i < 128 && guard < 4096; i++, guard++) {
-      var slotIdx = (byte)_data[stblOff + i];
+      var slotIdx = (byte)B(stblOff + i);
       if (slotIdx == 0 || slotIdx >= 128) continue;
       var slotOff = p + slotIdx * 32;
-      if (slotOff + 32 > _data.Length) continue;
+      if (slotOff + 32 > _len) continue;
 
       if (isLeaf) {
         AddLeafEntry(p, slotOff, basePath);
       } else {
         // idtentry: pxd xd(8) at slot start → child page block.
-        var childBlock = (long)ReadPxdAddress(_data.AsSpan(slotOff));
+        var childBlock = (long)ReadPxdAddress(_img.Read(slotOff, 64));
         if (childBlock > 0) ReadExternalDtreePage(childBlock, basePath);
       }
     }
@@ -185,9 +199,9 @@ public sealed class JfsReader : IDisposable {
     // ldtentry (head): inumber(le32) + next(s8) + namlen(u8) +
     //   name[DTLHDRDATALEN=11] UCS-2 LE + index(le32). Names longer than 11
     //   UCS-2 units spill into continuation dtslots chained by the `next` byte.
-    var childIno = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(slotOff));
+    var childIno = (int)U32((slotOff));
     if (childIno < 2) return;
-    var namLen = _data[slotOff + 5];
+    var namLen = B(slotOff + 5);
     if (namLen == 0) return;
 
     var name = ReadDtreeName(pageBase, slotOff, namLen);
@@ -199,12 +213,12 @@ public sealed class JfsReader : IDisposable {
     long childSize = 0;
     DateTime? mtime = null;
 
-    if (childInodeOff >= 0 && childInodeOff + InodeSize <= _data.Length) {
+    if (childInodeOff >= 0 && childInodeOff + InodeSize <= _len) {
       var cioff = (int)childInodeOff;
-      var childMode = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cioff + 52));
+      var childMode = U32((cioff + 52));
       isDir = (childMode & 0xF000) == 0x4000;
-      childSize = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(cioff + 24));
-      var ts = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cioff + 80));  // di_mtime sec
+      childSize = (long)U64((cioff + 24));
+      var ts = U32((cioff + 80));  // di_mtime sec
       if (ts != 0) mtime = DateTimeOffset.FromUnixTimeSeconds(ts).UtcDateTime;
     }
 
@@ -228,23 +242,23 @@ public sealed class JfsReader : IDisposable {
     // The slot array spans at most 128 slots: an inline dtroot uses 1..8, an
     // external dtpage uses 1..127. Continuation slots are chained by the head's
     // `next` byte; bound the walk by the maximum slot count.
-    var maxSlot = (dtBase + 128 * 32 <= _data.Length) ? 127 : 8;
+    var maxSlot = (dtBase + 128 * 32 <= _len) ? 127 : 8;
     var sb = new StringBuilder(namLen);
 
     var headChars = Math.Min(namLen, DtHeadNameChars);
-    if (headSlotOff + 6 + headChars * 2 > _data.Length) return "";
-    sb.Append(Encoding.Unicode.GetString(_data.AsSpan(headSlotOff + 6, headChars * 2)));
+    if (headSlotOff + 6 + headChars * 2 > _len) return "";
+    sb.Append(StrU(headSlotOff + 6, headChars * 2));
 
-    var next = (sbyte)_data[headSlotOff + 4];
+    var next = (sbyte)B(headSlotOff + 4);
     var remaining = namLen - headChars;
     var guard = 0;
     while (remaining > 0 && next > 0 && next <= maxSlot && guard++ < 128) {
       var contOff = dtBase + next * 32;
-      if (contOff + 32 > _data.Length) break;
+      if (contOff + 32 > _len) break;
       var contChars = Math.Min(remaining, DtSlotNameChars);
-      sb.Append(Encoding.Unicode.GetString(_data.AsSpan(contOff + 2, contChars * 2)));
+      sb.Append(StrU(contOff + 2, contChars * 2));
       remaining -= contChars;
-      next = (sbyte)_data[contOff];
+      next = (sbyte)B(contOff);
     }
 
     return sb.ToString();
@@ -255,44 +269,69 @@ public sealed class JfsReader : IDisposable {
     if (entry.IsDirectory) return [];
 
     var inodeOff = InodeOffset(entry.InodeNumber);
-    if (inodeOff < 0 || inodeOff + InodeSize > _data.Length) return [];
-    var ioff = (int)inodeOff;
+    if (inodeOff < 0 || inodeOff + InodeSize > _len) return [];
 
-    var size = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(ioff + 24));
+    var size = (long)U64(inodeOff + 24);
     if (size <= 0) return [];
+    if (size > Array.MaxLength)
+      throw new IOException(
+        $"JFS: '{entry.Name}' is {size:N0} bytes, past the array limit; use ExtractTo.");
 
     // xtree root at di_data offset +256
-    var xtOff = ioff + XtreeDataOffset;
-    if (xtOff + 32 > _data.Length) return [];
-
-    var xtheader = _data.AsSpan(xtOff);
-    var nextIdx = BinaryPrimitives.ReadUInt16LittleEndian(xtheader[18..]);
-    var maxEntry = BinaryPrimitives.ReadUInt16LittleEndian(xtheader[20..]);
-    const int XtentryStart = 2;
+    var xtOff = inodeOff + XtreeDataOffset;
+    if (xtOff + 32 > _len) return [];
 
     using var ms = new MemoryStream();
+    this.WriteExtents(xtOff, size, ms);
+    return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />,
+  /// one xtree extent at a time. Returns the number of bytes written.
+  /// </summary>
+  public long ExtractTo(JfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
+
+    var inodeOff = InodeOffset(entry.InodeNumber);
+    if (inodeOff < 0 || inodeOff + InodeSize > _len) return 0;
+    var size = (long)U64(inodeOff + 24);
+    if (size <= 0) return 0;
+
+    var xtOff = inodeOff + XtreeDataOffset;
+    if (xtOff + 32 > _len) return 0;
+    return this.WriteExtents(xtOff, size, destination);
+  }
+
+  /// <summary>Copies the extents an xtree root names, up to <paramref name="size" /> bytes.</summary>
+  private long WriteExtents(long xtOff, long size, Stream destination) {
+    var nextIdx = U16(xtOff + 18);
+    var maxEntry = U16(xtOff + 20);
+    const int XtentryStart = 2;
+
+    long written = 0;
     for (var i = XtentryStart; i < nextIdx && i < maxEntry; i++) {
       var xadOff = xtOff + i * 16;
-      if (xadOff + 16 > _data.Length) break;
-      var extLen = (int)ReadPxdLength(_data.AsSpan(xadOff + 8));
-      var extAddr = (long)ReadPxdAddress(_data.AsSpan(xadOff + 8));
+      if (xadOff + 16 > _len) break;
+      var pxd = _img.Read(xadOff + 8, 8);
+      var extLen = (int)ReadPxdLength(pxd);
+      var extAddr = (long)ReadPxdAddress(pxd);
       if (extLen == 0 || extAddr == 0) continue;
 
       var dataOff = extAddr * _blockSize;
-      var remaining = size - ms.Length;
+      var remaining = size - written;
       if (remaining <= 0) break;
-      var len = (int)Math.Min((long)extLen * _blockSize, remaining);
-      if (dataOff + len <= _data.Length && len > 0)
-        ms.Write(_data, (int)dataOff, len);
+      var len = Math.Min((long)extLen * _blockSize, remaining);
+      if (dataOff < 0 || dataOff + len > _len || len <= 0) continue;
+      _img.CopyTo(dataOff, destination, len);
+      written += len;
     }
-
-    var result = ms.ToArray();
-    if (result.Length > size)
-      return result.AsSpan(0, (int)size).ToArray();
-    return result;
+    return written;
   }
 
-  public void Dispose() { }
+  public void Dispose() => this._img.Dispose();
 
   // ── pxd_t helpers ─────────────────────────────────────────────────────
   // len_addr (le32): bits 0..23 = length, bits 24..31 = high 8 bits of address
