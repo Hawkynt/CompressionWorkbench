@@ -48,7 +48,7 @@ public sealed class Qnx4Reader : IDisposable {
 
   public IReadOnlyList<Qnx4Entry> Entries => this._entries;
 
-  internal const int BlockSize = 512;
+  public const int BlockSize = 512;
   internal const int InodeSize = 64;
   // Status byte values from qnx4 spec (linux/fs/qnx4/qnx4.h).
   // Linux qnx4 driver treats an entry as live when di_status & (USED|LINK) != 0;

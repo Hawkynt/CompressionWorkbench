@@ -16,7 +16,7 @@ namespace FileSystem.Erofs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/EROFS</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -147,4 +147,45 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     stream.CopyTo(ms);
     return new ErofsReader(ms.ToArray());
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// The superblock, inode and directory region is structure; each file's full
+  /// blocks are the run its inode addresses. A short file whose tail is stored
+  /// inline with its inode has no run of its own, and needs none.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      var reader = new ErofsReader(image);
+      var first = long.MaxValue;
+      foreach (var e in reader.Entries) {
+        if (!reader.TryGetDataExtent(e, out var offset, out var length)) continue;
+        result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Path));
+        first = Math.Min(first, offset);
+      }
+      if (first == long.MaxValue) first = image.Length;
+      result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    // A file's last block is shared with nothing, but its slack belongs to the
+    // file's own run; trimming it would need the size of the run, not the file.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

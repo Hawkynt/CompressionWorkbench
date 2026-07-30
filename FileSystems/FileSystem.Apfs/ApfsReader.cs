@@ -21,6 +21,9 @@ public sealed class ApfsReader : IDisposable {
   private readonly List<ApfsEntry> _entries = [];
   private uint _blockSize = DEFAULT_BLOCK_SIZE;
 
+  /// <summary>Container block size from the superblock.</summary>
+  public uint BlockSize => this._blockSize;
+
   public IReadOnlyList<ApfsEntry> Entries => this._entries;
 
   public ApfsReader(Stream stream, bool leaveOpen = false) {

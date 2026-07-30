@@ -148,6 +148,33 @@ public sealed class Qnx6Reader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Where an entry's bytes live. Files this writer emits occupy one contiguous
+  /// run from the inode's first block. Returns false for a directory or an
+  /// inode with no data.
+  /// </summary>
+  public bool TryGetDataExtent(Qnx6Entry entry, out long offset, out long length) {
+    ArgumentNullException.ThrowIfNull(entry);
+    offset = 0;
+    length = 0;
+    if (entry.IsDirectory || entry.Size <= 0) return false;
+    var sb = this._data.Read(SuperblockOffset, 512).AsSpan();
+    var inodeTablePtr = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x48 + 8));
+    if (inodeTablePtr == 0) return false;
+    var inodeTableOffset = (long)inodeTablePtr * this.BlockSize;
+    var inodeOff = inodeTableOffset + (long)(entry.InodeNumber - 1) * InodeSize;
+    if (inodeOff + InodeSize > this._data.Length) return false;
+    var inode = this._data.Read(inodeOff, InodeSize).AsSpan();
+    var firstBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.Slice(0x24));
+    if (firstBlock == 0) return false;
+    offset = (long)firstBlock * this.BlockSize;
+    if (offset < 0 || offset >= this._data.Length) return false;
+    // Whole blocks: the tail of the last one is slack, not another file's.
+    length = Math.Min((entry.Size + this.BlockSize - 1) / this.BlockSize * this.BlockSize,
+      this._data.Length - offset);
+    return length > 0;
+  }
+
   public byte[] Extract(Qnx6Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];

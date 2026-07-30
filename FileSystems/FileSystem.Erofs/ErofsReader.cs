@@ -151,6 +151,32 @@ public sealed class ErofsReader {
     return new InodeMeta(nid, inodeOffset, headerSize, mode, size, layout, rawBlkAddr);
   }
 
+  /// <summary>
+  /// Where an entry's full data blocks live: EROFS lays them out contiguously
+  /// from the inode's raw block address. A residual tail stored inline with the
+  /// inode is part of the metadata region, not of this run. Returns false when
+  /// the inode has no out-of-line data at all.
+  /// </summary>
+  public bool TryGetDataExtent(Entry entry, out long offset, out long length) {
+    ArgumentNullException.ThrowIfNull(entry);
+    offset = 0;
+    length = 0;
+    if (entry.IsDirectory || entry.Size <= 0) return false;
+    if (this.ReadInodeMeta(entry.Nid) is not { } m) return false;
+    if (m.Layout is not (LayoutFlatPlain or LayoutFlatInline)) return false;
+    if (m.RawBlkAddr == 0xFFFFFFFFu) return false;
+
+    var blocks = m.Layout == LayoutFlatPlain
+      ? (m.Size + this._blockSize - 1) / this._blockSize
+      : m.Size / this._blockSize;
+    if (blocks <= 0) return false;
+
+    offset = (long)m.RawBlkAddr * this._blockSize;
+    if (offset < 0 || offset >= this._data.Length) return false;
+    length = Math.Min(blocks * this._blockSize, this._data.Length - offset);
+    return length > 0;
+  }
+
   private byte[] ReadInodeData(InodeMeta m) {
     if (m.Size == 0) return [];
     if (m.Size > int.MaxValue) throw new InvalidDataException("EROFS: object too large.");

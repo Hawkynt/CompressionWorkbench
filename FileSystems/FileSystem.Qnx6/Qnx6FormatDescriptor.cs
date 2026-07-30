@@ -22,7 +22,7 @@ namespace FileSystem.Qnx6;
 ///   <item><description>QNX Neutrino <c>fs-qnx6.so</c> documentation (QNX Software Systems)</description></item>
 /// </list>
 /// </summary>
-public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable {
+public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Qnx6";
   public string DisplayName => "QNX6 Neutrino FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -131,4 +131,58 @@ public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(entryNames);
     Qnx6Modifier.RemoveFiles(archive, entryNames);
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// The superblocks, inode table and directory blocks are structure; each file
+  /// is the contiguous run its inode points at. Blocks no live inode points at
+  /// are what a removal left behind.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new Qnx6Reader(image);
+      var first = long.MaxValue;
+      foreach (var e in reader.Entries) {
+        if (!reader.TryGetDataExtent(e, out var offset, out var length)) continue;
+        result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
+        first = Math.Min(first, offset);
+      }
+      if (first == long.MaxValue) first = Math.Min(image.Length, 64L * reader.BlockSize);
+      result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new Qnx6Reader(image);
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var e in reader.Entries)
+          if (!e.IsDirectory)
+            sizes[e.Name] = e.Size;
+        fileSizeLookup = n => sizes.TryGetValue(n, out var v) ? v : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length, wipeClusterTips, fileSizeLookup);
+  }
+
 }

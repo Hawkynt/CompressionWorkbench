@@ -39,7 +39,7 @@ namespace FileSystem.AdvFs;
 ///   <item><description>Wikipedia "Advanced File System"</description></item>
 /// </list>
 /// </summary>
-public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveShrinkable, IArchiveModifiable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveShrinkable, IArchiveModifiable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -290,4 +290,43 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// Everything ahead of the first payload is structure — the RBMT pages and
+  /// the writer's directory — and each entry claims the bytes it was written
+  /// to. What no entry claims is space a removal or a shorter replacement left.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      var reader = new AdvFsReader(image);
+      var first = long.MaxValue;
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory || e.Offset < 0 || e.Size <= 0) continue;
+        result.Add(new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, e.Name));
+        first = Math.Min(first, e.Offset);
+      }
+      if (first == long.MaxValue) first = Math.Min(image.Length, 64 * 1024);
+      result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    // Payloads are packed to the byte, so there are no cluster tips to trim.
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

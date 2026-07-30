@@ -14,7 +14,7 @@ namespace FileSystem.Apfs;
 /// </summary>
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable,
-    IFormatOptionsSchema, ILayoutOptimizable {
+    IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -246,4 +246,64 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var (n, d) in files) w.AddFile(n, d);
     return w.Build();
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// Each file occupies one extent starting at its first block; everything
+  /// ahead of the lowest of them is container and volume structure. Blocks no
+  /// live extent covers are what a removal left behind.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      var reader = new ApfsReader(image);
+      var blockSize = (long)reader.BlockSize;
+      var first = long.MaxValue;
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory || e.IsSymlink || e.Size <= 0 || e.FirstBlock == 0) continue;
+        var offset = (long)e.FirstBlock * blockSize;
+        if (offset < 0 || offset >= image.Length) continue;
+        // An extent is whole blocks; the tail of the last one is slack the
+        // wiper trims from the file's real length.
+        var length = Math.Min((e.Size + blockSize - 1) / blockSize * blockSize, image.Length - offset);
+        result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
+        first = Math.Min(first, offset);
+      }
+      if (first == long.MaxValue) first = Math.Min(image.Length, 1L << 20);
+      result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new ApfsReader(image);
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var e in reader.Entries)
+          if (!e.IsDirectory)
+            sizes[e.Name] = e.Size;
+        fileSizeLookup = n => sizes.TryGetValue(n, out var v) ? v : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length, wipeClusterTips, fileSizeLookup);
+  }
+
 }
