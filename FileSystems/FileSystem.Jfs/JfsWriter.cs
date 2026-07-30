@@ -126,18 +126,47 @@ public sealed class JfsWriter {
   // For one dmap (≤ 8192 usable blocks), BMAP occupies blocks 16..20 (5 blocks).
   // For two dmaps (≤ 16384 usable blocks), BMAP occupies blocks 16..21 (6 blocks).
   // We always reserve up to 2 dmaps to keep the layout simple.
-  private const int BmapTotalBlocks = 6;          // 16..21 inclusive (control + 2 unused + dmapctl + 2 dmaps)
-  private const int SecondaryAimBlock = 22;       // 2 blocks
-  private const int SecondaryAitBlock = 24;       // 4 blocks
-  private const int FilesetAimBlock = 28;         // 2 blocks (dinomap + fileset IAG)
-  private const int FsitBlock = 30;               // fileset inode table (first extent at this fixed block)
+  /// <summary>
+  /// Blocks the block map occupies with a single dmap: the control page, the two
+  /// reserved level-skip placeholders, the L0 dmapctl and one dmap. A larger
+  /// volume needs one dmap per <see cref="Dmap_Bperdmap" /> blocks, and the map
+  /// grows to suit.
+  /// </summary>
+  private const int BmapMinBlocks = 5;            // 16..20 inclusive
+
+  /// <summary>Dmaps one L0 dmapctl indexes (jfs_dmap.h LPERCTL).</summary>
+  private const int Dmap_Lperctl = 1024;
+  // These follow the block map, which grows with the volume — one dmap per
+  // Dmap_Bperdmap blocks — so they are computed per image rather than pinned to
+  // the two-dmap positions the old layout assumed.
+  private int _secondaryAimBlock = 22;            // 2 blocks
+  private int _secondaryAitBlock = 24;            // 4 blocks
+  private int _filesetAimBlock = 28;              // 2 blocks (dinomap + fileset IAG)
+  private int _fsitBlock = 30;                    // fileset inode table (first extent)
+
+  /// <summary>Positions the structures that follow the block map for a volume of that size.</summary>
+  private void PlaceAfterBlockMap(int usableBlocks) {
+    var next = BmapBlock + BmapBlocksFor(usableBlocks);
+    // The old layout left one block of slack past a two-dmap map; keep the small
+    // volume byte-identical by starting at 22 when the map ends at 21.
+    if (next < 22) next = 22;
+    this._secondaryAimBlock = next;
+    this._secondaryAitBlock = next + 2;
+    this._filesetAimBlock = this._secondaryAitBlock + InodeExtentBlocks;
+    this._fsitBlock = this._filesetAimBlock + 2;
+  }
   private const int MinUsableBlocks = 4096;       // 16 MB minimum (kernel hard floor)
+
+  // fsck computes fsck_blkmap_size = ceil(agg/BITSPERPAGE)+1+50 pages = 52 pages
+  // for small images; mkfs.jfs's default inline log is 256 blocks.
+  private const int FsckWspBlocks = 52;
+  private const int InlineLogBlocks = 256;
 
   // The fileset inode table grows to as many contiguous 4-block extents as the
   // node count needs; external directory B+tree pages and file data follow it.
   // These two are computed per-image in WriteTo and recorded for the writers.
   private int _fsitExtentCount = 1;               // contiguous inode extents in the fileset table
-  private int _dataStartBlock = FsitBlock + InodeExtentBlocks; // first block past the FSIT
+  private int _dataStartBlock = 30 + InodeExtentBlocks; // first block past the FSIT
 
   // ── directory tree node ──────────────────────────────────────────────────
   // A node is either a directory (Data == null) or a regular file. Directories
@@ -347,12 +376,22 @@ public sealed class JfsWriter {
     // ── size the fileset inode table ───────────────────────────────────────
     // Every directory + file gets one dinode; inodes 0..3 are metadata. Pack
     // them into contiguous 16 KiB (4-block) extents so the reader can resolve
-    // any inode as FsitBlock-relative offset.
+    // any inode as this._fsitBlock-relative offset.
     var inodesUsed = FirstFileIno + nodes.Count;
     this._fsitExtentCount = (inodesUsed + InodesPerExtent - 1) / InodesPerExtent;
     if (this._fsitExtentCount < 1) this._fsitExtentCount = 1;
     var fsitBlocks = this._fsitExtentCount * InodeExtentBlocks;
-    this._dataStartBlock = FsitBlock + fsitBlocks;
+
+    // The block map takes one dmap per Dmap_Bperdmap blocks of volume, and the
+    // structures after it shift along. Size it from the payload before laying
+    // anything out, or a large volume's dmaps would land on the secondary AIM.
+    var payloadBlocks = 0L;
+    foreach (var file in files)
+      payloadBlocks += Math.Max(1, (file.EffectiveLength + BlockSize - 1) / BlockSize);
+    var estimatedBlocks = 64 + fsitBlocks + payloadBlocks + directories.Count + FsckWspBlocks + InlineLogBlocks;
+    this.PlaceAfterBlockMap((int)Math.Min(int.MaxValue, Math.Max(MinUsableBlocks, estimatedBlocks * 2)));
+
+    this._dataStartBlock = this._fsitBlock + fsitBlocks;
 
     // ── build external directory B+trees and allocate their pages ──────────
     // A directory whose children no longer fit the inline dtroot spills into
@@ -382,8 +421,6 @@ public sealed class JfsWriter {
     // Image must hold all data + fsck workspace + inline log past the visible
     // filesystem boundary. fsck computes fsck_blkmap_size = ceil(agg/BITSPERPAGE)+1+50
     // pages = 52 pages for small images. mkfs.jfs default inline log = 256 blocks.
-    const int FsckWspBlocks = 52;
-    const int InlineLogBlocks = 256;
     var usableBlocks = Math.Max(MinUsableBlocks, nextBlock + 4);
     var totalBlocks = usableBlocks + FsckWspBlocks + InlineLogBlocks;
     // Only the blocks the filesystem populates are held: file payloads are
@@ -401,11 +438,11 @@ public sealed class JfsWriter {
     MarkRange(allocated, AimBlock, 2);                             // AIM (dinomap + IAG)
     MarkRange(allocated, AitBlock, InodeExtentBlocks);             // primary AIT (4 blocks)
     MarkRange(allocated, Super2Block, 1);                          // super2
-    MarkRange(allocated, BmapBlock, BmapTotalBlocks);              // dbmap + L0 dmapctl + dmaps
-    MarkRange(allocated, SecondaryAimBlock, 2);                    // secondary AIM
-    MarkRange(allocated, SecondaryAitBlock, InodeExtentBlocks);    // secondary AIT
-    MarkRange(allocated, FilesetAimBlock, 2);                      // fileset AIM
-    MarkRange(allocated, FsitBlock, fsitBlocks);                   // fileset inode table (all extents)
+    MarkRange(allocated, BmapBlock, BmapBlocksFor(usableBlocks));  // dbmap + L0 dmapctl + dmaps
+    MarkRange(allocated, this._secondaryAimBlock, 2);                    // secondary AIM
+    MarkRange(allocated, this._secondaryAitBlock, InodeExtentBlocks);    // secondary AIT
+    MarkRange(allocated, this._filesetAimBlock, 2);                      // fileset AIM
+    MarkRange(allocated, this._fsitBlock, fsitBlocks);                   // fileset inode table (all extents)
     foreach (var dir in directories.Prepend(this._root))
       if (dir.DtreePages != null)
         foreach (var page in dir.DtreePages)
@@ -418,13 +455,13 @@ public sealed class JfsWriter {
     // compares every field EXCEPT di_ixpxd between the two AITs, then requires
     // each copy's di_ixpxd to equal the extent it was read from: the primary
     // inodes' di_ixpxd → AitBlock, the secondary inodes' di_ixpxd → the address
-    // recorded in s_ait2 (SecondaryAitBlock). They must therefore differ only in
+    // recorded in s_ait2 (this._secondaryAitBlock). They must therefore differ only in
     // di_ixpxd. The fileset inode map counts every directory + file dinode.
     WriteAggregateInodeMap(image, AimBlock, agStart: 0, inoextBlock: AitBlock);
-    this.WriteAggregateInodeTable(image, AitBlock, ixpxdBlock: AitBlock, aimBlock: AimBlock);
-    WriteAggregateInodeMap(image, SecondaryAimBlock, agStart: 0, inoextBlock: SecondaryAitBlock);
-    this.WriteAggregateInodeTable(image, SecondaryAitBlock, ixpxdBlock: SecondaryAitBlock, aimBlock: SecondaryAimBlock);
-    this.WriteFilesetInodeMap(image, FilesetAimBlock, nodeCount: nodes.Count);
+    this.WriteAggregateInodeTable(image, AitBlock, ixpxdBlock: AitBlock, aimBlock: AimBlock, usableBlocks);
+    WriteAggregateInodeMap(image, this._secondaryAimBlock, agStart: 0, inoextBlock: this._secondaryAitBlock);
+    this.WriteAggregateInodeTable(image, this._secondaryAitBlock, ixpxdBlock: this._secondaryAitBlock, aimBlock: this._secondaryAimBlock, usableBlocks);
+    this.WriteFilesetInodeMap(image, this._filesetAimBlock, nodeCount: nodes.Count);
     this.WriteFilesetInodeTable(image, nodes);
     WriteBlockMap(image, usableBlocks, allocated);
 
@@ -535,8 +572,8 @@ public sealed class JfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], JfsLinux | JfsDirIndex | JfsGroupCommit | JfsInlineLog);
     BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], 0);                                // s_state = FM_CLEAN
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 0);                                // s_compress
-    WritePxd(sb[48..], length: (uint)InodeExtentBlocks, address: SecondaryAitBlock);      // s_ait2
-    WritePxd(sb[56..], length: 2, address: SecondaryAimBlock);                            // s_aim2
+    WritePxd(sb[48..], length: (uint)InodeExtentBlocks, address: (ulong)this._secondaryAitBlock);      // s_ait2
+    WritePxd(sb[56..], length: 2, address: (ulong)this._secondaryAimBlock);                            // s_aim2
     BinaryPrimitives.WriteUInt32LittleEndian(sb[64..], 0);                                // s_logdev (inline)
     BinaryPrimitives.WriteUInt32LittleEndian(sb[68..], 1);                                // s_logserial
     var fsckAddr = (ulong)usableBlocks;
@@ -629,7 +666,7 @@ public sealed class JfsWriter {
     WritePxd(iag[3072..], length: (uint)InodeExtentBlocks, address: (ulong)inoextBlock);
   }
 
-  // ── fileset inode map: block FilesetAimBlock=dinomap, +1=IAG #0 ─────────
+  // ── fileset inode map: block this._filesetAimBlock=dinomap, +1=IAG #0 ─────────
   // Fileset AIM has FILESET_RSVD_I (0), FILESET_EXT_I (1), ROOT_I (2), ACL_I (3)
   // always allocated, plus user file inodes at index 4+.
   private void WriteFilesetInodeMap(SparseBlockImage image, int aimBlock, int nodeCount) {
@@ -701,23 +738,23 @@ public sealed class JfsWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(iag[wmapOff..], w);
       BinaryPrimitives.WriteUInt32LittleEndian(iag[pmapOff..], w);
     }
-    // inoext[e]: pxd(len=4, addr=FsitBlock + e*4) for each backed extent.
+    // inoext[e]: pxd(len=4, addr=this._fsitBlock + e*4) for each backed extent.
     for (var e = 0; e < nExtents; e++)
       WritePxd(iag[(3072 + e * 8)..], length: (uint)InodeExtentBlocks,
-        address: (ulong)(FsitBlock + e * InodeExtentBlocks));
+        address: (ulong)(this._fsitBlock + e * InodeExtentBlocks));
   }
 
   // ── aggregate inode table (4 blocks at aitBlock) ─────────────────────────
   // Holds: 0=AGGR_RESERVED_I, 1=AGGREGATE_I, 2=BMAP_I, 3=LOG_I, 4=BADBLOCK_I, 16=FILESYSTEM_I.
   // All have di_fileset = AGGREGATE_I (1) and di_ixpxd = (length=4, addr=ixpxdBlock).
   // <paramref name="ixpxdBlock"/> is the location of THIS copy (primary AitBlock
-  // for the primary AIT, SecondaryAitBlock for the secondary), because fsck
+  // for the primary AIT, this._secondaryAitBlock for the secondary), because fsck
   // requires each copy's di_ixpxd to equal the extent it was read from.
   // <paramref name="aimBlock"/> is the AIM this copy's AGGREGATE_I xtree points
   // at: fsck's AIM_check requires the secondary AGGREGATE_I's xad to equal
   // s_aim2 (the secondary AIM), while BMAP_I/LOG_I/BADBLOCK_I/FILESYSTEM_I
   // xtrees must stay byte-identical between the two copies.
-  private void WriteAggregateInodeTable(SparseBlockImage image, int aitBlock, int ixpxdBlock, int aimBlock) {
+  private void WriteAggregateInodeTable(SparseBlockImage image, int aitBlock, int ixpxdBlock, int aimBlock, int usableBlocks) {
     var aitOff = (long)aitBlock * BlockSize;
 
     // Inode 0: AGGR_RESERVED_I (di_nlink=1, IFJOURNAL|IFREG, no data)
@@ -731,11 +768,13 @@ public sealed class JfsWriter {
       size: 2L * BlockSize, nblocks: 2, hasXtreeData: true,
       xtreeEntries: [(0, 2u, (ulong)aimBlock)]);
 
-    // Inode 2: BMAP_I — xtree → BMAP (BmapBlock, BmapTotalBlocks)
+    // Inode 2: BMAP_I — xtree → BMAP, which is one dmap per 8192 blocks of volume.
+    // The dmaps past the first are a second extent, so the map is two entries.
+    var bmapBlocks = BmapBlocksFor(usableBlocks);
     var ino2 = (int)(aitOff + (long)BmapI * InodeSize);
     this.WriteAitInode(image, ino2, BmapI, IfJournal | IfReg, ixpxdBlock,
-      size: (long)BmapTotalBlocks * BlockSize, nblocks: BmapTotalBlocks, hasXtreeData: true,
-      xtreeEntries: [(0, (uint)BmapTotalBlocks, (ulong)BmapBlock)]);
+      size: (long)bmapBlocks * BlockSize, nblocks: bmapBlocks, hasXtreeData: true,
+      xtreeEntries: [(0, (uint)bmapBlocks, (ulong)BmapBlock)]);
 
     // Inode 3: LOG_I — no data (inline log inode placeholder)
     var ino3 = (int)(aitOff + (long)LogI * InodeSize);
@@ -747,19 +786,19 @@ public sealed class JfsWriter {
     this.WriteAitInode(image, ino4, BadblockI, IfJournal | IfReg | ISparse, ixpxdBlock,
       size: 0, nblocks: 0, hasXtreeData: true, xtreeEntries: []);
 
-    // Inode 16: FILESYSTEM_I — xtree → fileset AIM (FilesetAimBlock, 2 blocks)
+    // Inode 16: FILESYSTEM_I — xtree → fileset AIM (this._filesetAimBlock, 2 blocks)
     var ino16 = (int)(aitOff + (long)FilesetIno * InodeSize);
     this.WriteAitInode(image, ino16, FilesetIno, IfJournal | IfReg, ixpxdBlock,
       size: 2L * BlockSize, nblocks: 2, hasXtreeData: true,
-      xtreeEntries: [(0, 2u, (ulong)FilesetAimBlock)], gengen: 1);
+      xtreeEntries: [(0, 2u, (ulong)this._filesetAimBlock)], gengen: 1);
   }
 
-  // ── fileset inode table: 4 blocks at FsitBlock ───────────────────────────
+  // ── fileset inode table: 4 blocks at this._fsitBlock ───────────────────────────
   // Holds: 0=FILESET_RSVD_I, 1=FILESET_EXT_I, 2=ROOT_I (dtroot inline),
   // 3=ACL_I, 4+=directory and user file inodes (one xtree extent per file,
   // inline dtree per directory).
   private void WriteFilesetInodeTable(SparseBlockImage image, List<Node> nodes) {
-    var fsitOff = (long)FsitBlock * BlockSize;
+    var fsitOff = (long)this._fsitBlock * BlockSize;
 
     // FILESET_RSVD_I (0)
     var ino0 = (int)(fsitOff + 0 * InodeSize);
@@ -861,8 +900,8 @@ public sealed class JfsWriter {
     // di_ixpxd must address the inode extent that physically contains THIS
     // dinode, not the start of the table: fsck's inode_is_in_use compares each
     // dinode's di_ixpxd against the extent it was read from, so an inode in the
-    // second extent (numbers 32..63) needs di_ixpxd = (4, FsitBlock + 4), etc.
-    var extentBlock = FsitBlock + (int)(ino / InodesPerExtent) * InodeExtentBlocks;
+    // second extent (numbers 32..63) needs di_ixpxd = (4, this._fsitBlock + 4), etc.
+    var extentBlock = this._fsitBlock + (int)(ino / InodesPerExtent) * InodeExtentBlocks;
     this.WriteCommonInodeHeader(image, ioff, fileset: fileset, ino: ino, mode: mode,
       ixpxdLength: (uint)InodeExtentBlocks, ixpxdAddress: (ulong)extentBlock,
       size: size, nblocks: nblocks, nlink: nlink, nextIndex: nextIndex);
@@ -1289,19 +1328,36 @@ public sealed class JfsWriter {
   //
   // We allocate space for up to 2 dmaps (covering 16384 blocks). For the WORM
   // image any usableBlocks ≤ Dmap_Bperdmap = 8192 needs 1 dmap; up to 16384
-  // needs 2. The BMAP_I xtree always claims `BmapTotalBlocks = 6` blocks
+  // needs 2. The BMAP_I xtree claims the blocks BmapBlocksFor computes
   // (16..21) so the layout after BMAP is fixed.
-  private static void WriteBlockMap(SparseBlockImage image, int usableBlocks, bool[] allocated) {
+  /// <summary>Dmaps a volume of <paramref name="usableBlocks" /> blocks needs.</summary>
+  private static int DmapCount(int usableBlocks) {
     var ndmaps = (usableBlocks + Dmap_Bperdmap - 1) / Dmap_Bperdmap;
-    if (ndmaps < 1) ndmaps = 1;
-    if (ndmaps > 2)
-      throw new InvalidOperationException("JfsWriter does not support images requiring more than 2 dmaps.");
+    return Math.Max(1, ndmaps);
+  }
+
+  /// <summary>Blocks the block map occupies for a volume of that size.</summary>
+  private static int BmapBlocksFor(int usableBlocks) {
+    var ndmaps = DmapCount(usableBlocks);
+    if (ndmaps > Dmap_Lperctl)
+      throw new InvalidOperationException(
+        $"JFS: {ndmaps} dmaps exceed the {Dmap_Lperctl} one L0 dmapctl indexes.");
+    // Never fewer than the six blocks the two-dmap layout always reserved: a
+    // smaller map would free block 21 and shrink BMAP_I, which fsck.jfs rejects.
+    return Math.Max(6, BmapMinBlocks - 1 + ndmaps);
+  }
+
+  /// <summary>The block holding dmap <paramref name="index" />: the map is contiguous.</summary>
+  private static int DmapBlockAt(int index) => FirstDmapBlock + index;
+
+  private void WriteBlockMap(SparseBlockImage image, int usableBlocks, bool[] allocated) {
+    var ndmaps = DmapCount(usableBlocks);
 
     var dmapMaxes = new sbyte[ndmaps];
     for (var i = 0; i < ndmaps; i++) {
       var dmapStartBlock = i * Dmap_Bperdmap;
       var dmapBlockCount = Math.Min(Dmap_Bperdmap, usableBlocks - dmapStartBlock);
-      var dmapPageBlock = FirstDmapBlock + i;
+      var dmapPageBlock = DmapBlockAt(i);
       dmapMaxes[i] = WriteDmap(image, dmapPageBlock, dmapStartBlock, dmapBlockCount, allocated);
     }
 
