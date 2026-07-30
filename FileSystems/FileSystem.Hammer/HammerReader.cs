@@ -57,6 +57,12 @@ public sealed class HammerReader : IDisposable {
   /// <summary>True if the image carries a valid HAMMER volume header.</summary>
   public bool Valid { get; }
 
+  /// <summary>Where the volume's buffer area starts; zone-2 offsets are relative to it.</summary>
+  public long VolumeBufferStart => this._volBufBeg;
+
+  /// <summary>File offset of the freemap's layer-1 array.</summary>
+  public long FreemapLayer1Offset => this._freemapLayer1Phys;
+
   private HammerReader(ImageAccessor image, bool valid, long volBufBeg, long freemapLayer1Phys, long btreeRoot) {
     this._image = image;
     this._len = image.Length;

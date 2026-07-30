@@ -25,7 +25,7 @@ namespace FileSystem.Hammer;
 ///   <item><description><c>https://www.dragonflybsd.org/hammer/</c></description></item>
 /// </list>
 /// </summary>
-public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>
   /// Sole tunable the HAMMER writer honours: the filesystem label
@@ -230,4 +230,26 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => HammerExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zero-fills everything the freemap leaves unallocated: free big-blocks
+  /// outright, and the tail of a partly-used one past its append point.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = HammerExtentMap.Enumerate(image).ToList();
+    if (extents.Count == 0) return 0;
+    // The freemap accounts per big-block, not per file, so there is no
+    // per-file tail for the wiper to trim.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }
