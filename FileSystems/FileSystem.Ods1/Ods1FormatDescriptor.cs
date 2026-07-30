@@ -22,7 +22,7 @@ namespace FileSystem.Ods1;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Files-11</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>
   /// Sole tunable the Files-11 L1 writer honours: the 12-character home-block
@@ -151,4 +151,53 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
   }
+
+  // ── IFilesystemExtentMap + IWipeEmpty ─────────────────────────────────
+
+  /// <summary>
+  /// Reports the volume's layout: the boot and home blocks, the allocation bitmap
+  /// and the index-file window as metadata, then each file's retrieval pointers.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    List<DefragBlockInfo> result = [];
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new Ods1Reader(image);
+
+      var firstData = reader.Length;
+      List<DefragBlockInfo> files = [];
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory || e.Size <= 0) continue;
+        long written = 0;
+        foreach (var (lbn, blocks) in e.Extents ?? [(e.StartLbn, e.BlockCount)]) {
+          var offset = (long)lbn * Ods1Reader.LbnSize;
+          var take = Math.Min((long)blocks * Ods1Reader.LbnSize, e.Size - written);
+          if (take <= 0) break;
+          if (offset < firstData) firstData = offset;
+          files.Add(new DefragBlockInfo(offset, take, DefragBlockKind.Used, e.Name));
+          written += take;
+        }
+      }
+
+      var metadataEnd = files.Count > 0 ? firstData : Math.Min(reader.Length, 68L * Ods1Reader.LbnSize);
+      result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
+        "Boot block, home block, BITMAP.SYS and the index-file window"));
+      result.AddRange(files);
+    } catch {
+      return [];
+    }
+    return result;
+  }
+
+  /// <summary>Zeros every byte no live file occupies, including the block padding past each file.</summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    _ = wipeDeletedEntries;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

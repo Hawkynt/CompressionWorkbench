@@ -22,7 +22,7 @@ namespace FileSystem.Bfs;
 /// </summary>
 public sealed class BfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
 
   public string Id => "Bfs";
   public string DisplayName => "BFS";

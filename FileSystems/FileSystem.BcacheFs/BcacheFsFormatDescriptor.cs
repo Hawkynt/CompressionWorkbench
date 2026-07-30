@@ -22,7 +22,7 @@ namespace FileSystem.BcacheFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Bcachefs</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -294,4 +294,57 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }
+
+  // ── IFilesystemExtentMap + IWipeEmpty ─────────────────────────────────
+
+  /// <summary>
+  /// Reports the image's layout: the superblock slots and the payload directory
+  /// as metadata, each file's contiguous run of blocks as used, and the tail —
+  /// where the end-of-device backup superblocks live — as reserved.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    List<DefragBlockInfo> result = [];
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new BcacheFsReader(image);
+      if (!reader.Valid) return [];
+
+      var firstData = reader.Length;
+      List<DefragBlockInfo> files = [];
+      foreach (var e in reader.Entries) {
+        if (e.Size <= 0) continue;
+        var offset = e.FirstBlock * (long)BcacheFsWriter.PayloadBlockSize;
+        if (offset < firstData) firstData = offset;
+        files.Add(new DefragBlockInfo(offset, e.Size, DefragBlockKind.Used, e.Name));
+      }
+
+      var metadataEnd = files.Count > 0
+        ? firstData
+        : Math.Min(reader.Length, BcacheFsWriter.FirstPayloadBlock * (long)BcacheFsWriter.PayloadBlockSize);
+      result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
+        "Superblock layout, superblock slots and the payload directory"));
+      result.AddRange(files);
+
+      // The last megabyte holds the end-of-device backup superblocks.
+      var tail = Math.Max(0, reader.Length - (1L << 20));
+      if (tail > metadataEnd)
+        result.Add(new DefragBlockInfo(tail, reader.Length - tail,
+          DefragBlockKind.MetadataReserved, "End-of-device superblock backups"));
+    } catch {
+      return [];
+    }
+    return result;
+  }
+
+  /// <summary>Zeros every byte no live file and no superblock occupies.</summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    _ = wipeDeletedEntries;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

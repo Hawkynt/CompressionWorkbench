@@ -25,7 +25,7 @@ namespace FileSystem.Reiser4;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Reiser4</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -308,4 +308,59 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }
+
+  // ── IFilesystemExtentMap + IWipeEmpty ─────────────────────────────────
+
+  /// <summary>
+  /// Reports the volume's layout: the reserved blocks and the payload directory
+  /// chain as metadata, then each file's blocks. A file's blocks are consecutive
+  /// apart from the block-allocator bitmaps they step over.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    List<DefragBlockInfo> result = [];
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new Reiser4Reader(image);
+      if (!reader.Valid) return [];
+
+      var blockSize = reader.BlockSize;
+      // Everything before the first file's blocks is reserved or directory.
+      var firstData = reader.Length;
+      List<DefragBlockInfo> files = [];
+      foreach (var e in reader.Entries) {
+        if (e.Size <= 0) continue;
+        var offset = (long)e.FirstBlock * blockSize;
+        if (offset < firstData) firstData = offset;
+        files.Add(new DefragBlockInfo(offset, e.Size, DefragBlockKind.Used, e.Name));
+      }
+
+      var metadataEnd = files.Count > 0 ? firstData : Math.Min(reader.Length, 25L * blockSize);
+      result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
+        "Reserved blocks and the payload directory"));
+
+      // The bitmaps sit at stride boundaries inside the payload area.
+      for (var block = Reiser4Writer.BlocksPerBitmap;
+           (long)block * blockSize + blockSize <= reader.Length;
+           block += Reiser4Writer.BlocksPerBitmap)
+        result.Add(new DefragBlockInfo((long)block * blockSize, blockSize,
+          DefragBlockKind.MetadataReserved, "Block-allocator bitmap"));
+
+      result.AddRange(files);
+    } catch {
+      return [];
+    }
+    return result;
+  }
+
+  /// <summary>Zeros every byte no live file and no metadata block occupies.</summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    _ = wipeDeletedEntries;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

@@ -26,7 +26,7 @@ namespace FileSystem.AmigaPfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Professional_File_System</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -161,4 +161,58 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
   }
+
+  // ── IFilesystemExtentMap + IWipeEmpty ─────────────────────────────────
+
+  /// <summary>
+  /// Reports the volume's layout: the boot block, root block and dirblock chain,
+  /// then each file's contiguous extent, with everything between and after them
+  /// free. Stage 1 lays a file out as one run starting at its anode number, so the
+  /// map is exact.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    List<DefragBlockInfo> result = [];
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new AmigaPfsReader(image);
+      var blockSize = reader.BlockSize;
+
+      // Everything before the first file extent is metadata: the boot block, the
+      // root block and the dirblock chain all precede the data area.
+      var firstData = reader.Length;
+      List<DefragBlockInfo> files = [];
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        var (offset, length) = reader.Locate(e);
+        if (length <= 0) continue;
+        if (offset < firstData) firstData = offset;
+        files.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
+      }
+
+      var metadataEnd = files.Count > 0 ? firstData : Math.Min(reader.Length, 82L * blockSize);
+      result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
+        "Boot block, root block and dirblock chain"));
+      result.AddRange(files);
+    } catch {
+      return [];
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Zeros every byte no live file occupies. A file is one contiguous extent, so
+  /// the gaps between them — and the tail past the last one — are the volume's
+  /// free space. Cluster-tip wiping is inherent: an extent is reported at its
+  /// logical length, so the padding to the block boundary counts as free.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    _ = wipeDeletedEntries;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

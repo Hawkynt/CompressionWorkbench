@@ -15,7 +15,7 @@ namespace FileSystem.Vdfs;
 ///   <item><description>VdfsSharp — C# VDFS extractor/creator (GitHub)</description></item>
 /// </list>
 /// </summary>
-public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
   public string Id => "Vdfs";
   public string DisplayName => "VDFS";
   public FormatCategory Category => FormatCategory.Archive;

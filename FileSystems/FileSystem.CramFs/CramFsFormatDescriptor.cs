@@ -12,7 +12,7 @@ namespace FileSystem.CramFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Cramfs</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
   public string Id => "CramFs";
   public string DisplayName => "CramFS";
   public FormatCategory Category => FormatCategory.Archive;

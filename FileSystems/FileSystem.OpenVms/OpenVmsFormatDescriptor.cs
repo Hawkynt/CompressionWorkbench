@@ -41,7 +41,7 @@ namespace FileSystem.OpenVms;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Files-11</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>
   /// Sole tunable the ODS-2 writer honours: the 12-character home-block volume
@@ -305,6 +305,58 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     bldr.Append(CultureInfo.InvariantCulture, $"owner_uic=0x{hb.OwnerUic:X8}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"index_bitmap_lbn={hb.IndexBitmapLbn}\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
+  }
+
+
+  // ── IFilesystemExtentMap + IWipeEmpty ─────────────────────────────────
+
+  /// <summary>
+  /// Reports the volume's layout: the fixed metadata prefix — boot block, home
+  /// block, BITMAP.SYS, INDEXF.SYS and the root directory — then each file's
+  /// contiguous run of LBNs. Everything else is free.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    List<DefragBlockInfo> result = [];
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var volume = new OpenVmsVolume(image);
+      if (!volume.IsCwbVolume) return [];
+
+      result.Add(new DefragBlockInfo(0, OpenVmsLayout.MetadataBytes,
+        DefragBlockKind.MetadataReserved, "Boot block, home block, BITMAP.SYS, INDEXF.SYS and 000000.DIR"));
+
+      foreach (var e in volume.Entries) {
+        var fh = volume.ReadFileHeader(e.FileId);
+        if (fh is not { InUse: true }) continue;
+        long written = 0;
+        foreach (var ext in fh.Extents) {
+          var take = Math.Min(ext.Count * (long)OpenVmsLayout.BlockSize, fh.Size - written);
+          if (take <= 0) break;
+          result.Add(new DefragBlockInfo(OpenVmsLayout.LbnToByteOffset(ext.StartLbn), take,
+            DefragBlockKind.Used, e.Name));
+          written += take;
+        }
+      }
+    } catch {
+      return [];
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Zeros every byte no live file occupies. A file is one contiguous run of LBNs,
+  /// so the gaps between runs — and the tail past the last one — are free space.
+  /// The run is reported at its logical length, so the padding to the block
+  /// boundary is wiped with it.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    _ = wipeDeletedEntries;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
   }
 
 }

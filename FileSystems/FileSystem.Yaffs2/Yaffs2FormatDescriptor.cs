@@ -33,7 +33,7 @@ namespace FileSystem.Yaffs2;
 /// </summary>
 public sealed class Yaffs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
   public string Id => "Yaffs2";
   public string DisplayName => "YAFFS2";
   public FormatCategory Category => FormatCategory.Archive;

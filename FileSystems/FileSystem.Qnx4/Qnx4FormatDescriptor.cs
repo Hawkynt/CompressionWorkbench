@@ -23,7 +23,7 @@ namespace FileSystem.Qnx4;
 ///   <item><description><c>https://en.wikipedia.org/wiki/QNX</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable {
   public string Id => "Qnx4";
   public string DisplayName => "QNX4 FS";
   public FormatCategory Category => FormatCategory.Archive;

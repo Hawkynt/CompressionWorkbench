@@ -22,7 +22,7 @@ namespace FileSystem.Qnx6;
 ///   <item><description>QNX Neutrino <c>fs-qnx6.so</c> documentation (QNX Software Systems)</description></item>
 /// </list>
 /// </summary>
-public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable {
   public string Id => "Qnx6";
   public string DisplayName => "QNX6 Neutrino FS";
   public FormatCategory Category => FormatCategory.Archive;

@@ -28,7 +28,7 @@ namespace FileSystem.Hpfs;
 /// </remarks>
 public sealed class HpfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
 
   public string Id => "Hpfs";
   public string DisplayName => "HPFS";
