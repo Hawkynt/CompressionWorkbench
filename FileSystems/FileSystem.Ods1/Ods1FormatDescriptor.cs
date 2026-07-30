@@ -62,11 +62,14 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new Ods1Reader(stream);
+    using var r = new Ods1Reader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 

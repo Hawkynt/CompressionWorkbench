@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ods1;
@@ -57,7 +58,8 @@ namespace FileSystem.Ods1;
 /// </summary>
 public sealed class Ods1Reader : IDisposable {
 
-  private readonly byte[] _data;
+  private readonly ImageAccessor _img;
+  private readonly long _len;
   private readonly List<Ods1Entry> _entries = [];
 
   public IReadOnlyList<Ods1Entry> Entries => this._entries;
@@ -71,24 +73,33 @@ public sealed class Ods1Reader : IDisposable {
 
   public Ods1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+    // Blocks are pulled on demand: the header window is a few hundred LBNs
+    // however many gigabytes of file extents follow it.
+    this._img = new ImageAccessor(stream);
+    this._len = this._img.Length;
     this.Parse();
   }
 
+  private ushort U16(long off) => this._len >= off + 2 ? this._img.ReadUInt16(off) : (ushort)0;
+  private uint U32(long off) => this._len >= off + 4 ? this._img.ReadUInt32(off) : 0u;
+  private ulong U64(long off) => this._len >= off + 8 ? this._img.ReadUInt64(off) : 0UL;
+  private byte B(long off) => off >= 0 && off < this._len ? this._img.ReadByte(off) : (byte)0;
+
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._len;
+
   private void Parse() {
     var homeOffset = HomeBlockLbn * LbnSize;
-    if (homeOffset + LbnSize > this._data.Length)
+    if (homeOffset + LbnSize > this._len)
       throw new InvalidDataException("ODS-1: image too small for home block.");
 
-    var format = Encoding.ASCII.GetString(this._data, homeOffset + 0x1F0, 12).TrimEnd('\0', ' ');
+    var format = Encoding.ASCII.GetString(this._img.Read(homeOffset + 0x1F0, 12)).TrimEnd('\0', ' ');
     if (!format.StartsWith("DECFILE11A", StringComparison.Ordinal))
       throw new InvalidDataException($"ODS-1: bad volume format '{format}' (expected 'DECFILE11A').");
     this.VolumeFormat = format;
-    this.StructureLevel = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(homeOffset + 0x00C));
-    this.VolumeName = Encoding.ASCII.GetString(this._data, homeOffset + 0x00E, 12).TrimEnd('\0', ' ');
+    this.StructureLevel = U16((homeOffset + 0x00C));
+    this.VolumeName = Encoding.ASCII.GetString(this._img.Read(homeOffset + 0x00E, 12)).TrimEnd('\0', ' ');
 
     // Per the VMS spec, INDEXF.SYS file headers live starting at the LBN
     // pointed to by hm1$l_ibmaplbn + ibmapsize (the bitmap region) — but
@@ -96,7 +107,7 @@ public sealed class Ods1Reader : IDisposable {
     // which references the first file header (INDEXF.SYS itself).
     // Many real images put INDEXF.SYS at LBN 4 (after boot+home+2 spare).
     // Our synthetic test image places it at LBN 4.
-    var indexfLbn = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(homeOffset + 0x040));
+    var indexfLbn = (uint)U16((homeOffset + 0x040));
     if (indexfLbn == 0) indexfLbn = 4;
 
     // Iterate file headers starting at INDEXF.SYS+headers. Each file header
@@ -104,17 +115,17 @@ public sealed class Ods1Reader : IDisposable {
     // test images).
     for (var i = 0; i < 64; i++) {
       var fhOffset = (long)(indexfLbn + i) * LbnSize;
-      if (fhOffset + LbnSize > this._data.Length) break;
+      if (fhOffset + LbnSize > this._len) break;
       this.ParseFileHeader(fhOffset);
     }
   }
 
   private void ParseFileHeader(long fhOffset) {
-    var idOffWords = this._data[fhOffset + 0];
-    var mpOffWords = this._data[fhOffset + 1];
-    var fileNum = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan((int)fhOffset + 2));
+    var idOffWords = B(fhOffset + 0);
+    var mpOffWords = B(fhOffset + 1);
+    var fileNum = U16((fhOffset + 2));
     if (fileNum == 0) return;
-    var fileChar = this._data[fhOffset + 0x0A];
+    var fileChar = B(fhOffset + 0x0A);
     var isDir = (fileChar & 0x40) != 0;
 
     // Identification area at idOffWords * 2 bytes from start of header.
@@ -122,8 +133,8 @@ public sealed class Ods1Reader : IDisposable {
     if (idOffset + 12 > LbnSize) return;
     // 9 chars filename (Radix-50 packed — but for our test images we
     // store raw ASCII for simplicity), then 3 char ext, then 2 version.
-    var nameRaw = this._data.AsSpan((int)fhOffset + idOffset, 9);
-    var extRaw = this._data.AsSpan((int)fhOffset + idOffset + 9, 3);
+    var nameRaw = this._img.Read(fhOffset + idOffset, 9).AsSpan();
+    var extRaw = this._img.Read(fhOffset + idOffset + 9, 3).AsSpan();
     var name = Encoding.ASCII.GetString(nameRaw).TrimEnd('\0', ' ');
     var ext = Encoding.ASCII.GetString(extRaw).TrimEnd('\0', ' ');
     if (string.IsNullOrEmpty(name)) return;
@@ -142,9 +153,9 @@ public sealed class Ods1Reader : IDisposable {
     var blockCount = 0u;
     for (var slot = 0; slot < pointerSlots; ++slot) {
       var at = (int)fhOffset + mpOffset + slot * 6;
-      var count = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(at)) + 1u;
-      var hi = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(at + 2));
-      var lo = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(at + 4));
+      var count = (uint)U16((at)) + 1u;
+      var hi = (uint)U16((at + 2));
+      var lo = (uint)U16((at + 4));
       var lbn = (hi << 16) | lo;
       if (lbn == 0) break;
       extents.Add((lbn, count));
@@ -155,7 +166,7 @@ public sealed class Ods1Reader : IDisposable {
 
     // The exact logical size sits in the header's spare words; older images left
     // them zero, and there the block count is the best available answer.
-    var exact = BinaryPrimitives.ReadInt64LittleEndian(this._data.AsSpan((int)fhOffset + 0x0C));
+    var exact = (long)U64((fhOffset + 0x0C));
     var size = exact > 0 && exact <= (long)blockCount * LbnSize ? exact : (long)blockCount * LbnSize;
 
     this._entries.Add(new Ods1Entry {
@@ -192,15 +203,15 @@ public sealed class Ods1Reader : IDisposable {
     foreach (var (lbn, blocks) in extents) {
       if (written >= entry.Size) break;
       var offset = (long)lbn * LbnSize;
-      if (offset < 0 || offset >= this._data.Length) break;
+      if (offset < 0 || offset >= this._len) break;
       var take = (int)Math.Min(Math.Min((long)blocks * LbnSize, entry.Size - written),
-        this._data.Length - offset);
+        this._len - offset);
       if (take <= 0) break;
-      destination.Write(this._data, (int)offset, take);
+      this._img.CopyTo(offset, destination, take);
       written += take;
     }
     return written;
   }
 
-  public void Dispose() { }
+  public void Dispose() => this._img.Dispose();
 }
