@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Yaffs2;
@@ -12,7 +13,7 @@ namespace FileSystem.Yaffs2;
 /// </summary>
 internal sealed class Yaffs2Writer {
 
-  private readonly List<(string[] Segments, byte[] Data)> _files = [];
+  private readonly List<(string[] Segments, FilePayload Payload)> _files = [];
 
   /// <summary>Chunk and spare sizes (mkyaffs2image default).</summary>
   internal const int ChunkSize = 2048;
@@ -43,7 +44,24 @@ internal sealed class Yaffs2Writer {
       .ToArray();
     if (segments.Length == 0)
       throw new ArgumentException("File name must not be empty.", nameof(name));
-    _files.Add((segments, data));
+    _files.Add((segments, FilePayload.FromBytes(data)));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are read on demand while the chunks are emitted, so
+  /// a payload larger than memory can be written.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    var segments = name.Replace('\\', '/')
+      .Split('/', StringSplitOptions.RemoveEmptyEntries)
+      .Where(s => s != ".")
+      .ToArray();
+    if (segments.Length == 0)
+      throw new ArgumentException("File name must not be empty.", nameof(name));
+    _files.Add((segments, FilePayload.FromStream(size, openStream)));
   }
 
   /// <summary>
@@ -52,25 +70,28 @@ internal sealed class Yaffs2Writer {
   /// 2. Directory object headers for every intermediate path segment
   /// 3. For each file: object header (type=file, parent=its directory) + data chunks
   /// </summary>
-  public byte[] Build() => MaterialiseChunks(this.BuildChunks());
+  public byte[] Build() => MaterialiseChunks(this.BuildChunks().ToList());
 
-  /// <summary>Lays the image out as its ordered list of NAND chunks.</summary>
-  private List<byte[]> BuildChunks() {
-    var chunks = new List<byte[]>();
+  /// <summary>
+  /// Yields the image's NAND chunks in order. Data chunks are filled from each
+  /// file's stream as they are produced, so nothing larger than one chunk is
+  /// held at a time.
+  /// </summary>
+  private IEnumerable<byte[]> BuildChunks() {
     uint seqNumber = 0x1000; // Sequence numbers start at a conventional value.
     var nextObjectId = ReservedObjectIdCeiling + 1; // Allocate fresh ids above the reserved range.
 
     // 1. Root directory object header
-    chunks.Add(BuildChunkWithSpare(
+    yield return BuildChunkWithSpare(
       BuildObjectHeader(TypeDirectory, RootObjectId, "", 0),
-      seqNumber, RootObjectId, chunkId: 0, nBytes: 0));
+      seqNumber, RootObjectId, chunkId: 0, nBytes: 0);
 
     // Maps a directory path (e.g. "docs/api") to the object id of its directory.
     // The empty path maps to the root directory.
     var dirIds = new Dictionary<string, int> { [""] = RootObjectId };
 
     // 2. + 3. Per-file: ensure parent directories exist, then write the file.
-    foreach (var (segments, data) in _files) {
+    foreach (var (segments, payload) in _files) {
       // Ensure every directory along the path (all segments except the leaf) exists.
       var parentId = RootObjectId;
       var prefix = "";
@@ -83,9 +104,9 @@ internal sealed class Yaffs2Writer {
 
         var dirObjId = nextObjectId++;
         seqNumber++;
-        chunks.Add(BuildChunkWithSpare(
+        yield return BuildChunkWithSpare(
           BuildObjectHeader(TypeDirectory, parentId, segments[i], 0),
-          seqNumber, dirObjId, chunkId: 0, nBytes: 0));
+          seqNumber, dirObjId, chunkId: 0, nBytes: 0);
         dirIds[prefix] = dirObjId;
         parentId = dirObjId;
       }
@@ -94,29 +115,42 @@ internal sealed class Yaffs2Writer {
       var fileObjId = nextObjectId++;
       seqNumber++;
 
-      // Object header for this file
-      chunks.Add(BuildChunkWithSpare(
-        BuildObjectHeader(TypeFile, parentId, leaf, data.Length),
-        seqNumber, fileObjId, chunkId: 0, nBytes: 0));
+      // Object header for this file. file_size_low is a 32-bit field, which is
+      // the size YAFFS2 itself can record for a file.
+      if (payload.Size > int.MaxValue)
+        throw new InvalidOperationException(
+          $"YAFFS2: '{leaf}' is {payload.Size:N0} bytes; the object header records a file size " +
+          "in 32 bits, so a file cannot exceed 2 GiB.");
+      yield return BuildChunkWithSpare(
+        BuildObjectHeader(TypeFile, parentId, leaf, (int)payload.Size),
+        seqNumber, fileObjId, chunkId: 0, nBytes: 0);
 
       // Data chunks (each carries up to ChunkSize bytes)
-      var offset = 0;
+      var offset = 0L;
       var chunkIdx = 1;
-      while (offset < data.Length) {
-        var remaining = data.Length - offset;
-        var thisChunkBytes = Math.Min(remaining, ChunkSize);
-        var chunkData = new byte[ChunkSize];
-        Buffer.BlockCopy(data, offset, chunkData, 0, thisChunkBytes);
+      if (payload.Size > 0) {
+        using var source = payload.Open();
+        while (offset < payload.Size) {
+          var chunkData = new byte[ChunkSize];
+          var want = (int)Math.Min(ChunkSize, payload.Size - offset);
+          var got = 0;
+          while (got < want) {
+            var n = source.Read(chunkData, got, want - got);
+            if (n <= 0) break;
+            got += n;
+          }
+          if (got == 0)
+            throw new InvalidOperationException(
+              $"YAFFS2: '{leaf}' was announced as {payload.Size:N0} bytes but ran out at {offset:N0}.");
 
-        chunks.Add(BuildChunkWithSpare(
-          chunkData, seqNumber, fileObjId, chunkId: chunkIdx, nBytes: (uint)thisChunkBytes));
+          yield return BuildChunkWithSpare(
+            chunkData, seqNumber, fileObjId, chunkId: chunkIdx, nBytes: (uint)got);
 
-        offset += thisChunkBytes;
-        chunkIdx++;
+          offset += got;
+          chunkIdx++;
+        }
       }
     }
-
-    return chunks;
   }
 
   /// <summary>Concatenates the chunk list into one image.</summary>

@@ -37,7 +37,7 @@ namespace FileSystem.Nilfs2;
 /// </list>
 /// </summary>
 public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>Synthetic surface entries the reader always injects — excluded from rebuilds.</summary>
   private static readonly HashSet<string> SyntheticEntries =
@@ -293,4 +293,51 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
         try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>
+  /// Superblocks, the kernel log, the private directory and every appended
+  /// segment's header are metadata; each live payload is the file that owns it.
+  /// Superseded and tombstoned payloads are claimed by nothing, so a wipe
+  /// reclaims exactly the bytes a segment cleaner would.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new Nilfs2Reader(image);
+      foreach (var (offset, length) in reader.MetadataRegions)
+        if (length > 0)
+          result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.MetadataReserved));
+      foreach (var e in reader.Entries
+                 .Where(x => x.Offset >= 0 && x.Size > 0 && !SyntheticEntries.Contains(x.Name)))
+        result.Add(new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, e.Name));
+      if (result.Count == 0 && image.Length > 0)
+        result.Add(new DefragBlockInfo(0, Math.Min(4096, image.Length), DefragBlockKind.MetadataReserved));
+    } catch {
+      // An image we cannot parse claims nothing, and a wipe of it would zero
+      // every byte — so say it has no known extents and let the caller decide.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    // Records are packed to the byte, so there are no cluster tips to trim —
+    // only the slack a removal or a shorter replacement left behind.
+    //
+    // A file small enough to be embedded in the kernel checkpoint also has a
+    // copy among the log's data blocks. That copy belongs to the checkpoint, not
+    // to the live file set, and it is reclaimed the way NILFS2 reclaims any
+    // superseded checkpoint: by a cleaner run, which here is Defragment.
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

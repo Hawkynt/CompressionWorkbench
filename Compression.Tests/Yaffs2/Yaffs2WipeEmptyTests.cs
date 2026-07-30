@@ -62,9 +62,7 @@ public class Yaffs2WipeEmptyTests {
     var fileObj = scan.Objects.First(o =>
       o.Type == FileSystem.Yaffs2.Yaffs2Scanner.YObjectType.File && o.Name == "tip.bin");
     var chunks = scan.DataChunks[fileObj.ObjectId];
-    var data = new byte[chunks.Sum(c => c.Length)];
-    var pos = 0;
-    foreach (var c in chunks) { c.CopyTo(data, pos); pos += c.Length; }
+    var data = chunks.SelectMany(c => buf.Skip((int)c.Offset).Take(c.Length)).ToArray();
     Assert.That(data[..content.Length], Is.EqualTo(content), "file content must survive the wipe");
   }
 }

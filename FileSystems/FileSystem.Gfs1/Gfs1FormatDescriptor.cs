@@ -48,6 +48,18 @@ public sealed class Gfs1FormatDescriptor :
   public IReadOnlyList<string> Extensions => [".gfs", ".gfs1"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
+    // GFS1 and GFS2 share mh_magic 0x01161970 at the superblock, so magic alone
+    // sent every GFS1 volume to the GFS2 descriptor. sb_fs_format at +0x18 is
+    // what separates them: 1309 here, 18xx for GFS2. Everything between the two
+    // fields is masked out.
+    new([0x01, 0x16, 0x19, 0x70,
+         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0x00, 0x00, 0x05, 0x1D],
+      Offset: 65536, Confidence: 0.92,
+      Mask: [0xFF, 0xFF, 0xFF, 0xFF,
+             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+             0xFF, 0xFF, 0xFF, 0xFF]),
+    // The second meta header the writer lays down right after the superblock.
     new([0x01, 0x16, 0x19, 0x70], Offset: 65536 + 0x40, Confidence: 0.65),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
@@ -149,17 +161,51 @@ public sealed class Gfs1FormatDescriptor :
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new Gfs1Reader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
+  /// <summary>
+  /// Rewrites the volume with every file laid out contiguously from the start.
+  /// The rebuild goes through scratch files rather than a byte[] image, so a
+  /// volume larger than an array can hold still defragments.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new NotSupportedException(
+        $"GFS1 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+
+    var tempPath = Path.GetTempFileName();
+    var spill = new List<string>();
+    try {
+      using (var temp = File.Open(tempPath, FileMode.Open, FileAccess.ReadWrite)) {
         var w = new Gfs1Writer();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+        var reader = new Gfs1Reader(archive);
+        foreach (var e in reader.Entries) {
+          if (e.IsDirectory) continue;
+          var path = Path.GetTempFileName();
+          spill.Add(path);
+          using (var scratch = File.Create(path))
+            reader.ExtractTo(e, scratch);
+          var captured = path;
+          w.AddStreamingFile(e.Name, e.Size, () => File.OpenRead(captured));
+        }
+        w.WriteTo(temp);
+
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "commit", Fraction: 1.0, CurrentReadOffset: archive.Length,
+          CurrentWriteOffset: temp.Length, ImageSize: temp.Length, BlockMap: null));
+
+        temp.Position = 0;
+        archive.Position = 0;
+        temp.CopyTo(archive);
+        archive.SetLength(temp.Length);
+        archive.Flush();
+      }
+    } finally {
+      File.Delete(tempPath);
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
+  }
 
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);

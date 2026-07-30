@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
+using Compression.Core.DiskImage;
 using System.Text;
 using Compression.Registry;
 using Compression.Registry.Streaming;
@@ -45,7 +46,14 @@ public sealed class Yaffs2FormatDescriptor
   public IReadOnlyList<string> Extensions => [".yaffs2", ".yaffs"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // No true magic. Detection is primarily by extension, so no signatures registered.
+    // YAFFS2 has no superblock, but every image starts with chunk 0 holding the
+    // root directory's object header: type YAFFS_OBJECT_TYPE_DIRECTORY (3) and
+    // parent object id 1, followed by the zeroed checksum and an empty name.
+    // Weak on its own, so the confidence stays below anything with real magic —
+    // it is only here so an extensionless image is not claimed by a signature
+    // that is weaker still.
+    new([0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      Offset: 0, Confidence: 0.50),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
@@ -56,16 +64,18 @@ public sealed class Yaffs2FormatDescriptor
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
-    byte[] image;
+    ImageAccessor image;
     try {
-      image = ReadAll(stream);
+      if (stream.CanSeek) stream.Position = 0;
+      image = new ImageAccessor(stream);
     } catch {
       entries.Add(new ArchiveEntryInfo(0, "FULL.yaffs2", 0, 0, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
       return entries;
     }
 
-    entries.Add(new ArchiveEntryInfo(0, "FULL.yaffs2", image.LongLength, image.LongLength, "stored", false, false, null));
+    using var _ = image;
+    entries.Add(new ArchiveEntryInfo(0, "FULL.yaffs2", image.Length, image.Length, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
 
     Yaffs2Scanner.ScanResult scan;
@@ -92,15 +102,22 @@ public sealed class Yaffs2FormatDescriptor
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    byte[] image;
+    ImageAccessor image;
     try {
-      image = ReadAll(stream);
+      if (stream.CanSeek) stream.Position = 0;
+      image = new ImageAccessor(stream);
     } catch {
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
       return;
     }
 
-    WriteIfMatch(outputDir, "FULL.yaffs2", image, files);
+    using var _ = image;
+    if (files == null || files.Length == 0 || MatchesFilter("FULL.yaffs2", files)) {
+      var full = Path.Combine(outputDir, "FULL.yaffs2");
+      Directory.CreateDirectory(Path.GetDirectoryName(full) ?? outputDir);
+      using var raw = File.Create(full);
+      image.CopyTo(0, raw, image.Length);
+    }
 
     Yaffs2Scanner.ScanResult scan;
     try {
@@ -121,8 +138,12 @@ public sealed class Yaffs2FormatDescriptor
       var path = paths.TryGetValue(obj.ObjectId, out var p) ? p : obj.Name;
       if (string.IsNullOrEmpty(path)) continue;
 
-      var data = Concat(chunks, obj.Size);
-      WriteIfMatch(outputDir, "files/" + path, data, files);
+      if (files != null && files.Length > 0 && !MatchesFilter("files/" + path, files)) continue;
+      var target = Path.Combine(outputDir,
+        ("files/" + path).Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      CopyChunks(image, chunks, obj.Size, output);
     }
   }
 
@@ -136,7 +157,7 @@ public sealed class Yaffs2FormatDescriptor
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
     try {
-      var image = ReadAll(archive);
+      using var image = new ImageAccessor(archive);
       var scan = Yaffs2Scanner.Scan(image);
       if (!scan.ParseOk) goto Empty;
       var paths = BuildPaths(scan);
@@ -148,8 +169,13 @@ public sealed class Yaffs2FormatDescriptor
         if (string.IsNullOrEmpty(path)) continue;
         if (!string.Equals(path, target, StringComparison.OrdinalIgnoreCase)
           && !string.Equals("files/" + path, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-        var data = Concat(chunks, obj.Size);
-        return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+        // Spilled to scratch that deletes itself on close, so an entry larger
+        // than memory still opens as an ordinary stream.
+        var scratch = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,
+          FileShare.None, 81920, FileOptions.DeleteOnClose);
+        var written = CopyChunks(image, chunks, obj.Size, scratch);
+        scratch.Position = 0;
+        return new BoundedEntryStream(scratch, written, leaveOpen: false);
       }
     } catch {
       // fall through
@@ -209,26 +235,76 @@ public sealed class Yaffs2FormatDescriptor
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
+  /// <summary>
+  /// Rewrites the log with one current chunk per file and nothing else — the
+  /// garbage collection a real YAFFS2 does in the background. Files stream
+  /// through scratch, so a volume larger than an array can hold still packs.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new NotSupportedException(
+        $"YAFFS2 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+
+    var tempPath = Path.GetTempFileName();
+    var spill = new List<string>();
+    try {
+      using (var temp = File.Open(tempPath, FileMode.Open, FileAccess.ReadWrite)) {
+        var w = new Yaffs2Writer();
+        if (archive.CanSeek) archive.Position = 0;
+        using (var image = new ImageAccessor(archive)) {
+          var scan = Yaffs2Scanner.Scan(image);
+          if (scan.ParseOk) {
+            var paths = BuildPaths(scan);
+            foreach (var obj in scan.Objects) {
+              if (obj.Type != Yaffs2Scanner.YObjectType.File) continue;
+              if (!scan.DataChunks.TryGetValue(obj.ObjectId, out var chunks) || chunks.Count == 0) continue;
+              var path = paths.TryGetValue(obj.ObjectId, out var p) ? p : obj.Name;
+              if (string.IsNullOrEmpty(path)) continue;
+
+              var scratchPath = Path.GetTempFileName();
+              spill.Add(scratchPath);
+              long size;
+              using (var scratch = File.Create(scratchPath))
+                size = CopyChunks(image, chunks, obj.Size, scratch);
+              var captured = scratchPath;
+              w.AddStreamingFile(path, size, () => File.OpenRead(captured));
+            }
+          }
+        }
+        w.WriteTo(temp);
+
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "commit", Fraction: 1.0, CurrentReadOffset: archive.Length,
+          CurrentWriteOffset: temp.Length, ImageSize: temp.Length, BlockMap: null));
+
+        temp.Position = 0;
+        archive.Position = 0;
+        temp.CopyTo(archive);
+        archive.SetLength(temp.Length);
+        archive.Flush();
+      }
+    } finally {
+      File.Delete(tempPath);
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
+  }
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    byte[] data;
     try {
-      image.Position = 0;
-      using var ms = new MemoryStream();
-      image.CopyTo(ms);
-      data = ms.ToArray();
+      if (image.CanSeek) image.Position = 0;
+      using var data = new ImageAccessor(image);
+      return EnumerateExtentsCore(data);
     } catch {
       return [];
     }
-
-    return EnumerateExtentsCore(data);
   }
 
-  private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data) {
+  private static List<DefragBlockInfo> EnumerateExtentsCore(ImageAccessor data) {
     var result = new List<DefragBlockInfo>();
 
     // Try to detect the layout
@@ -244,8 +320,10 @@ public sealed class Yaffs2FormatDescriptor
     }
 
     // Walk chunks and classify them
-    for (var off = 0; off + stride <= data.Length; off += stride) {
-      var spare = data.AsSpan(off + scan.ChunkSize, scan.SpareSize);
+    var spareBuf = new byte[scan.SpareSize];
+    for (var off = 0L; off + stride <= data.Length; off += stride) {
+      data.Read(off + scan.ChunkSize, spareBuf.AsSpan());
+      var spare = spareBuf.AsSpan();
       var (objId, chunkId, _) = ParseSpare(spare);
 
       if (chunkId == 0) {
@@ -306,15 +384,8 @@ public sealed class Yaffs2FormatDescriptor
     // Zero those obsolete chunks so deleted content can't be recovered; live objects'
     // current chunks are left intact (the reader walks by fixed stride and skips
     // blanked slots).
-    if (wipeDeletedEntries) {
-      image.Position = 0;
-      using var ms = new MemoryStream();
-      image.CopyTo(ms);
-      var buf = ms.ToArray();
-      wiped += Yaffs2ForensicWiper.WipeObsolete(buf);
-      image.Position = 0;
-      image.Write(buf, 0, buf.Length);
-    }
+    if (wipeDeletedEntries)
+      wiped += Yaffs2ForensicWiper.WipeObsolete(image);
 
     image.Position = 0;
     var imageSize = image.Length;
@@ -329,7 +400,8 @@ public sealed class Yaffs2FormatDescriptor
   // ── Shared helpers ────────────────────────────────────────────────────
 
   private static IEnumerable<(string Name, byte[] Data)> ReadFileEntries(Stream stream) {
-    var image = ReadAll(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    using var image = new ImageAccessor(stream);
     var scan = Yaffs2Scanner.Scan(image);
     if (!scan.ParseOk) yield break;
 
@@ -340,7 +412,9 @@ public sealed class Yaffs2FormatDescriptor
       var path = paths.TryGetValue(obj.ObjectId, out var p) ? p : obj.Name;
       if (string.IsNullOrEmpty(path)) continue;
       // Preserve the full nested path so the writer rebuilds the directory tree.
-      yield return (path, Concat(chunks, obj.Size));
+      using var buffer = new MemoryStream();
+      CopyChunks(image, chunks, obj.Size, buffer);
+      yield return (path, buffer.ToArray());
     }
   }
 
@@ -355,18 +429,25 @@ public sealed class Yaffs2FormatDescriptor
     WriteFile(outputDir, name, data);
   }
 
-  private static byte[] Concat(List<byte[]> chunks, long declaredSize) {
-    var total = chunks.Sum(c => (long)c.Length);
-    var targetLen = declaredSize > 0 && declaredSize < total ? (int)declaredSize : (int)total;
-    var result = new byte[targetLen];
-    var pos = 0;
+  /// <summary>
+  /// Copies an object's live chunks, in chunk-id order, into
+  /// <paramref name="destination" />, stopping at the header's declared size.
+  /// Returns the number of bytes written.
+  /// </summary>
+  private static long CopyChunks(ImageAccessor image, List<Yaffs2Scanner.ChunkRef> chunks,
+      long declaredSize, Stream destination) {
+    var total = 0L;
+    foreach (var c in chunks) total += c.Length;
+    var target = declaredSize > 0 && declaredSize < total ? declaredSize : total;
+
+    var written = 0L;
     foreach (var c in chunks) {
-      var take = Math.Min(c.Length, targetLen - pos);
+      var take = Math.Min(c.Length, target - written);
       if (take <= 0) break;
-      Buffer.BlockCopy(c, 0, result, pos, take);
-      pos += take;
+      image.CopyTo(c.Offset, destination, take);
+      written += take;
     }
-    return result;
+    return written;
   }
 
   private static Dictionary<int, string> BuildPaths(Yaffs2Scanner.ScanResult scan) {

@@ -63,7 +63,8 @@ public class Yaffs2SubdirectoryTests {
     var deep = fileByPath["docs/api/reference.txt"];
     Assert.That(scan.DataChunks.ContainsKey(deep.ObjectId), Is.True);
     var chunks = scan.DataChunks[deep.ObjectId];
-    var data = chunks.SelectMany(c => c).Take((int)deep.Size).ToArray();
+    var data = chunks.SelectMany(c => image.Skip((int)c.Offset).Take(c.Length))
+      .Take((int)deep.Size).ToArray();
     Assert.That(data, Is.EqualTo("deep file"u8.ToArray()), "nested file content intact");
   }
 

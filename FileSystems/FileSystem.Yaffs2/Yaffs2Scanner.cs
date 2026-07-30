@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Yaffs2;
@@ -28,16 +29,25 @@ internal static class Yaffs2Scanner {
 
   internal sealed record ObjectEntry(int ObjectId, int ParentId, YObjectType Type, string Name, long Size);
 
+  /// <summary>Where a live data chunk's bytes are, and how many of them count.</summary>
+  internal readonly record struct ChunkRef(long Offset, int Length);
+
   internal sealed class ScanResult {
     public int ChunkSize { get; set; }
     public int SpareSize { get; set; }
     public List<ObjectEntry> Objects { get; } = [];
-    // ObjectId -> concatenated data chunks (collected in the order they appear in the image).
-    public Dictionary<int, List<byte[]>> DataChunks { get; } = new();
+    // ObjectId -> where its live data chunks are, in chunk-id order. The bytes
+    // stay in the image; a multi-gigabyte volume would not fit in memory twice.
+    public Dictionary<int, List<ChunkRef>> DataChunks { get; } = new();
     public bool ParseOk { get; set; }
   }
 
-  public static ScanResult Scan(ReadOnlySpan<byte> image) {
+  /// <summary>Scans an image already held in memory.</summary>
+  public static ScanResult Scan(ReadOnlySpan<byte> image) => Scan(ImageAccessor.FromBytes(image.ToArray()));
+
+  /// <summary>Scans an image through random access, reading a chunk at a time.</summary>
+  public static ScanResult Scan(ImageAccessor image) {
+    ArgumentNullException.ThrowIfNull(image);
     // Try each candidate layout, pick the one that yields the most valid ObjectHeader decodes.
     (int chunk, int spare, int score) best = (0, 0, 0);
     foreach (var (chunk, spare) in CandidateLayouts) {
@@ -57,7 +67,7 @@ internal static class Yaffs2Scanner {
     return result;
   }
 
-  private static int ScoreLayout(ReadOnlySpan<byte> image, int chunk, int spare) {
+  private static int ScoreLayout(ImageAccessor image, int chunk, int spare) {
     var stride = chunk + spare;
     if (stride <= 0) return 0;
 
@@ -71,12 +81,14 @@ internal static class Yaffs2Scanner {
     var limit = Math.Min(image.Length, ScanSpan);
 
     var score = 0;
-    for (var off = 0; off + stride <= limit; off += stride) {
-      var hdr = ParseHeader(image.Slice(off, chunk));
+    var buffer = new byte[stride];
+    for (var off = 0L; off + stride <= limit; off += stride) {
+      image.Read(off, buffer.AsSpan());
+      var hdr = ParseHeader(buffer.AsSpan(0, chunk));
       if (hdr == null) continue;
       if ((int)hdr.Type is < 1 or > 5) continue;
 
-      var (objId, chunkId, _) = ParseSpare(image.Slice(off + chunk, spare));
+      var (objId, chunkId, _) = ParseSpare(buffer.AsSpan(chunk, spare));
       // Genuine object-header chunks carry chunk_id == 0 and a non-zero object id
       // in the spare. Reward that corroboration heavily so the correct geometry
       // outscores any stride that merely happens to land on header bytes.
@@ -141,7 +153,7 @@ internal static class Yaffs2Scanner {
   /// header written by the in-place modifier is recognised here.</summary>
   internal const int TombstoneParentId = unchecked((int)0xFFFFFFFE);
 
-  private static void DecodeAll(ReadOnlySpan<byte> image, int chunkSize, int spareSize, ScanResult result) {
+  private static void DecodeAll(ImageAccessor image, int chunkSize, int spareSize, ScanResult result) {
     var stride = chunkSize + spareSize;
     // YAFFS2 is log-structured. The same (objectId, chunkId) may appear multiple
     // times — each with a distinct seqNumber. The chunk with the HIGHEST
@@ -163,12 +175,14 @@ internal static class Yaffs2Scanner {
     //   n_bytes     u32  offset 12
     //   ecc[3]      u32x3 offset 16..28
     var headers = new Dictionary<int, (uint Seq, HeaderRaw Hdr)>();
-    var dataChunks = new Dictionary<(int ObjId, int ChunkId), (uint Seq, byte[] Bytes)>();
+    var dataChunks = new Dictionary<(int ObjId, int ChunkId), (uint Seq, ChunkRef Where)>();
     var fallbackHeaderCounter = 2;
 
-    for (var off = 0; off + stride <= image.Length; off += stride) {
-      var chunk = image.Slice(off, chunkSize);
-      var spare = image.Slice(off + chunkSize, spareSize);
+    var buffer = new byte[stride];
+    for (var off = 0L; off + stride <= image.Length; off += stride) {
+      image.Read(off, buffer.AsSpan());
+      var chunk = buffer.AsSpan(0, chunkSize);
+      var spare = buffer.AsSpan(chunkSize, spareSize);
       var (seqNumber, objId, chunkId, nBytes) = ParseSpareWithSeq(spare);
 
       if (chunkId == 0) {
@@ -181,9 +195,9 @@ internal static class Yaffs2Scanner {
           headers[effectiveObjId] = (seqNumber, hdr);
       } else if (objId != 0 && nBytes > 0 && nBytes <= chunkSize) {
         var key = (objId, chunkId);
-        var payload = chunk.Slice(0, (int)Math.Min(nBytes, chunk.Length)).ToArray();
+        var where = new ChunkRef(off, (int)Math.Min(nBytes, chunkSize));
         if (!dataChunks.TryGetValue(key, out var existing) || seqNumber >= existing.Seq)
-          dataChunks[key] = (seqNumber, payload);
+          dataChunks[key] = (seqNumber, where);
       }
     }
 
@@ -218,7 +232,7 @@ internal static class Yaffs2Scanner {
       var ordered = group
         .Where(kv => kv.Key.ChunkId <= maxChunkId)
         .OrderBy(kv => kv.Key.ChunkId)
-        .Select(kv => kv.Value.Bytes)
+        .Select(kv => kv.Value.Where)
         .ToList();
       if (ordered.Count > 0)
         result.DataChunks[group.Key] = ordered;

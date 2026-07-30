@@ -84,6 +84,16 @@ public sealed class Nilfs2Reader : IDisposable {
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._len;
 
+  private readonly List<(long Offset, long Length)> _metadata = [];
+
+  /// <summary>
+  /// Regions holding structure rather than file bytes: the superblocks, the
+  /// kernel log, the writer-private directory and the header+directory of every
+  /// appended segment. A wipe must leave these alone; everything they and the
+  /// live payloads do not cover is dead space.
+  /// </summary>
+  public IReadOnlyList<(long Offset, long Length)> MetadataRegions => this._metadata;
+
   private void Parse() {
     if (_len < SuperblockOffset + 0x80)
       throw new InvalidDataException("Nilfs2: image too small for superblock.");
@@ -137,6 +147,11 @@ public sealed class Nilfs2Reader : IDisposable {
     var payloadEnd = TryParseWriterDirectory(versions);
     if (payloadEnd >= 0) ParseAppendedSegments(versions, payloadEnd);
 
+    // The tail superblock is structure too, wherever the volume happens to end.
+    var tailSb = _len - Nilfs2Superblock.SecondaryBackOffset;
+    if (tailSb > 0)
+      _metadata.Add((tailSb, Math.Min(Nilfs2Superblock.Size, _len - tailSb)));
+
     foreach (var (name, record) in versions) {
       if (record.Tombstone) continue;
       _entries.Add(new Nilfs2Entry {
@@ -174,6 +189,10 @@ public sealed class Nilfs2Reader : IDisposable {
     var dirStart = (long)Nilfs2Writer.SegmentStart + Nilfs2Writer.PrivateHeaderBytes;
     if (dirStart + dirSize > _len) return -1;
     var dir = _img.Read(dirStart, (int)dirSize);
+
+    // Everything ahead of the payload — boot area, superblock, private
+    // directory and the kernel log — is structure.
+    this._metadata.Add((0, Math.Min(payloadBase, _len)));
 
     var cursor = 0;
     while (cursor + 4 <= dir.Length) {
@@ -256,6 +275,9 @@ public sealed class Nilfs2Reader : IDisposable {
       foreach (var (name, record) in staged)
         if (!versions.TryGetValue(name, out var prev) || record.Cno >= prev.Cno)
           versions[name] = record;
+      // This segment's header and directory are structure; its payload bytes
+      // are claimed by whichever records are still live.
+      this._metadata.Add((p, payloadStart - p));
       // Advance past this segment.
       p = payloadStart + consumedPayload;
     }

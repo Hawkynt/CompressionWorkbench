@@ -54,6 +54,20 @@ public sealed class ImageAccessor : IDisposable {
     this.Length = stream.Length;
   }
 
+  /// <summary>
+  /// Drops the cached copy of the range <paramref name="offset" />..<paramref name="offset" /> +
+  /// <paramref name="length" />, so a caller that wrote to the underlying stream
+  /// sees its own bytes on the next read.
+  /// </summary>
+  public void Invalidate(long offset, long length) {
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+    if (length <= 0) return;
+    var first = offset / BlockSize * BlockSize;
+    var last = (offset + length - 1) / BlockSize * BlockSize;
+    for (var blockStart = first; blockStart <= last; blockStart += BlockSize)
+      this._cache.Remove(blockStart);
+  }
+
   /// <summary>Materialises an in-memory image. Convenience for callers that already hold the bytes.</summary>
   public static ImageAccessor FromBytes(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);

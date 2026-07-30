@@ -39,10 +39,25 @@ public sealed class Gfs1Reader {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Size == 0 || entry.FirstBlock == 0) return [];
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"GFS1: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
     var start = entry.FirstBlock * Gfs1Writer.BlockSize;
     if (start + (long)entry.Size > _image.Length)
       throw new InvalidDataException("GFS1 extract: extent reaches past image end.");
     return _image.Read(start, (int)entry.Size);
+  }
+
+  /// <summary>Writes <paramref name="entry" />'s bytes into <paramref name="destination" />.</summary>
+  public long ExtractTo(Gfs1Entry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory || entry.Size == 0 || entry.FirstBlock == 0) return 0;
+    var start = entry.FirstBlock * Gfs1Writer.BlockSize;
+    if (start + (long)entry.Size > _image.Length)
+      throw new InvalidDataException("GFS1 extract: extent reaches past image end.");
+    this._image.CopyTo(start, destination, entry.Size);
+    return entry.Size;
   }
 
   private void Recurse(int inode, string prefix) {

@@ -139,6 +139,13 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<string> Extensions => [".udf"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
+    // The volume recognition sequence starts at 32 KB, one 2048-byte descriptor
+    // per sector: BEA01, then NSR02/NSR03, then TEA01. Registering NSR at the
+    // first sector only meant a standard sequence matched nothing at all and
+    // the image fell through to a boot-sector heuristic.
+    new("BEA01"u8.ToArray(), Offset: 0x8001, Confidence: 0.90),
+    new("NSR02"u8.ToArray(), Offset: 0x8801, Confidence: 0.90),
+    new("NSR03"u8.ToArray(), Offset: 0x8801, Confidence: 0.90),
     new("NSR02"u8.ToArray(), Offset: 0x8001, Confidence: 0.90),
     new("NSR03"u8.ToArray(), Offset: 0x8001, Confidence: 0.90),
   ];

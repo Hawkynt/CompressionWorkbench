@@ -19,7 +19,7 @@ namespace FileSystem.Tux2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tux3</c> — Wikipedia article covering the phase-tree lineage</description></item>
 /// </list>
 /// </summary>
-public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── Synthetic, non-file entries the reader always surfaces ──────────────
   private static readonly HashSet<string> SyntheticNames =
@@ -164,4 +164,44 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         w.AddFile(n, d);
     return w.Build();
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <summary>Header, per-record prefixes and any tail slack are metadata; each record body is the file that owns it.</summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      using var reader = new Tux2Reader(image);
+      var cursor = 0L;
+      foreach (var e in reader.Entries
+                 .Where(x => x.Offset >= 0 && x.Size > 0 && !SyntheticNames.Contains(x.Name))
+                 .OrderBy(x => x.Offset)) {
+        if (e.Offset > cursor)
+          result.Add(new DefragBlockInfo(cursor, e.Offset - cursor, DefragBlockKind.MetadataReserved));
+        result.Add(new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, e.Name));
+        cursor = Math.Max(cursor, e.Offset + e.Size);
+      }
+      if (cursor == 0 && image.Length > 0)
+        result.Add(new DefragBlockInfo(0, Math.Min(4096, image.Length), DefragBlockKind.MetadataReserved));
+    } catch {
+      // An image we cannot parse claims nothing, and a wipe of it would zero
+      // every byte — so say it has no known extents and let the caller decide.
+      return [];
+    }
+    return result;
+  }
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = this.EnumerateExtents(image).ToList();
+    if (extents.Count == 0) return 0;
+    // Records are packed to the byte, so there are no cluster tips to trim —
+    // only the slack a removal or a shorter replacement left behind.
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

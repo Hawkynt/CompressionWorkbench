@@ -63,7 +63,10 @@ public class Yaffs2LargeDirectoryTests {
       var obj = fileByPath[$"big/f{i:D4}.txt"];
       Assert.That(scan.DataChunks.ContainsKey(obj.ObjectId), Is.True,
         $"data chunks present for f{i:D4}.txt");
-      var data = scan.DataChunks[obj.ObjectId].SelectMany(c => c).Take((int)obj.Size).ToArray();
+      // The scanner records where a chunk is, not a copy of it.
+      var data = scan.DataChunks[obj.ObjectId]
+        .SelectMany(c => image.Skip((int)c.Offset).Take(c.Length))
+        .Take((int)obj.Size).ToArray();
       Assert.That(data, Is.EqualTo(Encoding.ASCII.GetBytes($"content-{i}")),
         $"content of f{i:D4}.txt intact");
     }

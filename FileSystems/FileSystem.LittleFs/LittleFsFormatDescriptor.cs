@@ -52,6 +52,11 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     // explicit-extension dispatch + the FilesystemCarver. Three duplicated
     // registrations triggered O(N) signature-scan candidate explosion in
     // FilesystemCarverTests.FatInsideRawDump_Detected on a 10 MB host buffer.
+    // The name entry follows the revision count and the superblock tag, which
+    // puts "littlefs" at +8 for the layout our writer emits; the +16 placement
+    // is what a wider revision field gives. Both are registered because a
+    // missing one let a one-byte 0.20-confidence signature win the image.
+    new([0x6C, 0x69, 0x74, 0x74, 0x6C, 0x65, 0x66, 0x73], Offset: 8, Confidence: 0.6),
     new([0x6C, 0x69, 0x74, 0x74, 0x6C, 0x65, 0x66, 0x73], Offset: 16, Confidence: 0.6),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];

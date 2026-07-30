@@ -157,9 +157,7 @@ public class Yaffs2Tests {
 
     // Verify data round-trips
     var chunks = scan.DataChunks[fileObj.ObjectId];
-    var data = new byte[chunks.Sum(c => c.Length)];
-    var pos = 0;
-    foreach (var c in chunks) { c.CopyTo(data, pos); pos += c.Length; }
+    var data = chunks.SelectMany(c => image.Skip((int)c.Offset).Take(c.Length)).ToArray();
     Assert.That(data[..payload.Length], Is.EqualTo(payload));
   }
 
