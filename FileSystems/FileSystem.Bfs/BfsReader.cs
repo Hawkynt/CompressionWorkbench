@@ -29,6 +29,14 @@ internal sealed class BfsReader {
   private readonly int _blockSize;
   private readonly int _superblockOffset;
 
+  /// <summary>
+  /// Blocks per allocation group, from the superblock. A block_run carries its
+  /// group in a u32 and its start as a u16 within that group, so an absolute
+  /// block number is <c>ag * blocks_per_ag + start</c> — reading the start alone
+  /// worked only while the volume fitted in one group.
+  /// </summary>
+  private readonly long _blocksPerAg;
+
   public IReadOnlyList<BfsFileEntry> Entries { get; }
 
   public BfsReader(Stream stream) {
@@ -45,9 +53,12 @@ internal sealed class BfsReader {
     if (_blockSize < 512 || _blockSize > 65536 || (_blockSize & (_blockSize - 1)) != 0)
       throw new InvalidDataException($"BFS: invalid block size {_blockSize}.");
 
+    var blocksPerAg = _image.ReadUInt32(_superblockOffset + 72);
+    _blocksPerAg = blocksPerAg > 0 ? blocksPerAg : long.MaxValue;
+
     // Read root dir inode to find the B+ tree leaf
     var rootDirRun = ReadBlockRun(_image.Read(_superblockOffset + 116, 16), 0);
-    var rootDirInodeOffset = rootDirRun.Start * _blockSize;
+    var rootDirInodeOffset = this.BlockOf(rootDirRun) * _blockSize;
 
     // Verify inode magic
     if (rootDirInodeOffset + InodeDataStreamOffset + NumDirectBlocks * 8 > _image.Length)
@@ -61,12 +72,12 @@ internal sealed class BfsReader {
     // subdirectory inodes and surfacing each file (and directory) at its full
     // path. Names are joined with '/'.
     var entries = new List<BfsFileEntry>();
-    var visited = new HashSet<int>();
-    WalkDirectory(rootDirRun.Start, prefix: string.Empty, depth: 0, entries, visited);
+    var visited = new HashSet<long>();
+    WalkDirectory(this.BlockOf(rootDirRun), prefix: string.Empty, depth: 0, entries, visited);
     Entries = entries;
   }
 
-  private void WalkDirectory(int dirInodeBlock, string prefix, int depth, List<BfsFileEntry> entries, HashSet<int> visited) {
+  private void WalkDirectory(long dirInodeBlock, string prefix, int depth, List<BfsFileEntry> entries, HashSet<long> visited) {
     if (depth > MaxDirectoryDepth) return;
     if (!visited.Add(dirInodeBlock)) return; // already walked — avoid cycles
 
@@ -76,7 +87,7 @@ internal sealed class BfsReader {
 
     var btreeRun = ReadBlockRun(_image.Read(dirInodeOffset + InodeDataStreamOffset, 16), 0);
 
-    foreach (var (name, inodeBlock) in ReadAllBtreeEntries(btreeRun.Start)) {
+    foreach (var (name, inodeBlock) in ReadAllBtreeEntries(this.BlockOf(btreeRun))) {
       var fullName = prefix.Length == 0 ? name : prefix + "/" + name;
       var inodeOffset = inodeBlock * _blockSize;
       var (isDir, size) = ReadInodeKindAndSize(inodeOffset);
@@ -89,7 +100,7 @@ internal sealed class BfsReader {
   }
 
   /// <summary>Reads an inode's mode/size; returns whether it is a directory and its logical size.</summary>
-  private (bool IsDir, long Size) ReadInodeKindAndSize(int inodeOffset) {
+  private (bool IsDir, long Size) ReadInodeKindAndSize(long inodeOffset) {
     if (inodeOffset < 0 || inodeOffset + InodeDataStreamOffset + 136 + 8 > _image.Length) return (false, 0);
     if (_image.ReadUInt32(inodeOffset) != InodeMagic) return (false, 0);
 
@@ -120,26 +131,85 @@ internal sealed class BfsReader {
     if (fileSize < 0 || fileSize > _image.Length)
       throw new InvalidDataException($"BFS: invalid file size {fileSize} for '{entry.Name}'.");
 
-    // Read direct block_runs and concatenate data
+    if (fileSize > Array.MaxLength)
+      throw new IOException(
+        $"BFS: '{entry.Name}' is {fileSize:N0} bytes, past the array limit; use ExtractTo.");
+
     var result = new byte[fileSize];
-    var destOffset = 0L;
-    for (var i = 0; i < NumDirectBlocks && destOffset < fileSize; i++) {
-      var run = ReadBlockRun(_image.Read(inodeOffset + InodeDataStreamOffset + i * 8, 16), 0);
-      if (run.Length == 0) break;
-
-      var srcOffset = run.Start * _blockSize;
-      var runBytes = (long)run.Length * _blockSize;
-      var toCopy = Math.Min(runBytes, fileSize - destOffset);
-
-      if (srcOffset + toCopy > _image.Length)
-        throw new InvalidDataException($"BFS: data run for '{entry.Name}' extends past image.");
-
-      _image.Read(srcOffset, (int)toCopy).CopyTo(result.AsSpan((int)destOffset));
-      destOffset += toCopy;
-    }
-
+    using var target = new MemoryStream(result, writable: true);
+    this.WriteRuns(entry, inodeOffset, fileSize, target);
     return result;
   }
+
+  /// <summary>
+  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />,
+  /// one block run at a time. Returns the number of bytes written.
+  /// </summary>
+  public long ExtractTo(BfsFileEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
+
+    var inodeOffset = entry.InodeBlock * _blockSize;
+    if (inodeOffset + InodeDataStreamOffset + NumDirectBlocks * 8 + 8 > _image.Length)
+      throw new InvalidDataException($"BFS: file inode for '{entry.Name}' extends past image.");
+    if (_image.ReadUInt32(inodeOffset) != InodeMagic)
+      throw new InvalidDataException($"BFS: file inode magic mismatch for '{entry.Name}'.");
+
+    var fileSize = _image.ReadInt64(inodeOffset + InodeDataStreamOffset + 136);
+    if (fileSize < 0)
+      throw new InvalidDataException($"BFS: invalid file size {fileSize} for '{entry.Name}'.");
+    return this.WriteRuns(entry, inodeOffset, fileSize, destination);
+  }
+
+  /// <summary>
+  /// Copies the file's data runs out in order: the twelve in the inode's direct[],
+  /// then the block_run array the indirect run points at.
+  /// </summary>
+  private long WriteRuns(BfsFileEntry entry, long inodeOffset, long fileSize, Stream destination) {
+    var written = 0L;
+
+    long Copy((uint Ag, int Start, int Length) run) {
+      if (run.Length == 0 || written >= fileSize) return 0;
+      var srcOffset = this.BlockOf(run) * _blockSize;
+      var toCopy = Math.Min((long)run.Length * _blockSize, fileSize - written);
+      if (srcOffset < 0 || srcOffset + toCopy > _image.Length)
+        throw new InvalidDataException($"BFS: data run for '{entry.Name}' extends past image.");
+      _image.CopyTo(srcOffset, destination, toCopy);
+      written += toCopy;
+      return toCopy;
+    }
+
+    for (var i = 0; i < NumDirectBlocks && written < fileSize; i++) {
+      var run = ReadBlockRun(_image.Read(inodeOffset + InodeDataStreamOffset + i * 8, 16), 0);
+      if (run.Length == 0) break;
+      Copy(run);
+    }
+
+    if (written < fileSize) {
+      // The indirect run points at blocks holding a plain array of block_runs.
+      var indirect = ReadBlockRun(
+        _image.Read(inodeOffset + InodeDataStreamOffset + NumDirectBlocks * 8 + 8, 16), 0);
+      if (indirect.Length > 0) {
+        var runsPerBlock = _blockSize / 8;
+        var first = this.BlockOf(indirect);
+        for (var b = 0; b < indirect.Length && written < fileSize; ++b) {
+          var block = _image.Read((first + b) * _blockSize, _blockSize);
+          for (var j = 0; j < runsPerBlock && written < fileSize; ++j) {
+            var run = ReadBlockRun(block, j * 8);
+            if (run.Length == 0) break;
+            Copy(run);
+          }
+        }
+      }
+    }
+
+    return written;
+  }
+
+  /// <summary>Absolute block number a run addresses: its group index times the group size, plus its start.</summary>
+  private long BlockOf((uint Ag, int Start, int Length) run)
+    => run.Ag * this._blocksPerAg + run.Start;
 
   /// <summary>
   /// Reads every directory entry by walking the chain of B+ tree leaf nodes
@@ -147,8 +217,8 @@ internal sealed class BfsReader {
   /// right_link. A directory whose children overflow a single 1024-byte leaf is
   /// stored across several sibling leaves linked this way.
   /// </summary>
-  private List<(string Name, int InodeBlock)> ReadAllBtreeEntries(int firstLeafBlock) {
-    var all = new List<(string Name, int InodeBlock)>();
+  private List<(string Name, long InodeBlock)> ReadAllBtreeEntries(long firstLeafBlock) {
+    var all = new List<(string Name, long InodeBlock)>();
     var visited = new HashSet<long>();
     var leafBlock = (long)firstLeafBlock;
 
@@ -165,8 +235,8 @@ internal sealed class BfsReader {
     return all;
   }
 
-  private List<(string Name, int InodeBlock)> ParseBtreeLeafEntries(int leafOffset) {
-    var entries = new List<(string Name, int InodeBlock)>();
+  private List<(string Name, long InodeBlock)> ParseBtreeLeafEntries(long leafOffset) {
+    var entries = new List<(string Name, long InodeBlock)>();
 
     if (leafOffset < 0 || leafOffset + 28 > _image.Length)
       return entries;
@@ -228,4 +298,4 @@ internal sealed class BfsReader {
 }
 
 /// <summary>Represents a file or directory entry in a BFS image, named by its full path.</summary>
-internal sealed record BfsFileEntry(string Name, long Size, int InodeBlock, bool IsDirectory = false);
+internal sealed record BfsFileEntry(string Name, long Size, long InodeBlock, bool IsDirectory = false);

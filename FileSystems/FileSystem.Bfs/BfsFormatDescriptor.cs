@@ -66,7 +66,10 @@ public sealed class BfsFormatDescriptor
       foreach (var e in r.Entries) {
         if (e.IsDirectory) continue;
         if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-        WriteFile(outputDir, e.Name, r.Extract(e));
+        var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+        using var output = File.Create(target);
+        r.ExtractTo(e, output);
       }
     } catch {
       // Fallback: emit raw image + metadata
@@ -198,43 +201,61 @@ public sealed class BfsFormatDescriptor
     var blockSize = (int)sb.BlockSize;
     if (blockSize < 512) yield break;
 
+    // A block_run carries its allocation group in a u32 and its start as a u16
+    // within that group, so an absolute block is ag * blocks_per_ag + start.
+    // Reading the start alone reported the wrong offsets on a multi-group volume,
+    // and the wiper then zeroed live file data.
+    var blocksPerAg = imageBytes.Length >= sb.SuperblockOffset + 76
+      ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+          imageBytes.AsSpan(sb.SuperblockOffset + 72, 4))
+      : 0u;
+    long BlockOf((uint Ag, int Start, int Length) run)
+      => (blocksPerAg > 0 ? run.Ag * (long)blocksPerAg : 0) + run.Start;
+
     // Superblock
     yield return new DefragBlockInfo(sb.SuperblockOffset, 1024, DefragBlockKind.MetadataReserved, "Superblock");
 
     // Log area (blocks 2..9 for offset-0 images, or similar)
     var logRun = ReadBlockRunFromImage(imageBytes, sb.SuperblockOffset + 88);
     if (logRun.Length > 0) {
-      var logOffset = (long)logRun.Start * blockSize;
+      var logOffset = BlockOf(logRun) * blockSize;
       var logSize = (long)logRun.Length * blockSize;
       yield return new DefragBlockInfo(logOffset, logSize, DefragBlockKind.MetadataReserved, "Journal/Log");
     }
 
     // AG bitmap (block 10 for our images — right after log)
-    var agBitmapBlock = logRun.Start + logRun.Length;
-    yield return new DefragBlockInfo((long)agBitmapBlock * blockSize, blockSize, DefragBlockKind.MetadataReserved, "AG Bitmap");
+    // The bitmap spans every block it takes to cover the volume, starting right
+    // after the log; a single block only ever covered a 64 MB volume.
+    var agBitmapBlock = BlockOf(logRun) + logRun.Length;
+    var totalBlocks = imageBytes.Length >= sb.SuperblockOffset + 56
+      ? System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(imageBytes.AsSpan(sb.SuperblockOffset + 48, 8))
+      : 0L;
+    var bitmapBlocks = Math.Max(1L, ((totalBlocks + 7) / 8 + blockSize - 1) / blockSize);
+    yield return new DefragBlockInfo(agBitmapBlock * blockSize, bitmapBlocks * blockSize,
+      DefragBlockKind.MetadataReserved, "AG Bitmap");
 
     // Root dir inode + B+ tree
     var rootRun = ReadBlockRunFromImage(imageBytes, sb.SuperblockOffset + 116);
     if (rootRun.Length > 0) {
-      yield return new DefragBlockInfo((long)rootRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Root Dir Inode");
+      yield return new DefragBlockInfo(BlockOf(rootRun) * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Root Dir Inode");
       // Read root inode data_stream.direct[0] for B+ tree block
-      var rootInodeOff = rootRun.Start * blockSize;
+      var rootInodeOff = BlockOf(rootRun) * blockSize;
       if (rootInodeOff + 72 + 8 <= imageBytes.Length) {
         var btreeRun = ReadBlockRunFromImage(imageBytes, rootInodeOff + 72);
         if (btreeRun.Length > 0)
-          yield return new DefragBlockInfo((long)btreeRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Root Dir B+Tree");
+          yield return new DefragBlockInfo(BlockOf(btreeRun) * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Root Dir B+Tree");
       }
     }
 
     // Indices dir inode + B+ tree
     var idxRun = ReadBlockRunFromImage(imageBytes, sb.SuperblockOffset + 124);
     if (idxRun.Length > 0) {
-      yield return new DefragBlockInfo((long)idxRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Indices Dir Inode");
-      var idxInodeOff = idxRun.Start * blockSize;
+      yield return new DefragBlockInfo(BlockOf(idxRun) * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Indices Dir Inode");
+      var idxInodeOff = BlockOf(idxRun) * blockSize;
       if (idxInodeOff + 72 + 8 <= imageBytes.Length) {
         var btreeRun = ReadBlockRunFromImage(imageBytes, idxInodeOff + 72);
         if (btreeRun.Length > 0)
-          yield return new DefragBlockInfo((long)btreeRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Indices B+Tree");
+          yield return new DefragBlockInfo(BlockOf(btreeRun) * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Indices B+Tree");
       }
     }
 
@@ -256,21 +277,43 @@ public sealed class BfsFormatDescriptor
         if (inodeOff + 72 + 8 <= imageBytes.Length) {
           var dirBtree = ReadBlockRunFromImage(imageBytes, inodeOff + 72);
           if (dirBtree.Length > 0)
-            yield return new DefragBlockInfo((long)dirBtree.Start * blockSize, (long)dirBtree.Length * blockSize,
+            yield return new DefragBlockInfo(BlockOf(dirBtree) * blockSize, (long)dirBtree.Length * blockSize,
               DefragBlockKind.MetadataReserved, $"Dir B+Tree: {entry.Name}");
         }
         continue;
       }
 
-      // Data blocks from direct extents
+      // Data blocks: the twelve runs in direct[], then the block_run array the
+      // indirect run points at. Omitting the indirect runs left live file data
+      // looking free, which the wiper then zeroed.
       if (entry.Size > 0 && inodeOff + 72 + NumDirectBlocks * 8 <= imageBytes.Length) {
         var remaining = entry.Size;
         for (var i = 0; i < NumDirectBlocks && remaining > 0; i++) {
           var run = ReadBlockRunFromImage(imageBytes, inodeOff + 72 + i * 8);
           if (run.Length == 0) break;
           var runBytes = Math.Min((long)run.Length * blockSize, remaining);
-          yield return new DefragBlockInfo((long)run.Start * blockSize, runBytes, DefragBlockKind.Used, entry.Name);
+          yield return new DefragBlockInfo(BlockOf(run) * blockSize, runBytes, DefragBlockKind.Used, entry.Name);
           remaining -= runBytes;
+        }
+
+        if (remaining > 0) {
+          var indirect = ReadBlockRunFromImage(imageBytes, inodeOff + 72 + NumDirectBlocks * 8 + 8);
+          if (indirect.Length > 0) {
+            yield return new DefragBlockInfo(BlockOf(indirect) * blockSize,
+              (long)indirect.Length * blockSize, DefragBlockKind.MetadataReserved,
+              $"Indirect runs: {entry.Name}");
+
+            var runsPerBlock = blockSize / 8;
+            var first = BlockOf(indirect);
+            for (var b = 0; b < indirect.Length && remaining > 0; ++b)
+              for (var j = 0; j < runsPerBlock && remaining > 0; ++j) {
+                var run = ReadBlockRunFromImage(imageBytes, (first + b) * blockSize + j * 8);
+                if (run.Length == 0) break;
+                var runBytes = Math.Min((long)run.Length * blockSize, remaining);
+                yield return new DefragBlockInfo(BlockOf(run) * blockSize, runBytes, DefragBlockKind.Used, entry.Name);
+                remaining -= runBytes;
+              }
+          }
         }
       }
     }
@@ -400,11 +443,11 @@ public sealed class BfsFormatDescriptor
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  private static (uint Ag, int Start, int Length) ReadBlockRunFromImage(byte[] image, int offset) {
-    if (offset + 8 > image.Length) return (0, 0, 0);
-    var ag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(offset));
-    var start = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(offset + 4));
-    var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(offset + 6));
+  private static (uint Ag, int Start, int Length) ReadBlockRunFromImage(byte[] image, long offset) {
+    if (offset < 0 || offset + 8 > image.Length) return (0, 0, 0);
+    var ag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)offset));
+    var start = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan((int)offset + 4));
+    var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan((int)offset + 6));
     return (ag, start, length);
   }
 }

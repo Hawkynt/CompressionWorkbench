@@ -45,12 +45,29 @@ internal sealed class BfsWriter {
   private const int DefaultImageBlocks = 4096;  // 4 MB
   private const int LogStartBlock = 2;
   private const int LogBlocks = 8;
-  private const int AgBitmapBlock = 10;    // block 10 = AG 0 bitmap
-  private const int RootDirInodeBlock = 11;
-  private const int RootDirBtreeBlock = 12;
-  private const int IndicesInodeBlock = 13;
-  private const int IndicesBtreeBlock = 14;
-  private const int FirstFileInodeBlock = 15;
+  private const int AgBitmapBlock = 10;    // first allocation-group bitmap block
+
+  /// <summary>
+  /// Blocks one allocation group holds. A block_run addresses its start as a u16
+  /// within a group, so the group has to be at most 65536 blocks — and with the
+  /// group's own index in the run's u32 AG field, a volume can then be far larger
+  /// than one group. A single group was what capped this writer at 64 MB.
+  /// </summary>
+  private const int BlocksPerAg = 1 << 16;
+
+  /// <summary>log2 of <see cref="BlocksPerAg" />, the superblock's ag_shift.</summary>
+  private const int AgShift = 16;
+
+  /// <summary>Largest run a block_run can express: its length is a u16.</summary>
+  private const int MaxRunBlocks = ushort.MaxValue;
+
+  // Layout chosen per build; the bitmap's size shifts everything after it.
+  private int _bitmapBlocks = 1;
+  private int _rootDirInodeBlock;
+  private int _indicesInodeBlock;
+
+  /// <summary>Block runs one indirect block holds.</summary>
+  private const int RunsPerBlock = BlockSize / 8;
 
   // BFS inode mode bits (POSIX-compatible)
   private const uint S_IFDIR = 0x4000;
@@ -185,13 +202,15 @@ internal sealed class BfsWriter {
       new(StringComparer.Ordinal);
 
     // Block assignments filled in during layout.
-    public int InodeBlock;
-    public int BtreeBlock;       // directories only — first B+ tree leaf block
+    public long InodeBlock;
+    public long BtreeBlock;      // directories only — first B+ tree leaf block
     public int BtreeBlocks = 1;  // directories only — number of chained leaf blocks
     public readonly List<int> LeafBlocks = []; // directories only — every leaf block, in chain order
-    public int DataStartBlock;   // files only
-    public int DataBlocks;       // files only
-    public int ParentInodeBlock;
+    public long DataStartBlock;  // files only
+    public long DataBlocks;      // files only
+    public long IndirectBlock;   // files only — first block of the indirect run array
+    public int IndirectBlockCount;
+    public long ParentInodeBlock;
   }
 
   /// <summary>Declared size of the volume the last build laid out.</summary>
@@ -208,7 +227,7 @@ internal sealed class BfsWriter {
   private SparseBlockImage BuildSparse() {
     // 1) Build the directory tree from the flat file list. The synthetic root
     //    uses the fixed root-dir inode/B+ tree blocks (11/12).
-    var root = new TreeNode { Name = string.Empty, IsDir = true, InodeBlock = RootDirInodeBlock, BtreeBlock = RootDirBtreeBlock };
+    var root = new TreeNode { Name = string.Empty, IsDir = true };
     foreach (var (path, data, streamingSize, opener) in _files) {
       var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       var cursor = root;
@@ -241,9 +260,34 @@ internal sealed class BfsWriter {
     //    (block 12). If the root needs more leaves, the overflow leaves come from
     //    the free pool (block 15+); the reader chains them via right_link, so they
     //    need not be contiguous with block 12.
-    var nextBlock = FirstFileInodeBlock;
+    // The allocation bitmap covers every block in the volume, so it grows with
+    // the volume and the fixed metadata after it shifts along. Its size depends
+    // on the block count, which depends on the payload, so it is sized from the
+    // payload up front.
+    var payloadBlocks = 0L;
+    foreach (var (_, data, streamingSize, _) in _files) {
+      var length = streamingSize ?? (data?.Length ?? 0);
+      payloadBlocks += (length + BlockSize - 1) / BlockSize + 1;   // data + its inode
+    }
+    var estimate = Math.Max(DefaultImageBlocks, AgBitmapBlock + payloadBlocks + 64);
+    var bitmapBlocks = (int)(((estimate + 7) / 8 + BlockSize - 1) / BlockSize);
+    // One more pass: the bitmap itself pushes the volume out, which can need one
+    // more bitmap block.
+    bitmapBlocks = (int)(((estimate + bitmapBlocks + 7) / 8 + BlockSize - 1) / BlockSize);
+
+    var rootDirInodeBlock = AgBitmapBlock + bitmapBlocks;
+    var rootDirBtreeBlock = rootDirInodeBlock + 1;
+    var indicesInodeBlock = rootDirBtreeBlock + 1;
+    var indicesBtreeBlock = indicesInodeBlock + 1;
+    var nextBlock = indicesBtreeBlock + 1;
+
+    root.InodeBlock = rootDirInodeBlock;
+    root.BtreeBlock = rootDirBtreeBlock;
+    this._bitmapBlocks = bitmapBlocks;
+    this._rootDirInodeBlock = rootDirInodeBlock;
+    this._indicesInodeBlock = indicesInodeBlock;
     // Root's first leaf is the fixed block 12; overflow leaves come from the pool.
-    root.LeafBlocks.Add(root.BtreeBlock);
+    root.LeafBlocks.Add((int)root.BtreeBlock);
     var rootLeaves = CountLeafBlocks(root);
     for (var i = 1; i < rootLeaves; i++)
       root.LeafBlocks.Add(nextBlock++);
@@ -261,20 +305,20 @@ internal sealed class BfsWriter {
     this._payloads = new DeferredPayloads();
 
     // --- Superblock at block 0 (offset 0) ---
-    WriteSuperblock(image, numBlocks, totalUsedBlocks);
+    this.WriteSuperblock(image, numBlocks, totalUsedBlocks);
 
     // --- Log area (blocks 2..9) — all zeroes = clean ---
 
-    // --- AG bitmap at block 10 ---
-    WriteAgBitmap(image, totalUsedBlocks);
+    // --- Allocation bitmap, starting at block 10 ---
+    WriteAgBitmap(image, totalUsedBlocks, bitmapBlocks);
 
-    // --- Root dir inode (block 11) + its B+ tree (block 12) ---
+    // --- Root dir inode + its B+ tree ---
     WriteDirectoryInode(image, root.InodeBlock, root.BtreeBlock, 0, 0);
     WriteDirBtreeLeaf(image, root);
 
-    // --- Indices dir inode at block 13, empty B+ tree at block 14 ---
-    WriteDirectoryInode(image, IndicesInodeBlock, IndicesBtreeBlock, RootDirInodeBlock, 0);
-    WriteEmptyBtreeLeaf(image, IndicesBtreeBlock);
+    // --- Indices dir inode + empty B+ tree ---
+    WriteDirectoryInode(image, indicesInodeBlock, indicesBtreeBlock, rootDirInodeBlock, 0);
+    WriteEmptyBtreeLeaf(image, indicesBtreeBlock);
 
     // --- All non-root directories and files (depth-first) ---
     WriteNode(image, root);
@@ -332,7 +376,7 @@ internal sealed class BfsWriter {
   /// directory's inode/B+ tree blocks are assumed pre-assigned; this routine
   /// assigns blocks for its children and recurses into subdirectories.
   /// </summary>
-  private static void AssignBlocks(TreeNode dir, int dirInodeBlock, ref int nextBlock) {
+  private static void AssignBlocks(TreeNode dir, long dirInodeBlock, ref int nextBlock) {
     foreach (var child in dir.Children.Values) {
       child.ParentInodeBlock = dirInodeBlock;
       if (child.IsDir) {
@@ -347,9 +391,21 @@ internal sealed class BfsWriter {
       } else {
         child.InodeBlock = nextBlock++;
         var length = child.StreamingSize ?? (child.Data?.Length ?? 0);
-        child.DataBlocks = (int)((length + BlockSize - 1) / BlockSize);
+        child.DataBlocks = (length + BlockSize - 1) / BlockSize;
+
+        // The blocks are contiguous, but a run neither crosses an allocation
+        // group nor exceeds its u16 length. Past twelve runs the rest live in an
+        // indirect array, whose blocks are reserved ahead of the data so the data
+        // itself stays in one span.
+        var runs = SplitIntoRuns(nextBlock + 1L, child.DataBlocks);
+        if (runs.Count > NumDirectBlocks) {
+          child.IndirectBlockCount = (runs.Count - NumDirectBlocks + RunsPerBlock - 1) / RunsPerBlock;
+          child.IndirectBlock = nextBlock;
+          nextBlock += child.IndirectBlockCount;
+        }
+
         child.DataStartBlock = nextBlock;
-        nextBlock += child.DataBlocks;
+        nextBlock += (int)child.DataBlocks;
       }
     }
 
@@ -369,9 +425,9 @@ internal sealed class BfsWriter {
   /// An entry is placed in the current leaf if it still fits; otherwise a new leaf
   /// is started. A single name that cannot fit even alone is rejected.
   /// </summary>
-  private static List<List<(string Name, int InodeBlock)>> PartitionEntries(TreeNode dir) {
-    var leaves = new List<List<(string Name, int InodeBlock)>>();
-    var current = new List<(string Name, int InodeBlock)>();
+  private static List<List<(string Name, long InodeBlock)>> PartitionEntries(TreeNode dir) {
+    var leaves = new List<List<(string Name, long InodeBlock)>>();
+    var current = new List<(string Name, long InodeBlock)>();
     var used = BtreeLeafHeaderSize;
 
     foreach (var child in dir.Children.Values) {
@@ -406,7 +462,8 @@ internal sealed class BfsWriter {
         WriteDirBtreeLeaf(image, child);
       } else {
         var length = child.StreamingSize ?? (child.Data?.Length ?? 0);
-        WriteFileInode(image, child.InodeBlock, child.ParentInodeBlock, child.DataStartBlock, child.DataBlocks, (int)length);
+        WriteFileInode(image, child.InodeBlock, child.ParentInodeBlock, child.DataStartBlock,
+          child.DataBlocks, length, child.IndirectBlock, child.IndirectBlockCount);
         if (child.StreamOpener != null) {
           // Streaming entry: leave the data blocks zero; the streaming pass
           // post-fills from this absolute byte offset. Block tail past the
@@ -428,7 +485,7 @@ internal sealed class BfsWriter {
         WriteNode(image, child);
   }
 
-  private static void WriteSuperblock(SparseBlockImage image, int numBlocks, int usedBlocks) {
+  private void WriteSuperblock(SparseBlockImage image, int numBlocks, int usedBlocks) {
     // Superblock at offset 0 (block 0). Some BFS implementations use offset 512;
     // we use offset 0 for simplicity (our reader checks both locations).
     var off = 0;
@@ -460,21 +517,21 @@ internal sealed class BfsWriter {
     // magic2 at 68
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 68, 4), Magic2);
 
-    // blocks_per_ag at 72 — all blocks in one AG
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 72, 4), (uint)numBlocks);
+    // blocks_per_ag at 72 — a block_run's start is a u16, so a group is 65536 blocks
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 72, 4), BlocksPerAg);
 
     // ag_shift at 76 — log2 of blocks_per_ag
-    var agShift = (uint)Math.Ceiling(Math.Log2(numBlocks));
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 76, 4), agShift);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 76, 4), AgShift);
 
     // num_ags at 80
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 80, 4), 1);
+    var numAgs = (uint)((numBlocks + BlocksPerAg - 1) / BlocksPerAg);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 80, 4), numAgs);
 
     // flags at 84 = 0 (clean)
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 84, 4), 0);
 
     // log_blocks block_run at 88: AG=0, start=LogStartBlock, len=LogBlocks
-    WriteBlockRun(image, off + 88, 0, (ushort)LogStartBlock, (ushort)LogBlocks);
+    WriteBlockAsRun(image, off + 88, LogStartBlock, LogBlocks);
 
     // log_start at 96 = log_end (clean journal: no pending transactions)
     BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 96, 8), 0);
@@ -484,31 +541,38 @@ internal sealed class BfsWriter {
     // magic3 at 112
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 112, 4), Magic3);
 
-    // root_dir block_run at 116: AG=0, start=RootDirInodeBlock, len=1
-    WriteBlockRun(image, off + 116, 0, RootDirInodeBlock, 1);
+    // root_dir block_run at 116
+    WriteBlockAsRun(image, off + 116, this._rootDirInodeBlock, 1);
 
-    // indices_dir block_run at 124: AG=0, start=IndicesInodeBlock, len=1
-    WriteBlockRun(image, off + 124, 0, IndicesInodeBlock, 1);
+    // indices_dir block_run at 124
+    WriteBlockAsRun(image, off + 124, this._indicesInodeBlock, 1);
   }
 
-  private static void WriteAgBitmap(SparseBlockImage image, int usedBlocks) {
+  private static void WriteAgBitmap(SparseBlockImage image, long usedBlocks, int bitmapBlocks) {
     var bitmapOffset = (long)AgBitmapBlock * BlockSize;
-    // Set bits 0..usedBlocks-1 as allocated (1 = used)
-    for (var i = 0; i < usedBlocks; i++) {
-      var byteIdx = i / 8;
-      var bitIdx = i % 8;
-      image[bitmapOffset + byteIdx] |= (byte)(1 << (7 - bitIdx)); // MSB-first bit order (BFS convention)
-    }
+    var capacity = (long)bitmapBlocks * BlockSize * 8;
+    if (usedBlocks > capacity)
+      throw new InvalidOperationException(
+        $"BFS: {usedBlocks:N0} used blocks need more than the {bitmapBlocks} bitmap blocks reserved.");
+
+    // Set bits 0..usedBlocks-1 as allocated (1 = used), MSB-first within each byte
+    // (the BFS convention). A whole byte at a time keeps a multi-gigabyte volume's
+    // bitmap from costing a pass per block.
+    var wholeBytes = usedBlocks / 8;
+    for (var b = 0L; b < wholeBytes; ++b)
+      image[bitmapOffset + b] = 0xFF;
+    for (var i = wholeBytes * 8; i < usedBlocks; ++i)
+      image[bitmapOffset + i / 8] |= (byte)(1 << (int)(7 - i % 8));
   }
 
-  private static void WriteDirectoryInode(SparseBlockImage image, int inodeBlock, int btreeBlock, int parentBlock, int inodeNum) {
+  private static void WriteDirectoryInode(SparseBlockImage image, long inodeBlock, long btreeBlock, long parentBlock, int inodeNum) {
     var off = inodeBlock * BlockSize;
 
     // magic1
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off, 4), InodeMagic);
 
     // inode_num (block_run): AG=0, start=inodeBlock, len=1
-    WriteBlockRun(image, off + 4, 0, (ushort)inodeBlock, 1);
+    WriteBlockAsRun(image, off + 4, inodeBlock, 1);
 
     // uid=0, gid=0
     // mode = S_IFDIR | S_IRWXU
@@ -519,7 +583,7 @@ internal sealed class BfsWriter {
     // last_modified_time at 36 = 0
 
     // parent (block_run) at 44
-    WriteBlockRun(image, off + 44, 0, (ushort)parentBlock, parentBlock > 0 ? (ushort)1 : (ushort)0);
+    WriteBlockAsRun(image, off + 44, parentBlock, parentBlock > 0 ? 1 : 0);
 
     // attributes (block_run) at 52 = 0,0,0
     // type at 60 = 0 (directory)
@@ -527,7 +591,7 @@ internal sealed class BfsWriter {
     BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 64, 4), InodeSize);
 
     // data_stream at 72: one direct block_run pointing at btree leaf
-    WriteBlockRun(image, off + InodeDataStreamOffset, 0, (ushort)btreeBlock, 1);
+    WriteBlockAsRun(image, off + InodeDataStreamOffset, btreeBlock, 1);
 
     // max_direct_range at 72 + 96 = 168
     BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + NumDirectBlocks * 8, 8), BlockSize);
@@ -552,7 +616,7 @@ internal sealed class BfsWriter {
     }
   }
 
-  private static void WriteBtreeLeaf(SparseBlockImage image, int btreeBlock, List<(string Name, int InodeBlock)> entries, long leftLink, long rightLink) {
+  private static void WriteBtreeLeaf(SparseBlockImage image, int btreeBlock, List<(string Name, long InodeBlock)> entries, long leftLink, long rightLink) {
     var off = btreeBlock * BlockSize;
 
     // BFS B+ tree header (node header):
@@ -625,7 +689,7 @@ internal sealed class BfsWriter {
     }
   }
 
-  private static void WriteEmptyBtreeLeaf(SparseBlockImage image, int block) {
+  private static void WriteEmptyBtreeLeaf(SparseBlockImage image, long block) {
     var off = block * BlockSize;
     BinaryPrimitives.WriteInt64LittleEndian(image.At(off, 8), -1L);      // left_link
     BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 8, 8), -1L);  // right_link
@@ -633,14 +697,15 @@ internal sealed class BfsWriter {
     // all_key_count = 0, all_key_length = 0 — already zero
   }
 
-  private static void WriteFileInode(SparseBlockImage image, int inodeBlock, int parentInodeBlock, int dataStartBlock, int dataBlocks, int fileSize) {
+  private static void WriteFileInode(SparseBlockImage image, long inodeBlock, long parentInodeBlock,
+    long dataStartBlock, long dataBlocks, long fileSize, long indirectBlock, int indirectBlockCount) {
     var off = inodeBlock * BlockSize;
 
     // magic1
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off, 4), InodeMagic);
 
-    // inode_num (block_run): AG=0, start=inodeBlock, len=1
-    WriteBlockRun(image, off + 4, 0, (ushort)inodeBlock, 1);
+    // inode_num (block_run)
+    WriteBlockAsRun(image, off + 4, inodeBlock, 1);
 
     // uid=0, gid=0
     // mode = S_IFREG | S_IRWXU
@@ -651,18 +716,45 @@ internal sealed class BfsWriter {
     // last_modified_time at 36 = 0
 
     // parent = containing directory inode
-    WriteBlockRun(image, off + 44, 0, (ushort)parentInodeBlock, 1);
+    WriteBlockAsRun(image, off + 44, parentInodeBlock, 1);
 
     // inode_size at 64
     BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 64, 4), InodeSize);
 
-    // data_stream at 72
+    // data_stream at 72. The file's blocks are contiguous, but a run neither
+    // crosses an allocation group nor exceeds its u16 length, so the span is split
+    // into runs: the first twelve go in direct[], and the rest into an indirect
+    // block holding a plain array of block_runs.
     if (dataBlocks > 0) {
-      // direct[0]: AG=0, start=dataStartBlock, len=dataBlocks
-      WriteBlockRun(image, off + InodeDataStreamOffset, 0, (ushort)dataStartBlock, (ushort)dataBlocks);
-      // max_direct_range = dataBlocks * BlockSize
+      var runs = SplitIntoRuns(dataStartBlock, dataBlocks);
+      var direct = Math.Min(NumDirectBlocks, runs.Count);
+      long directBlocks = 0;
+      for (var i = 0; i < direct; ++i) {
+        WriteBlockAsRun(image, off + InodeDataStreamOffset + i * 8, runs[i].Block, runs[i].Length);
+        directBlocks += runs[i].Length;
+      }
       BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + NumDirectBlocks * 8, 8),
-        (long)dataBlocks * BlockSize);
+        directBlocks * BlockSize);
+
+      if (runs.Count > direct) {
+        if (indirectBlockCount <= 0)
+          throw new InvalidOperationException(
+            $"BFS: {runs.Count} data runs need an indirect block that was not reserved.");
+        WriteBlockAsRun(image, off + InodeDataStreamOffset + NumDirectBlocks * 8 + 8,
+          indirectBlock, indirectBlockCount);
+
+        long indirectBlocks = 0;
+        for (var i = direct; i < runs.Count; ++i) {
+          var slot = i - direct;
+          var block = indirectBlock + slot / RunsPerBlock;
+          var within = slot % RunsPerBlock * 8;
+          WriteBlockAsRun(image, (int)(block * BlockSize + within), runs[i].Block, runs[i].Length);
+          indirectBlocks += runs[i].Length;
+        }
+        BinaryPrimitives.WriteInt64LittleEndian(
+          image.At(off + InodeDataStreamOffset + NumDirectBlocks * 8 + 16, 8),
+          (directBlocks + indirectBlocks) * BlockSize);
+      }
     }
 
     // size at offset 72 + 136 = 208
@@ -672,17 +764,48 @@ internal sealed class BfsWriter {
   /// <summary>
   /// Writes a block_run (allocation_group: u32, start: u16, length: u16) at the given offset.
   /// </summary>
-  private static void WriteBlockRun(SparseBlockImage image, int offset, uint ag, int start, int length) {
+  /// <summary>
+  /// Writes a block_run for the absolute block <paramref name="block" />: a run
+  /// carries its allocation group in a u32 and its start as a u16 within that
+  /// group, so the group index is the block number's high bits.
+  /// </summary>
+  private static void WriteBlockAsRun(SparseBlockImage image, long offset, long block, long length) {
+    var ag = block / BlocksPerAg;
+    var start = block % BlocksPerAg;
+    if (ag > uint.MaxValue)
+      throw new InvalidOperationException($"BFS: block {block} is past the addressable range.");
+    WriteBlockRun(image, offset, (uint)ag, (int)start, (int)length);
+  }
+
+  /// <summary>
+  /// Splits a contiguous span of blocks into the runs a data stream can express:
+  /// no run crosses an allocation-group boundary, and none exceeds the u16 length
+  /// a block_run carries.
+  /// </summary>
+  private static List<(long Block, int Length)> SplitIntoRuns(long firstBlock, long blockCount) {
+    var runs = new List<(long Block, int Length)>();
+    var block = firstBlock;
+    var remaining = blockCount;
+    while (remaining > 0) {
+      var toAgEnd = BlocksPerAg - block % BlocksPerAg;
+      var take = (int)Math.Min(Math.Min(remaining, toAgEnd), MaxRunBlocks);
+      runs.Add((block, take));
+      block += take;
+      remaining -= take;
+    }
+    return runs;
+  }
+
+  private static void WriteBlockRun(SparseBlockImage image, long offset, uint ag, int start, int length) {
     // A block_run addresses its start and length as uint16 within one allocation
-    // group. Silently truncating them produced a volume that listed its files
-    // and returned the wrong bytes, so say what the writer cannot express: it
-    // emits a single allocation group and one run per file, which caps a file
-    // (and the volume) at 65535 blocks.
+    // group. Truncating either produced a volume that listed its files and
+    // returned the wrong bytes, and the guard that was meant to catch it never
+    // fired because the call sites cast to ushort first — so the callers pass the
+    // untruncated values and this check is live.
     if (start > ushort.MaxValue || length > ushort.MaxValue)
       throw new InvalidOperationException(
-        $"BFS writer: block_run start/length are uint16 within one allocation group, so a run cannot " +
-        $"exceed {ushort.MaxValue} blocks (got start={start}, length={length}). Multiple allocation " +
-        "groups and multi-run data streams are not implemented.");
+        $"BFS writer: a block_run's start and length are uint16 within its allocation group, so " +
+        $"neither can exceed {ushort.MaxValue} (got start={start}, length={length}).");
 
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset, 4), ag);
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(offset + 4, 2), (ushort)start);
