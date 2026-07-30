@@ -2,11 +2,22 @@
 # -----------------------------------------------------------------------------
 #  version.pl — the ONE versioner, identical in every Hawkynt repo.
 #
-#  Model: FILES drive versions, never git tags. For EACH version-bearing file,
-#  the build number is the commit count of THAT file's PARENT FOLDER — so a
-#  version advances by how much the directory that declares it actually changed.
-#  A project that inherits its version from a Directory.Build.props is therefore
-#  versioned by the props file's folder, not the project's.
+#  Model: FILES drive versions, never git tags. Each package's BASE version is
+#  the NEAREST declaration — whatever is in place, first hit wins:
+#    1. the manifest's own version field
+#    2. the nearest ANCESTOR Directory.Build.props/.targets <Version>
+#       (MSBuild inheritance, .NET only)
+#    3. the repo-root VERSION file
+#  The BUILD number is the commit count of the DECLARING file's PARENT FOLDER
+#  (recursive) — so a version advances by how much the directory that declares
+#  it actually changed; a repo-root declaration gets the whole-repo count.
+#
+#  PREFERRED LAYOUT for NuGet packages: own folder + own <Version>. An
+#  untouched folder composes the IDENTICAL version on the next release, so
+#  `dotnet nuget push --skip-duplicate` re-uses the already-published package
+#  instead of re-uploading it (C--FrameworkExtensions relies on this heavily).
+#  Repos that centralise the version in a props/VERSION file inherit the
+#  declaring folder's coarser count — every commit below it bumps all heirs.
 #
 #  Version sources (kind -> file -> field):
 #    dotnet : *.csproj/*.fsproj/*.vbproj, Directory.Build.props/.targets   <Version>
@@ -27,8 +38,11 @@
 #    perl version.pl            # print the repo's single version  (X.Y.Z.BUILD)
 #    perl version.pl --base     # print just the base              (X.Y.Z)
 #    perl version.pl --build    # print just the build number      (commit count)
-#    perl version.pl --stamp    # rewrite the version in every source file
-#    perl version.pl --list     # print "<file>\t<composed-version>" per source
+#    perl version.pl --stamp    # rewrite the version in every DECLARING file
+#                               # (heirs pick the stamped props value up
+#                               #  through MSBuild — inheritance stays intact)
+#    perl version.pl --list     # print "<file>\t<effective-version>" per source,
+#                               # inherited ones annotated with their declaring file
 #
 #  The single-version modes use the PRIMARY source: a root VERSION file, else the
 #  shallowest Directory.Build.props with a <Version>, else the shallowest csproj
@@ -68,8 +82,18 @@ if ($mode eq '--list') {
     for my $m (@manifests) {
         my ($file, $kind) = @$m;
         my $base = _ReadBase($kind, $file);
-        next unless defined $base;
-        print "$file\t" . _Compose($kind, $base, _BuildNumber($root, _ParentDir($root, $file))) . "\n";
+        if (defined $base) {
+            print "$file\t" . _Compose($kind, $base, _BuildNumber($root, _ParentDir($root, $file))) . "\n";
+            next;
+        }
+        # .NET projects may INHERIT their version (nearest ancestor
+        # Directory.Build.props/.targets, else the repo-root VERSION file).
+        # Show the EFFECTIVE version so no shipping project is invisible here;
+        # the build number is the DECLARING file's folder count.
+        next unless $kind eq 'dotnet' && $file =~ /\.(?:csproj|fsproj|vbproj)$/i;
+        my ($ibase, $idir, $isrc) = _InheritedBase($root, $file);
+        next unless defined $ibase;
+        print "$file\t" . _Compose('dotnet', $ibase, _BuildNumber($root, $idir)) . "\t(inherited from $isrc)\n";
     }
     exit 0;
 }
@@ -128,6 +152,30 @@ sub _Manifests {
         $r,
     );
     return sort { $a->[0] cmp $b->[0] } @out;
+}
+
+# Nearest version declaration an MSBuild project INHERITS: walk from the
+# project's folder up to the repo root looking for a Directory.Build.props
+# (then .targets) with a <Version>; fall back to the repo-root VERSION file.
+# Mirrors MSBuild's own lookup (only the NEAREST props auto-imports).
+# Returns ($base, $declaringDirRelativeToRoot, $declaringFile) or ().
+sub _InheritedBase {
+    my ($root, $file) = @_;
+    (my $r   = $root) =~ s{[/\\]$}{};
+    (my $dir = $file) =~ s{[/\\][^/\\]+$}{};
+    while (1) {
+        for my $name ('Directory.Build.props', 'Directory.Build.targets') {
+            my $cand = "$dir/$name";
+            next unless -r $cand;
+            my $b = _ReadDotnet($cand);
+            return ($b, _ParentDir($root, $cand), $cand) if defined $b;
+        }
+        last if $dir eq $r || length($dir) <= length($r);
+        last unless $dir =~ s{[/\\][^/\\]+$}{};
+    }
+    my $b = _VersionFile($root);
+    return ($b, '', "$r/VERSION") if defined $b;
+    return ();
 }
 
 # Primary source for the single repo version: VERSION, else the shallowest
