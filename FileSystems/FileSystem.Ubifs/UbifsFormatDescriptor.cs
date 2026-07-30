@@ -76,6 +76,23 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       return entries;
     }
 
+    // A volume that carries files lists exactly those. Surfacing the synthetic
+    // triage entries alongside them made every rebuild (shrink, defrag) fold them
+    // back in as real files, which is why defrag refused the round-trip; they stay
+    // on the carver path — images that hold no readable file.
+    List<UbifsFileReader.FileEntry> real = [];
+    try {
+      real = [.. new UbifsFileReader(image).Entries.Where(e => !e.IsDirectory)];
+    } catch {
+      // best-effort: triage-only surface
+    }
+
+    if (real.Count > 0) {
+      foreach (var e in real)
+        entries.Add(new ArchiveEntryInfo(entries.Count, e.Name, e.Size, e.Size, "stored", false, false, null));
+      return entries;
+    }
+
     entries.Add(new ArchiveEntryInfo(0, "FULL.ubifs", image.LongLength, image.LongLength, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
 
@@ -84,17 +101,6 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       entries.Add(new ArchiveEntryInfo(entries.Count, "inodes.txt", 0, 0, "stored", false, false, null));
     if (scan.Dentries.Count > 0)
       entries.Add(new ArchiveEntryInfo(entries.Count, "dentries.txt", 0, 0, "stored", false, false, null));
-
-    // Real per-file entries from the on-disk reader, when parseable.
-    try {
-      var reader = new UbifsFileReader(image);
-      foreach (var e in reader.Entries) {
-        if (e.IsDirectory) continue;
-        entries.Add(new ArchiveEntryInfo(entries.Count, e.Name, e.Size, e.Size, "stored", false, false, null));
-      }
-    } catch {
-      // best-effort: triage-only surface
-    }
     return entries;
   }
 
@@ -105,6 +111,21 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     } catch {
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
       return;
+    }
+
+    // A volume that carries files extracts exactly those, mirroring List.
+    try {
+      var withFiles = new UbifsFileReader(image);
+      if (withFiles.Entries.Any(e => !e.IsDirectory)) {
+        foreach (var e in withFiles.Entries) {
+          if (e.IsDirectory) continue;
+          if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+          WriteFile(outputDir, e.Name, withFiles.Extract(e));
+        }
+        return;
+      }
+    } catch {
+      // fall through to the triage surface
     }
 
     WriteIfMatch(outputDir, "FULL.ubifs", image, files);

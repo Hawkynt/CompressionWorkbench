@@ -208,9 +208,10 @@ public class Ods1WormTests {
     using var r = new Ods1Reader(ms);
     var e = r.Entries.First(x => x.Name == "BIG.DAT");
     Assert.That(e.BlockCount, Is.EqualTo(2u));
-    var got = r.Extract(e);
-    Assert.That(got.Length, Is.EqualTo(2 * LbnSize));
-    Assert.That(got.AsSpan(0, data.Length).ToArray(), Is.EqualTo(data));
+    // The header records the exact logical size, so the block-boundary padding
+    // is not handed back as file content.
+    Assert.That(e.Size, Is.EqualTo(data.Length));
+    Assert.That(r.Extract(e), Is.EqualTo(data));
   }
 
   [Test, Category("Boundary")]
@@ -271,8 +272,14 @@ public class Ods1WormTests {
   public void RoundTrip_ImageIsBlockAligned() {
     var img = Ods1Writer.Build([("ALIGN.OK", [1, 2, 3])]);
     Assert.That(img.Length % LbnSize, Is.EqualTo(0), "image size must be LBN-aligned");
-    // Floor = boot+home+bitmap+(index window of 64 LBNs)+ one data LBN minimum
-    Assert.That(img.Length / LbnSize, Is.GreaterThanOrEqualTo(4 + 64 + 1), "index window must fit");
+    // Floor = boot+home+bitmap(sized to the volume)+(index window of 64 LBNs)+
+    // one data LBN. The bitmap's size is in the home block at +0, and the index
+    // window's first LBN at +0x040.
+    var bitmapLbns = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(LbnSize));
+    var indexfLbn = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(LbnSize + 0x040));
+    Assert.That(bitmapLbns, Is.GreaterThanOrEqualTo(1));
+    Assert.That(indexfLbn, Is.EqualTo(2 + bitmapLbns), "index window follows the bitmap");
+    Assert.That(img.Length / LbnSize, Is.GreaterThanOrEqualTo(indexfLbn + 64 + 1), "index window must fit");
   }
 
   [Test, Category("RoundTrip")]

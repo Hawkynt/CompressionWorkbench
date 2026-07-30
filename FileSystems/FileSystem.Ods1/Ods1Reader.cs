@@ -133,32 +133,73 @@ public sealed class Ods1Reader : IDisposable {
     //   u16 count + u16 hi_lbn + u16 lo_lbn
     var mpOffset = mpOffWords * 2;
     if (mpOffset + 6 > LbnSize) return;
-    var count = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan((int)fhOffset + mpOffset)) + 1u;
-    var hi = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan((int)fhOffset + mpOffset + 2));
-    var lo = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan((int)fhOffset + mpOffset + 4));
-    var startLbn = (hi << 16) | lo;
 
-    // file size in bytes: count blocks * 512, but the real fh1$l_efblk
-    // (end-of-file block) lives in the ident area at a fixed offset
-    // beyond the name. For test images we approximate as count * 512.
-    var size = (long)count * LbnSize;
+    // A pointer's count is 16-bit, so a long file is described by a run of them:
+    // read until a pointer's LBN is zero, and sum the blocks. Reading only the
+    // first reported a truncated length and the file came back short.
+    var pointerSlots = (LbnSize - mpOffset) / 6;
+    var extents = new List<(uint Lbn, uint Blocks)>();
+    var blockCount = 0u;
+    for (var slot = 0; slot < pointerSlots; ++slot) {
+      var at = (int)fhOffset + mpOffset + slot * 6;
+      var count = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(at)) + 1u;
+      var hi = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(at + 2));
+      var lo = (uint)BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(at + 4));
+      var lbn = (hi << 16) | lo;
+      if (lbn == 0) break;
+      extents.Add((lbn, count));
+      blockCount += count;
+    }
+    if (extents.Count == 0) return;
+    var startLbn = extents[0].Lbn;
+
+    // The exact logical size sits in the header's spare words; older images left
+    // them zero, and there the block count is the best available answer.
+    var exact = BinaryPrimitives.ReadInt64LittleEndian(this._data.AsSpan((int)fhOffset + 0x0C));
+    var size = exact > 0 && exact <= (long)blockCount * LbnSize ? exact : (long)blockCount * LbnSize;
 
     this._entries.Add(new Ods1Entry {
       Name = fullName,
       Size = isDir ? 0 : size,
       StartLbn = startLbn,
-      BlockCount = count,
+      BlockCount = blockCount,
       IsDirectory = isDir,
+      Extents = extents,
     });
   }
 
   public byte[] Extract(Ods1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    if (entry.IsDirectory) return [];
-    var offset = (long)entry.StartLbn * LbnSize;
-    if (offset < 0 || offset >= this._data.Length) return [];
-    var take = (int)Math.Min(entry.Size, this._data.Length - offset);
-    return this._data.AsSpan((int)offset, take).ToArray();
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"ODS-1: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    using var buffer = new MemoryStream();
+    this.ExtractTo(entry, buffer);
+    return buffer.ToArray();
+  }
+
+  /// <summary>
+  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />,
+  /// one retrieval pointer at a time. Returns the number of bytes written.
+  /// </summary>
+  public long ExtractTo(Ods1Entry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
+
+    var extents = entry.Extents ?? [(entry.StartLbn, entry.BlockCount)];
+    long written = 0;
+    foreach (var (lbn, blocks) in extents) {
+      if (written >= entry.Size) break;
+      var offset = (long)lbn * LbnSize;
+      if (offset < 0 || offset >= this._data.Length) break;
+      var take = (int)Math.Min(Math.Min((long)blocks * LbnSize, entry.Size - written),
+        this._data.Length - offset);
+      if (take <= 0) break;
+      destination.Write(this._data, (int)offset, take);
+      written += take;
+    }
+    return written;
   }
 
   public void Dispose() { }

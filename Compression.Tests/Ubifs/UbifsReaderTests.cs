@@ -162,8 +162,8 @@ public class UbifsReaderTests {
     using var ms = new MemoryStream(img);
     var entries = d.List(ms, null);
     var names = entries.Select(e => e.Name).ToList();
-    Assert.That(names, Does.Contain("FULL.ubifs"));
     Assert.That(names, Does.Contain("hello.txt"));
+    Assert.That(names, Does.Not.Contain("FULL.ubifs"));
   }
 
   [Test, Category("HappyPath")]

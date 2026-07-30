@@ -8,4 +8,10 @@ public sealed class Ods1Entry {
   public uint StartLbn { get; init; }
   public uint BlockCount { get; init; }
   public bool IsDirectory { get; init; }
+
+  /// <summary>
+  /// Every retrieval pointer the header carries, in order. A pointer's block count
+  /// is 16-bit, so a long file is described by several of them.
+  /// </summary>
+  public IReadOnlyList<(uint Lbn, uint Blocks)>? Extents { get; init; }
 }

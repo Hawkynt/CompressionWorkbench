@@ -132,7 +132,6 @@ public class ConversionMatrixTests {
       { "Bbc", "[name/charset/size constraint] BBC Micro DFS disk; name-synthesizing FS, payload not found by content" },
       { "Cpm", "[name/charset/size constraint] CP/M disk; 8.3-folding name-synth FS, payload not found by content" },
       { "Lif", "[name/charset/size constraint] HP-71 LIF disk pads file content to a 256-byte record so bytes differ" },
-      { "Ods1", "[name/charset/size constraint] ODS-1 (Files-11) disk pads content to a 512-byte block so bytes differ" },
       { "ProDos", "[name/charset/size constraint] ProDOS disk; name-synthesizing FS carried no files (name/size constraints reject the fixture)" },
       { "Rt11", "[name/charset/size constraint] RT-11 disk pads content to a 512-byte block so bytes differ" },
       { "TrDos", "[name/charset/size constraint] TR-DOS disk; name-synthesizing FS, payload not found by content" },

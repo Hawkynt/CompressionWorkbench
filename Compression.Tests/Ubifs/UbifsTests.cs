@@ -82,10 +82,11 @@ public class UbifsTests {
 
     var entries = d.List(ms, null);
     var names = entries.Select(e => e.Name).ToHashSet();
-    Assert.That(names, Does.Contain("FULL.ubifs"));
-    Assert.That(names, Does.Contain("metadata.ini"));
-    Assert.That(names, Does.Contain("inodes.txt"));
-    Assert.That(names, Does.Contain("dentries.txt"));
+    // The minimal fixture carries a readable file, so the volume lists exactly
+    // that: the triage surface is for images that hold none.
+    Assert.That(names, Does.Contain("hello.txt"));
+    Assert.That(names, Does.Not.Contain("FULL.ubifs"));
+    Assert.That(names, Does.Not.Contain("inodes.txt"));
   }
 
   [Test, Category("HappyPath")]
@@ -98,15 +99,9 @@ public class UbifsTests {
     try {
       d.Extract(ms, outDir, null, null);
 
-      Assert.That(File.Exists(Path.Combine(outDir, "FULL.ubifs")), Is.True);
-      Assert.That(File.Exists(Path.Combine(outDir, "metadata.ini")), Is.True);
-      var meta = File.ReadAllText(Path.Combine(outDir, "metadata.ini"));
-      Assert.That(meta, Does.Contain("total_nodes="));
-      Assert.That(meta, Does.Contain("superblock_found=True"));
-
-      Assert.That(File.Exists(Path.Combine(outDir, "dentries.txt")), Is.True);
-      var dentries = File.ReadAllText(Path.Combine(outDir, "dentries.txt"));
-      Assert.That(dentries, Does.Contain("hello.txt"));
+      // A volume that carries files extracts exactly those.
+      Assert.That(File.Exists(Path.Combine(outDir, "hello.txt")), Is.True);
+      Assert.That(File.Exists(Path.Combine(outDir, "FULL.ubifs")), Is.False);
     } finally {
       try { Directory.Delete(outDir, recursive: true); } catch { /* ignore cleanup races */ }
     }

@@ -121,7 +121,25 @@ public static class Ods1Writer {
     // Headers: 1 LBN per file starting at IndexfLbn, unused slots zero-padded
     //          to the end of the reader's scan window.
     // Data:    contiguous extents starting right after the index-file window.
-    var dataStart = (uint)(IndexfLbn + IndexfHeaderSlots);
+    // The allocation bitmap is one bit per LBN, so it grows with the volume: a
+    // single LBN covers 4096 blocks (2 MB), and writing past that ran off the end
+    // of the block. Its size shifts the index-file window along, and the home
+    // block records both, so the reader follows.
+    var dataBlocks = 0L;
+    for (var i = 0; i < files.Count; i++)
+      dataBlocks += Math.Max(1, (files[i].Payload.Size + LbnSize - 1) / LbnSize);
+
+    var bitmapLbns = 1;
+    int indexfLbn, totalLbnPlan;
+    for (var iteration = 0; ; ++iteration) {
+      indexfLbn = BitmapLbn + bitmapLbns;
+      totalLbnPlan = (int)(indexfLbn + IndexfHeaderSlots + dataBlocks);
+      var need = (totalLbnPlan + LbnSize * 8 - 1) / (LbnSize * 8);
+      if (need <= bitmapLbns || iteration > 8) break;
+      bitmapLbns = need;
+    }
+
+    var dataStart = (uint)(indexfLbn + IndexfHeaderSlots);
 
     var extents = new (uint StartLbn, uint Blocks)[files.Count];
     var nextData = dataStart;
@@ -133,7 +151,7 @@ public static class Ods1Writer {
     }
 
     // Floor: enough room for boot/home/bitmap + full index-file window + data.
-    var totalLbn = Math.Max((int)nextData, IndexfLbn + IndexfHeaderSlots + 1);
+    var totalLbn = Math.Max((int)nextData, indexfLbn + IndexfHeaderSlots + 1);
     totalBytes = (long)totalLbn * LbnSize;
     // Only the header window is materialised: data extents start beyond it and
     // are placed by seek, so a volume past what a byte[] can address costs its
@@ -142,25 +160,23 @@ public static class Ods1Writer {
     var image = new byte[(long)dataStart * LbnSize];
 
     // ── LBN 1: home block ──────────────────────────────────────────────────
-    WriteHomeBlock(image, volumeName);
+    WriteHomeBlock(image, volumeName, bitmapLbns, indexfLbn);
 
-    // ── LBN 2: BITMAP.SYS data — mark every allocated LBN ─────────────────
-    var bitmap = image.AsSpan(BitmapLbn * LbnSize, LbnSize);
-    for (var lbn = 0u; lbn < nextData; lbn++) {
-      var byteIdx = (int)(lbn / 8);
-      var bit = (int)(lbn % 8);
-      bitmap[byteIdx] |= (byte)(1 << bit);
-    }
+    // ── BITMAP.SYS data — mark every allocated LBN ─────────────────────────
+    var bitmap = image.AsSpan(BitmapLbn * LbnSize, bitmapLbns * LbnSize);
+    for (var lbn = 0u; lbn < nextData; lbn++)
+      bitmap[(int)(lbn / 8)] |= (byte)(1 << (int)(lbn % 8));
 
     // ── LBN 4..: user-file headers + data ──────────────────────────────────
     for (var i = 0; i < files.Count; i++) {
       var (stem, ext) = split[i];
       var fileNum = (ushort)(1 + i); // first user file = id 1 (matches reader's "active != 0" check)
-      var headerLbn = (uint)(IndexfLbn + i);
+      var headerLbn = (uint)(indexfLbn + i);
       var (start, blocks) = extents[i];
 
       WriteFileHeader(image, (int)headerLbn, fileNum, stem, ext,
-        isDirectory: false, dataStartLbn: start, dataBlocks: blocks);
+        isDirectory: false, dataStartLbn: start, dataBlocks: blocks,
+        fileSize: files[i].Payload.Size);
 
       // The payload belongs at its allocated extent (zero-padded to the block
       // boundary); it is written after the header window.
@@ -170,12 +186,12 @@ public static class Ods1Writer {
     return image;
   }
 
-  private static void WriteHomeBlock(byte[] image, string volumeName) {
+  private static void WriteHomeBlock(byte[] image, string volumeName, int bitmapLbns, int indexfLbn) {
     var hb = HomeBlockLbn * LbnSize;
     var span = image.AsSpan(hb, LbnSize);
 
-    // +0x000  hm1$w_ibmapsize        u16 — bitmap is 1 LBN
-    BinaryPrimitives.WriteUInt16LittleEndian(span[0x000..], 1);
+    // +0x000  hm1$w_ibmapsize        u16 — bitmap size in LBNs
+    BinaryPrimitives.WriteUInt16LittleEndian(span[0x000..], (ushort)bitmapLbns);
     // +0x002  hm1$l_ibmaplbn         u32 — first LBN of allocation bitmap
     BinaryPrimitives.WriteUInt32LittleEndian(span[0x002..], (uint)BitmapLbn);
     // +0x006  hm1$w_maxfiles         u16
@@ -190,7 +206,7 @@ public static class Ods1Writer {
     WriteFixedAscii(span[0x00E..(0x00E + 12)], volumeName);
 
     // +0x040  pointer to INDEXF.SYS first header LBN (custom slot used by reader)
-    BinaryPrimitives.WriteUInt16LittleEndian(span[0x040..], (ushort)IndexfLbn);
+    BinaryPrimitives.WriteUInt16LittleEndian(span[0x040..], (ushort)indexfLbn);
 
     // +0x1F0  hm1$t_format           "DECFILE11A " (12 bytes)
     Encoding.ASCII.GetBytes("DECFILE11A").CopyTo(span[0x1F0..]);
@@ -213,7 +229,7 @@ public static class Ods1Writer {
   private static void WriteFileHeader(
     byte[] image, int headerLbn, ushort fileNum,
     string name, string ext, bool isDirectory,
-    uint dataStartLbn, uint dataBlocks) {
+    uint dataStartLbn, uint dataBlocks, long fileSize) {
 
     // The Stage-1 reader expects (matching its synthetic test image):
     //   +0    idOffWords = 32 (=> 64-byte offset to ident area)
@@ -221,7 +237,12 @@ public static class Ods1Writer {
     //   +2    fileNum    nonzero
     //   +0x0A fileChar   0x40 if directory else 0
     //   +64   name(9) ASCII + ext(3) ASCII + 2 bytes version
-    //   +128  map: u16 count_minus_1 + u16 hi + u16 lo
+    //   +128  map: a run of retrieval pointers, each u16 count_minus_1 + u16 hi + u16 lo
+    //   +0x0C exact byte size (u64). A retrieval pointer's count is 16-bit, so a
+    //         file is described by several of them and its logical size cannot be
+    //         derived from a single count; ODS-1 keeps the end-of-file position in
+    //         the record-attributes bundle, which this Stage-1 layout does not
+    //         emit, so the size lives in the header's spare words instead.
     const int IdOffWords = 32;
     const int MpOffWords = 64;
     const int IdByteOff = IdOffWords * 2;   // = 64
@@ -237,18 +258,34 @@ public static class Ods1Writer {
     BinaryPrimitives.WriteUInt16LittleEndian(span[6..], 0x0101);  // fh1$w_struclev = Files-11 L1
     BinaryPrimitives.WriteUInt16LittleEndian(span[8..], 0);       // fh1$w_fid_volume — relative volume 0
     span[0x0A] = (byte)(isDirectory ? 0x40 : 0x00);                // fh1$b_filechar (F11_DIRECTORY=0x40)
+    BinaryPrimitives.WriteInt64LittleEndian(span[0x0C..], fileSize); // exact logical size
 
     // Ident area at +64: 9-byte name + 3-byte ext + 2-byte version
     WriteFixedAscii(span[IdByteOff..(IdByteOff + MaxFileNameStem)], name);
     WriteFixedAscii(span[(IdByteOff + MaxFileNameStem)..(IdByteOff + MaxFileNameStem + MaxFileNameExt)], ext);
     // version field at IdByteOff + 12 = 0x4C: keep 0 (uninterpreted by reader)
 
-    // Map area at +128: single retrieval pointer covering the file's extent.
-    // Reader formula: count = read_u16 + 1, lbn = (hi << 16) | lo
-    var countMinus1 = dataBlocks == 0 ? (ushort)0 : (ushort)(dataBlocks - 1);
-    BinaryPrimitives.WriteUInt16LittleEndian(span[MpByteOff..], countMinus1);
-    BinaryPrimitives.WriteUInt16LittleEndian(span[(MpByteOff + 2)..], (ushort)(dataStartLbn >> 16));
-    BinaryPrimitives.WriteUInt16LittleEndian(span[(MpByteOff + 4)..], (ushort)(dataStartLbn & 0xFFFF));
+    // Map area at +128: retrieval pointers covering the file's extent. A pointer's
+    // count is 16-bit, so a run longer than 65536 blocks takes several — writing
+    // one truncated the count and the file read back short.
+    // Reader formula per pointer: count = read_u16 + 1, lbn = (hi << 16) | lo
+    var pointerSlots = (LbnSize - MpByteOff) / 6;
+    var remaining = dataBlocks;
+    var lbn = dataStartLbn;
+    var slot = 0;
+    do {
+      if (slot >= pointerSlots)
+        throw new InvalidOperationException(
+          $"ODS-1: '{name}' needs more than {pointerSlots} retrieval pointers.");
+      var count = Math.Min(remaining, 1u << 16);
+      var at = MpByteOff + slot * 6;
+      BinaryPrimitives.WriteUInt16LittleEndian(span[at..], (ushort)(count == 0 ? 0 : count - 1));
+      BinaryPrimitives.WriteUInt16LittleEndian(span[(at + 2)..], (ushort)(lbn >> 16));
+      BinaryPrimitives.WriteUInt16LittleEndian(span[(at + 4)..], (ushort)(lbn & 0xFFFF));
+      lbn += count;
+      remaining -= count;
+      ++slot;
+    } while (remaining > 0);
   }
 
   /// <summary>Splits "FOO.BAR" → ("FOO","BAR"); "NOEXT" → ("NOEXT","");

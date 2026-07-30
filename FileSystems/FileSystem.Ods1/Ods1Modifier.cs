@@ -31,7 +31,25 @@ public static class Ods1Modifier {
   private const int LbnSize = Ods1Writer.LbnSize;            // 512
   private const int HomeBlockLbn = Ods1Writer.HomeBlockLbn;  // 1
   private const int BitmapLbn = Ods1Writer.BitmapLbn;        // 2
-  private const int IndexfLbn = Ods1Writer.IndexfLbn;        // 4
+  /// <summary>
+  /// The index-file window's first LBN, from the home block. The bitmap grows with
+  /// the volume and pushes the window along, so a fixed 4 only held for volumes
+  /// small enough that one bitmap block covered them.
+  /// </summary>
+  private static int ReadIndexfLbn(byte[] img) {
+    var homeOffset = Ods1Writer.HomeBlockLbn * LbnSize;
+    if (img.Length < homeOffset + 0x042) return Ods1Writer.IndexfLbn;
+    var lbn = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(homeOffset + 0x040));
+    return lbn > BitmapLbn ? lbn : Ods1Writer.IndexfLbn;
+  }
+
+  /// <summary>Bitmap size in LBNs, from the home block.</summary>
+  private static int ReadBitmapLbns(byte[] img) {
+    var homeOffset = Ods1Writer.HomeBlockLbn * LbnSize;
+    if (img.Length < homeOffset + 2) return 1;
+    var size = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(homeOffset));
+    return size > 0 ? size : 1;
+  }
   private const int IndexfHeaderSlots = Ods1Writer.IndexfHeaderSlots; // 64
   private const int MaxNameStem = Ods1Writer.MaxFileNameStem;         // 9
   private const int MaxNameExt = Ods1Writer.MaxFileNameExt;           // 3
@@ -66,10 +84,11 @@ public static class Ods1Modifier {
     var img = ReadImage(image);
 
     // Find a free header slot in INDEXF window.
+    var indexfLbn = ReadIndexfLbn(img);
     var freeSlot = -1;
     var maxFileNum = 0;
     for (var i = 0; i < IndexfHeaderSlots; i++) {
-      var slotFileNum = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan((IndexfLbn + i) * LbnSize + 2));
+      var slotFileNum = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan((indexfLbn + i) * LbnSize + 2));
       if (slotFileNum == 0) {
         if (freeSlot < 0) freeSlot = i;
       } else if (slotFileNum > maxFileNum) {
@@ -87,8 +106,8 @@ public static class Ods1Modifier {
     // A single 512-byte bitmap block can track 4096 LBNs (= 2 MB of volume),
     // which is the hard ceiling for this Stage-1 modifier — beyond that the
     // volume would need a multi-block bitmap which the writer doesn't emit.
-    var bitmap = img.AsSpan(BitmapLbn * LbnSize, LbnSize).ToArray();
-    var dataStart = (uint)(IndexfLbn + IndexfHeaderSlots);
+    var bitmap = img.AsSpan(BitmapLbn * LbnSize, ReadBitmapLbns(img) * LbnSize).ToArray();
+    var dataStart = (uint)(ReadIndexfLbn(img) + IndexfHeaderSlots);
     var bitmapCapacity = (uint)(LbnSize * 8);
     var startLbn = FindContiguousFreeRun(bitmap, dataStart, bitmapCapacity, blocks);
     if (startLbn == uint.MaxValue)
@@ -109,7 +128,7 @@ public static class Ods1Modifier {
 
     // Write file header in the chosen slot.
     var newFileNum = (ushort)(maxFileNum + 1);
-    WriteFileHeader(img, IndexfLbn + freeSlot, newFileNum, stem, ext, isDirectory: false,
+    WriteFileHeader(img, ReadIndexfLbn(img) + freeSlot, newFileNum, stem, ext, isDirectory: false,
       dataStartLbn: startLbn, dataBlocks: blocks);
 
     // Copy payload + zero-fill tail of the allocated extent so any forensic-recovery
@@ -141,7 +160,7 @@ public static class Ods1Modifier {
     var slot = FindHeaderSlotByName(img, stem, ext);
     if (slot < 0) return false;
 
-    var headerOffset = (IndexfLbn + slot) * LbnSize;
+    var headerOffset = (ReadIndexfLbn(img) + slot) * LbnSize;
 
     // Read retrieval pointer (count-1, hi, lo) to discover the data extent.
     var countMinus1 = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(headerOffset + MpByteOff));
@@ -173,7 +192,7 @@ public static class Ods1Modifier {
     Span<byte> nameBuf = stackalloc byte[MaxNameStem];
     Span<byte> extBuf = stackalloc byte[MaxNameExt];
     for (var i = 0; i < IndexfHeaderSlots; i++) {
-      var headerOffset = (IndexfLbn + i) * LbnSize;
+      var headerOffset = (ReadIndexfLbn(img) + i) * LbnSize;
       var fileNum = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(headerOffset + 2));
       if (fileNum == 0) continue;
       img.AsSpan(headerOffset + IdByteOff, MaxNameStem).CopyTo(nameBuf);
