@@ -92,35 +92,6 @@ jobs:
               --notes-file CHANGES.md \
               dist/*.zip
 
-  publish-nuget:
-    name: Publish NuGet
-    needs: [meta, build]
-    runs-on: ubuntu-latest
-    steps:
-      # The .nupkg files were packed inside `_build.yml` (shared with release.yml)
-      # and uploaded as the `nuget-packages-<version>` artifact. We just download
-      # + push here. Nightly versions are X.Y.Z.<build-count> with no prerelease
-      # suffix, so they'll publish as a normal version on NuGet.org — that's what
-      # the user asked for ("published as soon as nightly runs").
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build.outputs.nuget-artifact-name }}
-          path: dist-nuget
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
-
-      - name: Push to NuGet.org
-        env:
-          NUGET_TOKEN: ${{ secrets.NUGET_TOKEN }}
-        run: |
-          if [ -z "$NUGET_TOKEN" ]; then
-            echo "::warning::NUGET_TOKEN secret is not set; skipping publish."
-            exit 0
-          fi
-
   prune:
     needs: publish
     runs-on: ubuntu-latest
