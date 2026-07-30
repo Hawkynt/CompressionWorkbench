@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 using static FileSystem.LittleFs.LittleFsFormat;
 
@@ -28,19 +29,37 @@ public sealed class LittleFsFileEntry {
 /// CTZ skip-lists for the rest. It validates structure against the on-disk format
 /// (revision, delta-encoded tags, commit CRC) rather than assuming fixed offsets.
 /// </remarks>
-public sealed class LittleFsReader {
-  private readonly byte[] _image;
+public sealed class LittleFsReader : IDisposable {
+  // Blocks are pulled on demand: a littlefs volume addresses blocks in 32 bits,
+  // which reaches far past what a byte[] can hold.
+  private readonly ImageAccessor _image;
+  private readonly long _length;
   private readonly uint _blockSize;
   private readonly List<LittleFsFileEntry> _files = new();
 
   public IReadOnlyList<LittleFsFileEntry> Files => this._files;
   public uint BlockSize => this._blockSize;
 
-  public LittleFsReader(byte[] image) {
-    ArgumentNullException.ThrowIfNull(image);
-    this._image = image;
+  /// <summary>Total size of the backing image in bytes.</summary>
+  public long Length => this._length;
 
-    var sb = LittleFsSuperblock.TryParse(image);
+  public LittleFsReader(byte[] image) : this(ImageAccessor.FromBytes(image ?? throw new ArgumentNullException(nameof(image)))) { }
+
+  public LittleFsReader(Stream stream, bool leaveOpen = true)
+    : this(Wrap(stream, leaveOpen)) { }
+
+  private static ImageAccessor Wrap(Stream stream, bool leaveOpen) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    return new ImageAccessor(stream, leaveOpen);
+  }
+
+  private LittleFsReader(ImageAccessor image) {
+    this._image = image;
+    this._length = image.Length;
+
+    var scan = image.Read(0, (int)Math.Min(65536, image.Length));
+    var sb = LittleFsSuperblock.TryParse(scan);
     if (!sb.Valid)
       throw new InvalidDataException("not a recognised littlefs image (no valid superblock).");
     this._blockSize = sb.BlockSize;
@@ -54,8 +73,30 @@ public sealed class LittleFsReader {
     ArgumentNullException.ThrowIfNull(entry);
     if (!entry.IsCtz)
       return entry.Inline ?? [];
-    return this.ReadCtz(entry.CtzHead, (uint)entry.Size);
+    if (entry.Size > Array.MaxLength)
+      throw new IOException(
+        $"littlefs: '{entry.Path}' is {entry.Size:N0} bytes, past the array limit; use ReadFileTo.");
+    using var buffer = new MemoryStream();
+    this.ReadFileTo(entry, buffer);
+    return buffer.ToArray();
   }
+
+  /// <summary>
+  /// Writes <paramref name="entry"/>'s bytes into <paramref name="destination"/>,
+  /// one CTZ block at a time. Returns the number of bytes written.
+  /// </summary>
+  public long ReadFileTo(LittleFsFileEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (!entry.IsCtz) {
+      var inline = entry.Inline ?? [];
+      destination.Write(inline);
+      return inline.Length;
+    }
+    return this.CopyCtz(entry.CtzHead, (uint)entry.Size, destination);
+  }
+
+  public void Dispose() => this._image.Dispose();
 
   private void WalkDirectory(uint blockA, uint blockB, string parentPath, HashSet<ulong> visited) {
     var key = ((ulong)blockA << 32) | blockB;
@@ -112,9 +153,10 @@ public sealed class LittleFsReader {
     entries = null;
 
     var blockStart = (long)blockIndex * this._blockSize;
-    if (blockStart + 4 > this._image.Length) return false;
+    if (blockStart + 4 > this._length) return false;
 
-    var span = this._image.AsSpan((int)blockStart, (int)this._blockSize);
+    var take = (int)Math.Min(this._blockSize, this._length - blockStart);
+    var span = this._image.Read(blockStart, take).AsSpan();
     revision = BinaryPrimitives.ReadUInt32LittleEndian(span);
 
     var off = 4;
@@ -151,10 +193,9 @@ public sealed class LittleFsReader {
     return false; // ran off the block without a terminating CRC tag
   }
 
-  private byte[] ReadCtz(uint head, uint size) {
-    if (size == 0) return [];
+  private long CopyCtz(uint head, uint size, Stream destination) {
+    if (size == 0) return 0;
     var blockSize = (int)this._blockSize;
-    var result = new byte[size];
 
     // The head is the LAST block of the skip-list (highest file-order index).
     // Walk back via the first back-pointer (which always points to index-1) until
@@ -166,22 +207,26 @@ public sealed class LittleFsReader {
       indices.Add(cur);
       if (i == 0) break;
       var bStart = (long)cur * blockSize;
-      cur = BinaryPrimitives.ReadUInt32LittleEndian(this._image.AsSpan((int)bStart, 4));
+      if (bStart + 4 > this._length) break;
+      cur = this._image.ReadUInt32(bStart);
     }
     indices.Reverse(); // now in file order: index 0 .. n-1
 
-    var written = 0;
+    var written = 0L;
     for (var i = 0; i < indices.Count; ++i) {
       var pointerCount = i == 0 ? 0 : (TrailingZeros((uint)i) + 1);
       var pointerBytes = pointerCount * 4;
-      var bStart = (long)indices[i] * blockSize;
+      var bStart = (long)indices[i] * blockSize + pointerBytes;
       var dataCap = blockSize - pointerBytes;
-      var take = Math.Min(dataCap, (int)size - written);
-      this._image.AsSpan((int)bStart + pointerBytes, take).CopyTo(result.AsSpan(written));
+      var take = Math.Min((long)dataCap, size - written);
+      if (take <= 0) break;
+      take = Math.Min(take, this._length - bStart);
+      if (take <= 0) break;
+      this._image.CopyTo(bStart, destination, take);
       written += take;
     }
 
-    return result;
+    return written;
   }
 
   /// <summary>Number of CTZ data blocks needed for <paramref name="size"/> bytes.</summary>
