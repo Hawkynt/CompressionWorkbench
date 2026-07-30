@@ -27,7 +27,7 @@ namespace FileSystem.Jfs;
 public sealed class JfsWriter {
   // ── spec constants ────────────────────────────────────────────────────────
   internal const int SuperblockOffset = 0x8000;   // 64 × 512 = 32768
-  internal const int BlockSize = 4096;
+  public const int BlockSize = 4096;
   internal const int SectorSize = 512;
   internal const int L2BSize = 12;                // log2(4096)
   internal const int L2PBSize = 9;                // log2(512)

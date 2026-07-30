@@ -114,6 +114,39 @@ public sealed class Reiser4Reader : IDisposable {
     return written;
   }
 
+  /// <summary>
+  /// Where an entry's bytes are: one run per stretch of consecutive blocks, the
+  /// block-allocator bitmaps stepped over exactly as <see cref="ExtractTo" />
+  /// steps over them. A file is not one contiguous run whenever a bitmap falls
+  /// inside it.
+  /// </summary>
+  public IEnumerable<(long Offset, long Length)> EnumerateRuns(Entry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.Size <= 0) yield break;
+
+    var blocksPerBitmap = Reiser4Writer.BlocksPerBitmap;
+    var block = entry.FirstBlock;
+    long remaining = entry.Size;
+    while (remaining > 0) {
+      while (IsBitmapBlock(block, blocksPerBitmap)) ++block;
+      var start = (long)block * this.BlockSize;
+      if (start < 0 || start >= this._image.Length) yield break;
+
+      // Take every block up to the next bitmap in one run.
+      long run = 0;
+      while (remaining - run > 0 && !IsBitmapBlock(block, blocksPerBitmap)) {
+        var take = Math.Min((long)this.BlockSize, remaining - run);
+        take = Math.Min(take, this._image.Length - (start + run));
+        if (take <= 0) break;
+        run += take;
+        ++block;
+      }
+      if (run <= 0) yield break;
+      yield return (start, run);
+      remaining -= run;
+    }
+  }
+
   private void ReadDirectory(ulong firstBlock) {
     var visited = new HashSet<ulong>();
     var block = firstBlock;

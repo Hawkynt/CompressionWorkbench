@@ -46,7 +46,7 @@ namespace FileSystem.Jfs;
 /// </summary>
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable,
-                                          IFormatOptionsSchema, ILayoutOptimizable {
+                                          IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// JFS aggregate geometry (4 KiB blocks, single allocation group, fixed
   /// metadata layout) is not tunable, so the only honoured knob is the volume
@@ -304,4 +304,26 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     w.WriteTo(ms);
     return ms.ToArray();
   }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => JfsExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zero-fills every block the allocation map reports as free — which is where
+  /// a removed file's bytes stay until something else claims them.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = JfsExtentMap.Enumerate(image).ToList();
+    if (extents.Count == 0) return 0;
+    // The map is per block and says nothing about where a file ends inside its
+    // last one, so there are no cluster tips to trim from it.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length,
+      wipeClusterTips: false, fileSizeLookup: null);
+  }
+
 }

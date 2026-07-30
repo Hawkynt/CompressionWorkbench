@@ -330,9 +330,12 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       List<DefragBlockInfo> files = [];
       foreach (var e in reader.Entries) {
         if (e.Size <= 0) continue;
-        var offset = (long)e.FirstBlock * blockSize;
-        if (offset < firstData) firstData = offset;
-        files.Add(new DefragBlockInfo(offset, e.Size, DefragBlockKind.Used, e.Name));
+        // A file is not one run: the allocator bitmaps inside it are stepped
+        // over, so its bytes continue past where its length alone would end.
+        foreach (var (offset, length) in reader.EnumerateRuns(e)) {
+          if (offset < firstData) firstData = offset;
+          files.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
+        }
       }
 
       var metadataEnd = files.Count > 0 ? firstData : Math.Min(reader.Length, 25L * blockSize);
