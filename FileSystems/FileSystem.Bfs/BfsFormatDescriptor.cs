@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.DiskImage;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
@@ -184,18 +185,49 @@ public sealed class BfsFormatDescriptor
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Buffering the rebuilt image would cap the volume at what a byte[] can
+    // hold, so the packing modes stream: each entry is spilled to scratch and
+    // the writer pulls it back while laying out the runs.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      BfsWriter? writer = null;
+      Stream? target = null;
+      var spill = new List<string>();
+      try {
+        DefragRebuilder.RebuildStreaming(archive, options,
+          readEntries: ReadEntries,
+          beginWrite: s => { writer = new BfsWriter(); target = s; },
+          writeEntry: (name, data) => {
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            File.WriteAllBytes(path, data);
+            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+          },
+          finishWrite: () => writer!.BuildToStreaming(target!));
+      } finally {
+        foreach (var path in spill)
+          try { File.Delete(path); } catch { /* scratch file already gone */ }
+      }
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  }
 
   // ── IFilesystemExtentMap ───────────────────────────────────────────
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    var imageBytes = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(image);
+    if (image.CanSeek) image.Position = 0;
+    // Blocks are pulled on demand: copying the volume in capped the map at the
+    // array limit, which the runs it describes do not.
+    using var accessor = new ImageAccessor(image);
+    var imageBytes = new ImageBytes(accessor);
 
-    var sb = BfsSuperblock.TryParse(imageBytes);
+    var sb = BfsSuperblock.TryParse(accessor.Read(0, (int)Math.Min(accessor.Length, 64 * 1024)));
     if (!sb.Valid) yield break;
 
     var blockSize = (int)sb.BlockSize;
@@ -207,7 +239,7 @@ public sealed class BfsFormatDescriptor
     // and the wiper then zeroed live file data.
     var blocksPerAg = imageBytes.Length >= sb.SuperblockOffset + 76
       ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
-          imageBytes.AsSpan(sb.SuperblockOffset + 72, 4))
+          imageBytes.Read(sb.SuperblockOffset + 72, 4))
       : 0u;
     long BlockOf((uint Ag, int Start, int Length) run)
       => (blocksPerAg > 0 ? run.Ag * (long)blocksPerAg : 0) + run.Start;
@@ -228,7 +260,7 @@ public sealed class BfsFormatDescriptor
     // after the log; a single block only ever covered a 64 MB volume.
     var agBitmapBlock = BlockOf(logRun) + logRun.Length;
     var totalBlocks = imageBytes.Length >= sb.SuperblockOffset + 56
-      ? System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(imageBytes.AsSpan(sb.SuperblockOffset + 48, 8))
+      ? System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(imageBytes.Read(sb.SuperblockOffset + 48, 8))
       : 0L;
     var bitmapBlocks = Math.Max(1L, ((totalBlocks + 7) / 8 + blockSize - 1) / blockSize);
     yield return new DefragBlockInfo(agBitmapBlock * blockSize, bitmapBlocks * blockSize,
@@ -443,11 +475,21 @@ public sealed class BfsFormatDescriptor
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  private static (uint Ag, int Start, int Length) ReadBlockRunFromImage(byte[] image, long offset) {
+  private static (uint Ag, int Start, int Length) ReadBlockRunFromImage(ImageBytes image, long offset) {
     if (offset < 0 || offset + 8 > image.Length) return (0, 0, 0);
-    var ag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)offset));
-    var start = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan((int)offset + 4));
-    var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan((int)offset + 6));
+    var run = image.Read(offset, 8);
+    var ag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(run.AsSpan(0, 4));
+    var start = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(run.AsSpan(4, 2));
+    var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(run.AsSpan(6, 2));
     return (ag, start, length);
+  }
+
+  /// <summary>
+  /// The bounded reads the extent map needs, over a volume that is never resident.
+  /// </summary>
+  private sealed class ImageBytes(ImageAccessor accessor) {
+    public long Length => accessor.Length;
+    public byte[] Read(long offset, int count) => accessor.Read(offset, count);
+    public byte[] AsSpanAt(long offset, int count) => accessor.Read(offset, count);
   }
 }
