@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Nilfs2;
 
@@ -26,19 +27,27 @@ namespace FileSystem.Nilfs2;
 ///   <item><description>0x400..0x7FF — primary NILFS2 superblock (magic 0x3434 at
 ///   +6, <c>s_rev_level == 2</c>, crc32_le-sealed <c>s_sum</c>, label at +0xA8).
 ///   <c>s_last_pseg</c> points at the committed log.</description></item>
-///   <item><description>0x800..(log start) — writer-private compact directory
-///   guarded by <see cref="WriterMagic"/> ("NILFS2WB") + 8-byte directory length
-///   + (u32 name_len, name, u64 payload_offset, u64 size) entries + the payloads.
-///   This is read by <see cref="Nilfs2Reader"/> and mutated by the in-place
-///   modifier; the kernel never looks here (it jumps straight to
+///   <item><description>0x800.. — writer-private compact directory guarded by
+///   <see cref="WriterMagic"/> ("NILFS2WB") + i64 directory length + i64 payload
+///   base + i64 payload length + (u32 name_len, name, u64 payload_offset,
+///   u64 size) entries. This is read by <see cref="Nilfs2Reader"/> and mutated by
+///   the in-place modifier; the kernel never looks here (it jumps straight to
 ///   <c>s_last_pseg</c>).</description></item>
 ///   <item><description>log region — a single partial segment at the first
-///   segment boundary past the writer body: segment summary, payload blocks
+///   segment boundary past the private directory: segment summary, payload blocks
 ///   (root dir, user-file data, ifile palloc blocks, DAT palloc blocks, cpfile,
 ///   sufile) and the super root as the last block of the segment.</description></item>
+///   <item><description>payload region — the private directory's file bytes,
+///   starting at the block after the log.</description></item>
 ///   <item><description>secondary superblock one block before EOF
 ///   (<c>dev_size - 4096</c>).</description></item>
 /// </list>
+///
+/// <para><b>Why the log comes first.</b> The sufile is a single block, so it can
+/// only describe <c>block_size / 16</c> segments. With the payload ahead of the
+/// log, a volume of any size pushed the log into a segment the sufile could not
+/// address. Keeping the log at the front bounds the sufile slot for every volume
+/// size, and lets the payload be streamed rather than held in memory.</para>
 ///
 /// <para><b>Scope.</b> Single checkpoint (cno=1), single partial segment. Each
 /// embedded user file uses a NILFS direct block map, so files in the mountable
@@ -63,8 +72,14 @@ public sealed class Nilfs2Writer {
   /// </summary>
   internal static readonly byte[] SegmentMagic = "NILFS2SG"u8.ToArray();
 
-  /// <summary>Where the writer-private directory + payload region begins.</summary>
+  /// <summary>Where the writer-private directory begins.</summary>
   internal const int SegmentStart = 2048;
+
+  /// <summary>
+  /// Bytes of private-directory header ahead of the entries: magic, directory
+  /// length, payload base and payload length.
+  /// </summary>
+  internal const int PrivateHeaderBytes = 8 + 8 + 8 + 8;
 
   /// <summary>Superblock offset on disk (NILFS2 spec).</summary>
   internal const int SuperblockOffsetOnDisk = 1024;
@@ -96,7 +111,7 @@ public sealed class Nilfs2Writer {
   // File modes.
   private const ushort SIfdir = 0x4000, SIfreg = 0x8000;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, FilePayload Payload)> _files = [];
 
   /// <summary>
   /// Deterministic UUID / CRC-seed source so output is byte-reproducible.
@@ -111,15 +126,45 @@ public sealed class Nilfs2Writer {
   public void AddFile(string name, byte[] data) {
     ArgumentException.ThrowIfNullOrEmpty(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name.Replace('\\', '/'), data));
+    this._files.Add((name.Replace('\\', '/'), FilePayload.FromBytes(data)));
   }
 
   /// <summary>
-  /// Builds the NILFS2 image. <paramref name="blockSize"/> must be a power of two
-  /// in [1024, 65536]. <paramref name="volumeLabel"/> is written into the
-  /// superblock's volume-label slot at +0xA8.
+  /// Adds a file whose bytes are copied straight from <paramref name="opener"/>
+  /// into the image at write time, so a payload larger than memory — or than a
+  /// byte[] — can be stored.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> opener) {
+    ArgumentException.ThrowIfNullOrEmpty(name);
+    ArgumentNullException.ThrowIfNull(opener);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    this._files.Add((name.Replace('\\', '/'), FilePayload.FromStream(size, opener)));
+  }
+
+  /// <summary>
+  /// Builds the NILFS2 image in memory. <paramref name="blockSize"/> must be a
+  /// power of two in [1024, 65536]; <paramref name="volumeLabel"/> is written into
+  /// the superblock's volume-label slot at +0xA8. Use
+  /// <see cref="Build(Stream, int, string?)"/> for volumes past the array limit.
   /// </summary>
   public byte[] Build(int blockSize = 4096, string? volumeLabel = null) {
+    using var buffer = new MemoryStream();
+    this.Build(buffer, blockSize, volumeLabel);
+    return buffer.ToArray();
+  }
+
+  /// <summary>Writes the assembled image to a stream.</summary>
+  public void WriteTo(Stream output) => this.Build(output);
+
+  /// <summary>
+  /// Writes the NILFS2 image into <paramref name="output"/> from its current
+  /// position. Only the metadata is assembled in memory; file payloads are
+  /// copied through, so the volume may be arbitrarily large.
+  /// </summary>
+  public void Build(Stream output, int blockSize = 4096, string? volumeLabel = null) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek)
+      throw new ArgumentException("Nilfs2 needs a seekable stream to place the tail superblock.", nameof(output));
     if (blockSize < 1024 || blockSize > 65536 || (blockSize & (blockSize - 1)) != 0)
       throw new ArgumentException("blockSize must be a power of two in [1024, 65536].", nameof(blockSize));
 
@@ -131,19 +176,22 @@ public sealed class Nilfs2Writer {
     if (blockSize < minBlock) blockSize = minBlock;
     var logBlockSize = (uint)(System.Numerics.BitOperations.Log2((uint)blockSize) - 10);
 
-    // ── writer-private directory body (read by Nilfs2Reader) ────────────────
+    // ── writer-private directory (read by Nilfs2Reader) ─────────────────────
     var dirSize = this.ComputeDirectoryBytes();
-    var dataSize = 0L;
-    foreach (var (_, data) in this._files) dataSize += data.LongLength;
-    var bodyBytes = WriterMagic.Length + 8 + dirSize + dataSize;
+    var payloadBytes = 0L;
+    foreach (var (_, payload) in this._files) payloadBytes += payload.Size;
 
-    // The kernel log starts at the first segment boundary past the writer body.
-    var bodyEnd = SegmentStart + bodyBytes;
-    var psegStart = (int)(((bodyEnd + (long)blockSize * SegBlocks - 1) / ((long)blockSize * SegBlocks)) * SegBlocks);
+    // The kernel log starts at the first segment boundary past the directory;
+    // the payload follows the log, so the log's segment index — and with it the
+    // sufile slot it needs — stays small however large the payload is.
+    var segBytes = (long)SegBlocks * blockSize;
+    var dirEnd = SegmentStart + PrivateHeaderBytes + dirSize;
+    var psegStart = (int)(((dirEnd + segBytes - 1) / segBytes) * SegBlocks);
     if (psegStart < SegBlocks) psegStart = SegBlocks;
 
     // Plan the kernel log blocks (counts) so we can size the image up front.
-    var plan = PlanLog(psegStart, blockSize);
+    var plan = this.PlanLog(psegStart, blockSize);
+    var payloadBase = (long)(psegStart + plan.NBlocks) * blockSize;
 
     // The kernel needs spare segments to commit new checkpoints, so the volume
     // must span several segments past the one holding the log (NILFS reserves
@@ -151,50 +199,70 @@ public sealed class Nilfs2Writer {
     // MiB). Size to at least MinSegments segments and one tail block for the
     // secondary superblock, rounded to whole blocks.
     var tailReserve = Math.Max(Nilfs2Superblock.SecondaryBackOffset, blockSize);
-    var logEndBytes = (long)(psegStart + plan.NBlocks) * blockSize + tailReserve;
-    var minSegBytes = (long)MinSegments * SegBlocks * blockSize;
-    var minImageBytes = Math.Max(Math.Max(64L * 1024, minSegBytes), logEndBytes);
+    var minImageBytes = Math.Max(
+      Math.Max(64L * 1024, (long)MinSegments * segBytes),
+      payloadBase + payloadBytes + tailReserve);
     // Round up to a whole number of segments so s_nsegments * blocks_per_segment
     // describes the device exactly.
-    var segBytes = (long)SegBlocks * blockSize;
     var imageBytes = ((minImageBytes + segBytes - 1) / segBytes) * segBytes;
     var totalBlocks = (ulong)(imageBytes / blockSize);
     var nSegments = Math.Max(1ul, totalBlocks / SegBlocks);
 
-    var img = new byte[imageBytes];
+    // ── metadata prefix: private directory + kernel log + primary superblock ──
+    var head = new SparseBlockImage(blockSize, payloadBase);
+    this.WritePrivateDirectory(head, dirSize, payloadBase, payloadBytes);
+    this.WriteKernelLog(head, plan, blockSize, nSegments);
 
-    // ── writer-private directory + payloads at SegmentStart (reader path) ────
-    WritePrivateDirectory(img);
-
-    // ── kernel-mountable log at psegStart ───────────────────────────────────
-    WriteKernelLog(img, plan, blockSize);
-
-    // ── superblock pair ─────────────────────────────────────────────────────
     var freeBlocks = (nSegments - 1) * SegBlocks; // one segment consumed by the log.
     Nilfs2Superblock.Encode(
-      img.AsSpan(Nilfs2Superblock.PrimaryOffset),
+      head.At(Nilfs2Superblock.PrimaryOffset, Nilfs2Superblock.Size),
       logBlockSize, nSegments, (ulong)imageBytes, SegBlocks,
       lastCno: 1, lastPseg: (ulong)psegStart, lastSeq: 0, freeBlocks: freeBlocks,
       ctime: CtimeFixed, state: Nilfs2Superblock.StateValid,
       crcSeed: FixedCrcSeed, uuid: FixedUuid, volumeLabel: volumeLabel);
 
+    var basePosition = output.Position;
+    head.WriteTo(output);
+
+    // ── payload region: copied through, never held ──────────────────────────
+    foreach (var (name, payload) in this._files) {
+      if (payload.Size <= 0) continue;
+      using var source = payload.Open();
+      var copied = CopyExactly(source, output, payload.Size);
+      if (copied != payload.Size)
+        throw new InvalidOperationException(
+          $"Nilfs2: '{name}' was announced as {payload.Size:N0} bytes but only {copied:N0} could be read.");
+    }
+
+    // ── tail: padding to a whole segment + the secondary superblock ─────────
+    output.SetLength(basePosition + imageBytes);
     var secondaryOffset = imageBytes - Nilfs2Superblock.SecondaryBackOffset;
-    if (secondaryOffset >= (long)(psegStart + plan.NBlocks) * blockSize)
+    if (secondaryOffset >= payloadBase + payloadBytes) {
+      var secondary = new byte[Nilfs2Superblock.Size];
       Nilfs2Superblock.Encode(
-        img.AsSpan((int)secondaryOffset),
+        secondary,
         logBlockSize, nSegments, (ulong)imageBytes, SegBlocks,
         lastCno: 1, lastPseg: (ulong)psegStart, lastSeq: 0, freeBlocks: freeBlocks,
         ctime: CtimeFixed, state: Nilfs2Superblock.StateValid,
         crcSeed: FixedCrcSeed, uuid: FixedUuid, volumeLabel: volumeLabel);
-
-    return img;
+      output.Position = basePosition + secondaryOffset;
+      output.Write(secondary);
+    }
+    output.Position = basePosition + imageBytes;
+    output.Flush();
   }
 
-  /// <summary>Writes the assembled image to a stream.</summary>
-  public void WriteTo(Stream output) {
-    ArgumentNullException.ThrowIfNull(output);
-    var img = this.Build();
-    output.Write(img, 0, img.Length);
+  private static long CopyExactly(Stream source, Stream destination, long count) {
+    var buffer = new byte[81920];
+    var remaining = count;
+    while (remaining > 0) {
+      var want = (int)Math.Min(buffer.Length, remaining);
+      var read = source.Read(buffer, 0, want);
+      if (read <= 0) break;
+      destination.Write(buffer, 0, read);
+      remaining -= read;
+    }
+    return count - remaining;
   }
 
   /// <summary>
@@ -207,10 +275,10 @@ public sealed class Nilfs2Writer {
   private int MinBlockSizeForLog() {
     var nFiles = 0;
     var rootDirBytes = 16 + 16; // "." + ".." minimum.
-    foreach (var (name, data) in this._files) {
+    foreach (var (name, payload) in this._files) {
       // Match the embed rule in PlanLog (assume 4 KiB to bound the block count).
       if (name.Contains('/')) continue;
-      var nblk = Math.Max(1, (data.Length + 4095) / 4096);
+      var nblk = Math.Max(1L, (payload.Size + 4095) / 4096);
       if (nblk > MaxKernelFileBlocks) continue;
       ++nFiles;
       rootDirBytes += DirRecLen(Encoding.UTF8.GetByteCount(name));
@@ -236,25 +304,27 @@ public sealed class Nilfs2Writer {
     return total;
   }
 
-  private void WritePrivateDirectory(byte[] img) {
-    var dirSize = this.ComputeDirectoryBytes();
-    var seg = img.AsSpan(SegmentStart);
-    WriterMagic.CopyTo(seg);
-    BinaryPrimitives.WriteInt64LittleEndian(seg[WriterMagic.Length..], dirSize);
+  private void WritePrivateDirectory(SparseBlockImage image, int dirSize, long payloadBase, long payloadBytes) {
+    Span<byte> header = stackalloc byte[PrivateHeaderBytes];
+    WriterMagic.CopyTo(header);
+    BinaryPrimitives.WriteInt64LittleEndian(header[8..], dirSize);
+    BinaryPrimitives.WriteInt64LittleEndian(header[16..], payloadBase);
+    BinaryPrimitives.WriteInt64LittleEndian(header[24..], payloadBytes);
+    image.Write(SegmentStart, header);
 
-    var dirOffset = WriterMagic.Length + 8;
-    var payloadOffset = dirOffset + dirSize;
+    var cursor = (long)SegmentStart + PrivateHeaderBytes;
     var payloadCursor = 0L;
-    foreach (var (name, data) in this._files) {
+    Span<byte> record = stackalloc byte[16];
+    foreach (var (name, payload) in this._files) {
       var nameBytes = Encoding.UTF8.GetBytes(name);
-      BinaryPrimitives.WriteUInt32LittleEndian(seg[dirOffset..], (uint)nameBytes.Length);
-      nameBytes.CopyTo(seg[(dirOffset + 4)..]);
-      BinaryPrimitives.WriteInt64LittleEndian(seg[(dirOffset + 4 + nameBytes.Length)..], payloadCursor);
-      BinaryPrimitives.WriteInt64LittleEndian(seg[(dirOffset + 4 + nameBytes.Length + 8)..], data.LongLength);
-      dirOffset += 4 + nameBytes.Length + 16;
-
-      data.CopyTo(seg[(payloadOffset + (int)payloadCursor)..]);
-      payloadCursor += data.LongLength;
+      BinaryPrimitives.WriteUInt32LittleEndian(record, (uint)nameBytes.Length);
+      image.Write(cursor, record[..4]);
+      image.Write(cursor + 4, nameBytes);
+      BinaryPrimitives.WriteInt64LittleEndian(record, payloadCursor);
+      BinaryPrimitives.WriteInt64LittleEndian(record[8..], payload.Size);
+      image.Write(cursor + 4 + nameBytes.Length, record);
+      cursor += 4 + nameBytes.Length + 16;
+      payloadCursor += payload.Size;
     }
   }
 
@@ -291,14 +361,16 @@ public sealed class Nilfs2Writer {
     // Only files that fit in a direct bmap are embedded into the mountable tree;
     // the writer-private directory still carries every file for the reader.
     var ino = (ulong)UserIno;
-    foreach (var (name, data) in this._files) {
+    foreach (var (name, payload) in this._files) {
       // Subdirectories are not materialised in the mountable tree (only a flat
       // root directory); such files stay readable via the writer-private
       // directory. Files too large for a direct bmap are likewise skipped.
       if (name.Contains('/')) continue;
-      var nblk = Math.Max(1, (data.Length + blockSize - 1) / blockSize);
+      var nblk = Math.Max(1L, (payload.Size + blockSize - 1) / blockSize);
       if (nblk > MaxKernelFileBlocks) continue;
-      p.Files.Add(new KFile { Name = name, Data = data, Ino = ino, NBlocks = nblk });
+      // Small enough to embed, so reading it back for the log costs at most
+      // MaxKernelFileBlocks blocks.
+      p.Files.Add(new KFile { Name = name, Data = payload.ToArray(), Ino = ino, NBlocks = (int)nblk });
       ++ino;
     }
     p.NInoUsed = (int)ino;
@@ -328,9 +400,7 @@ public sealed class Nilfs2Writer {
     return p;
   }
 
-  private void WriteKernelLog(byte[] img, LogPlan p, int blockSize) {
-    var nSegments = (ulong)(img.LongLength / blockSize) / SegBlocks;
-
+  private void WriteKernelLog(SparseBlockImage img, LogPlan p, int blockSize, ulong nSegments) {
     // ── DAT (physical pointers) ───────────────────────────────────────────
     var datEntry = Block(blockSize);
     foreach (var (vblk, phys) in p.DatMap) {
@@ -375,7 +445,7 @@ public sealed class Nilfs2Writer {
     foreach (var f in p.Files)
       for (var bi = 0; bi < f.NBlocks; ++bi) {
         var chunk = f.Data.AsSpan(bi * blockSize, Math.Min(blockSize, f.Data.Length - bi * blockSize));
-        chunk.CopyTo(img.AsSpan(f.Phys[bi] * blockSize));
+        img.Write((long)f.Phys[bi] * blockSize, chunk);
       }
 
     // ── cpfile ──────────────────────────────────────────────────────────────
@@ -392,6 +462,8 @@ public sealed class Nilfs2Writer {
     WriteBlock(img, p.PCpfile, blockSize, cp);
 
     // ── sufile ──────────────────────────────────────────────────────────────
+    // One block of segment usage entries. The log sits in one of the first
+    // segments by construction, so its slot is always inside this block.
     var segOfPseg = p.PsegStart / SegBlocks;
     var su = Block(blockSize);
     BinaryPrimitives.WriteUInt64LittleEndian(su.AsSpan(0), nSegments - 1);     // sh_ncleansegs
@@ -399,6 +471,10 @@ public sealed class Nilfs2Writer {
     BinaryPrimitives.WriteUInt64LittleEndian(su.AsSpan(16), (ulong)segOfPseg); // sh_last_alloc
     var suoff = ((24 + SegUsageSize - 1) / SegUsageSize) * SegUsageSize;
     var suSlot = suoff + segOfPseg * SegUsageSize;
+    if (suSlot + SegUsageSize > blockSize)
+      throw new InvalidOperationException(
+        $"Nilfs2: the log landed in segment {segOfPseg}, past the {blockSize / SegUsageSize} " +
+        "segments one sufile block can describe.");
     BinaryPrimitives.WriteUInt64LittleEndian(su.AsSpan(suSlot), CtimeFixed);       // su_lastmod
     BinaryPrimitives.WriteUInt32LittleEndian(su.AsSpan(suSlot + 8), (uint)p.NBlocks);// su_nblocks
     BinaryPrimitives.WriteUInt32LittleEndian(su.AsSpan(suSlot + 12), 0x1);         // su_flags = DIRTY
@@ -420,7 +496,7 @@ public sealed class Nilfs2Writer {
     WriteSegmentSummary(img, p, blockSize, segOfPseg);
   }
 
-  private void WriteSegmentSummary(byte[] img, LogPlan p, int blockSize, int segOfPseg) {
+  private void WriteSegmentSummary(SparseBlockImage img, LogPlan p, int blockSize, int segOfPseg) {
     using var ms = new MemoryStream();
     void Finfo(ulong ino, int nblk, int ndatablk) {
       Span<byte> b = stackalloc byte[24];
@@ -478,8 +554,8 @@ public sealed class Nilfs2Writer {
     WriteBlock(img, p.PsegStart, blockSize, ss);
 
     // ss_datasum = crc32_le over [pseg+4 .. pseg + nblocks*blockSize].
-    var datasum = Nilfs2Superblock.Crc32Le(FixedCrcSeed,
-      img.AsSpan(p.PsegStart * blockSize + 4, p.NBlocks * blockSize - 4));
+    var logBytes = img.Read((long)p.PsegStart * blockSize + 4, p.NBlocks * blockSize - 4);
+    var datasum = Nilfs2Superblock.Crc32Le(FixedCrcSeed, logBytes);
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(0), datasum);
     WriteBlock(img, p.PsegStart, blockSize, ss);
   }
@@ -490,8 +566,8 @@ public sealed class Nilfs2Writer {
 
   private static byte[] Block(int blockSize) => new byte[blockSize];
 
-  private static void WriteBlock(byte[] img, int blk, int blockSize, byte[] data) =>
-    data.AsSpan(0, blockSize).CopyTo(img.AsSpan(blk * blockSize));
+  private static void WriteBlock(SparseBlockImage img, int blk, int blockSize, byte[] data) =>
+    img.Write((long)blk * blockSize, data.AsSpan(0, blockSize));
 
   /// <summary>Writes a <c>nilfs_inode</c> with a direct block map.</summary>
   private static void WriteInode(Span<byte> dst, ulong blocks, ulong size, ushort mode,
@@ -510,7 +586,7 @@ public sealed class Nilfs2Writer {
   }
 
   /// <summary>Writes a palloc group-descriptor block + bitmap block for group 0.</summary>
-  private static void WritePallocMeta(byte[] img, int gdBlk, int bmBlk, int blockSize, int used) {
+  private static void WritePallocMeta(SparseBlockImage img, int gdBlk, int bmBlk, int blockSize, int used) {
     var gd = Block(blockSize);
     BinaryPrimitives.WriteUInt32LittleEndian(gd.AsSpan(0), (uint)(blockSize * 8 - used)); // pg_nfrees.
     WriteBlock(img, gdBlk, blockSize, gd);

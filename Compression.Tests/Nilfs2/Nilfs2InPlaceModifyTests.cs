@@ -86,7 +86,7 @@ public class Nilfs2InPlaceModifyTests {
     Assert.That(names, Does.Contain("beta.bin"));
 
     var beta = r.Entries.First(e => e.Name == "beta.bin");
-    Assert.That(beta.Data, Is.EqualTo(new byte[] { 9, 8, 7 }));
+    Assert.That(r.Extract(beta), Is.EqualTo(new byte[] { 9, 8, 7 }));
   }
 
   [Test, Category("HappyPath")]
@@ -155,7 +155,7 @@ public class Nilfs2InPlaceModifyTests {
     ms.Position = 0;
     var r = new Nilfs2Reader(ms);
     var alpha = r.Entries.First(e => e.Name == "alpha.txt");
-    Assert.That(alpha.Data, Is.EqualTo("replaced"u8.ToArray()),
+    Assert.That(r.Extract(alpha), Is.EqualTo("replaced"u8.ToArray()),
       "Highest-cno record wins per NILFS2 segment-replay semantic.");
   }
 
@@ -361,7 +361,7 @@ public class Nilfs2InPlaceModifyTests {
     Assert.That(r.LastCheckpoint, Is.EqualTo(startCno + 3),
       "Reader surfaces the bumped last-cno from the superblock.");
     var alpha = r.Entries.First(e => e.Name == "alpha.txt");
-    Assert.That(alpha.Data, Is.EqualTo("alphaX"u8.ToArray()));
+    Assert.That(r.Extract(alpha), Is.EqualTo("alphaX"u8.ToArray()));
   }
 
   [Test, Category("HappyPath")]
@@ -378,6 +378,6 @@ public class Nilfs2InPlaceModifyTests {
     ms.Position = 0;
     var r = new Nilfs2Reader(ms);
     var alpha = r.Entries.First(e => e.Name == "alpha.txt");
-    Assert.That(alpha.Data, Is.EqualTo("v2"u8.ToArray()));
+    Assert.That(r.Extract(alpha), Is.EqualTo("v2"u8.ToArray()));
   }
 }

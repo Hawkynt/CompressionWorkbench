@@ -83,11 +83,14 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new Nilfs2Reader(stream);
+    using var r = new Nilfs2Reader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+      Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+      using var output = File.Create(target);
+      r.ExtractTo(e, output);
     }
   }
 
@@ -101,9 +104,21 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var writer = new Nilfs2Writer();
-    var files = FilesOnly(inputs).ToList();
-    foreach (var (name, data) in files)
-      writer.AddFile(name, data);
+    // Inputs are streamed rather than read in: the payload region is copied
+    // through to the image, so it may be larger than memory.
+    var sizes = new List<long>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      if (input.InMemoryContent is { } bytes) {
+        writer.AddFile(input.ArchiveName, bytes);
+        sizes.Add(bytes.LongLength);
+        continue;
+      }
+      var path = input.FullPath;
+      var length = new FileInfo(path).Length;
+      writer.AddStreamingFile(input.ArchiveName, length, () => File.OpenRead(path));
+      sizes.Add(length);
+    }
 
     // Block size: a pinned value is honoured verbatim; when unset, the optimiser
     // picks the legal size minimising tail-padding slack for the file-set. The
@@ -113,9 +128,8 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var blockSize = options.HasOption("BlockSize")
       ? options.GetOptionInt("BlockSize", 4096)
       : Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
-          [1024, 2048, 4096, 8192, 16384, 32768, 65536],
-          files.Select(f => (long)f.Data.Length).ToList());
-    output.Write(writer.Build(blockSize, string.IsNullOrEmpty(label) ? null : label));
+          [1024, 2048, 4096, 8192, 16384, 32768, 65536], sizes);
+    writer.Build(output, blockSize, string.IsNullOrEmpty(label) ? null : label);
   }
 
   // ── IArchiveModifiable ────────────────────────────────────────────────
@@ -147,10 +161,41 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("Nilfs2 R/W is log-structured (append-only segments) — defragmentation would re-pack snapshots, which violates the continuous-snapshot invariant.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("Nilfs2 R/W is log-structured (append-only segments) — defragmentation would re-pack snapshots, which violates the continuous-snapshot invariant.");
+  /// <summary>
+  /// Rewrites the volume as a single checkpoint holding the live state — the
+  /// same reclamation the NILFS2 segment cleaner performs, which is what frees
+  /// the space that superseded and tombstoned records still occupy. Older
+  /// checkpoints are what a cleaner run reclaims, so they do not survive it;
+  /// the live file set does, byte for byte.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new NotSupportedException(
+        $"Nilfs2 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
+
+    var tempPath = Path.GetTempFileName();
+    try {
+      using (var temp = File.Open(tempPath, FileMode.Open, FileAccess.ReadWrite)) {
+        this.RebuildStreaming(archive, temp, new LayoutRebuildOptions { UnitSize = 0 });
+
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "commit", Fraction: 1.0, CurrentReadOffset: archive.Length,
+          CurrentWriteOffset: temp.Length, ImageSize: temp.Length, BlockMap: null));
+
+        temp.Position = 0;
+        archive.Position = 0;
+        temp.CopyTo(archive);
+        archive.SetLength(temp.Length);
+        archive.Flush();
+      }
+    } finally {
+      File.Delete(tempPath);
+    }
+  }
 
   // ── ILayoutOptimizable ────────────────────────────────────────────────
   //
@@ -220,20 +265,32 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(options);
     if (source.CanSeek) source.Position = 0;
-    var reader = new Nilfs2Reader(source);
+    using var reader = new Nilfs2Reader(source);
     var w = new Nilfs2Writer();
     var fileSizes = new List<long>();
-    foreach (var e in reader.Entries) {
-      if (e.IsDirectory || SyntheticEntries.Contains(e.Name)) continue;
-      var data = reader.Extract(e);
-      w.AddFile(e.Name, data);
-      fileSizes.Add(data.LongLength);
+    // Each file is spilled to scratch so the rebuild streams it back rather than
+    // holding the whole payload while the new image is assembled.
+    var spill = new List<string>();
+    try {
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory || SyntheticEntries.Contains(e.Name)) continue;
+        var path = Path.GetTempFileName();
+        spill.Add(path);
+        using (var scratch = File.Create(path))
+          reader.ExtractTo(e, scratch);
+        var captured = path;
+        w.AddStreamingFile(e.Name, e.Size, () => File.OpenRead(captured));
+        fileSizes.Add(e.Size);
+      }
+      var blockSize = options.UnitSize > 0
+        ? options.UnitSize
+        : Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(BlockCandidates, fileSizes);
+      var start = target.Position;
+      w.Build(target, blockSize);
+      options.OnProgress?.Invoke(target.Position - start, target.Position - start);
+    } finally {
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
-    var blockSize = options.UnitSize > 0
-      ? options.UnitSize
-      : Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(BlockCandidates, fileSizes);
-    var image = w.Build(blockSize);
-    target.Write(image);
-    options.OnProgress?.Invoke(image.Length, image.Length);
   }
 }
