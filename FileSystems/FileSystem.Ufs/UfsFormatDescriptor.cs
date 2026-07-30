@@ -270,6 +270,15 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     mover.Init(archive);
 
     var extents = UfsExtentMap.Enumerate(archive).ToList();
+
+    // The block mover relocates extents and rewrites the pointers that name them,
+    // but only the ones in the inode. A file with an indirect tree also has
+    // pointers inside its pointer blocks, which the mover would leave naming the
+    // old locations — so hand those volumes to the rebuild path instead.
+    if (extents.Any(e => e.FileName != null && e.FileName.StartsWith("Indirect: ", StringComparison.Ordinal)))
+      throw new NotSupportedException(
+        "UFS: the block mover does not rewrite pointers inside indirect blocks.");
+
     options.OnProgress?.Invoke(new DefragProgressEvent(
       Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
       ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
@@ -294,11 +303,33 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    // Buffering the rebuilt image would cap the volume at what a byte[] can
+    // hold, so the packing modes stream: each entry is spilled to scratch and
+    // the writer pulls it back while laying out the cylinder groups.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      UfsWriter? writer = null;
+      Stream? target = null;
+      var spill = new List<string>();
+      try {
+        DefragRebuilder.RebuildStreaming(archive, options,
+          readEntries: ReadRebuildEntries,
+          beginWrite: s => { writer = new UfsWriter(); target = s; },
+          writeEntry: (name, data) => {
+            var path = Path.GetTempFileName();
+            spill.Add(path);
+            File.WriteAllBytes(path, data);
+            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+          },
+          finishWrite: () => writer!.BuildToStreaming(target!));
+      } finally {
+        foreach (var path in spill)
+          try { File.Delete(path); } catch { /* scratch file already gone */ }
+      }
+      return;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new UfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
+      readEntries: ReadRebuildEntries,
       buildImage: files => {
         var w = new UfsWriter();
         foreach (var (n, d) in files) w.AddFile(n, d);
@@ -306,5 +337,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         w.WriteTo(ms);
         return ms.ToArray();
       });
+  }
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadRebuildEntries(Stream stream) {
+    var r = new UfsReader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
   }
 }

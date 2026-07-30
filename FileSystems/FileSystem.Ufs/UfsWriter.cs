@@ -676,8 +676,8 @@ public sealed class UfsWriter {
   }
 
   private static int CgNdblk(Geometry geom, int cg) {
-    var cgbase = cg * geom.Fpg;
-    return Math.Min(geom.Fpg, geom.TotalFrags - cgbase);
+    var cgbase = (long)cg * geom.Fpg;
+    return (int)Math.Min(geom.Fpg, geom.TotalFrags - cgbase);
   }
 
   // ── per-cg cluster/free accounting shared by the cg headers and the cs block ─
@@ -858,7 +858,9 @@ public sealed class UfsWriter {
   }
 
   private void WriteOneCylinderGroup(SparseBlockImage disk, Geometry geom, int cg, CgCounts c, int liveInodes, int cg0DataEndFrag) {
-    var cgbase = cg * geom.Fpg;
+    // A group's byte offset needs 64-bit arithmetic: past two gigabytes the int
+    // product wrapped negative and the write landed before the start of the image.
+    var cgbase = (long)cg * geom.Fpg;
     var cgOffset = (cgbase + CblkNo) * FragSize;
     // Built in a local buffer and placed in one go: the record is larger than
     // the image's addressing granule, so writing it in place would straddle it.
