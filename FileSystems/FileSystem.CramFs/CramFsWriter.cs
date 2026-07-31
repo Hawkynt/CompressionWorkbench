@@ -149,20 +149,48 @@ public sealed class CramFsWriter : IDisposable {
     //   Pass 2: Write directories bottom-up. For each dir, serialise child inodes
     //           (using known offsets for files and already-placed subdirs) + names.
 
+    // The root directory's entries go immediately after the superblock: a
+    // driver insists on finding them at exactly sizeof(superblock) unless the
+    // image claims a shifted root offset, and the flag that says so is one
+    // fsck.cramfs refuses to look at. The size depends only on the names, so
+    // the space can be reserved now and filled once the offsets are known.
+    var rootDirOffset = (int)ms.Position;
+    var rootDirSize = MeasureDirData(root);
+    if (rootDirSize > 0) ms.Write(new byte[rootDirSize]);
+
     // Pass 1: Write file/symlink blobs.
     var fileOffsets = new Dictionary<TreeNode, int>();
     WriteFileBlobs(ms, root, fileDataMap, fileOffsets);
 
-    // Pass 2: Write directory data bottom-up.
+    // Pass 2: Write directory data bottom-up — every directory but the root,
+    // whose reserved block is filled in afterwards.
     var dirOffsets = new Dictionary<TreeNode, (int offset, int size)>();
-    WriteDirData(ms, root, fileDataMap, fileOffsets, dirOffsets);
+    foreach (var child in root.Children)
+      if (child.Kind == EntryKind.Directory)
+        WriteDirData(ms, child, fileDataMap, fileOffsets, dirOffsets);
 
-    // 5. Build root inode and patch superblock.
-    var imageSize = (int)ms.Length;
+    dirOffsets[root] = (rootDirSize > 0 ? rootDirOffset : 0, rootDirSize);
+    if (rootDirSize > 0) {
+      var rootEntries = SerialiseDirEntries(root, fileOffsets, dirOffsets);
+      var here = ms.Position;
+      ms.Position = rootDirOffset;
+      ms.Write(rootEntries, 0, rootEntries.Length);
+      ms.Position = here;
+    }
 
-    // Root directory info.
-    var (rootDirOffset, rootDirSize) = dirOffsets[root];
-    var rootInode = MakeInode(DirMode, 0, 0, rootDirSize, 0, rootDirOffset);
+    // 5. Pad the image to a whole page, then build the root inode and patch the
+    // superblock. A driver reads a cramfs image through a block device, which
+    // is rounded down to whole sectors: an image ending mid-sector leaves its
+    // last bytes — here, the root directory, which is written last —
+    // unreadable, and the mount lists nothing with EIO. mkcramfs pads for the
+    // same reason and records the padded length.
+    var unpaddedSize = (int)ms.Length;
+    var imageSize = (unpaddedSize + PageSize - 1) / PageSize * PageSize;
+    if (imageSize > unpaddedSize) ms.Write(new byte[imageSize - unpaddedSize]);
+
+    // Root directory info — its entries were laid down right after the
+    // superblock before anything else was written.
+    var rootInode = MakeInode(DirMode, 0, 0, rootDirSize, 0, rootDirSize > 0 ? rootDirOffset : 0);
 
     // Patch superblock.
     var image = ms.ToArray();
@@ -175,6 +203,50 @@ public sealed class CramFsWriter : IDisposable {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(32), crc.Value);
 
     this._stream.Write(image);
+  }
+
+  /// <summary>Page granularity a block device hands a driver.</summary>
+  private const int PageSize = 4096;
+
+  /// <summary>
+  /// Bytes a directory's entry list occupies: a 12-byte inode plus the
+  /// null-terminated name padded to four, per child.
+  /// </summary>
+  private static int MeasureDirData(TreeNode node) {
+    var total = 0;
+    foreach (var child in node.Children)
+      total += CramFsConstants.InodeSize + Align4(Encoding.UTF8.GetByteCount(child.Name) + 1);
+    return total;
+  }
+
+  /// <summary>Serialises a directory's entry list against known child offsets.</summary>
+  private static byte[] SerialiseDirEntries(
+      TreeNode node,
+      Dictionary<TreeNode, int> fileOffsets,
+      Dictionary<TreeNode, (int offset, int size)> dirOffsets) {
+    using var buffer = new MemoryStream(MeasureDirData(node));
+    foreach (var child in node.Children) {
+      ushort mode;
+      int size;
+      int dataOffset;
+      if (child.Kind == EntryKind.Directory) {
+        mode = DirMode;
+        (dataOffset, size) = dirOffsets[child];
+      } else {
+        mode = child.Kind == EntryKind.Symlink ? SymlinkMode : FileMode;
+        size = child.Data?.Length ?? 0;
+        dataOffset = fileOffsets[child];
+      }
+
+      var nameBytes = Encoding.UTF8.GetBytes(child.Name);
+      var paddedLen = Align4(nameBytes.Length + 1);
+      var paddedName = new byte[paddedLen];
+      nameBytes.CopyTo(paddedName, 0);
+
+      buffer.Write(MakeInode(mode, 0, 0, size, paddedLen / 4, dataOffset));
+      buffer.Write(paddedName);
+    }
+    return buffer.ToArray();
   }
 
   // ── Tree building ──────────────────────────────────────────────────────────
@@ -474,8 +546,12 @@ public sealed class CramFsWriter : IDisposable {
     BinaryPrimitives.WriteUInt32LittleEndian(span[0..], CramFsConstants.MagicLE);
     // [4..8] Size
     BinaryPrimitives.WriteUInt32LittleEndian(span[4..], totalSize);
-    // [8..12] Flags: FsidVersion2 | SortedDirs
-    BinaryPrimitives.WriteUInt32LittleEndian(span[8..], CramFsConstants.FlagFsidVersion2 | CramFsConstants.FlagSortedDirs);
+    // [8..12] Flags: FsidVersion2 | SortedDirs. The root directory's entries
+    // are laid down at sizeof(superblock), which is where a driver insists on
+    // finding them; claiming a shifted root offset instead would work for the
+    // kernel but fsck.cramfs rejects flags it does not know.
+    BinaryPrimitives.WriteUInt32LittleEndian(span[8..],
+      CramFsConstants.FlagFsidVersion2 | CramFsConstants.FlagSortedDirs);
     // [12..16] Future
     BinaryPrimitives.WriteUInt32LittleEndian(span[12..], 0);
     // [16..32] Signature
@@ -488,16 +564,10 @@ public sealed class CramFsWriter : IDisposable {
     BinaryPrimitives.WriteUInt32LittleEndian(span[40..], blockCount);
     // [44..48] Number of files
     BinaryPrimitives.WriteUInt32LittleEndian(span[44..], fileCount);
-    // [48..52] Name length
-    BinaryPrimitives.WriteUInt32LittleEndian(span[48..], 0);
-    // [52..56] Reserved
-    BinaryPrimitives.WriteUInt32LittleEndian(span[52..], 0);
-    // [56..60] Reserved
-    BinaryPrimitives.WriteUInt32LittleEndian(span[56..], 0);
-    // [60..72] Root inode (12 bytes)
+    // [48..64] Volume name (16 bytes, zero-filled)
+    span.Slice(48, 16).Clear();
+    // [64..76] Root inode (12 bytes)
     rootInode.CopyTo(span[CramFsConstants.RootInodeOffset..]);
-    // [72..76] Reserved
-    BinaryPrimitives.WriteUInt32LittleEndian(span[72..], 0);
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

@@ -91,30 +91,41 @@ public class FragmentationLifecycleTests {
       }
 
       // ── 2. punch holes ──────────────────────────────────────────────────
+      // Whatever happens here, the payloads expected from now on are the ones
+      // the volume actually holds: a format that cannot remove, or cannot add a
+      // file of that size, still gets the rest of the lifecycle run against it.
       var fragmented = false;
+      var holesPunched = false;
       if (ops is IArchiveModifiable modifier) {
         try {
           using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
             modifier.Remove(stream, fillerNames.ToArray());
-
-          // ── 3. a file that has to land in more than one hole ─────────────
-          var bigPayload = Payload(0x5A, FileBytes * 3);
-          var bigPath = Path.Combine(work, "BIG.BIN");
-          File.WriteAllBytes(bigPath, bigPayload);
-          using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
-            modifier.Add(stream, [new ArchiveInputInfo(bigPath, "BIG.BIN", false)]);
-          keep.Add(bigPayload);
-          fragmented = true;
+          holesPunched = true;
         } catch (Exception ex) {
-          // A format that cannot mutate in place still gets the rest of the
-          // lifecycle, just without the holes.
           TestContext.Out.WriteLine(
-            $"{formatId}: could not fragment in place ({ex.GetType().Name}); " +
-            "continuing with the freshly created layout.");
-          keep.Clear();
-          for (var i = 0; i < InitialFiles; ++i) keep.Add(Payload(i));
+            $"{formatId}: cannot remove in place ({ex.GetType().Name}: " +
+            $"{ex.Message.Split('\n')[0]}); continuing without holes.");
         }
-      } else {
+
+        if (holesPunched) {
+          // ── 3. a file that has to land in more than one hole ─────────────
+          try {
+            var bigPayload = Payload(0x5A, FileBytes * 3);
+            var bigPath = Path.Combine(work, "BIG.BIN");
+            File.WriteAllBytes(bigPath, bigPayload);
+            using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
+              modifier.Add(stream, [new ArchiveInputInfo(bigPath, "BIG.BIN", false)]);
+            keep.Add(bigPayload);
+            fragmented = true;
+          } catch (Exception ex) {
+            TestContext.Out.WriteLine(
+              $"{formatId}: cannot add a {FileBytes * 3:N0}-byte file in place " +
+              $"({ex.GetType().Name}: {ex.Message.Split('\n')[0]}); the holes stay empty.");
+          }
+        }
+      }
+
+      if (!holesPunched) {
         keep.Clear();
         for (var i = 0; i < InitialFiles; ++i) keep.Add(Payload(i));
       }

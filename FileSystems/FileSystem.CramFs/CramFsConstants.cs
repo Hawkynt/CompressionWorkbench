@@ -13,8 +13,13 @@ internal static class CramFsConstants {
   /// <summary>Total size of the superblock in bytes.</summary>
   public const int SuperblockSize = 76;
 
-  /// <summary>Byte offset of the root inode inside the superblock.</summary>
-  public const int RootInodeOffset = 60;
+  /// <summary>
+  /// Byte offset of the root inode inside the superblock. The volume name is a
+  /// 16-byte field at 48, so the inode starts at 64 — writing it at 60 put the
+  /// kernel's read of the root's mode four bytes off, and it refused the mount
+  /// with "root is not a directory".
+  /// </summary>
+  public const int RootInodeOffset = 64;
 
   /// <summary>Size of a single cramfs inode in bytes.</summary>
   public const int InodeSize = 12;

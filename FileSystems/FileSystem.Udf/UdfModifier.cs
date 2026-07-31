@@ -506,8 +506,17 @@ public static class UdfModifier {
   private static byte[] BuildFileFe(int lbn, int fileSize, int dataLbn) {
     var buf = new byte[SectorSize];
     WriteTag(buf, 0, FeTagId, (uint)lbn);
+    // ICB tag: strategy type 4 at +20 and one entry at +24. Left at zero, a
+    // driver refuses the inode outright — "unsupported strategy type: 0" — so
+    // a file added in place was listed but could not be opened.
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1);
     buf[27] = 5; // file type = regular file
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0); // adType=0 (short)
+    // Permissions at +44 (owner/group/other read) and one link at +48; without
+    // them the file is mode 0000 with no links.
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), (1u << 12) | (1u << 7) | (1u << 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), 1);
     BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)fileSize);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(168), 0);  // L_EA
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), 8);  // L_AD = 8 (one short_ad)

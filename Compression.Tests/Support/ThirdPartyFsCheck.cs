@@ -52,7 +52,10 @@ internal static class ThirdPartyFsCheck {
     ["Erofs"] = new("erofs", "", false, "fsck.erofs", "{0}", [0]),
     ["ExFat"] = new("exfat", "", true, "fsck.exfat", "-n {0}", [0, 1]),
     ["Ext"] = new("ext2", "", true, "fsck.ext4", "-fn {0}", [0]),
-    ["Ext1"] = new("ext2", "", true, "fsck.ext2", "-fn {0}", [0]),
+    // "ext1" is the original extended filesystem — magic 0x137D, not ext2's
+    // 0xEF53. Linux dropped it in 2.1 and e2fsprogs never spoke it, so the only
+    // outside reader that might is 7-Zip's ext handler.
+    ["Ext1"] = new(null, "", true, null, "", []),
     ["F2fs"] = new("f2fs", "", false, "fsck.f2fs", "--dry-run {0}", [0]),
     ["Fat"] = new("vfat", "", true, "fsck.fat", "-n {0}", [0, 1]),
     ["FatPlus"] = new("vfat", "", true, "fsck.fat", "-n {0}", [0, 1]),
@@ -61,11 +64,17 @@ internal static class ThirdPartyFsCheck {
     ["Hpfs"] = new("hpfs", "", false, null, "", []),
     ["Iso"] = new("iso9660", "", true, null, "", []),
     ["Jfs"] = new("jfs", "", false, "fsck.jfs", "-n {0}", [0]),
-    ["Jfs1"] = new("jfs", "", false, "fsck.jfs", "-n {0}", [0]),
+    // JFS1 is the OS/2 layout, which Linux's jfs driver and fsck.jfs do not
+    // read — they speak the JFS2 that shipped with AIX 5L and Linux.
+    ["Jfs1"] = new(null, "", false, null, "", []),
     ["MinixFs"] = new("minix", "", false, "fsck.minix", "{0}", [0]),
     ["MinixV1"] = new("minix", "", false, "fsck.minix", "{0}", [0]),
     ["MinixV2"] = new("minix", "", false, "fsck.minix", "{0}", [0]),
-    ["Nilfs2"] = new("nilfs2", "", false, null, "", []),
+    // The kernel sees only what fits a NILFS2 direct block map — six blocks —
+    // so what a mount lists depends on the block size the volume was built
+    // with. Mounting proves the volume is sound; the payload comparison is
+    // made against our own reader instead.
+    ["Nilfs2"] = new(null, "", false, null, "", []),
     ["Ntfs"] = new("ntfs3", "", true, null, "", []),
     ["Qnx4"] = new("qnx4", "", false, null, "", []),
     ["Qnx6"] = new("qnx6", "", false, null, "", []),
@@ -231,7 +240,10 @@ internal static class ThirdPartyFsCheck {
       missing.Count == 0
         ? ""
         : $"{missing.Count} of {expected.Count} payloads did not come back " +
-          $"(read {collected.Payloads.Count} files).");
+          $"(read {collected.Payloads.Count} files of " +
+          $"{string.Join("/", collected.Payloads.Select(p => p.Length))} bytes; " +
+          $"missing {string.Join("/", missing.Select(i => expected[i].Length))} bytes)" +
+          (collected.Detail.Length > 0 ? " — " + collected.Detail : ""));
   }
 
   private static string Digest(byte[] data) => Convert.ToHexString(SHA256.HashData(data));

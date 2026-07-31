@@ -426,6 +426,13 @@ public sealed class UdfWriter {
     Encoding.ASCII.GetBytes("OSTA Compressed Unicode").CopyTo(buf, off + 1);
   }
 
+  /// <summary>Owner/group/other read+execute, in ECMA-167 permission bits.</summary>
+  private const uint DirectoryPermissions =
+    (1u << 12) | (1u << 10) | (1u << 7) | (1u << 5) | (1u << 2) | (1u << 0);
+
+  /// <summary>Owner/group/other read, in ECMA-167 permission bits.</summary>
+  private const uint FilePermissions = (1u << 12) | (1u << 7) | (1u << 2);
+
   private static void WriteTag(byte[] buf, int off, ushort tagId, uint tagLocation) {
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off), tagId);
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off + 2), 2); // descriptor version
@@ -570,6 +577,10 @@ public sealed class UdfWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4);
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1);
     buf[27] = 4; // file type = directory
+    // Permissions at FE offset 44. Left at zero, a mounted volume gives every
+    // object mode 0000 and the mount cannot even be listed. r-x for owner,
+    // group and other (ECMA-167 4/14.9.5 bit order).
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), DirectoryPermissions);
     // File link count is at FE offset 48 (ECMA-167 §14.9, after uid/gid/perms);
     // offset 28 falls inside the ICB tag and leaves the kernel seeing link
     // count 0 → "Error in udf_iget". Parent link + one per child directory.
@@ -612,6 +623,8 @@ public sealed class UdfWriter {
     WriteTag(buf, 0, 261, (uint)lbn);
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4); // ICB strategy type 4
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1); // max entries 1
+    // Permissions at FE offset 44 — see WriteDirectoryFe.
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), FilePermissions);
     buf[27] = 5; // file type = file (regular)
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), 1); // file link count (ECMA-167 §14.9 offset)
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0); // adType=0 short
