@@ -8,7 +8,9 @@ namespace FileSystem.Adfs;
 /// <summary>
 /// Descriptor for Acorn Advanced Disc Filing System (ADFS) images. Read works
 /// for both old-map (S/M/L, 256-byte sectors) and new-map (D/E/F, 1024-byte
-/// sectors). Create (WORM) emits ADFS-L (640 KiB, old-map) only.
+/// sectors, fragment-mapped). Create emits a new-map volume by default, which
+/// is the layout a real ADFS driver mounts — Linux's has no code path for an
+/// old map at all; pass <c>Variant=old</c> for the ADFS-L 640 KB layout.
 /// Detected by the "Hugo" or "Nick" directory marker at sector 2 — root dir
 /// magic at file offset 0x200 (old map) or 0x400 (new map).
 ///
@@ -30,6 +32,10 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 19),
+    new("Variant", "Map variant", FormatOptionKind.Enum, "new",
+      AllowedValues: ["new", "old"],
+      Description: "new = the E/F-style map a real ADFS driver mounts; " +
+        "old = the S/M/L free-space-list layout of a 640 KB ADFS-L floppy."),
   ];
 
   public string Id => "Adfs";
@@ -49,6 +55,13 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // New map (D/E/F): root dir at 0x400.
     new([(byte)'H', (byte)'u', (byte)'g', (byte)'o'], Offset: 0x400, Confidence: 0.70),
     new([(byte)'N', (byte)'i', (byte)'c', (byte)'k'], Offset: 0x400, Confidence: 0.70),
+    // A new-map volume puts its root wherever its map says, so the marker is at
+    // no fixed offset; the disc record at sector 0 + 4 is what identifies it.
+    // Matched fields: log2secsize (1024-byte sectors), idlen, log2bpmb and a
+    // single zone — the geometry AdfsNewMapWriter emits.
+    new([0x0A, 0, 0, 0, 0x0D, 0x0A, 0, 0, 0, 0x01],
+      Offset: 4, Confidence: 0.80,
+      Mask: [0xFF, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0xFF]),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
@@ -103,14 +116,67 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
 
-    var writer = new AdfsWriter();
     var title = options?.GetOption("VolumeLabel", "") ?? "";
-    if (!string.IsNullOrEmpty(title)) writer.DiscTitle = title;
+    var variant = options?.GetOption("Variant", "new") ?? "new";
 
+    if (variant.Equals("old", StringComparison.OrdinalIgnoreCase)) {
+      var oldWriter = new AdfsWriter();
+      if (!string.IsNullOrEmpty(title)) oldWriter.DiscTitle = title;
+      foreach (var (name, data) in FlatFiles(inputs))
+        oldWriter.AddFile(name, data);
+      output.Write(oldWriter.Build());
+      return;
+    }
+
+    var writer = new AdfsNewMapWriter();
+    if (!string.IsNullOrEmpty(title)) writer.DiscTitle = title;
     foreach (var (name, data) in FlatFiles(inputs))
       writer.AddFile(name, data);
-
     output.Write(writer.Build());
+  }
+
+  /// <summary>True when the image at hand carries a new-map disc record.</summary>
+  private static bool IsNewMap(Stream archive) {
+    var position = archive.CanSeek ? archive.Position : 0;
+    try {
+      if (archive.CanSeek) archive.Position = 0;
+      using var reader = new AdfsReader(archive);
+      return reader.IsNewMap;
+    } catch {
+      return false;
+    } finally {
+      if (archive.CanSeek) archive.Position = position;
+    }
+  }
+
+  /// <summary>
+  /// Rewrites a new-map image from its current contents plus/minus the given
+  /// changes. The in-place modifier speaks the old map's free-space list, so a
+  /// new-map volume is rebuilt instead.
+  /// </summary>
+  private static void RebuildNewMap(Stream archive, IReadOnlyList<(string Name, byte[] Data)> add,
+      string[] remove) {
+    var files = new List<(string Name, byte[] Data)>();
+    archive.Position = 0;
+    using (var reader = new AdfsReader(archive)) {
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        if (remove.Any(n => string.Equals(n, e.Name, StringComparison.OrdinalIgnoreCase))) continue;
+        if (add.Any(a => string.Equals(a.Name, e.Name, StringComparison.OrdinalIgnoreCase))) continue;
+        files.Add((e.Name, reader.Extract(e)));
+      }
+    }
+    files.AddRange(add);
+
+    var writer = new AdfsNewMapWriter();
+    foreach (var (name, data) in files)
+      writer.AddFile(name, data);
+    var image = writer.Build();
+
+    archive.Position = 0;
+    archive.Write(image);
+    archive.SetLength(image.Length);
+    archive.Flush();
   }
 
   // ── IArchiveModifiable (R/W) ────────────────────────────────────────────
@@ -124,6 +190,10 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
+    if (IsNewMap(archive)) {
+      RebuildNewMap(archive, FlatFiles(inputs).ToList(), []);
+      return;
+    }
     foreach (var (name, data) in FlatFiles(inputs)) {
       AdfsModifier.RemoveFile(archive, name);
       AdfsModifier.AddFile(archive, name, data);
@@ -139,6 +209,10 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
+    if (IsNewMap(archive)) {
+      RebuildNewMap(archive, [], entryNames);
+      return;
+    }
     foreach (var name in entryNames)
       AdfsModifier.RemoveFile(archive, name);
   }

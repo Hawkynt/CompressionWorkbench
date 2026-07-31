@@ -10,4 +10,11 @@ public sealed class AdfsEntry {
   public uint LoadAddress { get; init; }
   public uint ExecAddress { get; init; }
   public byte Attributes { get; init; }
+
+  /// <summary>
+  /// Indirect disc address on a new-map volume: the fragment id in the high
+  /// bits, a share offset in the low byte. Zero on an old-map volume, where
+  /// <see cref="StartSector" /> locates the object instead.
+  /// </summary>
+  public uint IndirectAddress { get; init; }
 }

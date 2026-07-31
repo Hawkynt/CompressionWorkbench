@@ -1783,10 +1783,13 @@ public class ExternalFsInteropTests {
                     "module is typically pre-built. To validate manually after a rebuild: " +
                     "`sudo modprobe adfs && sudo mount -t adfs -o loop,ro <img.adl> /mnt/adfs`.");
 
-    var w = new AdfsWriter { DiscTitle = "CWB-ADFS" };
+    // The driver mounts new-map volumes only: it looks for a disc record at
+    // 0xC00 + 0x1C0 or at sector 0 + 4, and walks a zone bitmap. An old-map
+    // ADFS-L image has neither, so this exercises the new-map writer.
+    var w = new AdfsNewMapWriter { DiscTitle = "CWB-ADFS" };
     w.AddFile("HELLO", SmallText);
     w.AddFile("REPEAT", RepetitiveText);
-    var imgPath = Path.Combine(this._tmpDir, "adfs_mount.adl");
+    var imgPath = Path.Combine(this._tmpDir, "adfs_mount.adf");
     File.WriteAllBytes(imgPath, w.Build());
 
     var wslImg = FsInteropToolbox.WinToWsl(imgPath);
@@ -1795,7 +1798,9 @@ public class ExternalFsInteropTests {
       "MNT=$(mktemp -d); " +
       "trap 'sudo -n umount \"$MNT\" 2>/dev/null; rmdir \"$MNT\" 2>/dev/null' EXIT; " +
       "sudo -n modprobe adfs; " +
-      $"sudo -n mount -t adfs -o loop,ro {wslImg} \"$MNT\"; " +
+      // ADFS gives the root mode 0511, so without ownership options the
+      // invoking user cannot even list what the driver mounted.
+      $"sudo -n mount -t adfs -o loop,ro,uid=$(id -u),gid=$(id -g),ownmask=0777,othmask=0777 {wslImg} \"$MNT\"; " +
       "ls -la \"$MNT\"; " +
       "echo '--- HELLO ---'; cat \"$MNT/HELLO\" || true; " +
       "echo '--- REPEAT head ---'; head -c 64 \"$MNT/REPEAT\" || true";
@@ -1806,6 +1811,8 @@ public class ExternalFsInteropTests {
       "Mounted ADFS root listing should include HELLO");
     Assert.That(result.StdOut, Does.Contain("Hello from CompressionWorkbench"),
       "cat HELLO should print our payload");
+    Assert.That(result.StdOut, Does.Contain("REPEAT"),
+      "Mounted ADFS root listing should include REPEAT");
   }
 
   /// <summary>

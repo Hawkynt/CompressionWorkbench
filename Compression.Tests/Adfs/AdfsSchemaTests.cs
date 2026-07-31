@@ -32,12 +32,11 @@ public class AdfsSchemaTests {
     desc.Create(ms, [ArchiveInputInfo.InMemory("DATA", payload)], opts);
     var image = ms.ToArray();
 
-    // Root directory at file offset 0x200; DirTitle is the 19 bytes at +0x4DC,
-    // 0x0D-padded.
-    const int rootDirOffset = 0x200;
-    var titleSpan = image.AsSpan(rootDirOffset + 0x4DC, 19);
-    var cr = titleSpan.IndexOf((byte)0x0D);
-    var title = Encoding.ASCII.GetString(titleSpan[..(cr < 0 ? 19 : cr)]);
+    // A new-map volume keeps the title in the disc record's disc_name field at
+    // sector 0 + 4 + 22, and again in the root directory's tail.
+    var titleSpan = image.AsSpan(4 + 22, 10);
+    var end = titleSpan.IndexOf((byte)0x00);
+    var title = Encoding.ASCII.GetString(titleSpan[..(end < 0 ? 10 : end)]);
     Assert.That(title, Is.EqualTo("MYDISC"), "non-default volume label must reach the disc title.");
 
     using var rs = new MemoryStream(image);

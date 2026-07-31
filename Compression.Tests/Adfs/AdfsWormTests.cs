@@ -179,9 +179,9 @@ public class AdfsWormTests {
       [ArchiveInputInfo.InMemory("FILE", "x"u8.ToArray())],
       opts);
 
-    // The DiscTitle is stored at root-dir offset 0x4DC (19 bytes ASCII). Verify it.
+    // A new-map volume stamps the title into the disc record's disc_name field.
     var img = ms.ToArray();
-    var titleSpan = img.AsSpan(0x200 + 0x4DC, 6);
+    var titleSpan = img.AsSpan(4 + 22, 6);
     Assert.That(Encoding.ASCII.GetString(titleSpan), Is.EqualTo("MYDISC"));
   }
 

@@ -50,7 +50,9 @@ public class AdfsTests {
     var d = new FileSystem.Adfs.AdfsFormatDescriptor();
     Assert.That(d.Id, Is.EqualTo("Adfs"));
     Assert.That(d.Extensions, Does.Contain(".adl"));
-    Assert.That(d.MagicSignatures.Count, Is.EqualTo(4));
+    // Four directory markers (old/new map, Hugo/Nick) plus the new-map disc
+    // record, which is what identifies a volume whose root has no fixed offset.
+    Assert.That(d.MagicSignatures.Count, Is.EqualTo(5));
     // WORM promotion: descriptor now advertises IArchiveCreatable + CanCreate
     // for ADFS-L emission.
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());

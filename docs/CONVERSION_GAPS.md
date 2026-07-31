@@ -92,7 +92,6 @@ Retro/constrained filesystems that mangle or synthesize entry names, or pad file
 
 | Target | Reason |
 |---|---|
-| `Adfs` | Acorn ADFS; '.'-folding names (HELLO_TXT) break verbatim-name match (not in NameSynthesizing set) |
 | `AppleDos` | Apple DOS 3.3 disk; name-synthesizing FS, payload not found by content (name+layout normalization) |
 | `Bbc` | BBC Micro DFS disk; name-synthesizing FS, payload not found by content |
 | `Cpm` | CP/M disk; 8.3-folding name-synth FS, payload not found by content |
