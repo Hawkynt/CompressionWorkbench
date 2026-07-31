@@ -108,8 +108,11 @@ public class PlannerLayoutTemplateTests {
 
   [Test]
   public void Template_WithinZoneOrdering_FollowsSortKeys() {
-    // Image 1000, four files in one zone, sortBy=size desc → largest first.
-    var imageSize = 1000L;
+    // Four files in one zone, sortBy=size desc → largest first. The image has
+    // room to shuffle in: on a volume packed tight enough that the moves only
+    // block each other, the planner refuses the in-place plan outright and the
+    // caller rebuilds instead, so there would be no ordering to inspect.
+    var imageSize = 4000L;
     var extents = MakeExtents(imageSize,
       ("a.bin", 100, 100),
       ("b.bin", 300, 200),

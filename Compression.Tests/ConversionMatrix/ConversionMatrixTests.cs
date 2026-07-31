@@ -127,7 +127,6 @@ public class ConversionMatrixTests {
       { "xDisk", "[single-payload/whole-image target] Amiga xDisk image; writer emits one .xdsk blob" },
       { "xMash", "[single-payload/whole-image target] Amiga xMash image; writer emits one .xmsh blob" },
       // -- bucket: name/charset/size constraint --
-      { "AppleDos", "[name/charset/size constraint] Apple DOS 3.3 disk; name-synthesizing FS, payload not found by content (name+layout normalization)" },
       { "Bbc", "[name/charset/size constraint] BBC Micro DFS disk; name-synthesizing FS, payload not found by content" },
       { "Cpm", "[name/charset/size constraint] CP/M disk; 8.3-folding name-synth FS, payload not found by content" },
       { "Lif", "[name/charset/size constraint] HP-71 LIF disk pads file content to a 256-byte record so bytes differ" },

@@ -106,9 +106,43 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
     using var r = new AppleDosReader(stream);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      WriteFile(outputDir, e.Name, WithoutBinaryHeader(e.FileType, r.Extract(e)));
     }
   }
+
+  /// <summary>DOS 3.3 "Binary" file type: the one that records an exact length.</summary>
+  private const byte BinaryFileType = 0x04;
+
+  /// <summary>
+  /// A DOS 3.3 binary file begins with a 2-byte load address and a 2-byte
+  /// length, and that length is how the catalog's reader knows where the file
+  /// ends. Storing a payload without it left the first four bytes of the
+  /// payload being read as a length, so a file came back truncated to whatever
+  /// those bytes happened to say.
+  /// </summary>
+  private static byte[] WithBinaryHeader(byte[] payload) {
+    ArgumentNullException.ThrowIfNull(payload);
+    if (payload.LongLength > ushort.MaxValue)
+      throw new InvalidOperationException(
+        $"AppleDOS: a binary file records its length in 16 bits, so it cannot hold " +
+        $"{payload.LongLength:N0} bytes.");
+    var result = new byte[payload.Length + 4];
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(0), DefaultLoadAddress);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(2), (ushort)payload.Length);
+    payload.CopyTo(result.AsSpan(4));
+    return result;
+  }
+
+  /// <summary>Strips that header again, leaving the payload as it went in.</summary>
+  private static byte[] WithoutBinaryHeader(byte fileType, byte[] stored) {
+    if ((fileType & 0x7F) != BinaryFileType || stored.Length < 4) return stored;
+    var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(stored.AsSpan(2));
+    if (length + 4 > stored.Length) return stored;
+    return stored.AsSpan(4, length).ToArray();
+  }
+
+  /// <summary>Where DOS 3.3 loads a binary file by default.</summary>
+  private const ushort DefaultLoadAddress = 0x0803;
 
   /// <summary>
   /// Opens a single filesystem entry as a bounded read-only stream. The
@@ -126,7 +160,7 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
+      var bytes = WithoutBinaryHeader(e.FileType, r.Extract(e));
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
     }
@@ -153,7 +187,7 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var volNum = options?.GetOptionInt("VolumeNumber", 254) ?? 254;
     if (volNum is >= 1 and <= 254) w.VolumeNumber = (byte)volNum;
     foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+      w.AddFile(name, BinaryFileType, WithBinaryHeader(data));
     output.Write(w.Build());
   }
 
@@ -177,29 +211,24 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      // Snapshot first so a planner pass that mutates the image but leaves it
-      // structurally invalid (some payloads make the catalog repatch write an
-      // out-of-range track/sector) can be rolled back. We verify the result is
-      // still readable with the same live-file count; only then keep it.
-      archive.Position = 0;
-      using var snapshot = new MemoryStream();
-      archive.CopyTo(snapshot);
-      var expected = CountLiveFiles(snapshot);
-      try {
-        DefragmentWithPlanner(archive, options);
-        if (CountLiveFilesFromStream(archive) >= expected && expected > 0)
-          return;
-      } catch {
-        // fall through to restore + rebuild
-      }
-      // Planner failed or corrupted the image — restore the original bytes and
-      // use the always-safe rebuild path below.
-      archive.Position = 0;
-      archive.SetLength(0);
-      snapshot.Position = 0;
-      snapshot.CopyTo(archive);
-      archive.Position = 0;
+      // A DOS 3.3 file is a chain of track/sector-list entries, so an in-place
+      // pass has to rewrite a link for every sector it moves. Counting the
+      // surviving catalog entries said nothing about whether it did: the files
+      // stayed listed at their right lengths and came back as a few bytes of
+      // the wrong data. The pass is kept only if the contents still match.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => {
+          using var reader = new AppleDosReader(stream);
+          return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+        },
+        inPlace: () => DefragmentWithPlanner(archive, options),
+        rebuild: () => RebuildVia(archive, options));
+      return;
     }
+    RebuildVia(archive, options);
+  }
+
+  private static void RebuildVia(Stream archive, DefragOptions options) {
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         using var r = new AppleDosReader(stream);

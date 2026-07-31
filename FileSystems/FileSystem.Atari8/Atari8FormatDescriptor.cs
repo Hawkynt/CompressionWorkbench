@@ -177,13 +177,24 @@ public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      try {
-        DefragmentWithPlanner(archive, options);
-        return;
-      } catch {
-        archive.Position = 0;
-      }
+      // An Atari DOS file is a chain: every sector ends with the number of the
+      // next one. Moving the bytes means rewriting those links, and getting it
+      // wrong leaves the file listed at its right length with a handful of
+      // wrong bytes in it. The in-place pass is kept only if the contents
+      // still match; otherwise the image is restored and rebuilt.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => {
+          using var reader = new Atari8Reader(stream);
+          return reader.Entries.Select(reader.Extract).ToList();
+        },
+        inPlace: () => DefragmentWithPlanner(archive, options),
+        rebuild: () => RebuildVia(archive, options));
+      return;
     }
+    RebuildVia(archive, options);
+  }
+
+  private static void RebuildVia(Stream archive, DefragOptions options) {
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         using var r = new Atari8Reader(stream);

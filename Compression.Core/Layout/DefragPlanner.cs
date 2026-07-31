@@ -724,6 +724,7 @@ public static class DefragPlanner {
     // Simple approach: detect overlapping pairs and break cycles via staging.
     var result = new List<ClusterMove>(rawMoves.Count + rawMoves.Count / 4);
     var pending = new List<ClusterMove>(rawMoves);
+    var stagedOnce = new HashSet<(string FileName, long DstOffset)>();
     var resolved = new HashSet<int>();
     var maxIter = pending.Count * pending.Count + 1;
     var iter = 0;
@@ -751,36 +752,56 @@ public static class DefragPlanner {
       }
 
       if (!progress && pending.Count > 0) {
-        // Cycle detected — break it by staging the first pending move's source
-        // in a free region.
-        var stuck = pending[0];
-        var stageIdx = FindFreeRegion(freeRegions, AlignUp(stuck.Length, clusterSize));
-        if (stageIdx < 0) {
-          // No single free region holds the whole run. Free space is rarely
-          // contiguous on the volume that needed defragmenting in the first
-          // place, so the run is staged cluster by cluster instead — each
-          // staged cluster is moved on to its final slot afterwards.
-          if (TryStagePiecewise(result, pending, freeRegions, clusterSize)) continue;
+        // A cycle: each remaining move's destination holds another's source.
+        // Lift whichever move occupies the first one's destination into a free
+        // region, and let it hop from there to its own target afterwards.
+        //
+        // Two rules keep this honest. The move that is lifted is the occupant,
+        // not the blocked move — staging the blocked one changes nothing about
+        // why it is blocked. And a move is lifted at most once: without that,
+        // a pair ping-ponged between two offsets until the iteration cap and
+        // the bytes ended up wherever the last hop left them, while the
+        // filesystem's chain pointed at the planned destination instead.
+        var blockedMove = pending[0];
+        var occupantIndex = -1;
+        for (var j = 1; j < pending.Count; ++j)
+          if (Overlaps(blockedMove.DstOffset, blockedMove.Length, pending[j].SrcOffset, pending[j].Length)) {
+            occupantIndex = j;
+            break;
+          }
+        if (occupantIndex < 0)
+          throw new InvalidOperationException(
+            "Defragmentation cannot be planned in place: a move is blocked by something that " +
+            "does not move, so no ordering of the remaining moves is safe.");
 
-          // Not even that much free space. The remaining moves overwrite each
-          // other's sources, and executing them in any order destroys data —
-          // which is what happened while this emitted them and hoped the byte
-          // mover would cope. Refuse instead: every caller falls back to the
-          // rebuild path, which reads each file before writing anything.
+        var stuck = pending[occupantIndex];
+        if (!stagedOnce.Add((stuck.FileName, stuck.DstOffset)))
+          throw new InvalidOperationException(
+            "Defragmentation cannot be planned in place: the moves keep blocking each other " +
+            "after staging, so no safe order exists.");
+
+        // The staging region has to be somewhere no pending move is headed;
+        // otherwise lifting one file out of the way just puts it in the next
+        // one's path, and the cycle survives with an extra hop in it.
+        var stageIdx = FindFreeRegionClearOf(freeRegions, AlignUp(stuck.Length, clusterSize), pending);
+        if (stageIdx < 0)
+          // Nowhere to stage the cycle. Executing the remaining moves in any
+          // order overwrites data — which is what happened while this emitted
+          // them and hoped the byte mover would cope. Every caller falls back
+          // to the rebuild path, which reads each file whole first.
           throw new InvalidOperationException(
             $"Defragmentation cannot be planned in place: {pending.Count} move(s) form a cycle " +
-            $"and there is not {AlignUp(stuck.Length, clusterSize):N0} bytes of free space to stage it.");
-        }
+            $"and no free region of {AlignUp(stuck.Length, clusterSize):N0} bytes can stage it.");
 
         var (stageOff, stageLen) = freeRegions[stageIdx];
         var consumed = AlignUp(stuck.Length, clusterSize);
 
-        // Step 1: move source → staging
+        // Step 1: the occupant moves out of the way, into the staging region.
         result.Add(new ClusterMove(stuck.SrcOffset, stageOff, stuck.Length, stuck.FileName));
-        // Step 2: move staging → target (will be unblocked after other moves)
-        pending[0] = new ClusterMove(stageOff, stuck.DstOffset, stuck.Length, stuck.FileName);
+        // Step 2: it hops from there to its own target once that is clear.
+        pending[occupantIndex] = new ClusterMove(stageOff, stuck.DstOffset, stuck.Length, stuck.FileName);
 
-        // Update free list: consume staging region, free source region.
+        // Update free list: consume staging region, free the occupant's source.
         if (consumed >= stageLen)
           freeRegions.RemoveAt(stageIdx);
         else
@@ -793,49 +814,23 @@ public static class DefragPlanner {
   }
 
   /// <summary>
-  /// Breaks a cycle by staging the first pending move one cluster at a time
-  /// into whatever free clusters exist, then queuing each staged cluster's hop
-  /// to its final slot. Returns false when free space cannot hold the run at
-  /// all, in which case the caller has nothing left to try.
+  /// A free region of at least <paramref name="size" /> bytes that no pending
+  /// move is headed for, so parking a run there cannot block anything.
   /// </summary>
-  private static bool TryStagePiecewise(
-      List<ClusterMove> result, List<ClusterMove> pending,
-      List<(long Offset, long Length)> freeRegions, int clusterSize) {
-    var stuck = pending[0];
-    var clusters = (int)((stuck.Length + clusterSize - 1) / clusterSize);
-
-    // Collect free clusters, largest region first so the staging area stays as
-    // contiguous as the volume allows.
-    var freeClusters = new List<long>();
-    foreach (var (offset, length) in freeRegions.OrderByDescending(r => r.Length))
-      for (var at = offset; at + clusterSize <= offset + length && freeClusters.Count < clusters; at += clusterSize)
-        freeClusters.Add(at);
-    if (freeClusters.Count < clusters) return false;
-
-    var replacements = new List<ClusterMove>(clusters);
-    for (var i = 0; i < clusters; ++i) {
-      var length = (int)Math.Min(clusterSize, stuck.Length - (long)i * clusterSize);
-      var source = stuck.SrcOffset + (long)i * clusterSize;
-      var stage = freeClusters[i];
-      result.Add(new ClusterMove(source, stage, length, stuck.FileName));
-      replacements.Add(new ClusterMove(stage, stuck.DstOffset + (long)i * clusterSize, length, stuck.FileName));
-    }
-
-    // The staged clusters are in use now; the run's old home is free.
-    var staged = freeClusters.Take(clusters).ToHashSet();
-    for (var i = freeRegions.Count - 1; i >= 0; --i) {
+  private static int FindFreeRegionClearOf(
+      List<(long Offset, long Length)> freeRegions, long size, List<ClusterMove> pending) {
+    for (var i = 0; i < freeRegions.Count; ++i) {
       var (offset, length) = freeRegions[i];
-      if (!staged.Any(s => s >= offset && s < offset + length)) continue;
-      freeRegions.RemoveAt(i);
-      for (var at = offset; at + clusterSize <= offset + length; at += clusterSize)
-        if (!staged.Contains(at))
-          freeRegions.Add((at, clusterSize));
+      if (length < size) continue;
+      var clear = true;
+      foreach (var move in pending)
+        if (Overlaps(offset, size, move.DstOffset, move.Length)) {
+          clear = false;
+          break;
+        }
+      if (clear) return i;
     }
-    freeRegions.Add((stuck.SrcOffset, AlignUp(stuck.Length, clusterSize)));
-
-    pending.RemoveAt(0);
-    pending.InsertRange(0, replacements);
-    return true;
+    return -1;
   }
 
   // ── Metadata zone placement ────────────────────────────────────────────
