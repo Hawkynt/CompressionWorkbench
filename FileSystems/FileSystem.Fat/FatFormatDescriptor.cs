@@ -337,6 +337,17 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       .ThenBy(o => o, StringComparer.OrdinalIgnoreCase)
       .ToList();
 
+    // Every cluster any owner ends up on. An owner's old clusters routinely
+    // become another owner's new ones, so this is what keeps the per-owner
+    // relink from freeing a chain that has just been written.
+    var clustersLiveAfterMove = new HashSet<int>();
+    foreach (var owner in orderedOwners)
+      foreach (var ext in extentsByOwner[owner]) {
+        var blocks = (int)((ext.Length + mover.ClusterSize - 1) / mover.ClusterSize);
+        for (var b = 0; b < blocks; b++)
+          clustersLiveAfterMove.Add(mover.OffsetCluster(FinalOffset(ext.Offset + (long)b * mover.ClusterSize)));
+      }
+
     var ownerIdx = 0;
     foreach (var owner in orderedOwners) {
       // Extents arrive from the extent map in CHAIN order (the map walks each
@@ -358,7 +369,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
       if (oldClusters.Count == 0) continue;
 
-      mover.UpdateAllocationScattered(archive, owner, oldClusters, newClusters);
+      mover.UpdateAllocationScattered(archive, owner, oldClusters, newClusters, clustersLiveAfterMove);
 
       if (owner.EndsWith('/') && oldClusters[0] != newClusters[0])
         dirStartRemap[oldClusters[0]] = newClusters[0];

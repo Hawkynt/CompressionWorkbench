@@ -204,10 +204,11 @@ public static class DefragPlanner {
       var (freeOff, freeLen) = freeRegions[freeIdx];
       var target = freeOff;
 
-      // Move all fragments to the free region in order.
+      // Move all fragments to the free region in order, on the cluster grid
+      // the data region actually uses.
       foreach (var ext in extents) {
         moves.Add(new ClusterMove(ext.Offset, target, ext.Length, fileName));
-        target = AlignUp(target + ext.Length, clusterSize);
+        target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
       }
 
       // Update free list: consume the used portion.
@@ -291,7 +292,7 @@ public static class DefragPlanner {
         var alignedSize = AlignUp(totalSize, clusterSize);
         var target = FindPrevSlot(ceiling, alignedSize, dataOrigin, clusterSize, forbidden);
         if (target < 0) break; // no room — leave remaining files where they are
-        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize);
+        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
         ceiling = target;
       }
     } else {
@@ -300,7 +301,7 @@ public static class DefragPlanner {
         var alignedSize = AlignUp(totalSize, clusterSize);
         var target = FindNextSlot(cursor, alignedSize, imageSize, dataOrigin, clusterSize, forbidden);
         if (target < 0) break; // no room
-        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize);
+        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
         cursor = target + alignedSize;
       }
     }
@@ -318,7 +319,8 @@ public static class DefragPlanner {
     long targetStart,
     long totalSize,
     string fileName,
-    int clusterSize) {
+    int clusterSize,
+    long dataOrigin) {
     var alreadyCorrect = srcExtents.Count == 1 && srcExtents[0].Offset == targetStart
                          && srcExtents[0].Length == totalSize;
     if (alreadyCorrect) return;
@@ -326,7 +328,12 @@ public static class DefragPlanner {
     foreach (var ext in srcExtents) {
       if (ext.Offset != target || ext.Length != totalSize)
         moves.Add(new ClusterMove(ext.Offset, target, ext.Length, fileName));
-      target = AlignUp(target + ext.Length, clusterSize);
+      // Cluster boundaries sit at dataOrigin + k * clusterSize, and a data
+      // region rarely starts on a multiple of the cluster size — a FAT volume's
+      // first data byte follows the reserved sectors, the FATs and the root
+      // directory. Aligning absolutely put every run after the first off the
+      // grid, and the relink then pointed the chain at the wrong cluster.
+      target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
     }
   }
 
@@ -749,11 +756,20 @@ public static class DefragPlanner {
         var stuck = pending[0];
         var stageIdx = FindFreeRegion(freeRegions, AlignUp(stuck.Length, clusterSize));
         if (stageIdx < 0) {
-          // No free region available — just emit the moves in order and hope
-          // the caller's byte-level move engine handles overlap safely.
-          result.AddRange(pending);
-          pending.Clear();
-          break;
+          // No single free region holds the whole run. Free space is rarely
+          // contiguous on the volume that needed defragmenting in the first
+          // place, so the run is staged cluster by cluster instead — each
+          // staged cluster is moved on to its final slot afterwards.
+          if (TryStagePiecewise(result, pending, freeRegions, clusterSize)) continue;
+
+          // Not even that much free space. The remaining moves overwrite each
+          // other's sources, and executing them in any order destroys data —
+          // which is what happened while this emitted them and hoped the byte
+          // mover would cope. Refuse instead: every caller falls back to the
+          // rebuild path, which reads each file before writing anything.
+          throw new InvalidOperationException(
+            $"Defragmentation cannot be planned in place: {pending.Count} move(s) form a cycle " +
+            $"and there is not {AlignUp(stuck.Length, clusterSize):N0} bytes of free space to stage it.");
         }
 
         var (stageOff, stageLen) = freeRegions[stageIdx];
@@ -774,6 +790,52 @@ public static class DefragPlanner {
     }
 
     return result;
+  }
+
+  /// <summary>
+  /// Breaks a cycle by staging the first pending move one cluster at a time
+  /// into whatever free clusters exist, then queuing each staged cluster's hop
+  /// to its final slot. Returns false when free space cannot hold the run at
+  /// all, in which case the caller has nothing left to try.
+  /// </summary>
+  private static bool TryStagePiecewise(
+      List<ClusterMove> result, List<ClusterMove> pending,
+      List<(long Offset, long Length)> freeRegions, int clusterSize) {
+    var stuck = pending[0];
+    var clusters = (int)((stuck.Length + clusterSize - 1) / clusterSize);
+
+    // Collect free clusters, largest region first so the staging area stays as
+    // contiguous as the volume allows.
+    var freeClusters = new List<long>();
+    foreach (var (offset, length) in freeRegions.OrderByDescending(r => r.Length))
+      for (var at = offset; at + clusterSize <= offset + length && freeClusters.Count < clusters; at += clusterSize)
+        freeClusters.Add(at);
+    if (freeClusters.Count < clusters) return false;
+
+    var replacements = new List<ClusterMove>(clusters);
+    for (var i = 0; i < clusters; ++i) {
+      var length = (int)Math.Min(clusterSize, stuck.Length - (long)i * clusterSize);
+      var source = stuck.SrcOffset + (long)i * clusterSize;
+      var stage = freeClusters[i];
+      result.Add(new ClusterMove(source, stage, length, stuck.FileName));
+      replacements.Add(new ClusterMove(stage, stuck.DstOffset + (long)i * clusterSize, length, stuck.FileName));
+    }
+
+    // The staged clusters are in use now; the run's old home is free.
+    var staged = freeClusters.Take(clusters).ToHashSet();
+    for (var i = freeRegions.Count - 1; i >= 0; --i) {
+      var (offset, length) = freeRegions[i];
+      if (!staged.Any(s => s >= offset && s < offset + length)) continue;
+      freeRegions.RemoveAt(i);
+      for (var at = offset; at + clusterSize <= offset + length; at += clusterSize)
+        if (!staged.Contains(at))
+          freeRegions.Add((at, clusterSize));
+    }
+    freeRegions.Add((stuck.SrcOffset, AlignUp(stuck.Length, clusterSize)));
+
+    pending.RemoveAt(0);
+    pending.InsertRange(0, replacements);
+    return true;
   }
 
   // ── Metadata zone placement ────────────────────────────────────────────
@@ -864,7 +926,7 @@ public static class DefragPlanner {
         var alignedSize = AlignUp(totalSize, clusterSize);
         var target = FindPrevSlot(ceiling, alignedSize, dataOrigin, clusterSize, forbidden);
         if (target < 0) break;
-        EmitFileMoves(moves, srcExtents, target, totalSize, fileName, clusterSize);
+        EmitFileMoves(moves, srcExtents, target, totalSize, fileName, clusterSize, dataOrigin);
         ceiling = target;
       }
     } else {
@@ -873,7 +935,7 @@ public static class DefragPlanner {
         var alignedSize = AlignUp(totalSize, clusterSize);
         var target = FindNextSlot(cursor, alignedSize, imageSize, dataOrigin, clusterSize, forbidden);
         if (target < 0) break;
-        EmitFileMoves(moves, srcExtents, target, totalSize, fileName, clusterSize);
+        EmitFileMoves(moves, srcExtents, target, totalSize, fileName, clusterSize, dataOrigin);
         cursor = target + alignedSize;
       }
     }
@@ -926,7 +988,7 @@ public static class DefragPlanner {
       // If no parent directory match, leave unassigned (will be appended at end).
     }
 
-    var cursor = AlignUp(dataOrigin, clusterSize);
+    var cursor = dataOrigin;   // already the first cluster boundary by definition
     var moves = new List<ClusterMove>();
 
     // Lay out each directory followed by its children.
@@ -939,9 +1001,9 @@ public static class DefragPlanner {
       foreach (var ext in dirExtents) {
         if (ext.Offset != target)
           moves.Add(new ClusterMove(ext.Offset, target, ext.Length, dirName));
-        target = AlignUp(target + ext.Length, clusterSize);
+        target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
       }
-      cursor = AlignUp(cursor + dirSize, clusterSize);
+      cursor = AlignUpFrom(cursor + dirSize, dataOrigin, clusterSize);
 
       // Place the children immediately after.
       foreach (var childName in childrenOf[dirName].OrderByDescending(n => dataSizes[n])) {
@@ -951,9 +1013,9 @@ public static class DefragPlanner {
         foreach (var ext in childExtents) {
           if (ext.Offset != target)
             moves.Add(new ClusterMove(ext.Offset, target, ext.Length, childName));
-          target = AlignUp(target + ext.Length, clusterSize);
+          target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
         }
-        cursor = AlignUp(cursor + childSize, clusterSize);
+        cursor = AlignUpFrom(cursor + childSize, dataOrigin, clusterSize);
       }
     }
 
@@ -966,9 +1028,9 @@ public static class DefragPlanner {
       foreach (var ext in extents) {
         if (ext.Offset != target)
           moves.Add(new ClusterMove(ext.Offset, target, ext.Length, fileName));
-        target = AlignUp(target + ext.Length, clusterSize);
+        target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
       }
-      cursor = AlignUp(cursor + size, clusterSize);
+      cursor = AlignUpFrom(cursor + size, dataOrigin, clusterSize);
     }
 
     // ConsolidateAtEnd: the layout above was built starting at `dataOrigin`.
@@ -1111,7 +1173,7 @@ public static class DefragPlanner {
         var ceiling = mode == DefragMode.ConsolidateAtEnd ? imageSize : imageSize;
         var target = FindNextSlot(cursor, alignedSize, ceiling, dataOrigin, clusterSize, forbidden);
         if (target < 0) break;
-        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize);
+        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
         cursor = target + alignedSize;
         _ = zEnd; // zEnd is informational only at this layer; planner allows spill
       }
@@ -1141,7 +1203,7 @@ public static class DefragPlanner {
         var alignedSize = AlignUp(totalSize, clusterSize);
         var target = FindNextSlot(cursor, alignedSize, imageSize, dataOrigin, clusterSize, forbidden);
         if (target < 0) break;
-        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize);
+        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
         cursor = target + alignedSize;
       }
     }

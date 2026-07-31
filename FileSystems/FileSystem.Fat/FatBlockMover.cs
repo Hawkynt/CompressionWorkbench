@@ -415,7 +415,17 @@ public sealed class FatBlockMover : IFilesystemBlockMover {
   /// <param name="fileName">File name to match in directory entries.</param>
   /// <param name="oldClusters">Cluster numbers of the file's current chain (in chain order).</param>
   /// <param name="newClusters">Cluster numbers of the file's new chain (in desired order).</param>
-  public void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters) {
+  public void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters)
+    => this.UpdateAllocationScattered(image, fileName, oldClusters, newClusters, clustersLiveElsewhere: null);
+
+  /// <summary>
+  /// As above, but told which clusters other files have already been relinked
+  /// onto. A defragmentation relinks one owner at a time, and an owner's old
+  /// clusters are frequently where another owner has just landed; freeing them
+  /// blindly cuts that owner's chain and truncates its content.
+  /// </summary>
+  public void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters,
+      IReadOnlyList<int> newClusters, IReadOnlySet<int>? clustersLiveElsewhere) {
     if (newClusters.Count == 0) return;
 
     var fatStart = _reservedSectors * _bytesPerSector;
@@ -440,11 +450,12 @@ public sealed class FatBlockMover : IFilesystemBlockMover {
       image.Flush();
     }
 
-    // Step 3: Free old clusters that are NOT in the new set.
+    // Step 3: Free old clusters that are NOT in this file's new chain, and not
+    // in anyone else's either.
     for (var fatIdx = 0; fatIdx < _fatCount; fatIdx++) {
       var fatBase = fatStart + fatIdx * _fatSize * _bytesPerSector;
       foreach (var c in oldClusters)
-        if (!newSet.Contains(c))
+        if (!newSet.Contains(c) && clustersLiveElsewhere?.Contains(c) != true)
           WriteFatEntryStream(image, fatBase, c, 0);
       image.Flush();
     }
