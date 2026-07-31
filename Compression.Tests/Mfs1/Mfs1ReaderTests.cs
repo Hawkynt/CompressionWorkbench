@@ -75,9 +75,10 @@ public class Mfs1ReaderTests {
     var d = new Mfs1FormatDescriptor();
     var entries = d.List(ms, null);
     var names = entries.Select(e => e.Name).ToList();
-    Assert.That(names, Does.Contain("FULL.mfs"));
-    Assert.That(names, Does.Contain("metadata.ini"));
-    Assert.That(names, Does.Contain("HELLO"));
+    // A volume whose catalog reads is listed as its files alone: the
+    // whole-image and metadata surfaces are for one that does not read, and
+    // listing them beside real files makes a rebuild store them as files.
+    Assert.That(names, Is.EqualTo(new[] { "HELLO" }));
   }
 
   [Test, Category("HappyPath")]
@@ -93,9 +94,8 @@ public class Mfs1ReaderTests {
       Assert.That(File.Exists(helloPath), Is.True);
       Assert.That(File.ReadAllBytes(helloPath), Is.EqualTo(content));
 
-      var meta = File.ReadAllText(Path.Combine(outDir, "metadata.ini"));
-      Assert.That(meta, Does.Contain("catalog_entries=1"));
-      Assert.That(meta, Does.Contain("parse_status=ok"));
+      // Nothing but the catalog's own files comes out of a volume that reads.
+      Assert.That(Directory.GetFiles(outDir).Select(Path.GetFileName), Is.EqualTo(new[] { "HELLO" }));
     } finally {
       try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
     }

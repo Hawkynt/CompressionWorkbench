@@ -85,18 +85,24 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       return entries;
     }
 
-    // Always surface FULL.mfs + metadata.ini for triage; add real catalog
-    // entries when the catalog parses successfully.
-    entries.Add(new ArchiveEntryInfo(0, "FULL.mfs", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
-
+    // Real catalog entries when the catalog parses. The whole-image and
+    // metadata surfaces are for a volume nothing can be read out of: listed
+    // alongside real files they are fed back into the writer on a rebuild,
+    // which then needs the volume's own size again and refuses for want of
+    // space.
+    var catalog = new List<ArchiveEntryInfo>();
     try {
       var r = new Mfs1Reader(image);
       foreach (var e in r.Entries)
-        entries.Add(new ArchiveEntryInfo(entries.Count, e.FullName, e.Size, e.Size, "stored", false, e.IsLocked, null));
+        catalog.Add(new ArchiveEntryInfo(catalog.Count, e.FullName, e.Size, e.Size, "stored", false, e.IsLocked, null));
     } catch {
       // best-effort: opaque-only surface
     }
+
+    if (catalog.Count > 0) return catalog;
+
+    entries.Add(new ArchiveEntryInfo(0, "FULL.mfs", image.LongLength, image.LongLength, "stored", false, false, null));
+    entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
     return entries;
   }
 
@@ -111,8 +117,6 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     var ok = image.Length >= 2 && image[0] == 0x00 && image[1] == 0x80;
     var label = TryExtractLabel(image);
-
-    WriteIfMatch(outputDir, "FULL.mfs", image, files);
 
     // Catalog walk + per-file extract.
     var entriesParsed = 0;
@@ -129,12 +133,20 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // best-effort
     }
 
+    // The whole image is only worth writing out when nothing was read from it.
+    if (entriesParsed == 0)
+      WriteIfMatch(outputDir, "FULL.mfs", image, files);
+
+    // Likewise the metadata note: written next to real files, it becomes a
+    // real file of its own the next time the volume is rebuilt from what was
+    // extracted.
+    if (entriesParsed > 0) return;
+
     var bldr = new StringBuilder();
-    bldr.Append(CultureInfo.InvariantCulture, $"parse_status={(entriesParsed > 0 ? "ok" : (ok ? "ok" : "partial"))}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"parse_status={(ok ? "ok" : "partial")}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"detected_label={label}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"catalog_entries={entriesParsed}\n");
-    if (entriesParsed == 0)
-      bldr.Append("note=Acorn MFS-1 catalog walk produced no entries; image surfaced as opaque blob.\n");
+    bldr.Append("note=Acorn MFS-1 catalog walk produced no entries; image surfaced as opaque blob.\n");
     WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(bldr.ToString()), files);
   }
 
