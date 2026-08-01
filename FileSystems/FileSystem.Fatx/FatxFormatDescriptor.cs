@@ -365,4 +365,63 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       wipeClusterTips: false, fileSizeLookup: fileSizeLookup);
   }
 
+
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Moves only the files that are out of place, relinking each chain and
+  /// repointing its directory record as the clusters arrive. A rebuild would
+  /// read and rewrite every file to fix a handful of runs; this rewrites the
+  /// allocation table entries and one field per file instead.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    archive.Position = 0;
+    var mover = new FatxBlockMover();
+    mover.Init(archive);
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // A file in more than one piece needs its whole chain restated, which this
+    // pass cannot do — it repoints a record's first cluster and writes one
+    // chain. Those volumes are refused rather than half-relinked.
+    var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var extent in extents) {
+      if (extent.Kind != DefragBlockKind.Used || extent.FileName is not { } owner) continue;
+      runsPerOwner.TryGetValue(owner, out var count);
+      runsPerOwner[owner] = count + 1;
+    }
+    var fragmented = runsPerOwner.Count(kv => kv.Value > 1);
+    if (fragmented > 0)
+      throw new NotSupportedException(
+        $"FATX: {fragmented} file(s) are in more than one piece, which this pass cannot relink " +
+        "as a single chain.");
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.ClusterSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
 }
