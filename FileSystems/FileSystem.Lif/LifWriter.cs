@@ -53,10 +53,12 @@ public sealed class LifWriter {
     // the caller saw an arithmetic error rather than being told the payload
     // does not fit on a LIF volume.
     var imageBytes = (long)totalSectors * LifReader.SectorSize;
-    if (imageBytes > MaxImageBytes)
+    var ceiling = Math.Min(MaxImageBytes, System.Array.MaxLength);
+    if (imageBytes > ceiling)
       throw new InvalidOperationException(
-        $"LIF: combined input size {imageBytes:N0} bytes exceeds the {MaxImageBytes:N0} bytes " +
-        "a LIF volume can address.");
+        $"LIF: combined input size {imageBytes:N0} bytes exceeds the {ceiling:N0} bytes this " +
+        "writer can lay out (a LIF volume addresses 24 bits of sectors, and the image is built " +
+        "in memory).");
     var image = new byte[imageBytes];
 
     // ── Volume label sector ───────────────────────────────────────────────

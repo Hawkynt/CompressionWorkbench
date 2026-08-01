@@ -457,9 +457,32 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// on exactly the volumes that most need it.
   /// </summary>
   private static void WriteVolume(Stream archive, FatWriter writer, int totalSectors) {
-    archive.Position = 0;
-    archive.SetLength(0);
-    writer.BuildTo(archive, totalSectors: totalSectors);
+    var scratch = Path.GetTempFileName();
+    try {
+      using (var staged = File.Open(scratch, FileMode.Open, FileAccess.ReadWrite)) {
+        try {
+          staged.SetLength(0);
+          writer.BuildTo(staged, totalSectors: totalSectors);
+        } catch (InvalidOperationException) {
+          // The same files that fit the old volume can need one cluster more
+          // once the metadata is laid out afresh — a different cluster size or
+          // FAT length shifts the first data sector. A defragmentation must
+          // never fail for that reason, so the volume is sized to its contents.
+          staged.Position = 0;
+          staged.SetLength(0);
+          writer.BuildToStreaming(staged, requestedTotalSectors: totalSectors);
+        }
+      }
+
+      using (var staged = File.OpenRead(scratch)) {
+        archive.Position = 0;
+        archive.SetLength(staged.Length);
+        staged.CopyTo(archive);
+        archive.Flush();
+      }
+    } finally {
+      try { File.Delete(scratch); } catch { /* scratch file already gone */ }
+    }
   }
 
   public string Id => "Fat";

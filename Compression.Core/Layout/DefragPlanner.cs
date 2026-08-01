@@ -151,6 +151,15 @@ public static class DefragPlanner {
 
     if (fileExtents.Count == 0) return [];
 
+    // Planning is superlinear in the number of extents, and a volume whose map
+    // reports a run per block — a few gigabytes at one kilobyte each — pushed
+    // that into a planning pass that never returned. Past this many the caller
+    // rebuilds instead, which costs one pass over the data.
+    if (fileExtents.Count > MaxPlannableExtents)
+      throw new InvalidOperationException(
+        $"Defragmentation cannot be planned in place: {fileExtents.Count:N0} extents exceed the " +
+        $"{MaxPlannableExtents:N0} this planner resolves; rebuild the volume instead.");
+
     // Group extents by file name.
     var byFile = new Dictionary<string, List<DefragBlockInfo>>(StringComparer.OrdinalIgnoreCase);
     foreach (var e in fileExtents) {
@@ -760,6 +769,11 @@ public static class DefragPlanner {
   /// Moves past which in-place planning is refused in favour of a rebuild.
   /// </summary>
   private const int MaxPlannableMoves = 4096;
+
+  /// <summary>
+  /// Extents past which in-place planning is refused in favour of a rebuild.
+  /// </summary>
+  private const int MaxPlannableExtents = 65536;
 
   private static IReadOnlyList<ClusterMove> ResolveDependencies(
     List<ClusterMove> rawMoves,

@@ -122,7 +122,7 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in. Above that the edit unpacks and relays it out.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this, SyntheticNames);
       return;
     }
 
@@ -141,7 +141,7 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this, SyntheticNames);
       return;
     }
 
@@ -543,6 +543,34 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
     } catch { /* best-effort; reader failure leaves only surface entries */ }
     return entries;
+  }
+
+
+  /// <summary>
+  /// The entries this reader surfaces that are not files on the volume — the
+  /// raw image and its triage sheets — so an image the parser cannot fully
+  /// walk still yields something useful.
+  /// </summary>
+  private static readonly HashSet<string> SyntheticNames =
+    new(StringComparer.OrdinalIgnoreCase) { "FULL.ext1", "metadata.ini", "superblock.bin" };
+
+  /// <summary>
+  /// Re-lays the volume out with the requested geometry. The generic default
+  /// wrote the synthetic entries back as files, so the rebuilt volume listed
+  /// more entries than the original and the rebuild was refused.
+  /// </summary>
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+    if (options.Parameters != null)
+      foreach (var kv in options.Parameters)
+        parameters[kv.Key] = kv.Value;
+
+    RebuildVerb.RebuildToStream(source, target, this, this,
+      parameters.Count > 0 ? parameters : null, SyntheticNames);
   }
 
 }

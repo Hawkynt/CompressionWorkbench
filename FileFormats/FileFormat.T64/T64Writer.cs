@@ -17,10 +17,19 @@ public sealed class T64Writer {
     var headerSize = 64;
     var dirSize = _files.Count * 32;
     var dataStart = headerSize + dirSize;
-    var totalSize = dataStart;
-    foreach (var (_, _, data) in _files)
-      totalSize += data.Length;
+    // A tape entry addresses its file inside the C64's 64 KB memory map, so no
+    // entry can be larger than that — and the archive is built in memory.
+    // Summing the sizes in an int overflowed before either limit was reported.
+    var totalBytes = (long)dataStart;
+    foreach (var (name, startAddr, data) in _files) {
+      if (startAddr + (long)data.Length > 0x10000)
+        throw new InvalidOperationException(
+          $"T64: '{name}' is {data.Length:N0} bytes and loads at ${startAddr:X4}, past the end of " +
+          "the C64's 64 KB address space that a tape entry's start/end addresses describe.");
+      totalBytes += data.Length;
+    }
 
+    var totalSize = (int)totalBytes;
     var output = new byte[totalSize];
 
     // Header
@@ -44,15 +53,6 @@ public sealed class T64Writer {
 
       output[entryOff] = 1; // normal entry
       output[entryOff + 1] = 0x82; // PRG
-
-      // A tape entry records where the file starts and ends in the C64's
-      // 16-bit address space, so it cannot describe more than 64 KB. Writing
-      // the end address truncated silently: the archive listed the file at a
-      // fraction of its length and read back that fraction.
-      if (startAddr + (long)data.Length > 0x10000)
-        throw new InvalidOperationException(
-          $"T64: '{name}' is {data.Length:N0} bytes and loads at ${startAddr:X4}, past the end of " +
-          "the C64's 64 KB address space that a tape entry's start/end addresses describe.");
 
       BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(entryOff + 2), startAddr);
       BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(entryOff + 4), (ushort)(startAddr + data.Length));

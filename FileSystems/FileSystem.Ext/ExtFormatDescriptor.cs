@@ -163,7 +163,14 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+    // Reading the layout of a multi-gigabyte volume means walking every block
+    // pointer of every file — hundreds of thousands per file at a kilobyte a
+    // block — before the planner sees its first extent, and the planner then
+    // refuses a volume that fragmented anyway. Past this size the rebuild is
+    // both the faster route and the one that finishes.
+    if (archive.Length <= MaxPlannerVolumeBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+           or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
       try {
         DefragmentWithPlanner(archive, options);
         return;
@@ -179,7 +186,11 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var mover = new ExtBlockMover();
     mover.Init(archive); // reads only SB + first BGD (~2 KB)
 
-    var extents = ExtExtentMap.Enumerate(archive).ToList();
+    // The map yields one run per block for a volume laid out block by block —
+    // a few gigabytes at a kilobyte each is millions of them, and materialising
+    // that list took longer than the rebuild it was meant to avoid. The planner
+    // refuses anything near this many anyway, so stop counting there.
+    var extents = ExtExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList();
     options.OnProgress?.Invoke(new DefragProgressEvent("scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
 
     var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
@@ -196,17 +207,40 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
+  /// <summary>Extents past which the planner refuses; see <see cref="Compression.Core.Layout.DefragPlanner" />.</summary>
+  private const int MaxPlannerExtents = 65536;
+
+  /// <summary>Volume size past which reading the layout costs more than a rebuild.</summary>
+  private const long MaxPlannerVolumeBytes = 512L * 1024 * 1024;
+
+  /// <summary>
+  /// Rebuild fallback for when the planner refuses. The volume is laid out
+  /// straight into the stream: a byte[] tops out at two gigabytes, so building
+  /// the image in memory threw on exactly the volumes that reach this path.
+  /// </summary>
   private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new ExtReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ExtWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    ExtWriter? writer = null;
+    Stream? target = null;
+    var spill = new List<string>();
+    try {
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new ExtReader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+        },
+        beginWrite: s => { writer = new ExtWriter(); target = s; },
+        writeEntry: (name, data) => {
+          var path = Path.GetTempFileName();
+          spill.Add(path);
+          File.WriteAllBytes(path, data);
+          writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+        },
+        finishWrite: () => writer!.BuildToStreamingAutoSized(
+          target!, ExtWriter.ExtVersion.Ext2, journal: false, volumeLabel: null!, inodeSize: 128));
+    } finally {
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
   }
   public string DefaultExtension => ".ext2";
   public IReadOnlyList<string> Extensions => [".ext2", ".ext3", ".ext4", ".img"];
@@ -466,14 +500,32 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (source.CanSeek) source.Position = 0;
     var reader = new ExtReader(source, leaveOpen: true);
     var w = new ExtWriter();
-    foreach (var e in reader.Entries) {
-      if (e.IsDirectory) continue;
-      w.AddFile(e.Name, reader.Extract(e));
+    // Each entry is spilled to scratch and pulled back while the volume is laid
+    // out, so neither the file nor the image is held in memory — building it in
+    // an array refused any volume past the array limit.
+    var spill = new List<string>();
+    try {
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        var path = Path.GetTempFileName();
+        spill.Add(path);
+        File.WriteAllBytes(path, reader.Extract(e));
+        var captured = path;
+        w.AddStreamingFile(e.Name, new FileInfo(captured).Length, () => File.OpenRead(captured));
+      }
+
+      // UnitSize 0 = auto-select the slack-optimal block size; explicit wins.
+      if (target.CanSeek) {
+        w.BuildToStreamingAutoSized(target, options.UnitSize, ExtWriter.ExtVersion.Ext2,
+          journal: false, volumeLabel: null!, inodeSize: 128);
+      } else {
+        target.Write(w.BuildAutoSized(options.UnitSize));
+      }
+      options.OnProgress?.Invoke(target.Length, target.Length);
+    } finally {
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
-    // UnitSize 0 = auto-select the slack-optimal block size; explicit wins.
-    var image = w.BuildAutoSized(options.UnitSize);
-    target.Write(image);
-    options.OnProgress?.Invoke(image.Length, image.Length);
   }
   /// <summary>
   /// A writable scratch stream that is not bounded by what a byte[] can hold.
