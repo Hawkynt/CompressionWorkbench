@@ -159,6 +159,24 @@ public sealed class CromemcoFormatDescriptor :
 
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the volume out again: a file
+    // here is one contiguous run named by its directory entry, so a move is the
+    // copy and one write. What the planner will not commit to falls through to
+    // the rebuild below.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch (Exception planFailure) {
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          "fallback", 0, -1, -1, archive.Length, null,
+          $"In-place planning declined ({planFailure.GetType().Name}: " +
+          $"{PlannerFallbackLine(planFailure.Message)}); rebuilding instead"));
+        archive.Position = 0;
+      }
+    }
     // Capture the source's geometry so the rebuilt image is the same physical
     // size — otherwise the optimizer would happily shrink the disk and break
     // the defrag contract ("size must not change").
@@ -234,4 +252,43 @@ public sealed class CromemcoFormatDescriptor :
     var extents = CromemcoExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, sizeLookup);
   }
+
+  /// <summary>
+  /// Moves only the files that are out of place, repointing each one's
+  /// directory entry as its run arrives.
+  /// </summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new CromemcoBlockMover();
+    mover.Init(archive);
+
+    var extents = CromemcoExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = CromemcoExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>The first line of a message, for a one-line progress note.</summary>
+  private static string PlannerFallbackLine(string message) {
+    var end = message.IndexOf('\n');
+    return end < 0 ? message : message[..end].TrimEnd('\r');
+  }
+
 }
