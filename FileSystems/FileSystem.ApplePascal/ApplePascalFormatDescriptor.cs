@@ -148,6 +148,23 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The rebuild lays the volume down again from the files it read out, and on
+    // a ApplePascal volume that came back with the files listed at their right
+    // lengths holding the wrong bytes. Counting entries says nothing about
+    // that, so the pass is kept only if every payload still reads back.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => {
+        using var reader = new ApplePascalReader(stream);
+        return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+      },
+      inPlace: () => RebuildVia(archive, options),
+      rebuild: () => { /* the rebuild is what was just tried; leave the volume as it was */ });
+  }
+
+  private void RebuildVia(Stream archive, DefragOptions options) {
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         using var r = new ApplePascalReader(stream);
