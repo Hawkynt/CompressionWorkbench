@@ -200,6 +200,27 @@ public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A GEMDOS volume is a FAT12 volume with the Atari branch byte where MS-DOS
+    // puts its jump, so the FAT mover relinks it once the boot sector is read
+    // through the same patched view the extent map already uses. What the
+    // planner will not commit to falls through to the rebuild below.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch (Exception planFailure) {
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          "fallback", 0, -1, -1, archive.Length, null,
+          $"In-place planning declined ({planFailure.GetType().Name}: " +
+          $"{PlannerFallbackLine(planFailure.Message)}); rebuilding instead"));
+        archive.Position = 0;
+      }
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new GemdosReader(stream);
@@ -237,4 +258,66 @@ public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var extents = GemdosExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, lookup);
   }
+
+  /// <summary>
+  /// Moves only the files that are out of place, relinking each chain as its
+  /// clusters arrive.
+  /// </summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    var mover = new FileSystem.Fat.FatBlockMover();
+
+    // The boot sector is read through a view that shows MS-DOS's jump byte in
+    // place of the Atari branch; every other byte, and every write, is the
+    // volume itself.
+    archive.Position = 0;
+    var bpb = new byte[512];
+    archive.ReadExactly(bpb, 0, (int)Math.Min(512, archive.Length));
+    bpb[0] = 0xEB;
+    using (var view = new MemoryStream(bpb, writable: false))
+      mover.Init(view);
+
+    archive.Position = 0;
+    var extents = GemdosExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // A file in several pieces needs its whole chain rewritten as one, which
+    // the shared executor cannot state from the runs it tracked; those volumes
+    // are rebuilt instead.
+    var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var extent in extents) {
+      if (extent.Kind != DefragBlockKind.Used || extent.FileName is not { } owner) continue;
+      runsPerOwner.TryGetValue(owner, out var count);
+      runsPerOwner[owner] = count + 1;
+    }
+    var fragmented = runsPerOwner.Count(kv => kv.Value > 1);
+    if (fragmented > 0)
+      throw new NotSupportedException(
+        $"GEMDOS: {fragmented} file(s) are in more than one piece; rebuild the volume instead.");
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.ClusterSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = GemdosExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>The first line of a message, for a one-line progress note.</summary>
+  private static string PlannerFallbackLine(string message) {
+    var end = message.IndexOf('\n');
+    return end < 0 ? message : message[..end].TrimEnd('\r');
+  }
+
 }
