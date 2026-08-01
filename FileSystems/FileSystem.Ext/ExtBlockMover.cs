@@ -546,4 +546,14 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
       }
     }
   }
+
+  // A scattered relink would let the planner move fragmented files in place
+  // here too — ext keeps a block map, so remapping each run's pointers is all
+  // it takes, and Ext1BlockMover does exactly that. It is not offered on ext
+  // because this mover also relocates the group's bitmaps and inode table, and
+  // the two together lose file contents on the Middle and end-pack layouts:
+  // the file relink and the structure repoint disagree about which blocks are
+  // still live. Until that is settled, a fragmented owner is rebuilt, which is
+  // slower and correct.
+
 }

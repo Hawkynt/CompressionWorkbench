@@ -113,9 +113,25 @@ public static class DefragPlannerExecutor {
     // With a scattered relink available, metadata is written once per owner
     // after every byte has moved — a fragmented owner's runs then become one
     // chain rather than several files.
-    if (relink != null)
+    if (relink != null) {
+      // A relocated structure's new home is live too. It is not part of the
+      // file relink — it was repointed as its own move — so without this a
+      // file's old blocks would be released while the bitmap or the inode table
+      // now sits on them, and the space would be handed out twice.
+      var live = new HashSet<long>(relink.BlocksInUseAfterMoves);
+      if (metadataNames.Count > 0) {
+        var step = mover.AllocationBlockSize;
+        foreach (var move in moves) {
+          if (!IsMetadata(move.FileName)) continue;
+          if (step <= 0) { live.Add(move.DstOffset); continue; }
+          for (var at = 0L; at < move.Length; at += step)
+            live.Add(move.DstOffset + at);
+        }
+      }
+
       foreach (var (owner, oldBlocks, newBlocks) in relink.Owners())
-        mover.UpdateAllocationScattered(archive, owner, oldBlocks, newBlocks, relink.BlocksInUseAfterMoves);
+        mover.UpdateAllocationScattered(archive, owner, oldBlocks, newBlocks, live);
+    }
   }
 
   /// <summary>

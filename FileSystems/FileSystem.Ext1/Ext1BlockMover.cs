@@ -263,4 +263,85 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
     }
     return ms.ToArray();
   }
+
+  // ── Scattered relink ──────────────────────────────────────────────────
+
+  /// <inheritdoc />
+  public int AllocationBlockSize => _blockSize;
+
+  /// <inheritdoc />
+  public bool SupportsScatteredRelink => true;
+
+  /// <summary>
+  /// Rewrites one file's whole allocation once every byte has moved.
+  /// </summary>
+  /// <remarks>
+  /// <para>A chain-based filesystem has to relink a fragmented file as one
+  /// chain, which is why the executor refuses to hand a fragmented owner to a
+  /// mover that cannot express it. ext keeps a block <em>map</em> instead: each
+  /// pointer stands on its own, in the inode or in an indirect block, and
+  /// remapping the ones that moved leaves the file's order untouched. So a
+  /// fragmented file is no harder here than a contiguous one — it is simply
+  /// more runs to remap.</para>
+  ///
+  /// <para>Without this the volume was rebuilt whenever any file was in more
+  /// than one piece, which on a fragmented volume is every time: the defragment
+  /// verb read and rewrote every file to move a handful of blocks.</para>
+  /// </remarks>
+  public void UpdateAllocationScattered(Stream image, string fileName,
+      IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets,
+      IReadOnlySet<long>? blocksLiveElsewhere) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(oldBlockOffsets);
+    ArgumentNullException.ThrowIfNull(newBlockOffsets);
+    if (newBlockOffsets.Count == 0 || oldBlockOffsets.Count != newBlockOffsets.Count) return;
+
+    using var cache = new SectorCache(image);
+
+    // Claim the new blocks before any pointer names them.
+    foreach (var offset in newBlockOffsets)
+      SetBitmapBitStream(image, _blockBitmapOffset, (int)(OffsetToBlock(offset) - _firstDataBlock));
+    cache.Invalidate(_blockBitmapOffset, _blockSize);
+    image.Flush();
+
+    // One patch per contiguous stretch: the existing remap walks the inode's
+    // direct pointers and every indirect block, replacing whatever falls inside
+    // the old range.
+    foreach (var (oldStart, newStart, count) in ContiguousRuns(oldBlockOffsets, newBlockOffsets, _blockSize)) {
+      PatchInodeBlockPointersStream(image, cache, fileName,
+        OffsetToBlock(oldStart), OffsetToBlock(newStart), (int)count);
+      image.Flush();
+      cache.InvalidateAll();
+    }
+
+    // Release only what nothing else has taken.
+    var claimed = new HashSet<long>(newBlockOffsets);
+    foreach (var offset in oldBlockOffsets) {
+      if (claimed.Contains(offset)) continue;
+      if (blocksLiveElsewhere?.Contains(offset) == true) continue;
+      ClearBitmapBitStream(image, _blockBitmapOffset, (int)(OffsetToBlock(offset) - _firstDataBlock));
+    }
+    cache.Invalidate(_blockBitmapOffset, _blockSize);
+    image.Flush();
+  }
+
+  /// <summary>Splits a block-by-block relocation into the stretches it is made of.</summary>
+  private static IEnumerable<(long OldStart, long NewStart, long Count)> ContiguousRuns(
+      IReadOnlyList<long> oldOffsets, IReadOnlyList<long> newOffsets, int blockSize) {
+    var runOldStart = oldOffsets[0];
+    var runNewStart = newOffsets[0];
+    var count = 1L;
+
+    for (var i = 1; i < oldOffsets.Count; ++i) {
+      var continues = oldOffsets[i] == oldOffsets[i - 1] + blockSize
+                   && newOffsets[i] == newOffsets[i - 1] + blockSize;
+      if (continues) { ++count; continue; }
+      yield return (runOldStart, runNewStart, count);
+      runOldStart = oldOffsets[i];
+      runNewStart = newOffsets[i];
+      count = 1;
+    }
+    yield return (runOldStart, runNewStart, count);
+  }
+
 }

@@ -134,7 +134,13 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       try {
         DefragmentWithPlanner(archive, options);
         return;
-      } catch {
+      } catch (Exception planFailure) {
+        // A silent fallback looks exactly like a successful in-place
+        // defragmentation from outside, so the reason is reported.
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          "fallback", 0, -1, -1, archive.Length, null,
+          $"In-place planning declined ({planFailure.GetType().Name}: " +
+          $"{FirstLine(planFailure.Message)}); rebuilding instead"));
         archive.Position = 0;
       }
     }
@@ -433,6 +439,13 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       } catch { /* unreadable input — the writer will report it */ }
     }
     return total;
+  }
+
+
+  /// <summary>The first line of a message, for a one-line progress note.</summary>
+  private static string FirstLine(string message) {
+    var end = message.IndexOf('\n');
+    return end < 0 ? message : message[..end].TrimEnd('\r');
   }
 
 }

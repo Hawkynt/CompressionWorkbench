@@ -301,6 +301,30 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Moving the blocks that are in the wrong place beats writing the volume
+    // out again: a rebuild reads and rewrites every file to fix a handful of
+    // runs. The planner needs the layout and something that can relink a file
+    // after its bytes have moved, and ext1 has both. Anything it refuses — a
+    // volume fragmented past what it will resolve, a plan it cannot order
+    // safely — falls through to the rebuild below.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch (Exception planFailure) {
+        // A silent fallback looks exactly like a successful in-place
+        // defragmentation from outside, so the reason is reported.
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          "fallback", 0, -1, -1, archive.Length, null,
+          $"In-place planning declined ({planFailure.GetType().Name}: " +
+          $"{FirstLine(planFailure.Message)}); rebuilding instead"));
+        archive.Position = 0;
+      }
+    }
+
     var (blockSize, totalBlocks) = ReadGeometry(archive);
 
     // A volume too large to materialise goes through the streaming rebuilder,
@@ -571,6 +595,50 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     RebuildVerb.RebuildToStream(source, target, this, this,
       parameters.Count > 0 ? parameters : null, SyntheticNames);
+  }
+
+
+  /// <summary>
+  /// Moves only what is out of place, relinking each file's inode as its blocks
+  /// arrive at their new positions.
+  /// </summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Ext1BlockMover();
+    mover.Init(archive);
+
+    // The map yields a run per block on a volume laid out block by block, and
+    // the planner refuses anything near this many, so stop counting there
+    // rather than materialising millions of entries first.
+    var extents = Ext1ExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves, archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = Ext1ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Extents past which the planner refuses; see <see cref="Compression.Core.Layout.DefragPlanner" />.</summary>
+  private const int MaxPlannerExtents = 65536;
+
+
+  /// <summary>The first line of a message, for a one-line progress note.</summary>
+  private static string FirstLine(string message) {
+    var end = message.IndexOf('\n');
+    return end < 0 ? message : message[..end].TrimEnd('\r');
   }
 
 }
