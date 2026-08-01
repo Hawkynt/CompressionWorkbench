@@ -470,6 +470,38 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   /// <param name="fileName">File name to match in directory entries.</param>
   /// <param name="oldClusters">Cluster numbers of the file's current chain (in chain order).</param>
   /// <param name="newClusters">Cluster numbers of the file's new chain (in desired order).</param>
+  /// <inheritdoc />
+  public int AllocationBlockSize => _clusterSize;
+
+  /// <inheritdoc />
+  public bool SupportsScatteredRelink => true;
+
+  /// <summary>
+  /// The interface's shape of the relink below: the shared executor speaks in
+  /// byte offsets because it does not know a format's allocation unit, so the
+  /// offsets are turned into cluster numbers and handed to the same code the
+  /// FAT descriptor's own two-phase pass uses.
+  /// </summary>
+  public void UpdateAllocationScattered(Stream image, string fileName,
+      IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets,
+      IReadOnlySet<long>? blocksLiveElsewhere) {
+    ArgumentNullException.ThrowIfNull(oldBlockOffsets);
+    ArgumentNullException.ThrowIfNull(newBlockOffsets);
+
+    var oldClusters = new int[oldBlockOffsets.Count];
+    for (var i = 0; i < oldClusters.Length; ++i) oldClusters[i] = OffsetToCluster(oldBlockOffsets[i]);
+    var newClusters = new int[newBlockOffsets.Count];
+    for (var i = 0; i < newClusters.Length; ++i) newClusters[i] = OffsetToCluster(newBlockOffsets[i]);
+
+    HashSet<int>? live = null;
+    if (blocksLiveElsewhere != null) {
+      live = [];
+      foreach (var offset in blocksLiveElsewhere) live.Add(OffsetToCluster(offset));
+    }
+
+    this.UpdateAllocationScattered(image, fileName, oldClusters, newClusters, live);
+  }
+
   public void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters)
     => this.UpdateAllocationScattered(image, fileName, oldClusters, newClusters, clustersLiveElsewhere: null);
 
