@@ -288,6 +288,12 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// image is repacked with files reordered per mode.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    // Planner-driven defragmentation was tried here and pulled back out: on a
+    // half-megabyte image the planning pass had not returned after ten minutes.
+    // IsoBlockMover re-reads the primary volume descriptor and walks the
+    // directory records from the root for every move, so the cost grows with
+    // the square of the move count. It needs the directory record located once
+    // per file rather than once per move before the planner is worth wiring up.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 

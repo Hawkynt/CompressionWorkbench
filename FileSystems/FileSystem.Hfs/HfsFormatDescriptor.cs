@@ -226,6 +226,10 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// values converge on a clean repack.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    // Planner-driven defragmentation is not wired up here yet. HfsBlockMover
+    // patches a catalog record's first extent, which is enough for a file that
+    // moves in one piece; the volume bitmap and the extents overflow file it
+    // would also have to keep in step are not handled.
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new HfsReader(stream);

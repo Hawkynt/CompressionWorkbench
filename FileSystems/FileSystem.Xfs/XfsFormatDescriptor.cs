@@ -66,6 +66,9 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    // Planner-driven defragmentation is not wired up here yet. XfsBlockMover
+    // exists but throws for the extent shapes a real volume uses, so every plan
+    // would end in the rebuild below anyway.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 

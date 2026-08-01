@@ -250,6 +250,11 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// + root FE and a packed file-data region.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    // Planner-driven defragmentation is not wired up here yet. UdfBlockMover
+    // can repoint a file entry, but like the ISO mover it re-parses the
+    // descriptor chain — anchor, volume descriptor sequence, partition, file
+    // set — on every move, and that has to be done once before the planner is
+    // worth using.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
     // Every consolidate mode lands on the same layout here: the writer emits a

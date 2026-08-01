@@ -78,6 +78,10 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// MemoryStream sized to the original.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    // Planner-driven defragmentation is not wired up here yet. Btrfs addresses
+    // its extents logically and maps them through the chunk tree, so moving
+    // bytes means rewriting that mapping rather than a file's own pointers —
+    // a different operation from the one the planner drives.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 

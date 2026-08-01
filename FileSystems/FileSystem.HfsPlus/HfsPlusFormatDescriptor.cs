@@ -287,6 +287,15 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// values converge on a clean repack.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    // Planner-driven defragmentation was tried here and pulled back out. It
+    // works on a volume laid out fresh — thirty runs across five metadata
+    // placements, three modes and two interleave strides came back clean — but
+    // on a volume that has had files removed and re-added it loses one on the
+    // end-packing mode, and offering the allocation and catalog forks to a
+    // metadata placement at the same time loses file contents on Front, Back
+    // and Middle. HfsPlusBlockMover rewrites a fork's first extent rather than
+    // its whole extent record, which is the shape of both faults. Until it can
+    // restate a record, the rebuild is what runs.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
