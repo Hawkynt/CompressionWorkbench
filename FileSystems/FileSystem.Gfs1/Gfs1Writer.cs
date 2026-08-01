@@ -192,7 +192,9 @@ public sealed class Gfs1Writer {
     for (var i = 0; i < tree.Nodes.Count; i++) {
       var node = tree.Nodes[i];
       if (blocksPerNode[i] == 0) continue;
-      var start = firstBlockPerNode[i] * BlockSize;
+      // Block index times block size in ints overflows a few gigabytes in,
+      // and the payload was then placed at a negative offset.
+      var start = (long)firstBlockPerNode[i] * BlockSize;
       if (node.IsDirectory) {
         var blk = image.At(start, BlockSize);
         BinaryPrimitives.WriteUInt16BigEndian(blk[0..], DirBlockMagic);

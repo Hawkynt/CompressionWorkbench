@@ -215,6 +215,111 @@ public static class ModifyRebuilder {
   }
 
   /// <summary>
+  /// Adds files to a volume too large to hold in memory. Every entry is
+  /// extracted to scratch, the inputs are merged in by name, and the format's
+  /// own <see cref="IArchiveCreatable.Create" /> lays a fresh volume out — the
+  /// in-place modifiers read the whole image into an array to find their trees,
+  /// which is impossible past two gigabytes.
+  /// </summary>
+  /// <param name="archive">Stream to rewrite. Must be readable, writable, seekable.</param>
+  /// <param name="inputs">Files to add or replace.</param>
+  /// <param name="ops">The format's own read side, used to unpack the volume.</param>
+  /// <param name="creator">The format's own writer.</param>
+  /// <param name="syntheticNames">Entries the reader surfaces that are not files
+  /// on the volume (a raw-image blob, a metadata sheet); they must not be written
+  /// back as files.</param>
+  public static void AddLargeVolume(
+    System.IO.Stream archive,
+    System.Collections.Generic.IReadOnlyList<ArchiveInputInfo> inputs,
+    IArchiveFormatOperations ops,
+    IArchiveCreatable creator,
+    System.Collections.Generic.IReadOnlySet<string>? syntheticNames = null)
+    => RebuildLargeVolume(archive, ops, creator, drop: null, extra: inputs, syntheticNames);
+
+  /// <summary>
+  /// Removes entries from a volume too large to hold in memory, by the same
+  /// route as <see cref="AddLargeVolume" />.
+  /// </summary>
+  /// <param name="archive">Stream to rewrite. Must be readable, writable, seekable.</param>
+  /// <param name="entryNames">Names to drop.</param>
+  /// <param name="ops">The format's own read side, used to unpack the volume.</param>
+  /// <param name="creator">The format's own writer.</param>
+  /// <param name="syntheticNames">Entries the reader surfaces that are not files
+  /// on the volume; see <see cref="AddLargeVolume" />.</param>
+  public static void RemoveLargeVolume(
+    System.IO.Stream archive,
+    string[] entryNames,
+    IArchiveFormatOperations ops,
+    IArchiveCreatable creator,
+    System.Collections.Generic.IReadOnlySet<string>? syntheticNames = null) {
+    System.ArgumentNullException.ThrowIfNull(entryNames);
+    var drop = new System.Collections.Generic.HashSet<string>(
+      System.Linq.Enumerable.Select(entryNames, Norm), System.StringComparer.OrdinalIgnoreCase);
+    RebuildLargeVolume(archive, ops, creator, drop, extra: null, syntheticNames);
+  }
+
+  /// <summary>Whether a volume is past the size an in-memory edit can handle.</summary>
+  public static bool NeedsLargeVolumePath(System.IO.Stream archive)
+    => archive != null && archive.CanSeek && archive.Length > MaxBufferedImageBytes;
+
+  private static void RebuildLargeVolume(
+      System.IO.Stream archive,
+      IArchiveFormatOperations ops,
+      IArchiveCreatable creator,
+      System.Collections.Generic.HashSet<string>? drop,
+      System.Collections.Generic.IReadOnlyList<ArchiveInputInfo>? extra,
+      System.Collections.Generic.IReadOnlySet<string>? syntheticNames = null) {
+    System.ArgumentNullException.ThrowIfNull(archive);
+    System.ArgumentNullException.ThrowIfNull(ops);
+    System.ArgumentNullException.ThrowIfNull(creator);
+
+    var scratch = System.IO.Directory.CreateTempSubdirectory("cwb_bigmodify_");
+    var unpacked = System.IO.Path.Combine(scratch.FullName, "files");
+    var imagePath = System.IO.Path.Combine(scratch.FullName, "image.bin");
+    try {
+      System.IO.Directory.CreateDirectory(unpacked);
+      archive.Position = 0;
+      ops.Extract(archive, unpacked, null, null);
+
+      var replaced = new System.Collections.Generic.HashSet<string>(
+        System.StringComparer.OrdinalIgnoreCase);
+      if (extra != null)
+        foreach (var input in extra)
+          if (!input.IsDirectory)
+            replaced.Add(Norm(input.ArchiveName));
+
+      var carried = new System.Collections.Generic.List<ArchiveInputInfo>();
+      foreach (var file in System.IO.Directory.EnumerateFiles(
+          unpacked, "*", System.IO.SearchOption.AllDirectories)) {
+        var name = Norm(System.IO.Path.GetRelativePath(unpacked, file));
+        if (drop != null && (drop.Contains(name) || drop.Contains(Norm(System.IO.Path.GetFileName(file)))))
+          continue;
+        // A reader that also surfaces the raw image must not have it written
+        // back as a file: the volume would carry a copy of its own former self.
+        if (syntheticNames != null && syntheticNames.Contains(name)) continue;
+        if (replaced.Contains(name)) continue;
+        carried.Add(new ArchiveInputInfo(file, name, false));
+      }
+      if (extra != null)
+        foreach (var input in extra)
+          if (!input.IsDirectory)
+            carried.Add(input);
+
+      using (var image = System.IO.File.Create(imagePath))
+        creator.Create(image, carried, new FormatCreateOptions());
+
+      using (var image = System.IO.File.OpenRead(imagePath)) {
+        archive.Position = 0;
+        archive.SetLength(image.Length);
+        image.CopyTo(archive);
+        archive.Flush();
+      }
+    } finally {
+      try { scratch.Delete(recursive: true); } catch { /* scratch already gone */ }
+    }
+  }
+
+  /// <summary>
   /// Size past which an image is rebuilt through the format's own streaming
   /// <see cref="IArchiveCreatable.Create" /> rather than assembled in memory. A
   /// byte[] cannot exceed two gigabytes, so a buffered rebuild does not merely

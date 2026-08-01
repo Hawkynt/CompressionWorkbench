@@ -756,6 +756,11 @@ public static class DefragPlanner {
   /// target overlaps move B's source (and vice versa), the cycle is broken by
   /// staging one of the extents in a free region.
   /// </summary>
+  /// <summary>
+  /// Moves past which in-place planning is refused in favour of a rebuild.
+  /// </summary>
+  private const int MaxPlannableMoves = 4096;
+
   private static IReadOnlyList<ClusterMove> ResolveDependencies(
     List<ClusterMove> rawMoves,
     List<(long Offset, long Length)> freeRegions,
@@ -765,12 +770,26 @@ public static class DefragPlanner {
     rawMoves.RemoveAll(m => m.SrcOffset == m.DstOffset);
     if (rawMoves.Count == 0) return [];
 
+    // Each move is checked against every other pending move, so the resolution
+    // costs the square of the move count per pass. A volume fragmented into
+    // tens of thousands of runs turned that into hours of planning with no
+    // output; past this many moves a rebuild is both faster and simpler, and
+    // the caller falls back to one.
+    if (rawMoves.Count > MaxPlannableMoves)
+      throw new InvalidOperationException(
+        $"Defragmentation cannot be planned in place: {rawMoves.Count:N0} moves exceed the " +
+        $"{MaxPlannableMoves:N0} this planner resolves; rebuild the volume instead.");
+
     // Simple approach: detect overlapping pairs and break cycles via staging.
     var result = new List<ClusterMove>(rawMoves.Count + rawMoves.Count / 4);
     var pending = new List<ClusterMove>(rawMoves);
     var stagedOnce = new HashSet<(string FileName, long DstOffset)>();
     var resolved = new HashSet<int>();
-    var maxIter = pending.Count * pending.Count + 1;
+    // Every pass either commits at least one move or stages one, and a move is
+    // staged at most once, so twice the move count bounds the passes. The
+    // square of it — what this used to allow — multiplied the per-pass cost
+    // into a run that never finished.
+    var maxIter = 2 * pending.Count + 8;
     var iter = 0;
 
     while (pending.Count > 0 && iter++ < maxIter) {

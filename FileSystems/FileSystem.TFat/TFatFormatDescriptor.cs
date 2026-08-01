@@ -216,6 +216,14 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in — and where it can still edit, it has no room
+    // to grow a full volume. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     var items = FilesOnly(inputs).ToList();
     try {
       foreach (var (name, data) in items)
@@ -233,6 +241,12 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// removed bytes remains after commit.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     try {
       foreach (var name in entryNames)
         TFatModifier.RemoveFile(archive, name, wipeData: true);

@@ -157,13 +157,28 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // New entries are append-only; same-size replaces overwrite in place;
   // resize/delete tail-rewrite from the changed record onward.
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => Tux3InPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this, SyntheticNames);
+      return;
+    }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => Tux3InPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
+    Tux3InPlaceModifier.Add(archive, inputs,
+      (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
+
+  public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this, SyntheticNames);
+      return;
+    }
+
+    Tux3InPlaceModifier.Remove(archive, entryNames,
+      (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
 
   // ── Shared rebuild delegates (real WORM-table records only) ─────────────
 
@@ -217,6 +232,27 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // only the slack a removal or a shorter replacement left behind.
     return UnusedSpaceWiper.Wipe(image, extents, image.Length,
       wipeClusterTips: false, fileSizeLookup: null);
+  }
+
+
+  /// <summary>
+  /// Re-lays the volume out with the requested geometry. The generic default
+  /// would feed this reader's synthetic entries — the raw image and the
+  /// metadata sheet — back in as files; they are excluded so the rebuilt
+  /// volume holds the same files the original did.
+  /// </summary>
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+    if (options.Parameters != null)
+      foreach (var kv in options.Parameters)
+        parameters[kv.Key] = kv.Value;
+
+    RebuildVerb.RebuildToStream(source, target, this, this,
+      parameters.Count > 0 ? parameters : null, SyntheticNames);
   }
 
 }

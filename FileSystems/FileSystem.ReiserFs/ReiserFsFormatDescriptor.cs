@@ -231,6 +231,14 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// the full read-modify-rebuild via <see cref="ReiserFsWriter"/>.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     foreach (var (name, data) in FilesOnly(inputs)) {
       ReiserFsModifier.AddFile(archive, name, data);
     }
@@ -242,6 +250,12 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// forensic trace.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     foreach (var name in entryNames)
       ReiserFsModifier.RemoveFile(archive, name, wipeData: true);
   }

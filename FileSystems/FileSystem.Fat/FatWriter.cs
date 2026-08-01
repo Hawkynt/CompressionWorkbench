@@ -76,6 +76,8 @@ public sealed class FatWriter {
     var neededClusters = 0L;
     foreach (var file in this._files)
       neededClusters += Math.Max(1, (file.Data.LongLength + clusterBytes - 1) / clusterBytes);
+    foreach (var file in this._streamingFiles)
+      neededClusters += Math.Max(1, (file.Size + clusterBytes - 1) / clusterBytes);
 
     if (neededClusters > availableClusters)
       throw new InvalidOperationException(
@@ -445,6 +447,11 @@ public sealed class FatWriter {
           $"FAT16 supports at most 65524 data clusters but this image has {finalClusters}. " +
           "Reduce the image size or switch to FAT32.");
     }
+
+    // The streaming path needs the same guarantee the buffered one has: without
+    // it a file larger than the free space was laid out as far as the heap
+    // reached and the rest dropped, so it read back short.
+    EnsurePayloadFits(totalSectors, firstDataSector, sectorsPerCluster, bytesPerSector);
 
     var clusterSize = (long)sectorsPerCluster * bytesPerSector;
     var label = string.IsNullOrWhiteSpace(volumeLabel)

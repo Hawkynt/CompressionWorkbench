@@ -44,7 +44,10 @@ public sealed class EfsReader {
     if (entry.IsDirectory) return [];
     var len = entry.Size;
     if (len == 0 || entry.FirstBlock == 0) return [];
-    var start = entry.FirstBlock * EfsWriter.BasicBlock;
+    // Block index times block size in ints wraps a couple of gigabytes in, and
+    // the file was then read from the wrong offset — the bytes came back the
+    // right length holding something else.
+    var start = (long)entry.FirstBlock * EfsWriter.BasicBlock;
     if (start + len > _image.Length)
       throw new InvalidDataException("EFS extract: extent reaches past image end.");
     return _image.Read(start, len);
@@ -54,7 +57,7 @@ public sealed class EfsReader {
     var info = ReadInode(inode);
     if (!info.IsDirectory) return;
     if (info.NumExtents == 0 || info.FirstBlock == 0) return;
-    var off = info.FirstBlock * EfsWriter.BasicBlock;
+    var off = (long)info.FirstBlock * EfsWriter.BasicBlock;
     if (off >= _image.Length) return;
     var blk = _image.Read(off, (int)Math.Min(EfsWriter.BasicBlock, _image.Length - off));
     if (blk.Length < 3) return;

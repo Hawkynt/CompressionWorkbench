@@ -733,11 +733,24 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var (name, data, mtime) in additions)
       combined.AddFile(name, data, mtime);
 
-    // Every entry is materialised above, so the source is no longer needed and the
-    // stream can be rewritten in place.
-    archive.Position = 0;
-    archive.SetLength(0);
-    combined.BuildTo(archive, totalSectors);
+    // The new volume is laid out in scratch first. Truncating the archive and
+    // building straight into it destroyed the volume whenever the build
+    // refused — a file that does not fit used to cost the caller everything
+    // that was already on the disk.
+    var scratch = Path.GetTempFileName();
+    try {
+      using (var staged = File.Open(scratch, FileMode.Open, FileAccess.ReadWrite))
+        combined.BuildTo(staged, totalSectors);
+
+      using (var staged = File.OpenRead(scratch)) {
+        archive.Position = 0;
+        archive.SetLength(staged.Length);
+        staged.CopyTo(archive);
+        archive.Flush();
+      }
+    } finally {
+      try { File.Delete(scratch); } catch { /* scratch file already gone */ }
+    }
   }
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {

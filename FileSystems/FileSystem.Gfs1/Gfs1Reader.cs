@@ -42,7 +42,10 @@ public sealed class Gfs1Reader {
     if (entry.Size > Array.MaxLength)
       throw new IOException(
         $"GFS1: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
-    var start = entry.FirstBlock * Gfs1Writer.BlockSize;
+    // Block index times block size in ints wraps a couple of gigabytes in, and
+    // the file was then read from the wrong offset — the bytes came back the
+    // right length holding something else.
+    var start = (long)entry.FirstBlock * Gfs1Writer.BlockSize;
     if (start + (long)entry.Size > _image.Length)
       throw new InvalidDataException("GFS1 extract: extent reaches past image end.");
     return _image.Read(start, (int)entry.Size);
@@ -53,7 +56,7 @@ public sealed class Gfs1Reader {
     ArgumentNullException.ThrowIfNull(entry);
     ArgumentNullException.ThrowIfNull(destination);
     if (entry.IsDirectory || entry.Size == 0 || entry.FirstBlock == 0) return 0;
-    var start = entry.FirstBlock * Gfs1Writer.BlockSize;
+    var start = (long)entry.FirstBlock * Gfs1Writer.BlockSize;
     if (start + (long)entry.Size > _image.Length)
       throw new InvalidDataException("GFS1 extract: extent reaches past image end.");
     this._image.CopyTo(start, destination, entry.Size);

@@ -144,6 +144,14 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// auto-detected from the on-disk geometry.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     archive.Position = 0;
@@ -165,6 +173,12 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// are silently skipped (consistent with how WORM Extract treats them).
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     archive.Position = 0;
@@ -243,15 +257,33 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (source.CanSeek) source.Position = 0;
     var reader = new FatxReader(source);
     var w = new FatxWriter();
-    foreach (var e in reader.Entries) {
-      if (e.IsDirectory) continue;
-      w.AddFile(e.Name, reader.Extract(e));
+    // Each entry is spilled to scratch and pulled back while the volume is laid
+    // out, so neither the file nor the image has to be held in memory — the
+    // buffered form of this refused any volume past the array limit.
+    var spill = new List<string>();
+    try {
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        var path = Path.GetTempFileName();
+        spill.Add(path);
+        File.WriteAllBytes(path, reader.Extract(e));
+        var captured = path;
+        w.AddStreamingFile(e.Name, new FileInfo(captured).Length, () => File.OpenRead(captured));
+      }
+
+      // UnitSize 0 = auto-optimise; an explicit byte size maps to sectors-per-cluster.
+      var spc = options.UnitSize > 0 ? options.UnitSize / FatxReader.SectorSize : 0;
+      if (target.CanSeek) {
+        w.WriteTo(target, sectorsPerCluster: spc);
+      } else {
+        var image = w.Build(sectorsPerCluster: spc);
+        target.Write(image);
+      }
+      options.OnProgress?.Invoke(target.Length, target.Length);
+    } finally {
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
-    // UnitSize 0 = auto-optimise; an explicit byte size maps to sectors-per-cluster.
-    var spc = options.UnitSize > 0 ? options.UnitSize / FatxReader.SectorSize : 0;
-    var image = w.Build(sectorsPerCluster: spc);
-    target.Write(image);
-    options.OnProgress?.Invoke(image.Length, image.Length);
   }
 
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────

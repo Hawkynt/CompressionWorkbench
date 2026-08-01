@@ -196,7 +196,10 @@ public sealed class EfsWriter {
     for (var i = 0; i < tree.Nodes.Count; i++) {
       var node = tree.Nodes[i];
       if (blocksPerNode[i] == 0) continue;
-      var startByte = firstBlockPerNode[i] * BasicBlock;
+      // Both operands are block indices in an int, and a volume of a few
+      // gigabytes has more blocks than their product fits: the byte offset
+      // came out negative and the payload was written before the file.
+      var startByte = (long)firstBlockPerNode[i] * BasicBlock;
       if (node.IsDirectory) {
         // efs_dirblk: hdr (4 bytes magic + 1 byte slot count) followed by
         // (offset, ino, nlen, name…) entries. We use the simpler "flat"

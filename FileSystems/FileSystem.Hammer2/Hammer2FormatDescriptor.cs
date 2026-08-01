@@ -168,18 +168,34 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// as a single inline/one-indirect blockset (nested-indirect roots, nested
   /// paths). See <see cref="Hammer2InPlaceModifier"/>.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) =>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     Hammer2InPlaceModifier.Add(archive, inputs,
       (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
 
   /// <summary>
   /// Genuine in-place (copy-on-write) removal of files from the labelled PFS
   /// root, rebuilding the chain above without disturbing surviving files' data.
   /// Falls back to the verified rebuild path when out of scope.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames) =>
+  public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     Hammer2InPlaceModifier.Remove(archive, entryNames,
       (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
 
   // Rebuild-fallback delegates: read every file the reader can surface, and
   // re-emit a fresh image from a file list via the writer.

@@ -38,7 +38,10 @@ public sealed class Jfs1Reader {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Size == 0 || entry.FirstBlock == 0) return [];
-    var start = entry.FirstBlock * _blockSize;
+    // Block index times block size in ints wraps a couple of gigabytes in, and
+    // the file was then read from the wrong offset — the bytes came back the
+    // right length holding something else.
+    var start = (long)entry.FirstBlock * _blockSize;
     if (start + entry.Size > _image.Length)
       throw new InvalidDataException("JFS1 extract: extent reaches past image end.");
     return _image.Read(start, (int)entry.Size);
@@ -47,7 +50,7 @@ public sealed class Jfs1Reader {
   private void Recurse(int inode, string prefix) {
     var info = ReadInode(inode);
     if (!info.IsDirectory || info.FirstBlock == 0) return;
-    var off = info.FirstBlock * _blockSize;
+    var off = (long)info.FirstBlock * _blockSize;
     if (off >= _image.Length) return;
     var blk = _image.Read(off, (int)Math.Min(_blockSize, _image.Length - off));
     if (blk.Length < 4) return;

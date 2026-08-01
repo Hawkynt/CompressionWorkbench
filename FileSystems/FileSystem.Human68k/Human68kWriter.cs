@@ -71,6 +71,10 @@ public sealed class Human68kWriter {
   }
 
   /// <summary>Builds the disk image.</summary>
+
+  /// <summary>Data clusters a FAT16 allocation table can address.</summary>
+  private const int MaxClusters = 65524;
+
   public byte[] Build() {
     if (this._files.Count > this._rootEntries)
       throw new InvalidOperationException(
@@ -93,7 +97,16 @@ public sealed class Human68kWriter {
     var minTotal = metadataSectors + dataSectors;
     var total = this._totalSectors > 0 ? Math.Max(this._totalSectors, minTotal) : Math.Max(minTotal, 16);
 
-    var image = new byte[total * this._bytesPerSector];
+    // A Human68k volume is FAT12/16 on an X68000 medium: past the clusters the
+    // allocation table can address there is nothing to describe, and
+    // multiplying the sector count out reported that as an arithmetic overflow.
+    var imageBytes = (long)total * this._bytesPerSector;
+    if (clustersNeeded > MaxClusters || imageBytes > System.Array.MaxLength)
+      throw new InvalidOperationException(
+        $"Human68k: the payload needs {clustersNeeded:N0} clusters ({imageBytes:N0} bytes), past " +
+        $"the {MaxClusters:N0} an X68000 volume can address.");
+
+    var image = new byte[imageBytes];
 
     // Boot sector / BPB.
     image[0] = 0x60; // BSR jump (Human68k convention).

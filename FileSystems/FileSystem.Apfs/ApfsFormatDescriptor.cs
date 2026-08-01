@@ -214,6 +214,14 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// fusion, sparse clones) still throw <see cref="NotSupportedException"/>.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
@@ -228,6 +236,12 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// support as <see cref="Add"/>: arbitrary depth, splits, multi-component paths.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     foreach (var name in entryNames)

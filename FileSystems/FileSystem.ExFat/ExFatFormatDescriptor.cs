@@ -171,18 +171,36 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, volumeSize, null, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Rebuild fallback for when the planner refuses. The volume is laid out
+  /// straight into the stream: a byte[] tops out at two gigabytes, so building
+  /// the image in memory threw on exactly the volumes that reach this path.
+  /// </summary>
   private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    var sizeMB = (int)System.Math.Max(8, (archive.Length + 1024 * 1024 - 1) / (1024 * 1024));
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new ExFatReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ExFatWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build(sizeMB);
-      });
+    ExFatWriter? writer = null;
+    Stream? target = null;
+    var spill = new List<string>();
+    try {
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new ExFatReader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+        },
+        beginWrite: s => { writer = new ExFatWriter(); target = s; },
+        writeEntry: (name, data) => {
+          var path = Path.GetTempFileName();
+          spill.Add(path);
+          File.WriteAllBytes(path, data);
+          writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+        },
+        // BuildToStreaming is the finaliser that pairs with AddStreamingFile —
+        // BuildTo only writes entries added as byte arrays, so the volume came
+        // back the right shape with every file's contents missing.
+        finishWrite: () => writer!.BuildToStreaming(target!));
+    } finally {
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
   }
   public string DefaultExtension => ".img";
   public IReadOnlyList<string> Extensions => [".img", ".exfat"];

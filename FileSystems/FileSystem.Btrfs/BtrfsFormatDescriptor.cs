@@ -287,6 +287,14 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// passes <c>btrfs check</c>). Unhandled shapes fall back to the verified rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     var toAdd = inputs
       .Where(i => !i.IsDirectory)
       .Select(i => (i.ArchiveName, i.ReadContent()))
@@ -300,6 +308,12 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// a fresh superblock, chunk tree, and fs-tree leaf.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     BtrfsModifier.Remove(archive, entryNames);
   }
 

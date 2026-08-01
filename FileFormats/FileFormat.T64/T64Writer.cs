@@ -45,6 +45,15 @@ public sealed class T64Writer {
       output[entryOff] = 1; // normal entry
       output[entryOff + 1] = 0x82; // PRG
 
+      // A tape entry records where the file starts and ends in the C64's
+      // 16-bit address space, so it cannot describe more than 64 KB. Writing
+      // the end address truncated silently: the archive listed the file at a
+      // fraction of its length and read back that fraction.
+      if (startAddr + (long)data.Length > 0x10000)
+        throw new InvalidOperationException(
+          $"T64: '{name}' is {data.Length:N0} bytes and loads at ${startAddr:X4}, past the end of " +
+          "the C64's 64 KB address space that a tape entry's start/end addresses describe.");
+
       BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(entryOff + 2), startAddr);
       BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(entryOff + 4), (ushort)(startAddr + data.Length));
       BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(entryOff + 8), (uint)dataOffset);

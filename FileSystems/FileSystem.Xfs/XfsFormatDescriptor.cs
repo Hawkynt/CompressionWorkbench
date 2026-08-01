@@ -296,6 +296,13 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// fits AG 0 — fall back to the verified <see cref="XfsModifier"/> rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     var toAdd = inputs
       .Where(i => !i.IsDirectory)
       .Select(i => (Name: i.ArchiveName, Data: i.ReadContent()))
@@ -334,6 +341,12 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// a fresh superblock, AGF/AGI, and inode table.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     XfsModifier.Remove(archive, entryNames);
   }
 }

@@ -106,6 +106,14 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <see cref="NotSupportedException"/> when INDEXF or BITMAP is exhausted.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var input in inputs) {
@@ -125,6 +133,12 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// zero-fills its file-header slot. Unknown names are silently skipped.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     foreach (var name in entryNames)

@@ -172,7 +172,9 @@ public sealed class HtfsWriter {
     for (var i = 0; i < tree.Nodes.Count; i++) {
       var node = tree.Nodes[i];
       if (blocksPerNode[i] == 0) continue;
-      var start = firstBlockPerNode[i] * _blockSize;
+      // Block index times block size in ints overflows a few gigabytes in,
+      // and the payload was then placed at a negative offset.
+      var start = (long)firstBlockPerNode[i] * _blockSize;
       if (node.IsDirectory) {
         var blk = image.At(start, _blockSize);
         // dir entry = 2-byte LE inode + 14-byte name (S5 d_ino + d_name).

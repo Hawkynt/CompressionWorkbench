@@ -44,7 +44,10 @@ public sealed class HtfsReader {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Size == 0 || entry.FirstBlock == 0) return [];
-    var start = entry.FirstBlock * _blockSize;
+    // Block index times block size in ints wraps a couple of gigabytes in,
+    // and the file was then read from a negative offset — or from another
+    // file's bytes once the wrap landed back inside the volume.
+    var start = (long)entry.FirstBlock * _blockSize;
     if (start + entry.Size > _image.Length)
       throw new InvalidDataException("HTFS extract: extent reaches past image end.");
     return _image.Read(start, entry.Size);
@@ -62,7 +65,7 @@ public sealed class HtfsReader {
   private void Recurse(int inode, string prefix) {
     var info = ReadInode(inode);
     if (!info.IsDirectory || info.FirstBlock == 0) return;
-    var off = info.FirstBlock * _blockSize;
+    var off = (long)info.FirstBlock * _blockSize;
     if (off >= _image.Length) return;
     var blk = _image.Read(off, (int)Math.Min(_blockSize, _image.Length - off));
     for (var cur = 0; cur + 16 <= blk.Length; cur += 16) {

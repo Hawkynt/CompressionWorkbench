@@ -217,6 +217,14 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// highest-version-wins resolution surfaces the new content. No rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this, SyntheticNames);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     var payloads = new List<(string Name, byte[] Data)>(inputs.Count);
@@ -234,6 +242,12 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// dirent are silently skipped.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this, SyntheticNames);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     foreach (var name in entryNames) {
@@ -469,6 +483,34 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     foreach (var i in scan.Inodes)
       sb.Append(CultureInfo.InvariantCulture, $"{i.Inode}\t{i.Version}\t{i.Uid}\t{i.Gid}\t{i.Mode}\t{i.Size}\t{i.Mtime}\n");
     return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
+
+  /// <summary>
+  /// The entries this reader surfaces that are not files on the volume: the raw
+  /// image and the three triage sheets. They exist so an image the scanner
+  /// cannot fully parse still yields something useful.
+  /// </summary>
+  private static readonly HashSet<string> SyntheticNames =
+    new(StringComparer.OrdinalIgnoreCase) { "FULL.jffs2", "metadata.ini", "dirents.txt", "inodes.txt" };
+
+  /// <summary>
+  /// Re-lays the image out with the requested geometry. The generic default
+  /// wrote the synthetic entries back as files, so the rebuilt image listed
+  /// twelve entries where the original had eight and the rebuild was refused.
+  /// </summary>
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+    if (options.Parameters != null)
+      foreach (var kv in options.Parameters)
+        parameters[kv.Key] = kv.Value;
+
+    RebuildVerb.RebuildToStream(source, target, this, this,
+      parameters.Count > 0 ? parameters : null, SyntheticNames);
   }
 
 }

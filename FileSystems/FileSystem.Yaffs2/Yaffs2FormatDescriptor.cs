@@ -208,10 +208,24 @@ public sealed class Yaffs2FormatDescriptor
   // the scanner's seqNumber-max filter resolves the live view. Add detects
   // name collisions and routes them through Replace.
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => Yaffs2InPlaceModifier.Add(archive, inputs);
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
+    Yaffs2InPlaceModifier.Add(archive, inputs);
+  }
 
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     foreach (var name in entryNames) {

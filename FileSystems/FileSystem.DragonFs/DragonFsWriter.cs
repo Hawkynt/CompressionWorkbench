@@ -63,9 +63,17 @@ public sealed class DragonFsWriter {
   /// <summary>Builds the complete DragonFS image as a byte array.</summary>
   public byte[] Build() {
     // Total size = header (264) + sum over files of (32-byte record + data).
-    var total = RootChainOffset;
+    // Summing in an int wrapped negative on a large payload, and the image was
+    // then allocated too short — the copy that followed reported a destination
+    // that was too short rather than a volume that cannot hold this much.
+    var totalBytes = (long)RootChainOffset;
     foreach (var (_, data) in _files)
-      total += EntryRecordSize + data.Length;
+      totalBytes += EntryRecordSize + (long)data.Length;
+    if (totalBytes > System.Array.MaxLength)
+      throw new InvalidOperationException(
+        $"DragonFS: the files need {totalBytes:N0} bytes, more than the " +
+        $"{System.Array.MaxLength:N0} this writer lays out in memory.");
+    var total = (int)totalBytes;
 
     // Guarantee the reader's minimum image size even when there are no files.
     var minSize = RootChainOffset + EntryRecordSize;

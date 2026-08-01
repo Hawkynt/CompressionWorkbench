@@ -118,6 +118,14 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <exception cref="NotSupportedException">Root cluster full (29 user
   /// files). The flat-root scope matches the WORM writer's capacity guard.</exception>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in — and where it can still edit, it has no room
+    // to grow a full volume. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var (name, data) in FlatFiles(inputs))
@@ -131,6 +139,12 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// zero-wiped, and the inode slot is cleared.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     foreach (var name in entryNames)

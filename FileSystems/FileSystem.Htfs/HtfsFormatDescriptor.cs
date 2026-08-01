@@ -121,13 +121,29 @@ public sealed class HtfsFormatDescriptor :
   // any case that would need a new inode block or a multi-block root dir fall
   // back to ModifyRebuilder so the user always gets a working image.
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => HtfsInPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => HtfsInPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
+    HtfsInPlaceModifier.Add(archive, inputs,
+      (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
+
+  public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
+    HtfsInPlaceModifier.Remove(archive, entryNames,
+      (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });

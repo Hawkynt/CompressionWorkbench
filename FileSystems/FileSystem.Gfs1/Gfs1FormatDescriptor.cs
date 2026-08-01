@@ -137,13 +137,29 @@ public sealed class Gfs1FormatDescriptor :
   // directories are handled in place; deeper trees, a full inode region, or a
   // full directory block fall back to the rebuild delegate.
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => Gfs1InPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => Gfs1InPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
+    Gfs1InPlaceModifier.Add(archive, inputs,
+      (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
+
+  public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
+    Gfs1InPlaceModifier.Remove(archive, entryNames,
+      (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
+  }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
     var r = new Gfs1Reader(stream);

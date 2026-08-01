@@ -114,6 +114,14 @@ public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <exception cref="NotSupportedException">When the root directory is full
   /// (the Stage-2 modifier preserves the single-block root limit of 32 dirents).</exception>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var (name, data) in FlatFiles(inputs))
@@ -127,6 +135,12 @@ public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// superblock mirror is refreshed afterwards.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     Qnx6Modifier.RemoveFiles(archive, entryNames);

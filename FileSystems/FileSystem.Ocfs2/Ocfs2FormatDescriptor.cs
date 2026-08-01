@@ -165,6 +165,14 @@ public sealed class Ocfs2FormatDescriptor
   /// keep working when the writer's MVP scope is exceeded.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in — and where it can still edit, it has no room
+    // to grow a full volume. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     foreach (var (name, data) in FilesOnly(inputs)) {
       try {
         // Replace-by-name semantics — drop any prior entry with the same name first.
@@ -189,6 +197,12 @@ public sealed class Ocfs2FormatDescriptor
   /// rebuild path (which can reach subdirectories).
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     var unhandled = new List<string>();
     foreach (var name in entryNames) {
       try {

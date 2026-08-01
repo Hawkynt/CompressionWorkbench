@@ -119,6 +119,13 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// slot, the root dir block, and the file's data blocks are read or written.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     foreach (var (name, data) in FilesOnly(inputs)) {
       // Replace-by-name semantics — drop any prior entry with the same name first.
       Ext1Modifier.RemoveFile(archive, name, wipeData: true);
@@ -132,6 +139,12 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// data blocks are wiped during removal so no forensic trace remains.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     foreach (var name in entryNames)
       Ext1Modifier.RemoveFile(archive, name, wipeData: true);
   }

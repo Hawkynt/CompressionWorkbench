@@ -155,6 +155,14 @@ public sealed class HpfsFormatDescriptor
   /// so callers always get a result.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier reads the volume into an array to walk its
+    // structures, which a volume past two gigabytes does not fit in. Above that
+    // the edit is applied by unpacking and relaying the volume out instead.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     try {
       HpfsInPlaceModifier.Add(archive, inputs);
     } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException) {
@@ -170,6 +178,12 @@ public sealed class HpfsFormatDescriptor
   /// byte-identical.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     try {
       HpfsInPlaceModifier.Remove(archive, entryNames);
     } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException) {

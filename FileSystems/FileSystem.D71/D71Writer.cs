@@ -86,7 +86,12 @@ public sealed class D71Writer {
     while (pos < dataLen) {
       var (track, sector) = AllocateSector(bam, sectors.Count > 0 ? sectors[^1].Track : 1,
         sectors.Count > 0 ? sectors[^1].Sector : 0);
-      if (track == 0) break;
+      // Running out of blocks used to end the chain quietly: the directory
+      // still claimed the file, and the truncated chain read back as a loop.
+      if (track == 0)
+        throw new InvalidOperationException(
+          $"D71: the disk is full after {sectors.Count:N0} blocks; {dataLen - pos:N0} bytes " +
+          "of the file do not fit on a 1571 disk.");
 
       sectors.Add((track, sector));
       var off = GetSectorOffset(track, sector);

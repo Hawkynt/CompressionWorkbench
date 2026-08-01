@@ -25,7 +25,8 @@ public static class RebuildVerb {
   /// </summary>
   public static int RebuildToStream(Stream input, Stream output,
       IArchiveFormatOperations ops, IArchiveCreatable creator,
-      IReadOnlyDictionary<string, string>? formatSpecific = null) {
+      IReadOnlyDictionary<string, string>? formatSpecific = null,
+      IReadOnlySet<string>? syntheticNames = null) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(ops);
@@ -51,6 +52,11 @@ public static class RebuildVerb {
       }
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        // A reader that also surfaces the raw image and a metadata sheet must
+        // not have them written back as files: the rebuilt volume would carry
+        // a copy of its own previous self, and its reader would surface fresh
+        // synthetic entries on top of them.
+        if (syntheticNames != null && syntheticNames.Contains(rel)) continue;
         inputs.Add(new ArchiveInputInfo(file, rel, false));
       }
 

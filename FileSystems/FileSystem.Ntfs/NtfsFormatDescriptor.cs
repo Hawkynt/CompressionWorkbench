@@ -542,6 +542,13 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // The in-place modifier walks the volume in memory, which a volume past two
+    // gigabytes does not fit in. Above that the edit unpacks and relays it out.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
+      return;
+    }
+
     if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       RebuildInPlaceStreaming(archive, FormatHelpers.FilesOnly(inputs).ToList(), drop: null);
       return;
@@ -589,6 +596,12 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// recovery of the removed content is possible from the resulting bytes.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // See Add: past two gigabytes the volume cannot be walked in memory.
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
+      return;
+    }
+
     if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       RebuildInPlaceStreaming(archive, [], new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase));
       return;
