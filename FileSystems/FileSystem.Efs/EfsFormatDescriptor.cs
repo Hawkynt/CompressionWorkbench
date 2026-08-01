@@ -168,6 +168,23 @@ public sealed class EfsFormatDescriptor :
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Moving what is out of place beats writing the volume out again: a file
+    // here is one extent named by its inode, so a move is the copy and one
+    // write. What the planner will not commit to falls through to the rebuild.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch (Exception planFailure) {
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          "fallback", 0, -1, -1, archive.Length, null,
+          $"In-place planning declined ({planFailure.GetType().Name}: " +
+          $"{PlannerFallbackLine(planFailure.Message)}); rebuilding instead"));
+        archive.Position = 0;
+      }
+    }
+
     // A volume too large to materialise goes through the streaming rebuilder;
     // the buffered path's buildImage returns a byte[] of the whole image, which
     // the writer refuses to produce once it passes the array limit.
@@ -230,4 +247,43 @@ public sealed class EfsFormatDescriptor :
     bldr.Append(CultureInfo.InvariantCulture, $"magic=0x{sb.Magic:X8}\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
+
+  /// <summary>
+  /// Moves only the files that are in the wrong place, repointing each one's
+  /// inode extent as its blocks arrive.
+  /// </summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new EfsBlockMover();
+    mover.Init(archive);
+
+    var extents = EfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = EfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>The first line of a message, for a one-line progress note.</summary>
+  private static string PlannerFallbackLine(string message) {
+    var end = message.IndexOf('\n');
+    return end < 0 ? message : message[..end].TrimEnd('\r');
+  }
+
 }
