@@ -19,6 +19,7 @@ public static partial class FormatDetector {
   private static Dictionary<string, Format>? _idToFormat;
   private static Dictionary<Format, IFormatDescriptor>? _formatToDesc;
   private static Dictionary<string, Format>? _extToFormat; // single extensions
+  private static Dictionary<string, List<Format>>? _extToFormats; // every claimant of an extension
   private static Dictionary<string, Format>? _compoundExtToFormat; // compound extensions
   private static Dictionary<Format, Format>? _compoundToStream; // TarGz → Gzip
   private static Dictionary<Format, Format>? _streamToCompound; // Gzip → TarGz
@@ -48,6 +49,7 @@ public static partial class FormatDetector {
     var idToFormat = new Dictionary<string, Format>(StringComparer.OrdinalIgnoreCase);
     var formatToDesc = new Dictionary<Format, IFormatDescriptor>();
     var extToFormat = new Dictionary<string, Format>(StringComparer.OrdinalIgnoreCase);
+    var extToFormats = new Dictionary<string, List<Format>>(StringComparer.OrdinalIgnoreCase);
     var compoundExtToFormat = new Dictionary<string, Format>(StringComparer.OrdinalIgnoreCase);
     var compoundToStream = new Dictionary<Format, Format>();
     var streamToCompound = new Dictionary<Format, Format>();
@@ -67,8 +69,18 @@ public static partial class FormatDetector {
       }
 
       // Build extension → format maps
-      foreach (var ext in desc.Extensions)
-        extToFormat.TryAdd(ext.ToLowerInvariant(), f);
+      foreach (var ext in desc.Extensions) {
+        var key = ext.ToLowerInvariant();
+        extToFormat.TryAdd(key, f);
+        // Several descriptors routinely claim the same extension — .dmg by
+        // Apple's disk image and by the HFS+ volume inside one, .po by ProDOS
+        // images and gettext catalogues, .s5 by System V and HTFS. First claim
+        // wins in the map above, which hands the file to a reader that cannot
+        // read it; keeping every claimant lets the content settle it.
+        if (!extToFormats.TryGetValue(key, out var claimants))
+          extToFormats[key] = claimants = [];
+        if (!claimants.Contains(f)) claimants.Add(f);
+      }
 
       foreach (var ext in desc.CompoundExtensions)
         compoundExtToFormat.TryAdd(ext.ToLowerInvariant(), f);
@@ -98,6 +110,7 @@ public static partial class FormatDetector {
     FormatDetector._idToFormat = idToFormat;
     FormatDetector._formatToDesc = formatToDesc;
     FormatDetector._extToFormat = extToFormat;
+    FormatDetector._extToFormats = extToFormats;
     FormatDetector._compoundExtToFormat = compoundExtToFormat;
     FormatDetector._compoundToStream = compoundToStream;
     FormatDetector._streamToCompound = streamToCompound;
@@ -246,6 +259,19 @@ public static partial class FormatDetector {
     }
 
     // Single extension lookup from registry
+    // An extension claimed by more than one descriptor is settled by the
+    // content, among those claimants only: the map below is first-claim-wins,
+    // which routes the file to whichever descriptor the registry happened to
+    // enumerate first. Restricting the question to the claimants keeps it away
+    // from formats that legitimately share their bytes with another — a
+    // .tar.gz is gzip inside, and must stay TarGz.
+    if (!string.IsNullOrEmpty(singleExt)
+        && FormatDetector._extToFormats!.TryGetValue(singleExt, out var claimants)
+        && claimants.Count > 1) {
+      var chosen = ResolveSharedExtension(path, claimants);
+      if (chosen != Format.Unknown) return chosen;
+    }
+
     if (!string.IsNullOrEmpty(singleExt) && FormatDetector._extToFormat!.TryGetValue(singleExt, out var format))
       return format;
 
@@ -533,6 +559,46 @@ public static partial class FormatDetector {
     if (byExt != Format.Unknown) return byExt;
 
     return DetectByMagicFromFile(path);
+  }
+
+  /// <summary>
+  /// Picks the claimant of a shared extension whose own magic matches the file,
+  /// preferring the most confident. Returns <see cref="Format.Unknown" /> when
+  /// none of them recognises the bytes, leaving the caller's first-claim-wins
+  /// answer in place.
+  /// </summary>
+  private static Format ResolveSharedExtension(string path, List<Format> claimants) {
+    var header = ReadHeader(path);
+    if (header.Length == 0) return Format.Unknown;
+
+    var best = Format.Unknown;
+    var bestConfidence = 0.0;
+    foreach (var candidate in claimants) {
+      if (!FormatDetector._formatToDesc!.TryGetValue(candidate, out var desc)) continue;
+      foreach (var sig in desc.MagicSignatures) {
+        if (!MatchesMagic(header, sig)) continue;
+        if (sig.Confidence <= bestConfidence) continue;
+        bestConfidence = sig.Confidence;
+        best = candidate;
+      }
+    }
+    return best;
+  }
+
+  /// <summary>Reads as much of the file as the deepest registered signature needs.</summary>
+  private static byte[] ReadHeader(string path) {
+    EnsureRegistryMapped();
+    try {
+      if (!File.Exists(path)) return [];
+      using var stream = File.OpenRead(path);
+      var want = (int)Math.Min(Math.Max(FormatDetector._maxMagicExtent, FastProbeBytes), stream.Length);
+      if (want <= 0) return [];
+      var buffer = new byte[want];
+      var read = stream.ReadAtLeast(buffer, want, throwOnEndOfStream: false);
+      return read == want ? buffer : buffer[..read];
+    } catch {
+      return [];
+    }
   }
 
   /// <summary>

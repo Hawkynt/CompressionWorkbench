@@ -211,14 +211,24 @@ public class Gfs2Tests {
     Assert.That(names, Does.Not.Contain("superblock.bin"));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void Defragment_UnsupportedMode_Throws() {
+  /// <summary>
+  /// End-packing used to be refused because the buffered rebuild it needed
+  /// could not describe a volume past two gigabytes. The rebuild now streams
+  /// and orders the entries from scratch, so the mode is served rather than
+  /// rejected — the files must survive it.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Defragment_ConsolidateAtEnd_PreservesFiles() {
     var d = new FileSystem.Gfs2.Gfs2FormatDescriptor();
     using var ms = new MemoryStream();
     ms.Write(BuildMinimal());
-    var ex = Assert.Throws<NotSupportedException>(
-      () => d.Defragment(ms, new DefragOptions { Mode = DefragMode.ConsolidateAtEnd }));
-    Assert.That(ex!.Message, Does.Contain("ConsolidateAtStart"));
+    var before = d.List(ms, null).Select(e => e.Name).ToHashSet();
+
+    ms.Position = 0;
+    d.Defragment(ms, new DefragOptions { Mode = DefragMode.ConsolidateAtEnd });
+
+    ms.Position = 0;
+    Assert.That(d.List(ms, null).Select(e => e.Name).ToHashSet(), Is.EquivalentTo(before));
   }
 
   [Test, Category("HappyPath")]

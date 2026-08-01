@@ -77,7 +77,13 @@ public sealed class D64Writer {
     while (pos < dataLen) {
       var (track, sector) = AllocateSector(bam, sectors.Count > 0 ? sectors[^1].Track : 1,
         sectors.Count > 0 ? sectors[^1].Sector : 0);
-      if (track == 0) break; // disk full
+      // Running out of blocks used to end the chain quietly: the directory
+      // still claimed the file, and reading it back returned whatever fraction
+      // had been written.
+      if (track == 0)
+        throw new InvalidOperationException(
+          $"D64: the disk is full after {sectors.Count:N0} blocks; {dataLen - pos:N0} bytes " +
+          "of the file do not fit on a 1541 disk.");
 
       sectors.Add((track, sector));
       var off = GetSectorOffset(track, sector);

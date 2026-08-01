@@ -97,7 +97,6 @@ public class ConversionMatrixTests {
   // SOURCE→TARGET pair-specific and live in KnownGapPairs.
   private static readonly Dictionary<string, string> KnownGapTargets =
     new(StringComparer.OrdinalIgnoreCase) {
-      // -- bucket: self-rejecting reader --
       // CpcDsk now re-detects as itself (the ".dsk" magic disambiguation routes the
       // Amstrad "MV - CPC" image to the CpcDsk reader, not AppleDOS), but the reader
       // is a raw track/sector dumper with no AMSDOS/CP/M filesystem layer: it exposes
@@ -105,7 +104,6 @@ public class ConversionMatrixTests {
       // payload, so neither verbatim-name nor content matching can succeed. A real fix
       // needs a CPC filesystem reader, which is a separate effort.
       { "CpcDsk", "[single-payload/whole-image target] CpcDsk reader exposes raw 512-byte track/sector blocks (T00S0_C1…), not files; padded sectors can't content-match the payload and no AMSDOS/CP/M filesystem layer exists" },
-      { "HfsPlus", "[self-rejecting reader] writer output is re-detected as DMG, whose reader rejects it: 'missing koly trailer signature'" },
       // -- bucket: single-payload/whole-image target --
       { "AndroidSparse", "[single-payload/whole-image target] Android sparse image; Create sparsifies a single raw image and re-lists as metadata.ini+image.raw, not a file tree" },
       { "AndroidOta", "[single-payload/whole-image target] OTA update payload; writer emits a whole-image blob that re-lists as 0 files" },
@@ -114,13 +112,11 @@ public class ConversionMatrixTests {
       { "Ewf", "[single-payload/whole-image target] EnCase EWF (.E01) wraps raw media as opaque chunks; the reader surfaces section blobs (volume/sectors/table/...), not the original files" },
       { "Lrzip", "[single-payload/whole-image target] single-stream long-range compressor; one 'data' member only" },
       { "Mp3", "[single-payload/whole-image target] single audio stream; collapses tree to one FULL.mp3" },
-      { "Msa", "[single-payload/whole-image target] Atari ST disk image; writer emits one disk.st blob" },
       { "Psf", "[single-payload/whole-image target] PlayStation sound format; fixed header.bin+program.bin pair, not a tree" },
       { "Sparseimage", "[single-payload/whole-image target] Apple sparse disk image; one disk.img blob" },
       { "SplitFile", "[single-payload/whole-image target] byte-splitter; rejoins to a single 'joined' member, not a tree" },
       { "Srec", "[single-payload/whole-image target] Motorola S-record firmware pseudo-archive; writer re-encodes one flat image and re-lists as metadata.ini+firmware.bin, not a file tree" },
       { "StuffItX", "[single-payload/whole-image target] writer emits an image that re-lists as 0 files" },
-      { "SysV", "[single-payload/whole-image target] System V FS image writer emits a whole-image (FULL.htfs) not a tree" },
       { "Umx", "[single-payload/whole-image target] Unreal package; writer emits a blob that re-lists as 0 files" },
       { "Wbn", "[single-payload/whole-image target] WebBundle writer collapses tree to a single FULL.wbn" },
       { "Wrapster", "[single-payload/whole-image target] Wrapster MP3 wrapper; one FULL.mp3 + 0/1 frame, not a tree" },
@@ -130,7 +126,6 @@ public class ConversionMatrixTests {
       { "Bbc", "[name/charset/size constraint] BBC Micro DFS disk; name-synthesizing FS, payload not found by content" },
       { "Cpm", "[name/charset/size constraint] CP/M disk; 8.3-folding name-synth FS, payload not found by content" },
       { "Lif", "[name/charset/size constraint] HP-71 LIF disk pads file content to a 256-byte record so bytes differ" },
-      { "ProDos", "[name/charset/size constraint] ProDOS disk; name-synthesizing FS carried no files (name/size constraints reject the fixture)" },
       { "Rt11", "[name/charset/size constraint] RT-11 disk pads content to a 512-byte block so bytes differ" },
       { "TrDos", "[name/charset/size constraint] TR-DOS disk; name-synthesizing FS, payload not found by content" },
       { "Wad", "[name/charset/size constraint] Doom WAD lump names are 8-char-truncated (HELLO.TX) so verbatim-name match fails" },

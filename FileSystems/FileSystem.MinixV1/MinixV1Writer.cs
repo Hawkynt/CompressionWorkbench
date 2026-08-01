@@ -75,6 +75,9 @@ public sealed class MinixV1Writer : IDisposable {
   public void Finish() => _output.Write(this.Build());
 
   /// <summary>Builds the complete image in memory and returns its bytes.</summary>
+  /// <summary>Zones a 16-bit zone number can address.</summary>
+  private const long MaxZones = (1L << 16) - 1;
+
   public byte[] Build() {
     var root = new TreeNode { IsDirectory = true };
     var allDirs = new List<TreeNode> { root };
@@ -113,7 +116,15 @@ public sealed class MinixV1Writer : IDisposable {
       dataZonesNeeded += ZonesForByteLength(file.FileData.Length);
 
     var totalZones = firstDataZone + dataZonesNeeded;
-    var disk = new byte[(long)totalZones * BlockSize];
+    // A zone number is 16 bits wide on this variant, and the image is built in
+    // memory. Sizing past either limit used to surface as an arithmetic
+    // overflow instead of saying the volume cannot hold the payload.
+    var diskBytes = (long)totalZones * BlockSize;
+    if (totalZones > MaxZones || diskBytes > System.Array.MaxLength)
+      throw new InvalidOperationException(
+        $"Minix: the payload needs {totalZones:N0} zones ({diskBytes:N0} bytes), past the " +
+        $"{MaxZones:N0} zones this volume can address.");
+    var disk = new byte[diskBytes];
 
     var imapOff = 2 * BlockSize;
     var zmapOff = 3 * BlockSize;

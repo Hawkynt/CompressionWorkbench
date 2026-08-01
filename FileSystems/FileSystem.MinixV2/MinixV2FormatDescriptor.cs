@@ -127,7 +127,7 @@ public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
           var r = new MinixV2Reader(stream);
           return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
         },
-        buildImage: BuildImage);
+        buildImage: BuildImage, largeVolumeCreator: this);
     }
   }
 
@@ -146,7 +146,7 @@ public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
         var r = new MinixV2Reader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
       },
-      buildImage: BuildImage);
+      buildImage: BuildImage, largeVolumeCreator: this);
   }
 
   private byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {

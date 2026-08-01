@@ -159,7 +159,7 @@ public sealed class HpfsFormatDescriptor
       HpfsInPlaceModifier.Add(archive, inputs);
     } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException) {
       archive.Position = 0;
-      ModifyRebuilder.Add(archive, inputs, ReadFileEntries, BuildImage);
+      ModifyRebuilder.Add(archive, inputs, ReadFileEntries, BuildImage, largeVolumeCreator: this);
     }
   }
 
@@ -174,7 +174,7 @@ public sealed class HpfsFormatDescriptor
       HpfsInPlaceModifier.Remove(archive, entryNames);
     } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException) {
       archive.Position = 0;
-      ModifyRebuilder.Remove(archive, entryNames, ReadFileEntries, BuildImage);
+      ModifyRebuilder.Remove(archive, entryNames, ReadFileEntries, BuildImage, largeVolumeCreator: this);
     }
   }
 
@@ -190,8 +190,10 @@ public sealed class HpfsFormatDescriptor
     // A volume too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole image, which Build() refuses to
     // produce once the volume passes the array limit.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       HpfsWriter? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,
@@ -199,10 +201,7 @@ public sealed class HpfsFormatDescriptor
         beginWrite: s2 => { streamWriter = new HpfsWriter(); target = s2; },
         writeEntry: (name, data) => streamWriter!.AddFile(name, data),
         finishWrite: () => streamWriter!.WriteTo(target!));
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
   }
 
   /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>

@@ -57,6 +57,33 @@ public sealed class FatWriter {
   }
 
   /// <summary>
+  /// Throws when the added files need more clusters than the volume has. A FAT
+  /// volume that overflows its cluster heap is not a smaller volume — it is a
+  /// corrupt one, because the directory still references clusters the heap
+  /// never had.
+  /// </summary>
+  private void EnsurePayloadFits(int totalSectors, long firstDataSector,
+      int sectorsPerCluster, int bytesPerSector) {
+    var clusterBytes = (long)sectorsPerCluster * bytesPerSector;
+    if (clusterBytes <= 0) return;
+
+    var availableClusters = ((long)totalSectors - firstDataSector) / sectorsPerCluster;
+    if (availableClusters <= 0)
+      throw new InvalidOperationException(
+        $"FAT: a {totalSectors:N0}-sector volume has no room for file data after its " +
+        "reserved sectors, FATs and root directory.");
+
+    var neededClusters = 0L;
+    foreach (var file in this._files)
+      neededClusters += Math.Max(1, (file.Data.LongLength + clusterBytes - 1) / clusterBytes);
+
+    if (neededClusters > availableClusters)
+      throw new InvalidOperationException(
+        $"FAT: the files need {neededClusters:N0} clusters ({neededClusters * clusterBytes:N0} bytes) " +
+        $"but the volume holds {availableClusters:N0} ({availableClusters * clusterBytes:N0} bytes).");
+  }
+
+  /// <summary>
   /// Builds the FAT filesystem image.
   /// </summary>
   /// <param name="totalSectors">Total sectors (default 2880 = 1.44 MB floppy).</param>
@@ -166,6 +193,12 @@ public sealed class FatWriter {
           $"FAT16 supports at most 65524 data clusters but this image has {finalClusters}. " +
           "Reduce the image size or switch to FAT32.");
     }
+
+    // The payload has to fit in the volume the caller asked for. Without this
+    // the writer laid files out past the end of the cluster heap: the image
+    // came back the requested size with a directory pointing into nothing, and
+    // reading it produced entries with null bytes in their names.
+    EnsurePayloadFits(totalSectors, firstDataSector, sectorsPerCluster, bytesPerSector);
 
     var disk = new byte[(long)totalSectors * bytesPerSector];
 

@@ -290,9 +290,10 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(archive);
     var (blockSize, totalBlocks) = ReadGeometry(archive);
 
-    // A volume too large to materialise goes through the streaming rebuilder.
-    if (archive.CanSeek && archive.Length > int.MaxValue / 2
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // A volume too large to materialise goes through the streaming rebuilder,
+    // whichever mode was asked for: end-pack and carve-hole order their entries
+    // from scratch inside it rather than falling back to a buffered rebuild.
+    if (archive.CanSeek && archive.Length > int.MaxValue / 2) {
       Ext1Writer? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,

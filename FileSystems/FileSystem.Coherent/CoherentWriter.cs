@@ -128,7 +128,14 @@ public sealed class CoherentWriter : IDisposable {
     if (fsize < dataStart + 1) fsize = (uint)(dataStart + 1);
 
     // ── 4. Build the in-memory image ──────────────────────────────────────
+    // The volume is assembled as one array, so a payload past what an array
+    // holds has to be refused here — computing the size and allocating anyway
+    // surfaced as an arithmetic overflow that told the caller nothing.
     var imageSize = (long)fsize * BlockSize;
+    if (imageSize > System.Array.MaxLength)
+      throw new InvalidOperationException(
+        $"Coherent: the payload needs {fsize:N0} blocks ({imageSize:N0} bytes), more than the " +
+        $"{System.Array.MaxLength:N0} bytes this writer lays out in memory.");
     var image = new byte[imageSize];
 
     // 4a. Superblock (genuine coh_super_block, 500 bytes). The Linux sysv

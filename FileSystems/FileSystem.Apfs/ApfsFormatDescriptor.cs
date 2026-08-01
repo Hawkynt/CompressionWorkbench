@@ -183,8 +183,10 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // A volume too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole image, which Build() refuses to
     // produce once the volume passes the array limit.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       var minSize = archive.Length;
       ApfsWriter? streamWriter = null;
       Stream? target = null;
@@ -197,10 +199,7 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         },
         writeEntry: (name, data) => streamWriter!.AddFile(name, data),
         finishWrite: () => streamWriter!.BuildTo(target!));
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, archive.Length));
   }
 
   /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>

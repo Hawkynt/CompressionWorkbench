@@ -22,6 +22,20 @@ public sealed class TrDosWriter {
   public byte[] Build(string label = "DISK") {
     var disk = new byte[DiskSize];
 
+    // The disk is a fixed 640 KB, and the loop below wrote a file only when it
+    // fit — anything larger vanished silently, leaving a directory entry
+    // pointing at bytes that were never written.
+    var payload = 0L;
+    foreach (var (_, _, data) in this._files) payload += data.Length;
+    var usable = DiskSize - TrackSize;   // track 0 holds the directory
+    if (payload > usable)
+      throw new InvalidOperationException(
+        $"TR-DOS: combined input size {payload:N0} bytes exceeds the 640 KB disk capacity " +
+        $"({usable:N0} bytes usable).");
+    if (this._files.Count > 128)
+      throw new InvalidOperationException(
+        $"TR-DOS: a disk holds at most 128 files; got {this._files.Count}.");
+
     var dirIndex = 0;
     var freeSector = 1; // first free sector (skip track 0 for directory)
     var freeTrack = 1;

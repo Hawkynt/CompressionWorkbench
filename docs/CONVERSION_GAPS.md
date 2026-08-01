@@ -17,20 +17,19 @@ Measured on the full grid (8 representative sources x all creatable targets):
 
 | Outcome | Count |
 |---|---|
-| Passing pairs | 1440 |
-| Ignored — genuinely-impossible | 424 |
-| Ignored — known gap (quarantined here) | 561 |
-| **Total grid cells (+ coverage report)** | **2425** |
+| Passing pairs | 1616 |
+| Ignored — genuinely-impossible | 440 |
+| Ignored — known gap (quarantined here) | 432 |
+| **Total grid cells (+ coverage report)** | **2489** |
 
 ## Bucket summary
 
 | Bucket | Failing targets | Failing pairs |
 |---|---:|---:|
-| self-rejecting reader | 1 | 8 |
-| single-payload/whole-image target | 23 | 176 |
-| name/charset/size constraint | 11 | 88 |
-| other | 30 | 241 |
-| **Total** | **65** (+1 pair-specific) | **513** |
+| single-payload/whole-image target | 18 | 144 |
+| name/charset/size constraint | 7 | 56 |
+| other | 29 | 232 |
+| **Total** | **54** | **432** |
 
 > Fixed and flipped to enforced-pass: `Svx8` (descriptor class renamed so the
 > source-generated Format enum Id matches its registry Id), `Crate`, `FreeArc`,
@@ -38,6 +37,13 @@ Measured on the full grid (8 representative sources x all creatable targets):
 > + `Nsis` (now re-readable; reclassified as name-synthesizing so the matrix
 > content-matches their folded/synthesized entry names). `CpcDsk` moved to the
 > single-payload bucket: its reader has no filesystem layer.
+>
+> Also flipped to enforced-pass (32 pairs): `HfsPlus`, `ProDos` and `SysV`,
+> which shared their extension with another format and were handed to the wrong
+> reader (`.dmg` with DMG, `.po` with the gettext catalogue, `.s5` with HTFS) —
+> detection now settles a shared extension by content among the descriptors that
+> claim it; and `Msa`, whose writer took the first input's bytes for a floppy
+> image and dropped the rest, and now lays the inputs into a GEMDOS volume.
 >
 > Also flipped to enforced-pass (24 pairs): `ExFat` and `Hpfs`, which never
 > "emitted a whole-image" at all — their `.img` output was mis-detected as FAT
@@ -49,14 +55,6 @@ Measured on the full grid (8 representative sources x all creatable targets):
 > Most gaps are **target-wide** (the target fails from every one of the 8 sources, so
 > the failing-pair count is `targets x 8`). Pair-specific gaps are listed in their own
 > section.
-
-## Bucket: self-rejecting reader
-
-Writer emits a file its own reader (or the converter's auto-detected reader) cannot re-read. The conversion produces output, but re-listing it throws. Fix: make each writer's output pass its own reader (correct magic / structure).
-
-| Target | Reason |
-|---|---|
-| `HfsPlus` | writer output is re-detected as DMG, whose reader rejects it: 'missing koly trailer signature' |
 
 ## Bucket: single-payload/whole-image target
 
@@ -73,13 +71,11 @@ The target collapses an arbitrary file tree into a single stream or whole-image 
 | `Ewf` | EnCase EWF (.E01) wraps raw media as opaque chunks; the reader surfaces section blobs (volume/sectors/table/...), not the original files |
 | `Lrzip` | single-stream long-range compressor; one 'data' member only |
 | `Mp3` | single audio stream; collapses tree to one FULL.mp3 |
-| `Msa` | Atari ST disk image; writer emits one disk.st blob |
 | `Psf` | PlayStation sound format; fixed header.bin+program.bin pair, not a tree |
 | `Sparseimage` | Apple sparse disk image; one disk.img blob |
 | `SplitFile` | byte-splitter; rejoins to a single 'joined' member, not a tree |
 | `Srec` | Motorola S-record firmware pseudo-archive; writer re-encodes one flat image and re-lists as metadata.ini+firmware.bin, not a file tree |
 | `StuffItX` | writer emits an image that re-lists as 0 files |
-| `SysV` | System V FS image writer emits a whole-image (FULL.htfs) not a tree |
 | `Umx` | Unreal package; writer emits a blob that re-lists as 0 files |
 | `Wbn` | WebBundle writer collapses tree to a single FULL.wbn |
 | `Wrapster` | Wrapster MP3 wrapper; one FULL.mp3 + 0/1 frame, not a tree |
@@ -96,7 +92,6 @@ Retro/constrained filesystems that mangle or synthesize entry names, or pad file
 | `Cpm` | CP/M disk; 8.3-folding name-synth FS, payload not found by content |
 | `Lif` | HP-71 LIF disk pads file content to a 256-byte record so bytes differ |
 | `Ods1` | ODS-1 (Files-11) disk pads content to a 512-byte block so bytes differ |
-| `ProDos` | ProDOS disk; name-synthesizing FS carried no files (name/size constraints reject the fixture) |
 | `Rt11` | RT-11 disk pads content to a 512-byte block so bytes differ |
 | `TrDos` | TR-DOS disk; name-synthesizing FS, payload not found by content |
 | `Wad` | Doom WAD lump names are 8-char-truncated (HELLO.TX) so verbatim-name match fails |

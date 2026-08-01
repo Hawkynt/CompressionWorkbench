@@ -279,8 +279,10 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // A volume too large to materialise goes through the streaming rebuilder;
     // buildImage returns a byte[] of the whole volume, which Build refuses to
     // produce once it passes the array limit.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       HfsPlusWriter? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,

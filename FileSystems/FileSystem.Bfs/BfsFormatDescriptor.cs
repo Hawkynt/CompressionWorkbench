@@ -174,11 +174,11 @@ public sealed class BfsFormatDescriptor
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
     => BfsInPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   public void Remove(Stream archive, string[] entryNames)
     => BfsInPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   // ── IArchiveDefragmentable (rebuild-based) ─────────────────────────
 
@@ -192,7 +192,10 @@ public sealed class BfsFormatDescriptor
     // Buffering the rebuilt image would cap the volume at what a byte[] can
     // hold, so the packing modes stream: each entry is spilled to scratch and
     // the writer pulls it back while laying out the runs.
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams: end-pack and carve-hole order their entries from
+    // scratch inside the rebuilder, so none of them has to fall back to the
+    // buffered path that a volume past two gigabytes cannot use.
+    {
       BfsWriter? writer = null;
       Stream? target = null;
       var spill = new List<string>();
@@ -211,10 +214,7 @@ public sealed class BfsFormatDescriptor
         foreach (var path in spill)
           try { File.Delete(path); } catch { /* scratch file already gone */ }
       }
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
   }
 
   // ── IFilesystemExtentMap ───────────────────────────────────────────

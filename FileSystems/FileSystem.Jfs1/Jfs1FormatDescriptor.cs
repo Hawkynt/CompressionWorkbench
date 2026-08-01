@@ -150,7 +150,7 @@ public sealed class Jfs1FormatDescriptor :
           var r = new Jfs1Reader(stream);
           return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
         },
-        buildImage: BuildImage);
+        buildImage: BuildImage, largeVolumeCreator: this);
     }
   }
 
@@ -169,7 +169,7 @@ public sealed class Jfs1FormatDescriptor :
         var r = new Jfs1Reader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
       },
-      buildImage: BuildImage);
+      buildImage: BuildImage, largeVolumeCreator: this);
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
@@ -190,8 +190,10 @@ public sealed class Jfs1FormatDescriptor :
     // A volume too large to materialise goes through the streaming rebuilder;
     // the buffered path's buildImage returns a byte[] of the whole image, which
     // the writer refuses to produce once it passes the array limit.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       Jfs1Writer? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,

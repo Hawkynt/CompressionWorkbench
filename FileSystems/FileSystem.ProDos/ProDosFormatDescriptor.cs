@@ -96,10 +96,16 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<string> Extensions => [".po", ".2mg"];
   public IReadOnlyList<string> CompoundExtensions => [];
 
-  // .2mg files begin with "2IMG" at offset 0. Raw .po files have no magic — detection
-  // falls back to extension plus a valid volume-directory parse.
+  // .2mg files begin with "2IMG" at offset 0. A raw .po image has no header of
+  // its own, but its volume directory does: block 2 opens with a zero
+  // previous-block pointer, a next-block pointer of 3, and a storage type of
+  // 0xF — the volume directory header. Without that, a ProDOS image shared the
+  // .po extension with gettext catalogues and whichever descriptor came first
+  // in the registry got the file.
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("2IMG"u8.ToArray(), Offset: 0, Confidence: 0.95),
+    new([0x00, 0x00, 0x03, 0x00, 0xF0], Offset: 0x400, Confidence: 0.85,
+      Mask: [0xFF, 0xFF, 0xFF, 0xFF, 0xF0]),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;

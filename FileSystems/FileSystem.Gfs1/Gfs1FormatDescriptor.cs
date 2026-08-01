@@ -139,11 +139,11 @@ public sealed class Gfs1FormatDescriptor :
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
     => Gfs1InPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   public void Remove(Stream archive, string[] entryNames)
     => Gfs1InPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
     var r = new Gfs1Reader(stream);

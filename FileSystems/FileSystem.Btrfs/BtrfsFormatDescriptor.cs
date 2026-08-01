@@ -83,8 +83,10 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
     // A volume too large to materialise goes through the streaming rebuilder;
     // the buffered path's buildImage returns a byte[] of the whole image.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       BtrfsWriter? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,

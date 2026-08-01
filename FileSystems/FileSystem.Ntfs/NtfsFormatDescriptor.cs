@@ -230,14 +230,20 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var extents = NtfsExtentMap.Enumerate(archive).ToList();
     options.OnProgress?.Invoke(new DefragProgressEvent("scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
 
-    // Compute data origin: the first byte past all MetadataReserved extents.
-    // User data must not be placed in the boot sector, MFT, or system file regions.
+    // Data starts after the metadata that sits at the front of the volume — and
+    // only that. NTFS scatters system files ($MFTMirr near the middle, $AttrDef
+    // at the tail), so taking the end of the last one put the origin a few
+    // megabytes short of the image end; every file was then planned into the
+    // same impossible destination past the end of the volume, and executing
+    // that left them the right length with each other's bytes. The planner is
+    // told about the scattered records separately — they arrive as forbidden
+    // regions in the extent list, which is what keeps data off them.
     long dataOrigin = mover.FirstDataByte;
-    foreach (var e in extents) {
-      if (e.Kind == DefragBlockKind.MetadataReserved) {
-        var end = e.Offset + e.Length;
-        if (end > dataOrigin) dataOrigin = end;
-      }
+    foreach (var e in extents.Where(e => e.Kind == DefragBlockKind.MetadataReserved)
+                             .OrderBy(e => e.Offset)) {
+      if (e.Offset > dataOrigin) break;   // a gap: the leading metadata ended here
+      var end = e.Offset + e.Length;
+      if (end > dataOrigin) dataOrigin = end;
     }
     // Align to cluster boundary.
     var cs = mover.ClusterSize;
@@ -261,18 +267,34 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Rebuild fallback for when the planner refuses. The volume is laid out
+  /// straight into the stream: a byte[] tops out at two gigabytes, so building
+  /// the image in memory threw on exactly the volumes that reach this path.
+  /// </summary>
   private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    var totalSize = (int)archive.Length;
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new NtfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new NtfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build(totalSize);
-      });
+    var totalSize = archive.Length;
+    NtfsWriter? writer = null;
+    Stream? target = null;
+    var spill = new List<string>();
+    try {
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new NtfsReader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+        },
+        beginWrite: s => { writer = new NtfsWriter(); target = s; },
+        writeEntry: (name, data) => {
+          var path = Path.GetTempFileName();
+          spill.Add(path);
+          File.WriteAllBytes(path, data);
+          writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
+        },
+        finishWrite: () => writer!.BuildToStreaming(target!, totalSize));
+    } finally {
+      foreach (var path in spill)
+        try { File.Delete(path); } catch { /* scratch file already gone */ }
+    }
   }
   public string DefaultExtension => ".ntfs";
   public IReadOnlyList<string> Extensions => [".ntfs", ".img"];

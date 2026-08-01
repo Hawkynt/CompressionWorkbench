@@ -134,6 +134,11 @@ public class UnusedSpaceWiperTests {
     Assert.That(wiped, Is.EqualTo(0), "Already-clean gap should not count as wiped");
   }
 
+  /// <summary>
+  /// An empty volume still describes itself — its map reports the superblock,
+  /// the allocation tables and the free space between them — so wiping it
+  /// zeros everything the map calls free.
+  /// </summary>
   [Test]
   public void Wipe_EmptyImage_ZerosEverything() {
     var imageSize = 256L;
@@ -141,12 +146,33 @@ public class UnusedSpaceWiperTests {
     Array.Fill(data, (byte)0xDD);
 
     using var ms = new MemoryStream(data);
-    // No extents at all — entire image is free.
-    var wiped = UnusedSpaceWiper.Wipe(ms, [], imageSize, wipeClusterTips: false);
-    Assert.That(wiped, Is.EqualTo(256));
+    var extents = new List<DefragBlockInfo> {
+      new(0, 16, DefragBlockKind.MetadataReserved, "Superblock"),
+    };
+    var wiped = UnusedSpaceWiper.Wipe(ms, extents, imageSize, wipeClusterTips: false);
+    Assert.That(wiped, Is.EqualTo(240));
 
     var result = ms.ToArray();
-    Assert.That(result, Is.All.EqualTo((byte)0));
+    Assert.That(result[16..], Is.All.EqualTo((byte)0));
+  }
+
+  /// <summary>
+  /// A map that claims nothing has not read the image — every filesystem it
+  /// understands accounts for at least its own superblock. Treating that as
+  /// "all free" wiped live files off volumes whose reader simply did not
+  /// recognise the layout, so it now wipes nothing at all.
+  /// </summary>
+  [Test]
+  public void Wipe_NoExtentsAtAll_LeavesTheImageAlone() {
+    var imageSize = 256L;
+    var data = new byte[imageSize];
+    Array.Fill(data, (byte)0xDD);
+
+    using var ms = new MemoryStream(data);
+    var wiped = UnusedSpaceWiper.Wipe(ms, [], imageSize, wipeClusterTips: false);
+
+    Assert.That(wiped, Is.EqualTo(0));
+    Assert.That(ms.ToArray(), Is.All.EqualTo((byte)0xDD));
   }
 
   [Test]

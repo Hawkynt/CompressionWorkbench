@@ -77,6 +77,10 @@ public sealed class Pc98Writer {
   }
 
   /// <summary>Builds the disk image.</summary>
+
+  /// <summary>Data clusters a FAT12 allocation table can address.</summary>
+  private const int MaxFat12Clusters = 4084;
+
   public byte[] Build() {
     if (this._files.Count > this._rootEntries)
       throw new InvalidOperationException(
@@ -102,7 +106,15 @@ public sealed class Pc98Writer {
     var minTotal = metadataSectors + dataSectors;
     var total = this._totalSectors > 0 ? Math.Max(this._totalSectors, minTotal) : Math.Max(minTotal, 16);
 
-    var image = new byte[total * bps];
+    // The medium is a FAT12 floppy: past 4084 clusters the on-disk format
+    // cannot express the chain at all, and multiplying the sector count out
+    // reported that as an arithmetic overflow rather than as a full disk.
+    if (clustersNeeded > MaxFat12Clusters)
+      throw new InvalidOperationException(
+        $"PC-98: the payload needs {clustersNeeded:N0} clusters, past the {MaxFat12Clusters:N0} " +
+        $"a FAT12 medium can address ({(long)MaxFat12Clusters * bytesPerCluster:N0} bytes).");
+
+    var image = new byte[(long)total * bps];
 
     // IPL block at offset 0.
     Encoding.ASCII.GetBytes("NECIPL").CopyTo(image.AsSpan(0, 6));

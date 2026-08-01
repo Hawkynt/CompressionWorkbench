@@ -151,7 +151,10 @@ public sealed class ZfsFormatDescriptor :
     // Buffering the rebuilt pool would cap it at what a byte[] can hold, so the
     // packing modes stream: each entry is spilled to scratch and the writer pulls
     // it back while writing records.
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams: end-pack and carve-hole order their entries from
+    // scratch inside the rebuilder, so none of them has to fall back to the
+    // buffered path that a volume past two gigabytes cannot use.
+    {
       ZfsWriter? writer = null;
       Stream? target = null;
       var spill = new List<string>();
@@ -170,10 +173,7 @@ public sealed class ZfsFormatDescriptor :
         foreach (var path in spill)
           try { File.Delete(path); } catch { /* scratch file already gone */ }
       }
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, originalSize));
   }
 
   // ── IArchiveModifiable (genuine copy-on-write add, rebuild fallback) ────

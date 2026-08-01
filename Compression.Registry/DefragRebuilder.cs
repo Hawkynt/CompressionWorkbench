@@ -234,11 +234,13 @@ public static class DefragRebuilder {
   /// accumulating the full file list in memory, so multi-GB containers can
   /// start the write before the full directory tree has been walked.
   ///
-  /// <para>Currently only used for <see cref="DefragMode.ConsolidateAtStart"/>
-  /// and <see cref="DefragMode.FillHolesLazy"/> (both pack files in input
-  /// order, so no upfront sort needed). End-pack and carve-hole still need
-  /// the buffered <see cref="Rebuild"/> path — they require knowing all sizes
-  /// before writing the first byte.</para>
+  /// <para><see cref="DefragMode.ConsolidateAtStart"/> and
+  /// <see cref="DefragMode.FillHolesLazy"/> pack in input order and stream
+  /// straight through. <see cref="DefragMode.ConsolidateAtEnd"/> and
+  /// <see cref="DefragMode.CarveHole"/> need every size before the first byte
+  /// is written, so they spill each entry to scratch, sort, and then write —
+  /// still without ever holding the volume in memory, which is what the
+  /// buffered <see cref="Rebuild"/> path cannot do above two gigabytes.</para>
   /// </summary>
   /// <param name="archive">Stream to rewrite. Must be readable, writable, seekable.</param>
   /// <param name="options">Defrag mode + parameters. Must be ConsolidateAtStart or FillHolesLazy.</param>
@@ -259,9 +261,10 @@ public static class DefragRebuilder {
     System.ArgumentNullException.ThrowIfNull(beginWrite);
     System.ArgumentNullException.ThrowIfNull(writeEntry);
     System.ArgumentNullException.ThrowIfNull(finishWrite);
-    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy
+        or DefragMode.ConsolidateAtEnd or DefragMode.CarveHole))
       throw new System.NotSupportedException(
-        $"RebuildStreaming only supports ConsolidateAtStart / FillHolesLazy; got {options.Mode}.");
+        $"RebuildStreaming does not support {options.Mode}.");
 
     var originalLength = archive.Length;
     archive.Position = 0;
@@ -277,7 +280,7 @@ public static class DefragRebuilder {
 
         long readPos = 0;
         long entriesProcessed = 0;
-        foreach (var entry in readEntries(archive)) {
+        foreach (var entry in InOrder(archive, options, readEntries, originalLength)) {
           // Write each entry as it arrives — no accumulation.
           writeEntry(entry.Name, entry.Data);
           entriesProcessed++;
@@ -326,6 +329,57 @@ public static class DefragRebuilder {
       }
     } finally {
       try { System.IO.File.Delete(tempPath); } catch { /* best-effort cleanup */ }
+    }
+  }
+
+  /// <summary>
+  /// Yields the entries in the order <paramref name="options" />' mode wants
+  /// them written. Input order streams straight from the source; an order that
+  /// depends on every size — end-pack, carve-hole — spills each entry to a
+  /// scratch file first, so the sort costs disk rather than the memory a
+  /// multi-gigabyte volume does not fit in.
+  /// </summary>
+  private static System.Collections.Generic.IEnumerable<(string Name, byte[] Data)> InOrder(
+      System.IO.Stream archive,
+      DefragOptions options,
+      System.Func<System.IO.Stream, System.Collections.Generic.IEnumerable<(string Name, byte[] Data)>> readEntries,
+      long originalLength) {
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      foreach (var entry in readEntries(archive))
+        yield return entry;
+      yield break;
+    }
+
+    var spilled = new System.Collections.Generic.List<(string Name, long Length, string Path)>();
+    try {
+      foreach (var entry in readEntries(archive)) {
+        var path = System.IO.Path.GetTempFileName();
+        System.IO.File.WriteAllBytes(path, entry.Data);
+        spilled.Add((entry.Name, entry.Data.LongLength, path));
+      }
+
+      if (options.Mode == DefragMode.CarveHole) {
+        if (options.HoleSize <= 0)
+          throw new System.ArgumentException(
+            "HoleSize must be positive for DefragMode.CarveHole.", nameof(options));
+        var totalLive = 0L;
+        foreach (var entry in spilled) totalLive += entry.Length;
+        if (totalLive + options.HoleSize > originalLength)
+          throw new System.ArgumentException(
+            $"Image is too small for the carved hole: live {totalLive} + hole {options.HoleSize} > image {originalLength}.",
+            nameof(options));
+      } else {
+        // Largest first: the longest contiguous run lands lowest, so the small
+        // files gather near the metadata and the big ones own the tail — the
+        // same approximation of end-packing the buffered path makes.
+        spilled.Sort(static (a, b) => b.Length.CompareTo(a.Length));
+      }
+
+      foreach (var entry in spilled)
+        yield return (entry.Name, System.IO.File.ReadAllBytes(entry.Path));
+    } finally {
+      foreach (var entry in spilled)
+        try { System.IO.File.Delete(entry.Path); } catch { /* scratch file already gone */ }
     }
   }
 

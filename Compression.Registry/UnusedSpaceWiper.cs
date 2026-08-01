@@ -46,6 +46,13 @@ public static class UnusedSpaceWiper {
         live.Add(ex);
     live.Sort(static (a, b) => a.Offset.CompareTo(b.Offset));
 
+    // No live extent at all means the map could not read this image — a
+    // filesystem it does understand always claims at least its own boot sector
+    // and allocation tables. Treating that as "everything is free" would zero
+    // the volume, which is precisely the outcome a wipe must never produce.
+    if (live.Count == 0)
+      return 0;
+
     var totalWiped = 0L;
     var cursor = 0L;
     var zeroBuf = new byte[64 * 1024]; // pre-zeroed by CLR
@@ -104,6 +111,11 @@ public static class UnusedSpaceWiper {
       if (ex.Kind != DefragBlockKind.Free)
         live.Add(ex);
     live.Sort(static (a, b) => a.Offset.CompareTo(b.Offset));
+
+    // Matches Wipe: a map that claims nothing has not read the image, so the
+    // honest answer is that no space is known to be unused.
+    if (live.Count == 0)
+      return 0;
 
     var unused = 0L;
     var cursor = 0L;

@@ -35,8 +35,26 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Atari ST Magic Shadow Archiver disk image with RLE compression";
 
+  /// <summary>
+  /// Lists the files on the floppy the image holds. An MSA file wraps a GEMDOS
+  /// volume, and this descriptor's Add and Remove already work on that volume's
+  /// files, so this reads them too — a disc whose filesystem cannot be walked
+  /// falls back to the raw image as a single entry.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MsaReader(stream);
+    var disk = DecodedDisk(r);
+    if (disk != null)
+      try {
+        using var inner = new FileSystem.Gemdos.GemdosReader(new MemoryStream(disk, writable: false));
+        var entries = inner.Entries.Where(e => !e.IsDirectory).ToList();
+        if (entries.Count > 0)
+          return entries.Select((e, i) => new ArchiveEntryInfo(
+            i, e.Name, e.Size, -1, "RLE", false, false, null)).ToList();
+      } catch {
+        // fall through to the raw image
+      }
+
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, -1, "RLE", false, false, null
     )).ToList();
@@ -44,8 +62,32 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new MsaReader(stream);
+    var disk = DecodedDisk(r);
+    if (disk != null)
+      try {
+        using var inner = new FileSystem.Gemdos.GemdosReader(new MemoryStream(disk, writable: false));
+        var wrote = false;
+        foreach (var e in inner.Entries) {
+          if (e.IsDirectory) continue;
+          if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+          WriteFile(outputDir, e.Name, inner.Extract(e));
+          wrote = true;
+        }
+        if (wrote) return;
+      } catch {
+        // fall through to the raw image
+      }
+
     foreach (var e in r.Entries)
       WriteFile(outputDir, e.Name, r.Extract(e));
+  }
+
+  /// <summary>The decoded floppy, or null when the image holds no track data.</summary>
+  private static byte[]? DecodedDisk(MsaReader reader) {
+    var entry = reader.Entries.FirstOrDefault();
+    if (entry == null) return null;
+    var disk = reader.Extract(entry);
+    return disk.Length >= 512 ? disk : null;
   }
 
   /// <summary>
@@ -79,11 +121,67 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Builds an MSA image holding the inputs. An MSA file is a compressed Atari
+  /// ST floppy, so the files go into a GEMDOS volume first and that volume is
+  /// what gets encoded.
+  /// <para>
+  /// A single input that already is a floppy image — the .st → .msa conversion —
+  /// is encoded as it stands. Anything else used to be treated the same way,
+  /// which meant the first input's bytes were read as a disk image and every
+  /// other input was dropped without a word: three files in, one nonsensical
+  /// "floppy" out.
+  /// </para>
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
     if (fileList.Count == 0) return;
-    var (_, data) = fileList[0]; // First file is the raw disk image
-    MsaWriter.Write(output, data);
+
+    if (fileList.Count == 1 && LooksLikeFloppyImage(fileList[0].Data)) {
+      MsaWriter.Write(output, fileList[0].Data);
+      return;
+    }
+
+    // A floppy is all an MSA file can describe. Handing more than fits to the
+    // GEMDOS writer produced an image whose directory ran off the end of the
+    // volume — it read back as garbage rather than saying no.
+    var payload = fileList.Sum(f => (long)f.Data.Length);
+    if (payload > UsableFloppyBytes)
+      throw new InvalidOperationException(
+        $"MSA: combined input size {payload:N0} bytes exceeds the 720 KB Atari ST floppy " +
+        $"this format describes ({UsableFloppyBytes:N0} bytes usable).");
+
+    // 720 KB double-sided, the ST's common floppy: 80 tracks x 9 sectors x 2
+    // sides. MsaWriter's defaults describe the same geometry.
+    var writer = new FileSystem.Gemdos.GemdosWriter();
+    foreach (var (name, data) in fileList)
+      writer.AddFile(name, data);
+    var floppy = writer.Build(totalSectors: 1440, bytesPerSector: 512,
+      sectorsPerCluster: 2, rootEntries: 112);
+    MsaWriter.Write(output, floppy);
+  }
+
+  /// <summary>
+  /// What a 720 KB volume holds once its boot sector, both FATs and the root
+  /// directory are subtracted.
+  /// </summary>
+  private const long UsableFloppyBytes = 1440L * 512 - 24L * 512;
+
+  /// <summary>
+  /// Whether these bytes are already an ST floppy image: one of the standard
+  /// capacities, with a BPB whose sector size and media descriptor read as a
+  /// GEMDOS/FAT boot sector.
+  /// </summary>
+  private static bool LooksLikeFloppyImage(byte[] data) {
+    ArgumentNullException.ThrowIfNull(data);
+    var standardSizes = new[] { 360 * 1024, 400 * 1024, 720 * 1024, 800 * 1024, 1440 * 1024 };
+    if (!standardSizes.Contains(data.Length)) return false;
+    if (data.Length < 32) return false;
+    var bytesPerSector = data[11] | (data[12] << 8);
+    if (bytesPerSector is not (256 or 512 or 1024)) return false;
+    var sectorsPerCluster = data[13];
+    return sectorsPerCluster is 1 or 2 or 4;
   }
 
   /// <summary>
@@ -92,8 +190,14 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// per-track RLE compression makes anything cheaper architecturally impossible.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      MsaModifier.AddFile(archive, name, data);
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ModifyInner(archive,
+      volume => new FileSystem.Gemdos.GemdosFormatDescriptor().Add(volume, inputs),
+      () => {
+        foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
+          MsaModifier.AddFile(archive, name, data);
+      });
   }
 
   /// <summary>
@@ -103,8 +207,43 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// modified flat image is re-encoded to MSA tracks.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    foreach (var name in entryNames)
-      MsaModifier.RemoveFile(archive, name);
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    ModifyInner(archive,
+      volume => new FileSystem.Gemdos.GemdosFormatDescriptor().Remove(volume, entryNames),
+      () => {
+        foreach (var name in entryNames)
+          MsaModifier.RemoveFile(archive, name);
+      });
+  }
+
+  /// <summary>
+  /// Applies <paramref name="onGemdos" /> to the volume inside the image and
+  /// re-encodes it. A volume the GEMDOS layer does not recognise — a
+  /// PC-formatted floppy in an MSA wrapper — falls to <paramref name="onFat" />,
+  /// which edits the same bytes through the FAT reader instead.
+  /// </summary>
+  private static void ModifyInner(Stream archive, Action<Stream> onGemdos, Action onFat) {
+    archive.Position = 0;
+    var reader = new MsaReader(archive);
+    if (reader.Entries.Count == 0) { onFat(); return; }
+
+    var flat = reader.Extract(reader.Entries[0]);
+    var geometry = (reader.SectorsPerTrack, reader.Sides);
+    using var volume = new MemoryStream();
+    volume.Write(flat);
+    volume.Position = 0;
+    if (!FileSystem.Gemdos.GemdosExtentMap.Enumerate(volume).Any()) { onFat(); return; }
+
+    volume.Position = 0;
+    onGemdos(volume);
+
+    using var encoded = new MemoryStream();
+    MsaWriter.Write(encoded, volume.ToArray(), geometry.SectorsPerTrack, geometry.Sides);
+    var rebuilt = encoded.ToArray();
+    archive.Position = 0;
+    archive.Write(rebuilt, 0, rebuilt.Length);
+    archive.SetLength(rebuilt.Length);
   }
 
   // ── IArchiveDefragmentable ───────────────────────────────────────────
@@ -169,26 +308,48 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// container) — this matches what the defrag window expects for filesystem
   /// extent maps.
   /// </summary>
+  /// <summary>
+  /// The layout of the volume inside the image. An ST floppy is read as GEMDOS
+  /// first — that is what this descriptor writes and what the machine formats —
+  /// and as FAT only when the GEMDOS map claims nothing, which is what a
+  /// PC-formatted floppy in an MSA wrapper needs.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     image.Position = 0;
     var reader = new MsaReader(image);
     if (reader.Entries.Count == 0) yield break;
     var flat = reader.Extract(reader.Entries[0]);
-    using var fatStream = new MemoryStream(flat, writable: false);
-    foreach (var extent in FatExtentMap.Enumerate(fatStream))
+
+    using var flatStream = new MemoryStream(flat, writable: false);
+    var extents = InnerExtents(flatStream);
+    foreach (var extent in extents)
       yield return extent;
+  }
+
+  /// <summary>
+  /// The inner volume's extents, from whichever reader recognises it. An empty
+  /// result means neither did — the callers must treat that as "unknown", never
+  /// as "all free".
+  /// </summary>
+  private static IReadOnlyList<DefragBlockInfo> InnerExtents(Stream flat) {
+    flat.Position = 0;
+    var gemdos = FileSystem.Gemdos.GemdosExtentMap.Enumerate(flat).ToList();
+    if (gemdos.Count > 0) return gemdos;
+
+    flat.Position = 0;
+    return FatExtentMap.Enumerate(flat).ToList();
   }
 
   // ── IWipeEmpty ─────────────────────────────────────────────────────────
 
   /// <summary>
-  /// Zeros all unused space in the FAT12 filesystem inside an MSA image. MSA is
-  /// an outer RLE-compressed container whose track bytes hold no in-place free
+  /// Zeros all unused space in the filesystem inside an MSA image. MSA is an
+  /// outer RLE-compressed container whose track bytes hold no in-place free
   /// space — the extent map's offsets are relative to the decoded flat image,
   /// not the container — so wiping is performed the only honest way: decode the
-  /// tracks to the flat FAT12 image, run the FAT descriptor's wiper (free
-  /// clusters + cluster tips) on it, then re-encode preserving the original
-  /// geometry. Cluster-tip wiping applies to the inner FAT layer.
+  /// tracks to the flat image, run the wiper of whichever descriptor reads that
+  /// volume (free clusters + cluster tips) on it, then re-encode preserving the
+  /// original geometry.
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
@@ -199,10 +360,15 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var flat = reader.Extract(reader.Entries[0]);
     var geom = (reader.SectorsPerTrack, reader.Sides);
 
-    // Wipe the inner flat FAT image in memory via the FAT descriptor.
+    // Wipe the inner volume in memory through whichever descriptor reads it.
     long wiped;
     using (var flatStream = new MemoryStream(flat, writable: true)) {
-      wiped = new FatFormatDescriptor().WipeUnusedSpace(flatStream, wipeClusterTips, wipeDeletedEntries);
+      flatStream.Position = 0;
+      var gemdos = FileSystem.Gemdos.GemdosExtentMap.Enumerate(flatStream).Any();
+      wiped = gemdos
+        ? new FileSystem.Gemdos.GemdosFormatDescriptor()
+          .WipeUnusedSpace(flatStream, wipeClusterTips, wipeDeletedEntries)
+        : new FatFormatDescriptor().WipeUnusedSpace(flatStream, wipeClusterTips, wipeDeletedEntries);
       flat = flatStream.ToArray();
     }
 

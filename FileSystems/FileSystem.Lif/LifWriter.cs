@@ -12,6 +12,9 @@ namespace FileSystem.Lif;
 /// </summary>
 public sealed class LifWriter {
 
+  /// <summary>Largest volume LIF's 24-bit sector addressing can describe.</summary>
+  private const long MaxImageBytes = (1L << 24) * LifReader.SectorSize;
+
   /// <summary>
   /// Builds a LIF image from the supplied files. <paramref name="volumeLabel"/> is
   /// truncated/padded to 6 ASCII characters; non-ASCII bytes are replaced with '?'.
@@ -45,7 +48,16 @@ public sealed class LifWriter {
       nextSec += lenSec;
     }
     var totalSectors = nextSec;
-    var image = new byte[totalSectors * LifReader.SectorSize];
+    // LIF addresses its sectors in 24 bits, and the image is laid out in
+    // memory. Multiplying an over-large sector count out simply overflowed:
+    // the caller saw an arithmetic error rather than being told the payload
+    // does not fit on a LIF volume.
+    var imageBytes = (long)totalSectors * LifReader.SectorSize;
+    if (imageBytes > MaxImageBytes)
+      throw new InvalidOperationException(
+        $"LIF: combined input size {imageBytes:N0} bytes exceeds the {MaxImageBytes:N0} bytes " +
+        "a LIF volume can address.");
+    var image = new byte[imageBytes];
 
     // ── Volume label sector ───────────────────────────────────────────────
     BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(0), LifReader.LifMagic);

@@ -173,10 +173,10 @@ public sealed class Ocfs2FormatDescriptor
       } catch (NotSupportedException) {
         // Subdir path, extent-backed root dir, or full inline area — fall back
         // to the rebuild path so callers still get the file added.
-        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage);
+        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage, largeVolumeCreator: this);
       } catch (IOException) {
         // No free clusters / no inline room — same fall-back rationale.
-        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage);
+        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage, largeVolumeCreator: this);
       }
     }
   }
@@ -199,7 +199,7 @@ public sealed class Ocfs2FormatDescriptor
       }
     }
     if (unhandled.Count > 0)
-      ModifyRebuilder.Remove(archive, [.. unhandled], ReadFileEntries, BuildImage);
+      ModifyRebuilder.Remove(archive, [.. unhandled], ReadFileEntries, BuildImage, largeVolumeCreator: this);
   }
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
@@ -214,8 +214,10 @@ public sealed class Ocfs2FormatDescriptor
     // A volume too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole volume and ReadFileEntries
     // buffers the source, both of which stop at the array limit.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       Ocfs2Writer? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,
@@ -226,10 +228,7 @@ public sealed class Ocfs2FormatDescriptor
         writeEntry: (name, data) => streamWriter!.AddStreamingFile(
           name, data.LongLength, () => new MemoryStream(data, writable: false)),
         finishWrite: () => streamWriter!.WriteTo(target!));
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
   }
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────

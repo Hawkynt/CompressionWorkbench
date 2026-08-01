@@ -38,6 +38,9 @@ public sealed class ApplePascalWriter {
     _files.Add((leaf.ToUpperInvariant(), data, kind));
   }
 
+  /// <summary>Blocks a 16-bit Pascal block number can address.</summary>
+  private const int MaxVolumeBlocks = 65535;
+
   /// <summary>
   /// Builds the image. <paramref name="volumeBlocks"/> is the total block count
   /// (typical: 280 for 140 KB floppy, 560 for 280 KB DS floppy, 1024+ for HD).
@@ -54,7 +57,15 @@ public sealed class ApplePascalWriter {
     if (string.IsNullOrEmpty(volumeName)) volumeName = "PASCAL";
     if (volumeName.Length > 7) volumeName = volumeName[..7];
 
-    var img = new byte[volumeBlocks * ApplePascalReader.BlockSize];
+    // Pascal addresses blocks in 16 bits, so a volume larger than that cannot
+    // be described at all. Multiplying the block count out first turned an
+    // over-large request into an arithmetic overflow.
+    if (volumeBlocks > MaxVolumeBlocks)
+      throw new InvalidOperationException(
+        $"Apple Pascal: a volume of {volumeBlocks:N0} blocks exceeds the {MaxVolumeBlocks:N0} " +
+        $"blocks a 16-bit block number can address ({(long)MaxVolumeBlocks * ApplePascalReader.BlockSize:N0} bytes).");
+
+    var img = new byte[(long)volumeBlocks * ApplePascalReader.BlockSize];
 
     // Volume header: type=0, first=0, next=6, name + 7 chars, total blocks,
     // file count, first-block-access (set to next), packed Pascal date (zero).

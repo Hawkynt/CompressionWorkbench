@@ -25,6 +25,7 @@ public sealed class MfsWriter {
     var imageSize = totalSectors * sectorSize;
     var disk = new byte[imageSize];
 
+
     // MDB at offset 1024 (sector 2)
     var mdb = disk.AsSpan(1024);
     BinaryPrimitives.WriteUInt16BigEndian(mdb, 0xD2D7); // magic
@@ -36,6 +37,16 @@ public sealed class MfsWriter {
     // File directory at sectors 3-5 (offset 1536 to 3072)
     // First allocation block at sector 12
     var firstAllocBlockSector = 12;
+    // An MFS volume is a 400 KB floppy. Files past that used to be copied only
+    // if they happened to fit and dropped without a word if they did not, so a
+    // volume came back missing whatever ran off the end.
+    var payload = 0L;
+    foreach (var (_, data) in this._files) payload += data.Length;
+    var usable = imageSize - firstAllocBlockSector * sectorSize;
+    if (payload > usable)
+      throw new InvalidOperationException(
+        $"MFS: combined input size {payload:N0} bytes exceeds the 400 KB floppy capacity " +
+        $"({usable:N0} bytes usable).");
     BinaryPrimitives.WriteUInt16BigEndian(mdb[28..], (ushort)firstAllocBlockSector);
 
     // Volume name — MDB offset 36 (Pascal string, length byte + ASCII).

@@ -306,7 +306,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // Buffering the rebuilt image would cap the volume at what a byte[] can
     // hold, so the packing modes stream: each entry is spilled to scratch and
     // the writer pulls it back while laying out the cylinder groups.
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams: end-pack and carve-hole order their entries from
+    // scratch inside the rebuilder, so none of them has to fall back to the
+    // buffered path that a volume past two gigabytes cannot use.
+    {
       UfsWriter? writer = null;
       Stream? target = null;
       var spill = new List<string>();
@@ -325,18 +328,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         foreach (var path in spill)
           try { File.Delete(path); } catch { /* scratch file already gone */ }
       }
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: ReadRebuildEntries,
-      buildImage: files => {
-        var w = new UfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
   }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadRebuildEntries(Stream stream) {

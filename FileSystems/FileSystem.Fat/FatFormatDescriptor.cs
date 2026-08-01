@@ -421,20 +421,14 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         // FAT's writer is always start-packed; both modes converge to the same layout.
         var w = new FatWriter();
         foreach (var (name, data) in files) w.AddFile(name, data);
-        var rebuilt = w.Build(totalSectors: totalSectors);
-        archive.Position = 0;
-        archive.Write(rebuilt);
-        archive.SetLength(rebuilt.Length);
+        WriteVolume(archive, w, totalSectors);
         break;
       }
       case DefragMode.ConsolidateAtEnd: {
         var w = new FatWriter();
         foreach (var (name, data) in files.OrderByDescending(f => f.Data.Length))
           w.AddFile(name, data);
-        var rebuilt = w.Build(totalSectors: totalSectors);
-        archive.Position = 0;
-        archive.Write(rebuilt);
-        archive.SetLength(rebuilt.Length);
+        WriteVolume(archive, w, totalSectors);
         break;
       }
       case DefragMode.CarveHole: {
@@ -448,15 +442,24 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         // Pack at start; trailing free space then includes the requested hole.
         var w = new FatWriter();
         foreach (var (name, data) in files) w.AddFile(name, data);
-        var rebuilt = w.Build(totalSectors: totalSectors);
-        archive.Position = 0;
-        archive.Write(rebuilt);
-        archive.SetLength(rebuilt.Length);
+        WriteVolume(archive, w, totalSectors);
         break;
       }
       default:
         throw new NotSupportedException($"Unsupported defrag mode: {options.Mode}");
     }
+  }
+
+  /// <summary>
+  /// Writes a freshly laid-out volume over <paramref name="archive" />. The
+  /// build goes straight to the stream: a byte[] cannot hold more than two
+  /// gigabytes, so building the image in memory first made this fallback throw
+  /// on exactly the volumes that most need it.
+  /// </summary>
+  private static void WriteVolume(Stream archive, FatWriter writer, int totalSectors) {
+    archive.Position = 0;
+    archive.SetLength(0);
+    writer.BuildTo(archive, totalSectors: totalSectors);
   }
 
   public string Id => "Fat";

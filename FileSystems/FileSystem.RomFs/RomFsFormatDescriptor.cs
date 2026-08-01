@@ -126,7 +126,7 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
           var r = new RomFsReader(stream);
           return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
         },
-        buildImage: BuildImage);
+        buildImage: BuildImage, largeVolumeCreator: this);
     }
   }
 
@@ -141,7 +141,7 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         var r = new RomFsReader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
       },
-      buildImage: BuildImage);
+      buildImage: BuildImage, largeVolumeCreator: this);
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
@@ -167,8 +167,10 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
     // An image too large to materialise goes through the streaming rebuilder;
     // BuildImage assembles the whole thing in a MemoryStream.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       RomFsWriter? streamWriter = null;
       DefragRebuilder.RebuildStreaming(archive, options,
         readEntries: stream => {

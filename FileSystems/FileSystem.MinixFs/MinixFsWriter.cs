@@ -170,7 +170,14 @@ public sealed class MinixFsWriter : IDisposable {
 
     var totalZones = firstdatazone + dataZonesNeeded;
     var totalBlocks = totalZones; // zones == blocks for log_zone_size=0
-    var diskSize = totalBlocks * BlockSize;
+    // The image is built in memory, so a payload past what an array can hold
+    // has to be refused here. Multiplying it out instead produced an
+    // arithmetic overflow that said nothing about the volume's capacity.
+    var diskSize = (long)totalBlocks * BlockSize;
+    if (diskSize > System.Array.MaxLength)
+      throw new InvalidOperationException(
+        $"Minix: the payload needs {totalBlocks:N0} blocks ({diskSize:N0} bytes), more than " +
+        $"the {System.Array.MaxLength:N0} bytes this writer lays out in memory.");
     var disk = new byte[diskSize];
 
     // --- Bitmap / inode-table offsets ---

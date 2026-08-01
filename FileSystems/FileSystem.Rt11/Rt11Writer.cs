@@ -72,7 +72,7 @@ public sealed class Rt11Writer {
 
     if (nextFileBlock > Rt11Layout.ImageBlocks)
       throw new ArgumentException(
-        $"RT-11: total data ({(nextFileBlock - dataStartBlock) * Rt11Layout.BlockSize} bytes) exceeds RX01 capacity.", nameof(files));
+        $"RT-11: total data ({(long)(nextFileBlock - dataStartBlock) * Rt11Layout.BlockSize:N0} bytes) exceeds the RX01 capacity of {(long)Rt11Layout.ImageBlocks * Rt11Layout.BlockSize:N0} bytes.", nameof(files));
 
     // Today's RT-11 date.
     var today = DateTime.Today;

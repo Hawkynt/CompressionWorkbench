@@ -170,7 +170,7 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) =>
     Hammer2InPlaceModifier.Add(archive, inputs,
-      (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+      (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   /// <summary>
   /// Genuine in-place (copy-on-write) removal of files from the labelled PFS
@@ -179,7 +179,7 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) =>
     Hammer2InPlaceModifier.Remove(archive, entryNames,
-      (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+      (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   // Rebuild-fallback delegates: read every file the reader can surface, and
   // re-emit a fresh image from a file list via the writer.

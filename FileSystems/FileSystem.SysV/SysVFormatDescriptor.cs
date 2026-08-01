@@ -183,24 +183,24 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       RebuildRemove(archive, rebuildList.ToArray());
   }
 
-  private static void RebuildAdd(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  private void RebuildAdd(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     archive.Position = 0;
     ModifyRebuilder.Add(archive, inputs,
       readEntries: stream => {
         var r = new SysVReader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
       },
-      buildImage: BuildImage);
+      buildImage: BuildImage, largeVolumeCreator: this);
   }
 
-  private static void RebuildRemove(Stream archive, string[] entryNames) {
+  private void RebuildRemove(Stream archive, string[] entryNames) {
     archive.Position = 0;
     ModifyRebuilder.Remove(archive, entryNames,
       readEntries: stream => {
         var r = new SysVReader(stream);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
       },
-      buildImage: BuildImage);
+      buildImage: BuildImage, largeVolumeCreator: this);
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {

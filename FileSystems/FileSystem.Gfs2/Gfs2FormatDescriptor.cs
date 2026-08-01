@@ -252,7 +252,10 @@ public sealed class Gfs2FormatDescriptor
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams: end-pack and carve-hole order their entries from
+    // scratch inside the rebuilder, so none of them has to fall back to the
+    // buffered path that a volume past two gigabytes cannot use.
+    {
       Gfs2Writer? writer = null;
       Stream? target = null;
       var spill = new List<(string Name, string Path, long Size)>();
@@ -279,11 +282,7 @@ public sealed class Gfs2FormatDescriptor
               try { File.Delete(path); } catch { /* scratch file already gone */ }
           }
         });
-      return;
     }
-
-    throw new NotSupportedException(
-      $"GFS2 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
   }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {

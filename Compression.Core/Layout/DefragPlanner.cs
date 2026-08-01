@@ -76,7 +76,51 @@ public static class DefragPlanner {
     long holeSize = 0,
     long holeAt = -1,
     MetadataZone metadataZone = MetadataZone.Unchanged,
-    LayoutTemplate? layoutTemplate = null) {
+    LayoutTemplate? layoutTemplate = null)
+    => Validate(PlanCore(extents, dataOrigin, imageSize, clusterSize, profile, mode,
+      interleaveStride, holeSize, holeAt, metadataZone, layoutTemplate), imageSize);
+
+  /// <summary>
+  /// Checks that a plan can be executed without destroying data: every move has
+  /// to land inside the image, and no two destinations may overlap. A plan that
+  /// breaks either rule is refused rather than run — the caller falls back to a
+  /// rebuild. Silently executing one wrote files on top of each other and left
+  /// them the right length with the wrong bytes.
+  /// </summary>
+  private static IReadOnlyList<ClusterMove> Validate(IReadOnlyList<ClusterMove> moves, long imageSize) {
+    if (moves.Count == 0) return moves;
+
+    var occupied = new List<(long Start, long End)>();
+    foreach (var move in moves) {
+      if (move.DstOffset < 0 || move.Length <= 0 || move.DstOffset + move.Length > imageSize)
+        throw new InvalidOperationException(
+          $"Defragmentation plan places {move.Length:N0} bytes of '{move.FileName}' at " +
+          $"{move.DstOffset:N0}, which does not fit inside the {imageSize:N0}-byte image.");
+
+      var start = move.DstOffset;
+      var end = move.DstOffset + move.Length;
+      foreach (var (otherStart, otherEnd) in occupied)
+        if (start < otherEnd && otherStart < end)
+          throw new InvalidOperationException(
+            $"Defragmentation plan writes '{move.FileName}' to {start:N0}..{end:N0}, " +
+            "which another move already claims.");
+      occupied.Add((start, end));
+    }
+    return moves;
+  }
+
+  private static IReadOnlyList<ClusterMove> PlanCore(
+    IReadOnlyList<DefragBlockInfo> extents,
+    long dataOrigin,
+    long imageSize,
+    int clusterSize,
+    LayoutProfile profile,
+    DefragMode mode,
+    int interleaveStride,
+    long holeSize,
+    long holeAt,
+    MetadataZone metadataZone,
+    LayoutTemplate? layoutTemplate) {
     ArgumentNullException.ThrowIfNull(extents);
     if (clusterSize <= 0) throw new ArgumentOutOfRangeException(nameof(clusterSize));
     if (interleaveStride < 1 || interleaveStride > 256)

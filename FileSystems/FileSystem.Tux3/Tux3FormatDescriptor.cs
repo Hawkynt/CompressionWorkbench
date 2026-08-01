@@ -159,11 +159,11 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
     => Tux3InPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   public void Remove(Stream archive, string[] entryNames)
     => Tux3InPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   // ── Shared rebuild delegates (real WORM-table records only) ─────────────
 

@@ -141,8 +141,10 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     // A container too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole thing.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       VdfsWriter? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,
@@ -153,12 +155,7 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         writeEntry: (name, data) => streamWriter!.AddStreamingFile(
           name, data.LongLength, () => new MemoryStream(data, writable: false)),
         finishWrite: () => streamWriter!.WriteTo(target!));
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: ReadEntries,
-      buildImage: BuildImage);
   }
 
   /// <summary>Largest container a defrag will rebuild through a byte[].</summary>

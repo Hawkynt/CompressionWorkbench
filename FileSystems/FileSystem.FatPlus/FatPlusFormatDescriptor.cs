@@ -282,8 +282,10 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // A volume too large to materialise goes through the streaming rebuilder: the
     // buffered path's buildImage callback returns a byte[] of the whole image, which
     // caps FAT+ at the ~2 GB array limit.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       FatPlusWriter? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(

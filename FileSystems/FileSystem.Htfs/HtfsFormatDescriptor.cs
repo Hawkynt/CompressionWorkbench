@@ -123,11 +123,11 @@ public sealed class HtfsFormatDescriptor :
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
     => HtfsInPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   public void Remove(Stream archive, string[] entryNames)
     => HtfsInPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
@@ -139,8 +139,10 @@ public sealed class HtfsFormatDescriptor :
     // A volume too large to materialise goes through the streaming rebuilder;
     // the buffered path's buildImage returns a byte[] of the whole image, which
     // the writer refuses to produce once it passes the array limit.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
       HtfsWriter? streamWriter = null;
       Stream? target = null;
       DefragRebuilder.RebuildStreaming(archive, options,
@@ -154,10 +156,7 @@ public sealed class HtfsFormatDescriptor :
         writeEntry: (name, data) => streamWriter!.AddStreamingFile(
           name, data.LongLength, () => new MemoryStream(data, writable: false)),
         finishWrite: () => streamWriter!.WriteTo(target!));
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
   }
 
   /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>

@@ -204,11 +204,11 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
     => AdvFsInPlaceModifier.Add(archive, inputs,
-        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   public void Remove(Stream archive, string[] entryNames)
     => AdvFsInPlaceModifier.Remove(archive, entryNames,
-        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
@@ -220,8 +220,10 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // A domain too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole image, and ReadEntries buffers
     // the source, both of which stop at the array limit.
-    if (archive.CanSeek && archive.Length > FullReadCapBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+    // Every mode streams above the cap: end-pack and carve-hole order their
+    // entries from scratch inside the rebuilder, so none of them falls back
+    // to a buffered rebuild the volume is too large for.
+    if (archive.CanSeek && archive.Length > FullReadCapBytes) {
       AdvFsWriter? streamWriter = null;
       DefragRebuilder.RebuildStreaming(archive, options,
         readEntries: stream => {
@@ -235,10 +237,7 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         writeEntry: (name, data) => streamWriter!.AddStreamingFile(
           name, data.LongLength, () => new MemoryStream(data, writable: false)),
         finishWrite: () => { streamWriter!.Finish(); streamWriter.Dispose(); });
-      return;
     }
-
-    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
   }
 
   // ── Shared rebuild delegates ────────────────────────────────────────
