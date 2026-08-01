@@ -220,6 +220,24 @@ public sealed class Pc98FormatDescriptor :
 
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
+
+    // Past its IPL block a PC-98 volume is an ordinary FAT layout, so moving
+    // what is out of place is a chain rewrite and one write into a directory
+    // entry — cheaper than laying the whole volume down again. What the planner
+    // will not commit to falls through to the rebuild below.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch (Exception planFailure) {
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          "fallback", 0, -1, -1, archive.Length, null,
+          $"In-place planning declined ({planFailure.GetType().Name}: " +
+          $"{PlannerFallbackLine(planFailure.Message)}); rebuilding instead"));
+        archive.Position = 0;
+      }
+    }
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         using var r = new Pc98Reader(stream);
@@ -274,4 +292,56 @@ public sealed class Pc98FormatDescriptor :
     var extents = Pc98ExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, sizeLookup);
   }
+
+  /// <summary>
+  /// Moves only the files that are out of place, relinking each chain and
+  /// repointing its directory entry as the clusters arrive.
+  /// </summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Pc98BlockMover();
+    mover.Init(archive);
+
+    var extents = Pc98ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // A file in more than one piece needs its whole chain restated, which this
+    // pass cannot do; those volumes are rebuilt instead.
+    var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var extent in extents) {
+      if (extent.Kind != DefragBlockKind.Used || extent.FileName is not { } owner) continue;
+      runsPerOwner.TryGetValue(owner, out var count);
+      runsPerOwner[owner] = count + 1;
+    }
+    var fragmented = runsPerOwner.Count(kv => kv.Value > 1);
+    if (fragmented > 0)
+      throw new NotSupportedException(
+        $"PC-98: {fragmented} file(s) are in more than one piece; rebuild the volume instead.");
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.ClusterSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = Pc98ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>The first line of a message, for a one-line progress note.</summary>
+  private static string PlannerFallbackLine(string message) {
+    var end = message.IndexOf('\n');
+    return end < 0 ? message : message[..end].TrimEnd('\r');
+  }
+
 }
