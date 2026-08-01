@@ -35,6 +35,20 @@ public interface IFilesystemBlockMover {
   void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length);
 
   /// <summary>
+  /// Size of one allocation unit — a cluster, a block — in bytes, or zero when
+  /// the mover does not say.
+  /// </summary>
+  /// <remarks>
+  /// <see cref="UpdateAllocationScattered" /> is documented as taking one entry
+  /// per allocation block, and a caller that does not know the size can only
+  /// hand over one entry per contiguous run. A relink that reads those as
+  /// blocks writes a chain as long as the run count — a seventy-cluster file
+  /// arriving as one run became a one-cluster file. Stating the size lets the
+  /// caller expand runs into the blocks the contract promises.
+  /// </remarks>
+  int AllocationBlockSize => 0;
+
+  /// <summary>
   /// Whether this mover can relink an owner's <em>whole</em> allocation in one
   /// call. A fragmented file's runs have to become a single chain;
   /// <see cref="UpdateAllocationAfterMove" />, called once per run, can only

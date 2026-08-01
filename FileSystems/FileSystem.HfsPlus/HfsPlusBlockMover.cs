@@ -20,7 +20,7 @@ namespace FileSystem.HfsPlus;
 /// ~256 MB of cache RAM regardless of image size.
 /// </para>
 /// </summary>
-public sealed class HfsPlusBlockMover : IFilesystemBlockMover {
+public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetadataMover {
   private const int VolumeHeaderOffset = 1024;
   private const int VolumeHeaderSize = 512;
   private const ushort HfsPlusSignature = 0x482B;
@@ -95,7 +95,10 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover {
     var oldBlock = (uint)(oldOffset / _blockSize);
     var newBlock = (uint)(newOffset / _blockSize);
     var blockCount = (int)((length + _blockSize - 1) / _blockSize);
-    var bitmapBase = (long)_blockSize; // allocation bitmap at block 1
+    // The bitmap lives wherever the allocation fork says it does. Assuming
+    // block 1 was right only for volumes this repository had laid out itself,
+    // and became wrong the moment the allocation file was relocated.
+    var bitmapBase = AllocationFileOffset(image);
 
     using var cache = new SectorCache(image);
 
@@ -126,6 +129,105 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover {
       image.Write(vh);
       image.Flush();
     }
+  }
+
+  // ── IFilesystemMetadataMover ──────────────────────────────────────────
+
+  /// <summary>Where each relocatable fork's descriptor sits in the volume header.</summary>
+  private static readonly Dictionary<string, int> ForkOffsets =
+    new(StringComparer.OrdinalIgnoreCase) {
+      ["HFS+ allocation file"] = 112,
+      ["HFS+ catalog file"] = 272,
+    };
+
+  /// <summary>
+  /// The allocation file and the catalog file. Both are ordinary forks whose
+  /// extents the volume header records, which is the whole of what says where
+  /// they are — so writing a new start block moves them. The boot region and the
+  /// volume header itself are pinned: the header is at a fixed offset by
+  /// definition, and it is what everything else is found through.
+  /// </summary>
+  public IReadOnlySet<string> RelocatableMetadata { get; } =
+    ForkOffsets.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+  /// <inheritdoc />
+  public void UpdateMetadataAfterMove(Stream image, string metadataName,
+      long oldOffset, long newOffset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(metadataName);
+    if (!ForkOffsets.TryGetValue(metadataName, out var forkOffset))
+      throw new NotSupportedException(
+        $"HFS+: '{metadataName}' is not a fork this volume can be repointed at.");
+
+    if (_blockSize == 0) Init(image);
+
+    var oldBlock = (uint)(oldOffset / _blockSize);
+    var newBlock = (uint)(newOffset / _blockSize);
+    var blockCount = (int)((length + _blockSize - 1) / _blockSize);
+    if (blockCount <= 0 || oldBlock == newBlock) return;
+
+    // The fork's first extent is the whole of it here: the planner only offers
+    // a structure that arrives as a single run.
+    Span<byte> field = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32BigEndian(field, newBlock);
+    image.Position = VolumeHeaderOffset + forkOffset + 16;
+    image.Write(field);
+    image.Flush();
+
+    if (string.Equals(metadataName, "HFS+ catalog file", StringComparison.OrdinalIgnoreCase))
+      _catalogStartBlock = newBlock;
+
+    // Now that the header points at the new home, the bitmap is read and
+    // written through it — which matters when the bitmap is what moved.
+    var bitmapBase = AllocationFileOffset(image);
+    for (var i = 0; i < blockCount; i++)
+      SetBitmapBitStream(image, bitmapBase, newBlock + (uint)i);
+    image.Flush();
+
+    for (var i = 0; i < blockCount; i++) {
+      var releasing = (long)(oldBlock + (uint)i) * _blockSize;
+      if (IsLive(releasing, _blockSize, liveRanges)) continue;
+      ClearBitmapBitStream(image, bitmapBase, oldBlock + (uint)i);
+    }
+    image.Flush();
+
+    MirrorAlternateVolumeHeader(image);
+  }
+
+  /// <summary>Byte offset of the allocation file, as the volume header records it.</summary>
+  private long AllocationFileOffset(Stream image) {
+    Span<byte> field = stackalloc byte[4];
+    image.Position = VolumeHeaderOffset + 112 + 16;
+    image.ReadExactly(field);
+    var startBlock = BinaryPrimitives.ReadUInt32BigEndian(field);
+    return (long)startBlock * _blockSize;
+  }
+
+  /// <summary>
+  /// Copies the volume header over the alternate one HFS+ keeps in the
+  /// second-to-last sector. A driver reads whichever it finds intact, so
+  /// leaving the copy naming the old positions would make the volume read two
+  /// different ways.
+  /// </summary>
+  private void MirrorAlternateVolumeHeader(Stream image) {
+    if (image.Length < 1024) return;
+    Span<byte> vh = stackalloc byte[VolumeHeaderSize];
+    image.Position = VolumeHeaderOffset;
+    image.ReadExactly(vh);
+    image.Position = image.Length - 1024;
+    image.Write(vh);
+    image.Flush();
+  }
+
+  /// <summary>Whether any live range covers part of this block.</summary>
+  private static bool IsLive(long offset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges) {
+    if (liveRanges == null) return false;
+    foreach (var (start, len) in liveRanges)
+      if (offset < start + len && start < offset + length)
+        return true;
+    return false;
   }
 
   // ── Stream-based bitmap RMW ────────────────────────────────────────────

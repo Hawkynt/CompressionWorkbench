@@ -1042,7 +1042,7 @@ public static class DefragPlanner {
     // pipeline below.
     if (zone == MetadataZone.BeforeContent)
       return PlanBeforeContent(metadataExtents, dirByFile, dirSizes, dataByFile, dataSizes,
-        dataOrigin, imageSize, clusterSize, freeRegions, mode);
+        dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode);
 
     var layoutOrder = new List<(string Name, List<DefragBlockInfo> Extents, long Size)>();
     switch (zone) {
@@ -1117,6 +1117,7 @@ public static class DefragPlanner {
     Dictionary<string, long> dataSizes,
     long dataOrigin, long imageSize, int clusterSize,
     List<(long Offset, long Length)> freeRegions,
+    IReadOnlyList<(long Start, long End)> forbidden,
     DefragMode mode) {
 
     // Build parent→children mapping. A file's parent is determined by
@@ -1146,46 +1147,30 @@ public static class DefragPlanner {
     var cursor = dataOrigin;   // already the first cluster boundary by definition
     var moves = new List<ClusterMove>();
 
+    // Every placement steps over the regions nothing may be written on. This
+    // loop used to walk a plain cursor: on a volume whose immovable structures
+    // sit inside the data area — an exFAT root directory does — the first file
+    // was laid straight over the directory that lists it, and the volume came
+    // back holding no files at all.
+    void Place(string owner, List<DefragBlockInfo> extents, long size) {
+      var slot = FindNextSlot(cursor, AlignUp(size, clusterSize), imageSize, dataOrigin,
+        clusterSize, forbidden);
+      if (slot < 0) return;
+      EmitFileMoves(moves, extents, slot, size, owner, clusterSize, dataOrigin);
+      cursor = AlignUpFrom(slot + size, dataOrigin, clusterSize);
+    }
+
     // Lay out each directory followed by its children.
     foreach (var dirName in dirByFile.Keys.OrderByDescending(n => dirSizes[n])) {
-      var dirExtents = dirByFile[dirName];
-      var dirSize = dirSizes[dirName];
-
-      // Place the directory extents.
-      var target = cursor;
-      foreach (var ext in dirExtents) {
-        if (ext.Offset != target)
-          moves.Add(new ClusterMove(ext.Offset, target, ext.Length, dirName));
-        target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
-      }
-      cursor = AlignUpFrom(cursor + dirSize, dataOrigin, clusterSize);
-
-      // Place the children immediately after.
-      foreach (var childName in childrenOf[dirName].OrderByDescending(n => dataSizes[n])) {
-        var childExtents = dataByFile[childName];
-        var childSize = dataSizes[childName];
-        target = cursor;
-        foreach (var ext in childExtents) {
-          if (ext.Offset != target)
-            moves.Add(new ClusterMove(ext.Offset, target, ext.Length, childName));
-          target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
-        }
-        cursor = AlignUpFrom(cursor + childSize, dataOrigin, clusterSize);
-      }
+      Place(dirName, dirByFile[dirName], dirSizes[dirName]);
+      foreach (var childName in childrenOf[dirName].OrderByDescending(n => dataSizes[n]))
+        Place(childName, dataByFile[childName], dataSizes[childName]);
     }
 
     // Place unassigned files (those without a parent directory in the extent map).
     foreach (var fileName in dataByFile.Keys.OrderByDescending(n => dataSizes[n])) {
       if (assignedFiles.Contains(fileName)) continue;
-      var extents = dataByFile[fileName];
-      var size = dataSizes[fileName];
-      var target = cursor;
-      foreach (var ext in extents) {
-        if (ext.Offset != target)
-          moves.Add(new ClusterMove(ext.Offset, target, ext.Length, fileName));
-        target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
-      }
-      cursor = AlignUpFrom(cursor + size, dataOrigin, clusterSize);
+      Place(fileName, dataByFile[fileName], dataSizes[fileName]);
     }
 
     // ConsolidateAtEnd: the layout above was built starting at `dataOrigin`.
@@ -1194,35 +1179,24 @@ public static class DefragPlanner {
     // is preserved; only the base address shifts. Without this step,
     // BeforeContent silently ignored ConsolidateAtEnd and always packed
     // toward the start of the image.
+    // End-packing shifts the whole sequence towards the tail. The same slot
+    // search is used so the shifted layout steps over the immovable regions
+    // too, rather than being recomputed with a plain cursor.
     if (mode == DefragMode.ConsolidateAtEnd) {
-      var packedEnd = cursor;
+      var packedBytes = cursor - dataOrigin;
       var ceiling = AlignDownFrom(imageSize, dataOrigin, clusterSize);
-      var packedStart = AlignUp(dataOrigin, clusterSize);
-      var shift = ceiling - packedEnd;
-      if (shift > 0) {
+      var start = AlignUpFrom(ceiling - packedBytes, dataOrigin, clusterSize);
+      if (start > dataOrigin) {
         moves.Clear();
-        var emitCursor = packedStart + shift;
+        cursor = start;
         foreach (var dirName in dirByFile.Keys.OrderByDescending(n => dirSizes[n])) {
-          foreach (var ext in dirByFile[dirName]) {
-            if (ext.Offset != emitCursor)
-              moves.Add(new ClusterMove(ext.Offset, emitCursor, ext.Length, dirName));
-            emitCursor = AlignUp(emitCursor + ext.Length, clusterSize);
-          }
-          foreach (var childName in childrenOf[dirName].OrderByDescending(n => dataSizes[n])) {
-            foreach (var ext in dataByFile[childName]) {
-              if (ext.Offset != emitCursor)
-                moves.Add(new ClusterMove(ext.Offset, emitCursor, ext.Length, childName));
-              emitCursor = AlignUp(emitCursor + ext.Length, clusterSize);
-            }
-          }
+          Place(dirName, dirByFile[dirName], dirSizes[dirName]);
+          foreach (var childName in childrenOf[dirName].OrderByDescending(n => dataSizes[n]))
+            Place(childName, dataByFile[childName], dataSizes[childName]);
         }
         foreach (var fileName in dataByFile.Keys.OrderByDescending(n => dataSizes[n])) {
           if (assignedFiles.Contains(fileName)) continue;
-          foreach (var ext in dataByFile[fileName]) {
-            if (ext.Offset != emitCursor)
-              moves.Add(new ClusterMove(ext.Offset, emitCursor, ext.Length, fileName));
-            emitCursor = AlignUp(emitCursor + ext.Length, clusterSize);
-          }
+          Place(fileName, dataByFile[fileName], dataSizes[fileName]);
         }
       }
     }

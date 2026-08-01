@@ -77,7 +77,9 @@ public static class DefragPlannerExecutor {
     var fileMoves = metadataNames.Count == 0
       ? moves
       : moves.Where(m => !IsMetadata(m.FileName)).ToList();
-    var relink = mover.SupportsScatteredRelink ? new ChainTracker(fileMoves) : null;
+    var relink = mover.SupportsScatteredRelink
+      ? new ChainTracker(fileMoves, mover.AllocationBlockSize)
+      : null;
 
     for (var i = 0; i < moves.Count; i++) {
       var move = moves[i];
@@ -127,29 +129,35 @@ public static class DefragPlannerExecutor {
     private readonly Dictionary<string, List<long>> _originalByOwner = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<long, long> _finalOf = [];
 
-    public ChainTracker(IReadOnlyList<ClusterMove> moves) {
-      // Block size is not known here, so a move is tracked as a whole run: the
-      // planner emits one move per contiguous run, and a run's blocks stay
-      // contiguous and in order wherever it lands.
+    public ChainTracker(IReadOnlyList<ClusterMove> moves, int blockSize) {
+      // One ordered pass. A block is recorded as one of its owner's originals
+      // the first time it is seen at a source nothing has written to; after
+      // that it is only ever followed. Registering sources in a separate pass
+      // counted a staged move's second leg as fresh blocks, so an owner that
+      // had been lifted out of the way was relinked with its allocation listed
+      // twice — the chain came out double the length the file needed.
       var occupant = new Dictionary<long, long>();
+
       foreach (var move in moves) {
         if (!this._originalByOwner.TryGetValue(move.FileName, out var list))
           this._originalByOwner[move.FileName] = list = [];
-        if (!occupant.ContainsKey(move.SrcOffset)) {
-          occupant[move.SrcOffset] = move.SrcOffset;
-          this._finalOf[move.SrcOffset] = move.SrcOffset;
-          list.Add(move.SrcOffset);
-        }
-      }
 
-      foreach (var move in moves) {
-        if (!occupant.TryGetValue(move.SrcOffset, out var origin)) {
-          occupant[move.DstOffset] = move.DstOffset;
-          continue;
+        var step = blockSize > 0 ? blockSize : move.Length;
+        for (var at = 0L; at < move.Length; at += step) {
+          var from = move.SrcOffset + at;
+          var to = move.DstOffset + at;
+
+          if (!occupant.TryGetValue(from, out var origin)) {
+            origin = from;
+            occupant[from] = from;
+            this._finalOf[from] = from;
+            list.Add(from);
+          }
+
+          occupant[to] = origin;
+          this._finalOf[origin] = to;
+          if (from != to) occupant.Remove(from);
         }
-        occupant[move.DstOffset] = origin;
-        this._finalOf[origin] = move.DstOffset;
-        if (move.SrcOffset != move.DstOffset) occupant.Remove(move.SrcOffset);
       }
 
       this.BlocksInUseAfterMoves = this._finalOf.Values.ToHashSet();

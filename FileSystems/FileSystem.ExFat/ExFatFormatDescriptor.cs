@@ -159,14 +159,19 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var volumeSize = Math.Min(mover.VolumeSize, archive.Length);
     options.OnProgress?.Invoke(new DefragProgressEvent("scanning", 0, 0, -1, volumeSize, extents, "Analysing layout"));
 
-    var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, volumeSize, mover.ClusterSize, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    // The allocation bitmap and up-case table are files with a directory entry
+    // apiece, so a metadata placement can move them where it wants.
+    var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, volumeSize, mover.ClusterSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement, movableMetadata: mover.RelocatableMetadata);
     if (moves.Count == 0) {
       options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, volumeSize, extents, "Already defragmented"));
       return;
     }
 
     // VBR doesn't change during defrag — no per-move re-init needed.
-    DefragPlannerExecutor.Execute(archive, options, mover, moves, volumeSize, reinitAfterMove: null);
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, volumeSize,
+      reinitAfterMove: null, metadataMover: mover);
 
     options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, volumeSize, null, "Defragmentation complete"));
   }

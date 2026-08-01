@@ -19,7 +19,7 @@ namespace FileSystem.ExFat;
 /// <see cref="SectorCache"/> with a bounded ~256 MB memory cap.
 /// </para>
 /// </summary>
-public sealed class ExFatBlockMover : IFilesystemBlockMover {
+public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMover {
   private int _bytesPerSector;
   private int _sectorsPerCluster;
   private int _clusterSize;
@@ -125,6 +125,215 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover {
       UpdatePercentInUseStream(image, bmpOffset);
       image.Flush();
     }
+  }
+
+  // ── IFilesystemMetadataMover ──────────────────────────────────────────
+
+  /// <summary>Directory-entry type of the allocation bitmap.</summary>
+  private const byte BitmapEntryType = 0x81;
+
+  /// <summary>Directory-entry type of the up-case table.</summary>
+  private const byte UpcaseEntryType = 0x82;
+
+  /// <summary>
+  /// The allocation bitmap and the up-case table. exFAT keeps both as ordinary
+  /// files: each has a directory entry in the root recording its first cluster,
+  /// which is the whole of what says where it is. The FAT and the boot region
+  /// are pinned — their positions are fields in the boot sector, and rewriting
+  /// those means recomputing the boot checksum sector as well, which is a
+  /// different operation from repointing a file. The root directory is pinned
+  /// for the same reason.
+  /// </summary>
+  public IReadOnlySet<string> RelocatableMetadata { get; } =
+    new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "<bitmap>", "<upcase>" };
+
+  /// <inheritdoc />
+  public void UpdateMetadataAfterMove(Stream image, string metadataName,
+      long oldOffset, long newOffset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(metadataName);
+
+    var entryType = metadataName switch {
+      "<bitmap>" => BitmapEntryType,
+      "<upcase>" => UpcaseEntryType,
+      _ => throw new NotSupportedException(
+        $"exFAT: '{metadataName}' is not a structure this volume can be repointed at."),
+    };
+
+    var clusterCount = (int)((length + _clusterSize - 1) / _clusterSize);
+    var oldFirstCluster = OffsetToCluster(oldOffset);
+    var newFirstCluster = OffsetToCluster(newOffset);
+    if (clusterCount <= 0 || oldFirstCluster == newFirstCluster) return;
+
+    using var cache = new SectorCache(image);
+
+    // The new chain first: nothing reads it until the entry names it.
+    for (var i = 0; i < clusterCount; i++) {
+      var next = i + 1 < clusterCount ? newFirstCluster + (uint)(i + 1) : 0xFFFFFFFFu;
+      WriteFatStream(image, newFirstCluster + (uint)i, next);
+      cache.Invalidate(_fatOffset + (long)(newFirstCluster + i) * 4, 4);
+    }
+    image.Flush();
+
+    if (!PatchRootEntryFirstCluster(image, entryType, newFirstCluster))
+      throw new NotSupportedException(
+        $"exFAT: the root directory has no {metadataName} entry to repoint.");
+    image.Flush();
+    cache.InvalidateAll();
+
+    // The bitmap is read through its entry, so this now finds it at its new
+    // home — which is what makes moving the bitmap itself work.
+    var bitmapOffset = FindBitmapOffsetStream(image, cache);
+    if (bitmapOffset >= 0) {
+      for (var i = 0; i < clusterCount; i++)
+        SetBitmapBitStream(image, bitmapOffset, newFirstCluster + (uint)i);
+      image.Flush();
+
+      for (var i = 0; i < clusterCount; i++) {
+        var releasing = _clusterHeapOffset + (long)(oldFirstCluster + (uint)i - 2) * _clusterSize;
+        if (IsLive(releasing, _clusterSize, liveRanges)) continue;
+        ClearBitmapBitStream(image, bitmapOffset, oldFirstCluster + (uint)i);
+      }
+      image.Flush();
+      UpdatePercentInUseStream(image, bitmapOffset);
+      image.Flush();
+    }
+
+    // Only now is the old chain unreferenced — minus whatever moved onto it.
+    for (var i = 0; i < clusterCount; i++) {
+      var releasing = _clusterHeapOffset + (long)(oldFirstCluster + (uint)i - 2) * _clusterSize;
+      if (IsLive(releasing, _clusterSize, liveRanges)) continue;
+      WriteFatStream(image, oldFirstCluster + (uint)i, 0);
+    }
+    image.Flush();
+  }
+
+  /// <summary>
+  /// Writes a new first cluster into the root's bitmap or up-case entry. Both
+  /// are single 32-byte records carrying the cluster at offset 20 — unlike a
+  /// file, which spreads its name and stream across a set of entries.
+  /// </summary>
+  private bool PatchRootEntryFirstCluster(Stream image, byte entryType, uint newFirstCluster) {
+    using var cache = new SectorCache(image);
+    var cluster = _rootCluster;
+    var visited = new HashSet<uint>();
+    var entry = new byte[32];
+
+    while (cluster >= 2 && cluster != 0xFFFFFFFF && visited.Add(cluster)) {
+      var clusterOffset = _clusterHeapOffset + (long)(cluster - 2) * _clusterSize;
+      if (clusterOffset + _clusterSize > image.Length) return false;
+
+      for (var i = 0; i < _clusterSize; i += 32) {
+        image.Position = clusterOffset + i;
+        image.ReadExactly(entry);
+        if (entry[0] == 0x00) return false;          // end of directory
+        if (entry[0] != entryType) continue;
+
+        BinaryPrimitives.WriteUInt32LittleEndian(entry.AsSpan(20), newFirstCluster);
+        image.Position = clusterOffset + i;
+        image.Write(entry);
+        return true;
+      }
+
+      cluster = ReadFatStream(cache, _fatOffset, cluster);
+    }
+    return false;
+  }
+
+  /// <summary>Whether any live range covers part of this cluster.</summary>
+  private static bool IsLive(long offset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges) {
+    if (liveRanges == null) return false;
+    foreach (var (start, len) in liveRanges)
+      if (offset < start + len && start < offset + length)
+        return true;
+    return false;
+  }
+
+  // ── Scattered relink ──────────────────────────────────────────────────
+
+  /// <inheritdoc />
+  public int AllocationBlockSize => _clusterSize;
+
+  /// <inheritdoc />
+  public bool SupportsScatteredRelink => true;
+
+  /// <summary>
+  /// Rewrites one file's whole allocation in a single pass, after every byte
+  /// has moved.
+  /// </summary>
+  /// <remarks>
+  /// Relinking per move released each run's old clusters immediately, and one
+  /// file's old clusters are routinely where the next file has just landed — so
+  /// the second file's chain was cut and it read back as its first cluster
+  /// alone. Doing it once per file, with the set of clusters that are live after
+  /// the moves in hand, is what keeps a plan that shuffles files past each other
+  /// intact.
+  /// </remarks>
+  public void UpdateAllocationScattered(Stream image, string fileName,
+      IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets,
+      IReadOnlySet<long>? blocksLiveElsewhere) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(oldBlockOffsets);
+    ArgumentNullException.ThrowIfNull(newBlockOffsets);
+    if (newBlockOffsets.Count == 0 || oldBlockOffsets.Count != newBlockOffsets.Count) return;
+
+    var oldClusters = new uint[oldBlockOffsets.Count];
+    var newClusters = new uint[newBlockOffsets.Count];
+    for (var i = 0; i < oldClusters.Length; ++i) {
+      oldClusters[i] = OffsetToCluster(oldBlockOffsets[i]);
+      newClusters[i] = OffsetToCluster(newBlockOffsets[i]);
+    }
+    if (oldClusters[0] == newClusters[0] && oldClusters.SequenceEqual(newClusters)) return;
+
+    // The dirent carries a flag saying whether the file is contiguous, and the
+    // writer sets it. A relink that leaves a file scattered would have to clear
+    // it and prove the chain instead; until that is written, an owner that does
+    // not end up as one run is refused so the caller rebuilds the volume rather
+    // than committing a layout the entry no longer describes.
+    for (var i = 1; i < newClusters.Length; ++i)
+      if (newClusters[i] != newClusters[i - 1] + 1)
+        throw new NotSupportedException(
+          $"exFAT: '{fileName}' would end up in {newClusters.Length} scattered clusters, " +
+          "which its directory entry cannot describe; rebuild the volume instead.");
+
+    using var cache = new SectorCache(image);
+
+    // The new chain, in the file's own order.
+    for (var i = 0; i < newClusters.Length; ++i) {
+      var next = i + 1 < newClusters.Length ? newClusters[i + 1] : 0xFFFFFFFFu;
+      WriteFatStream(image, newClusters[i], next);
+      cache.Invalidate(_fatOffset + (long)newClusters[i] * 4, 4);
+    }
+    image.Flush();
+
+    PatchDirectoryEntriesStream(image, cache, fileName, oldClusters[0], newClusters[0]);
+    image.Flush();
+
+    // Old clusters are free again — except where this or another file now sits.
+    var claimed = new HashSet<uint>(newClusters);
+    for (var i = 0; i < oldClusters.Length; ++i) {
+      if (claimed.Contains(oldClusters[i])) continue;
+      if (blocksLiveElsewhere?.Contains(oldBlockOffsets[i]) == true) continue;
+      WriteFatStream(image, oldClusters[i], 0);
+      cache.Invalidate(_fatOffset + (long)oldClusters[i] * 4, 4);
+    }
+    image.Flush();
+
+    var bitmapOffset = FindBitmapOffsetStream(image, cache);
+    if (bitmapOffset < 0) return;
+
+    foreach (var cluster in newClusters)
+      SetBitmapBitStream(image, bitmapOffset, cluster);
+    for (var i = 0; i < oldClusters.Length; ++i) {
+      if (claimed.Contains(oldClusters[i])) continue;
+      if (blocksLiveElsewhere?.Contains(oldBlockOffsets[i]) == true) continue;
+      ClearBitmapBitStream(image, bitmapOffset, oldClusters[i]);
+    }
+    image.Flush();
+    UpdatePercentInUseStream(image, bitmapOffset);
+    image.Flush();
   }
 
   // ── Streaming FAT / bitmap helpers ─────────────────────────────────────
