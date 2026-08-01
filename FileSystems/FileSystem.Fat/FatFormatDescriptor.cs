@@ -221,7 +221,11 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       stride,
       options.HoleSize,
       options.HoleAt,
-      options.MetadataZonePlacement);
+      options.MetadataZonePlacement,
+      layoutTemplate: null,
+      // On FAT32 the root directory is an ordinary chain the BPB names, so a
+      // metadata placement can move it like any other owner.
+      movableMetadata: mover.RelocatableMetadata);
 
     if (moves.Count == 0) {
       // Already defragmented — emit complete event.
@@ -340,7 +344,33 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // Every cluster any owner ends up on. An owner's old clusters routinely
     // become another owner's new ones, so this is what keeps the per-owner
     // relink from freeing a chain that has just been written.
+    // A relocated structure is repointed rather than relinked: what names the
+    // FAT32 root is the BPB, not a directory entry, so it takes no part in the
+    // per-owner chain rebuild. Its first move's source and its last move's
+    // destination bracket the whole journey, staging hops included.
+    var relocatable = mover.RelocatableMetadata;
+    var metadataFrom = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+    var metadataTo = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+    var metadataLength = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+    foreach (var move in moves) {
+      if (!relocatable.Contains(move.FileName)) continue;
+      if (!metadataFrom.ContainsKey(move.FileName)) metadataFrom[move.FileName] = move.SrcOffset;
+      metadataTo[move.FileName] = move.DstOffset;
+      metadataLength[move.FileName] = move.Length;
+    }
+
+    // Every cluster any owner ends up on. An owner's old clusters routinely
+    // become another owner's new ones, so this is what keeps the per-owner
+    // relink from freeing a chain that has just been written.
     var clustersLiveAfterMove = new HashSet<int>();
+    // A relocated structure's new clusters are live for the same reason: they
+    // are usually where some file used to be, and freeing them would leave the
+    // root directory chained through a cluster marked free.
+    foreach (var (owner, target) in metadataTo) {
+      var blocks = (int)((metadataLength[owner] + mover.ClusterSize - 1) / mover.ClusterSize);
+      for (var b = 0; b < blocks; b++)
+        clustersLiveAfterMove.Add(mover.OffsetCluster(target + (long)b * mover.ClusterSize));
+    }
     foreach (var owner in orderedOwners)
       foreach (var ext in extentsByOwner[owner]) {
         var blocks = (int)((ext.Length + mover.ClusterSize - 1) / mover.ClusterSize);
@@ -389,6 +419,18 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // pointers of relocated subdirectories so the on-disk tree is consistent.
     if (dirStartRemap.Count > 0)
       mover.RepatchDotEntries(archive, dirStartRemap);
+
+    // The root's chain is written last: doing it before the per-owner relink
+    // meant the files' own relink freed the clusters the root had just been
+    // given, and the volume came back with its root chained through free space.
+    if (metadataFrom.Count > 0) {
+      var liveRanges = new List<(long Offset, long Length)>();
+      foreach (var cluster in clustersLiveAfterMove)
+        liveRanges.Add((mover.ClusterOffset(cluster), mover.ClusterSize));
+      foreach (var (owner, source) in metadataFrom)
+        mover.UpdateMetadataAfterMove(archive, owner, source, metadataTo[owner],
+          metadataLength[owner], liveRanges);
+    }
 
     // Emit complete event with post-defrag block map. Re-walk the archive
     // directly — no need to load it into memory.

@@ -16,7 +16,7 @@ namespace FileSystem.Fat;
 /// enumerates extents, feeds them to the planner, then applies each planned
 /// move via <see cref="MoveExtent"/> + <see cref="UpdateAllocationAfterMove"/>.</para>
 /// </summary>
-public sealed class FatBlockMover : IFilesystemBlockMover {
+public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMover {
   // BPB fields cached once per image
   private int _bytesPerSector;
   private int _sectorsPerCluster;
@@ -67,7 +67,15 @@ public sealed class FatBlockMover : IFilesystemBlockMover {
     _rootDirSectors = (_rootEntryCount * 32 + _bytesPerSector - 1) / _bytesPerSector;
     _firstDataSector = _reservedSectors + _fatCount * _fatSize + _rootDirSectors;
     _totalDataClusters = (_totalSectors - _firstDataSector) / _sectorsPerCluster;
-    _fatType = _totalDataClusters < 4085 ? 12 : _totalDataClusters < 65525 ? 16 : 32;
+    // FAT32 is the variant that keeps its FAT size in the 32-bit field and has
+    // no fixed root directory; the cluster count alone called a small volume
+    // formatted as FAT32 a FAT16 one, and the chain arithmetic then addressed
+    // the wrong entry width.
+    var isFat32ByBpb = fs16 == 0 && _rootEntryCount == 0;
+    _fatType = isFat32ByBpb ? 32
+      : _totalDataClusters < 4085 ? 12
+      : _totalDataClusters < 65525 ? 16
+      : 32;
     _clusterSize = _sectorsPerCluster * _bytesPerSector;
     _firstDataByte = (long)_firstDataSector * _bytesPerSector;
   }
@@ -86,43 +94,12 @@ public sealed class FatBlockMover : IFilesystemBlockMover {
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
-    var buffer = ArrayPool<byte>.Shared.Rent(Math.Min((int)Math.Min(length, 64 * 1024), int.MaxValue));
-    try {
-      var remaining = length;
-      var src = srcOffset;
-      var dst = dstOffset;
-      while (remaining > 0) {
-        var chunk = (int)Math.Min(remaining, buffer.Length);
-        image.Position = src;
-        image.ReadExactly(buffer, 0, chunk);
-        image.Position = dst;
-        image.Write(buffer, 0, chunk);
-        src += chunk;
-        dst += chunk;
-        remaining -= chunk;
-      }
-      // Flush so the data copy lands on disk before any metadata update reaches
-      // it. Without this barrier, the OS could reorder writes such that the new
-      // FAT entry referencing dst commits BEFORE the dst bytes themselves —
-      // crash-window where the file points at garbage.
-      image.Flush();
-
-      if (zeroSource) {
-        Array.Clear(buffer, 0, buffer.Length);
-        remaining = length;
-        src = srcOffset;
-        while (remaining > 0) {
-          var chunk = (int)Math.Min(remaining, buffer.Length);
-          image.Position = src;
-          image.Write(buffer, 0, chunk);
-          src += chunk;
-          remaining -= chunk;
-        }
-        image.Flush();
-      }
-    } finally {
-      ArrayPool<byte>.Shared.Return(buffer);
-    }
+    // Overlap-safe: a run shifted forward by less than its own length
+    // overwrites its own tail, and copying that front to back reads bytes
+    // the copy has already replaced.
+    Compression.Core.DiskImage.ExtentCopy.Move(image, srcOffset, dstOffset, length);
+    if (zeroSource)
+      Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, length);
   }
 
   /// <inheritdoc />
@@ -173,6 +150,84 @@ public sealed class FatBlockMover : IFilesystemBlockMover {
         WriteFatEntryStream(image, fatBase, oldFirstCluster + i, 0);
       image.Flush();
     }
+  }
+
+  // ── IFilesystemMetadataMover ──────────────────────────────────────────
+
+  /// <summary>The name the extent map gives the FAT32 root directory chain.</summary>
+  private const string Fat32RootDirectory = "FAT32 root directory";
+
+  /// <summary>
+  /// Nothing, for now. On FAT12 and FAT16 there is genuinely nothing to move:
+  /// the root lives in a fixed area between the FATs and the first data
+  /// cluster, sized at format time and named by nothing, and the FATs and boot
+  /// sector are pinned for the same reason. On FAT32 the root <em>is</em> an
+  /// ordinary chain the BPB names, and <see cref="UpdateMetadataAfterMove" />
+  /// repoints it correctly — but this descriptor relinks files in a second pass
+  /// that replays the moves to work out where each cluster ended up, and that
+  /// replay does not model a staged metadata hop. Offering the root while the
+  /// two disagree produces a volume that passes fsck with the wrong bytes in
+  /// its files, which is worse than leaving the root where it is.
+  /// </summary>
+  public IReadOnlySet<string> RelocatableMetadata { get; } =
+    new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+  /// <inheritdoc />
+  public void UpdateMetadataAfterMove(Stream image, string metadataName,
+      long oldOffset, long newOffset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (_fatType != 32 || !string.Equals(metadataName, Fat32RootDirectory, StringComparison.OrdinalIgnoreCase))
+      throw new NotSupportedException(
+        $"FAT: '{metadataName}' is not a structure this volume can be repointed at.");
+
+    var clusterCount = (int)((length + _clusterSize - 1) / _clusterSize);
+    var oldFirstCluster = OffsetToCluster(oldOffset);
+    var newFirstCluster = OffsetToCluster(newOffset);
+    if (clusterCount <= 0 || oldFirstCluster == newFirstCluster) return;
+
+    var fatStart = _reservedSectors * _bytesPerSector;
+
+    // The new chain first: until the BPB names it, nothing reads it, so a crash
+    // here costs only the clusters it claimed.
+    for (var fatIdx = 0; fatIdx < _fatCount; fatIdx++) {
+      var fatBase = fatStart + fatIdx * _fatSize * _bytesPerSector;
+      for (var i = 0; i < clusterCount; i++) {
+        var nextVal = i + 1 < clusterCount ? newFirstCluster + i + 1 : EocMarker();
+        WriteFatEntryStream(image, fatBase, newFirstCluster + i, nextVal);
+      }
+      image.Flush();
+    }
+
+    // BPB_RootClus at offset 44 is the whole of the root's identity on FAT32.
+    Span<byte> field = stackalloc byte[4];
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(field, (uint)newFirstCluster);
+    image.Position = 44;
+    image.Write(field);
+    image.Flush();
+
+    // Only now are the old clusters unreferenced — except the ones a file has
+    // moved onto in the meantime. Freeing those cut the file's chain, and it
+    // read back short with the volume still looking consistent.
+    for (var fatIdx = 0; fatIdx < _fatCount; fatIdx++) {
+      var fatBase = fatStart + fatIdx * _fatSize * _bytesPerSector;
+      for (var i = 0; i < clusterCount; i++) {
+        var clusterOffset = ClusterToOffset(oldFirstCluster + i);
+        if (IsLive(clusterOffset, _clusterSize, liveRanges)) continue;
+        WriteFatEntryStream(image, fatBase, oldFirstCluster + i, 0);
+      }
+      image.Flush();
+    }
+  }
+
+  /// <summary>Whether any live range covers part of this block.</summary>
+  private static bool IsLive(long offset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges) {
+    if (liveRanges == null) return false;
+    foreach (var (start, len) in liveRanges)
+      if (offset < start + len && start < offset + length)
+        return true;
+    return false;
   }
 
   // ── Stream-based FAT-entry helpers (targeted RMW) ──────────────────────

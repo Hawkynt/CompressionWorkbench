@@ -249,7 +249,13 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var cs = mover.ClusterSize;
     dataOrigin = (dataOrigin + cs - 1) / cs * cs;
 
-    var moves = DefragPlanner.Plan(extents, dataOrigin, archive.Length, mover.ClusterSize, options.Profile, options.Mode);
+    // The volume's own structures are offered to the planner as owners: their
+    // position is recorded in the boot sector or in their MFT record, both of
+    // which the mover rewrites. A layout that asks for metadata at the front
+    // can then actually move the MFT there instead of planning around it.
+    var moves = DefragPlanner.Plan(extents, dataOrigin, archive.Length, mover.ClusterSize,
+      options.Profile, options.Mode, metadataZone: options.MetadataZonePlacement,
+      movableMetadata: mover.RelocatableMetadata);
     if (moves.Count == 0) {
       options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
       return;
@@ -260,7 +266,7 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     DefragPlannerExecutor.Execute(archive, options, mover, moves, archive.Length, () => {
       archive.Position = 0;
       mover.Init(archive);
-    });
+    }, metadataMover: mover);
 
     archive.Position = 0;
     var postExtents = NtfsExtentMap.Enumerate(archive).ToList();

@@ -18,13 +18,14 @@ namespace FileSystem.SmartFs;
 ///   <item><description>Apache NuttX "SmartFS" documentation and SmartFS Design Document (NuttX project wiki)</description></item>
 /// </list>
 /// </summary>
-public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+    IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "SmartFs";
   public string DisplayName => "SmartFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".smartfs";
   public IReadOnlyList<string> Extensions => [".smartfs", ".smart"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -39,11 +40,11 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "SmartFS wear-levelled raw-flash filesystem (Apache NuttX) — format sector surface only. " +
-    "WORM write deferred — full SmartFS emission requires the per-sector logical-physical mapping " +
-    "table (CRC-protected 5-byte header per sector), wear-level sequence counters, directory " +
-    "sector chains with variable-length name entries, and free-sector allocator; no Windows/WSL " +
-    "validator exists outside the NuttX target, so an emitted image cannot be proved correct.";
+    "SmartFS wear-levelled raw-flash filesystem (Apache NuttX). Reads the format sector, walks " +
+    "the root directory and each file's sector chain, and writes a volume in the state mksmartfs " +
+    "leaves behind: logical sector N in physical sector N, sequence numbers at zero, free " +
+    "sectors erased. Wear-level rotation and CRC-protected sector headers are what a running " +
+    "NuttX target adds afterwards; neither is needed to read or lay out a volume.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SmartFsReader(stream);
@@ -60,9 +61,53 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     }
   }
 
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException("SmartFs read-only — defragmentation requires a writer.");
+  /// <summary>
+  /// Lays a fresh volume out holding the inputs. Sector size is the caller's
+  /// choice among the five SmartFS allows; the volume is sized to its contents
+  /// unless a larger one is asked for.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    options ??= new FormatCreateOptions();
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("SmartFs read-only — defragmentation requires a writer.");
+    var sectorSize = options.GetOptionInt("SectorSize", 1024);
+    var writer = new SmartFsWriter { SectorSize = sectorSize };
+    foreach (var (name, data) in FilesOnly(inputs))
+      writer.AddFile(Path.GetFileName(name), data);
+
+    output.Write(writer.Build());
+  }
+
+  /// <summary>
+  /// Rewrites the volume with every file's sectors consecutive. SmartFS chains
+  /// its sectors rather than requiring them to be adjacent, so the gain is
+  /// sequential reads rather than a structural repair — and the rebuild is what
+  /// produces it, since a fresh layout is contiguous by construction.
+  /// </summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new SmartFsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory && !IsSynthetic(e.Name))
+                        .Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new SmartFsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
+  }
+
+  /// <summary>
+  /// The entries the reader surfaces that are not files on the volume — the raw
+  /// image and the format-sector summary.
+  /// </summary>
+  private static bool IsSynthetic(string name)
+    => name is "FULL.smartfs" or "metadata.ini";
 }

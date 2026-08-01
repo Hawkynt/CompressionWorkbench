@@ -28,13 +28,29 @@ public static class DefragPlannerExecutor {
   /// <param name="reinitAfterMove">Optional callback invoked after each move so the
   /// caller can re-read image data and reinitialise the mover (required when the mover
   /// caches byte arrays). May be <c>null</c> if the mover reads directly from the stream.</param>
+  /// <param name="metadataMover">Optional relocator for the volume's own
+  /// structures. A move whose owner is one of its
+  /// <see cref="IFilesystemMetadataMover.RelocatableMetadata" /> is repointed
+  /// through it — the thing that locates an MFT or a bitmap is not a directory
+  /// entry, so the file relink cannot express it.</param>
   public static void Execute(
     Stream archive,
     DefragOptions options,
     IFilesystemBlockMover mover,
     IReadOnlyList<ClusterMove> moves,
     long imageSize,
-    Action? reinitAfterMove = null) {
+    Action? reinitAfterMove = null,
+    IFilesystemMetadataMover? metadataMover = null) {
+
+    var metadataNames = metadataMover?.RelocatableMetadata ?? (IReadOnlySet<string>)new HashSet<string>();
+    bool IsMetadata(string owner) => metadataNames.Contains(owner);
+
+    // Where everything ends up. A structure's old home is routinely where a
+    // file has just landed, so releasing it wholesale would free space that is
+    // in use; the mover is told which ranges to leave alone.
+    var liveRanges = metadataNames.Count == 0
+      ? null
+      : moves.Select(m => (m.DstOffset, m.Length)).ToList();
 
     // An owner with more than one move is fragmented, and its runs have to be
     // relinked as one chain. A mover that cannot do that would write each run
@@ -43,6 +59,7 @@ public static class DefragPlannerExecutor {
     // which reads each file whole before writing anything.
     var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     foreach (var move in moves) {
+      if (IsMetadata(move.FileName)) continue;   // repointed, not relinked
       runsPerOwner.TryGetValue(move.FileName, out var count);
       runsPerOwner[move.FileName] = count + 1;
     }
@@ -55,7 +72,12 @@ public static class DefragPlannerExecutor {
 
     // Where each block ends up, simulated in the same order the moves run, so a
     // relink can be told an owner's whole new allocation afterwards.
-    var relink = mover.SupportsScatteredRelink ? new ChainTracker(moves) : null;
+    // The chain tracker describes files; a repointed structure is finished the
+    // moment its move is done, so it is kept out of the per-owner relink.
+    var fileMoves = metadataNames.Count == 0
+      ? moves
+      : moves.Where(m => !IsMetadata(m.FileName)).ToList();
+    var relink = mover.SupportsScatteredRelink ? new ChainTracker(fileMoves) : null;
 
     for (var i = 0; i < moves.Count; i++) {
       var move = moves[i];
@@ -77,7 +99,10 @@ public static class DefragPlannerExecutor {
       // entry still points to a now-zeroed cluster, destroying user data.
       // For forensic wipe, callers run wipe-empty after defrag completes.
       mover.MoveExtent(archive, move.SrcOffset, move.DstOffset, move.Length, zeroSource: false);
-      if (relink == null)
+      if (IsMetadata(move.FileName))
+        metadataMover!.UpdateMetadataAfterMove(archive, move.FileName,
+          move.SrcOffset, move.DstOffset, move.Length, liveRanges);
+      else if (relink == null)
         mover.UpdateAllocationAfterMove(archive, move.FileName, move.SrcOffset, move.DstOffset, move.Length);
 
       reinitAfterMove?.Invoke();

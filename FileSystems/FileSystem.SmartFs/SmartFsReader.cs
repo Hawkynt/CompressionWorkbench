@@ -76,6 +76,94 @@ public sealed class SmartFsReader : IDisposable {
     var meta = BuildMetadata(sigOffset);
     _entries.Add(new SmartFsEntry { Name = "FULL.smartfs", Size = _data.Length, Data = _data });
     _entries.Add(new SmartFsEntry { Name = "metadata.ini", Size = meta.Length, Data = meta });
+
+    // Past the format sector the volume is chains: the root directory names
+    // each file and where its first sector is, and each sector says which one
+    // follows and how much of itself is in use. Walking that is what turns the
+    // image from a blob into files.
+    try {
+      WalkRootDirectory();
+    } catch (Exception ex) when (ex is InvalidDataException or ArgumentOutOfRangeException
+                                    or IndexOutOfRangeException) {
+      // A volume laid out by a configuration this reader does not model still
+      // yields the format sector and the raw image above.
+    }
+  }
+
+  /// <summary>
+  /// Reads every entry the root directory chain holds, and each file's bytes
+  /// from the sector chain the entry points at.
+  /// </summary>
+  private void WalkRootDirectory() {
+    if (this.SectorSize == 0) return;
+
+    var sectorSize = (int)this.SectorSize;
+    var payloadStart = SmartFsLayout.SectorHeaderSize + SmartFsLayout.ChainHeaderSize;
+    if (sectorSize <= payloadStart) return;
+
+    var visited = new HashSet<ushort>();
+    var sector = (ushort)SmartFsLayout.RootDirSector;
+    while (sector != SmartFsLayout.EndOfChain && visited.Add(sector)) {
+      var at = (long)sector * sectorSize;
+      if (at + sectorSize > _data.Length) return;
+
+      var chain = _data.AsSpan((int)at + SmartFsLayout.SectorHeaderSize);
+      var next = BinaryPrimitives.ReadUInt16LittleEndian(chain);
+      var used = BinaryPrimitives.ReadUInt16LittleEndian(chain[2..]);
+      var type = chain[4];
+      if (type != SmartFsLayout.ChainTypeDirectory) return;
+      if (used > sectorSize - payloadStart) return;
+
+      for (var offset = 0; offset + SmartFsLayout.EntrySize <= used; offset += SmartFsLayout.EntrySize) {
+        var entry = _data.AsSpan((int)at + payloadStart + offset, SmartFsLayout.EntrySize);
+        var flags = BinaryPrimitives.ReadUInt16LittleEndian(entry);
+        if ((flags & SmartFsLayout.EntryActive) == 0) continue;
+
+        var firstSector = BinaryPrimitives.ReadUInt16LittleEndian(entry[2..]);
+        var name = ReadName(entry[SmartFsLayout.EntryHeaderSize..]);
+        if (name.Length == 0) continue;
+
+        if ((flags & SmartFsLayout.EntryDirectory) != 0) {
+          _entries.Add(new SmartFsEntry { Name = name, Size = 0, IsDirectory = true });
+          continue;
+        }
+
+        var content = ReadChain(firstSector, sectorSize, payloadStart);
+        _entries.Add(new SmartFsEntry { Name = name, Size = content.Length, Data = content });
+      }
+
+      sector = next;
+    }
+  }
+
+  /// <summary>The bytes a file's sector chain holds, in chain order.</summary>
+  private byte[] ReadChain(ushort firstSector, int sectorSize, int payloadStart) {
+    using var content = new MemoryStream();
+    var visited = new HashSet<ushort>();
+    var sector = firstSector;
+    while (sector != SmartFsLayout.EndOfChain && visited.Add(sector)) {
+      var at = (long)sector * sectorSize;
+      if (at + sectorSize > _data.Length) break;
+
+      var chain = _data.AsSpan((int)at + SmartFsLayout.SectorHeaderSize);
+      var next = BinaryPrimitives.ReadUInt16LittleEndian(chain);
+      var used = BinaryPrimitives.ReadUInt16LittleEndian(chain[2..]);
+      if (chain[4] != SmartFsLayout.ChainTypeFile) break;
+      if (used > sectorSize - payloadStart) break;
+
+      content.Write(_data, (int)at + payloadStart, used);
+      sector = next;
+    }
+    return content.ToArray();
+  }
+
+  /// <summary>The name in a directory entry, trimmed at its first padding byte.</summary>
+  private static string ReadName(ReadOnlySpan<byte> field) {
+    var length = 0;
+    while (length < SmartFsLayout.MaxNameLength && length < field.Length
+           && field[length] is not (0 or 0xFF))
+      ++length;
+    return Encoding.ASCII.GetString(field[..length]);
   }
 
   private static uint SectorSizeFromCode(byte code) => code switch {

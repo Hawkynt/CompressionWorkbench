@@ -23,7 +23,7 @@ namespace FileSystem.Ext;
 /// created elsewhere) needs additional work — walk the BGD table for the
 /// target block's group rather than assuming group 0.</para>
 /// </summary>
-public sealed class ExtBlockMover : IFilesystemBlockMover {
+public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMover {
   private int _blockSize;
   private uint _firstDataBlock;
   private uint _blocksCount;
@@ -31,6 +31,7 @@ public sealed class ExtBlockMover : IFilesystemBlockMover {
   private uint _blocksPerGroup;
   private int _inodeSize;
   private uint _featureIncompat;
+  private uint _featureRoCompat;
   private long _bgdOffset;
   private long _blockBitmapOffset;
   private long _inodeBitmapOffset;
@@ -79,6 +80,10 @@ public sealed class ExtBlockMover : IFilesystemBlockMover {
     if (_inodeSize == 0) _inodeSize = 128;
     _featureIncompat = BinaryPrimitives.ReadUInt32LittleEndian(sb[96..]);
     _firstDataBlock = BinaryPrimitives.ReadUInt32LittleEndian(sb[20..]);
+    _featureRoCompat = BinaryPrimitives.ReadUInt32LittleEndian(sb[100..]);
+    _groupCount = _blocksPerGroup == 0
+      ? 0
+      : (_blocksCount - _firstDataBlock + _blocksPerGroup - 1) / _blocksPerGroup;
   }
 
   public long FirstDataByte => (long)_firstDataBlock * _blockSize;
@@ -86,41 +91,169 @@ public sealed class ExtBlockMover : IFilesystemBlockMover {
 
   private uint OffsetToBlock(long offset) => (uint)(offset / _blockSize);
 
+  // ── IFilesystemMetadataMover ──────────────────────────────────────────
+
+  /// <summary>Group count derived from the superblock, set by <c>Init</c>.</summary>
+  private uint _groupCount;
+
+  /// <summary>
+  /// Each group's block bitmap, inode bitmap and inode table. All three are
+  /// located by fields in that group's descriptor, so moving one is a matter of
+  /// writing the new block number there — which is how a real resize2fs shifts
+  /// them about. The superblock, the descriptor table and their backups are
+  /// pinned: their positions are computed from the geometry, not recorded.
+  /// </summary>
+  public IReadOnlySet<string> RelocatableMetadata {
+    get {
+      var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      for (var g = 0u; g < this._groupCount; ++g) {
+        names.Add(BlockBitmapName(g));
+        names.Add(InodeBitmapName(g));
+        names.Add(InodeTableName(g));
+      }
+      return names;
+    }
+  }
+
+  private static string BlockBitmapName(uint group) => $"ext block bitmap (group {group})";
+  private static string InodeBitmapName(uint group) => $"ext inode bitmap (group {group})";
+  private static string InodeTableName(uint group) => $"ext inode table (group {group})";
+
+  /// <inheritdoc />
+  public void UpdateMetadataAfterMove(Stream image, string metadataName,
+      long oldOffset, long newOffset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(metadataName);
+
+    var (fieldOffset, group) = ParseRegionName(metadataName);
+    var oldBlock = OffsetToBlock(oldOffset);
+    var newBlock = OffsetToBlock(newOffset);
+    if (oldBlock == newBlock) return;
+
+    var blocks = (uint)((length + _blockSize - 1) / _blockSize);
+
+    // The descriptor is what a driver reads to find the region, and every
+    // backup copy of the table has to agree with it or fsck reports the group
+    // as corrupt.
+    Span<byte> field = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(field, newBlock);
+    foreach (var tableOffset in GroupDescriptorTables(image)) {
+      var at = tableOffset + (long)group * DescriptorSize + fieldOffset;
+      if (at + 4 > image.Length) continue;
+      image.Position = at;
+      image.Write(field);
+    }
+    image.Flush();
+
+    // The blocks themselves are allocated in the bitmap of whichever group
+    // holds them, and released the same way — except where something else has
+    // moved onto the old home in the meantime.
+    for (var i = 0u; i < blocks; ++i) {
+      SetBlockAllocated(image, newBlock + i, allocated: true);
+      var releasing = (long)(oldBlock + i) * _blockSize;
+      if (!IsLive(releasing, _blockSize, liveRanges))
+        SetBlockAllocated(image, oldBlock + i, allocated: false);
+    }
+    image.Flush();
+  }
+
+  /// <summary>Field offset inside the 32-byte group descriptor, and the group.</summary>
+  private static (int FieldOffset, uint Group) ParseRegionName(string name) {
+    var open = name.LastIndexOf("(group ", StringComparison.OrdinalIgnoreCase);
+    var close = name.LastIndexOf(')');
+    if (open < 0 || close <= open
+        || !uint.TryParse(name.AsSpan(open + 7, close - open - 7), out var group))
+      throw new NotSupportedException($"ext: '{name}' is not a region this volume can be repointed at.");
+
+    if (name.StartsWith("ext block bitmap", StringComparison.OrdinalIgnoreCase)) return (0, group);
+    if (name.StartsWith("ext inode bitmap", StringComparison.OrdinalIgnoreCase)) return (4, group);
+    if (name.StartsWith("ext inode table", StringComparison.OrdinalIgnoreCase)) return (8, group);
+    throw new NotSupportedException($"ext: '{name}' is not a region this volume can be repointed at.");
+  }
+
+  /// <summary>Bytes per group descriptor. 64 once 64-bit block numbers are on.</summary>
+  private int DescriptorSize => (_featureIncompat & 0x80) != 0 ? 64 : 32;
+
+  /// <summary>
+  /// Every copy of the group descriptor table: the primary right after the
+  /// superblock, plus one beside each backup superblock. A driver reads the
+  /// primary, but fsck compares them.
+  /// </summary>
+  private IEnumerable<long> GroupDescriptorTables(Stream image) {
+    yield return (long)(_firstDataBlock + 1) * _blockSize;
+
+    for (var g = 1u; g < _groupCount; ++g) {
+      if (!HasSuperblockBackup(g)) continue;
+      var groupStart = _firstDataBlock + (long)g * _blocksPerGroup;
+      var table = (groupStart + 1) * _blockSize;
+      if (table < image.Length) yield return table;
+    }
+  }
+
+  /// <summary>
+  /// Whether a group carries a superblock backup. With the sparse_super feature
+  /// only groups 0, 1 and the powers of 3, 5 and 7 do; without it, every group.
+  /// </summary>
+  private bool HasSuperblockBackup(uint group) {
+    if ((_featureRoCompat & 0x1) == 0) return true;   // sparse_super off
+    if (group is 0 or 1) return true;
+    foreach (var b in stackalloc uint[] { 3, 5, 7 }) {
+      var p = b;
+      while (p < group) p *= b;
+      if (p == group) return true;
+    }
+    return false;
+  }
+
+  /// <summary>Sets or clears a block's bit in its group's block bitmap.</summary>
+  private void SetBlockAllocated(Stream image, uint block, bool allocated) {
+    if (block < _firstDataBlock || _blocksPerGroup == 0) return;
+    var group = (block - _firstDataBlock) / _blocksPerGroup;
+    if (group >= _groupCount) return;
+
+    var indexInGroup = (block - _firstDataBlock) % _blocksPerGroup;
+    var tableOffset = (long)(_firstDataBlock + 1) * _blockSize;
+    var bitmapField = tableOffset + (long)group * DescriptorSize;
+    if (bitmapField + 4 > image.Length) return;
+
+    Span<byte> field = stackalloc byte[4];
+    image.Position = bitmapField;
+    image.ReadExactly(field);
+    var bitmapBlock = BinaryPrimitives.ReadUInt32LittleEndian(field);
+
+    var byteOffset = (long)bitmapBlock * _blockSize + indexInGroup / 8;
+    if (byteOffset >= image.Length) return;
+
+    Span<byte> one = stackalloc byte[1];
+    image.Position = byteOffset;
+    image.ReadExactly(one);
+    var mask = (byte)(1 << (int)(indexInGroup % 8));
+    one[0] = allocated ? (byte)(one[0] | mask) : (byte)(one[0] & ~mask);
+    image.Position = byteOffset;
+    image.Write(one);
+  }
+
+  /// <summary>Whether any live range covers part of this block.</summary>
+  private static bool IsLive(long offset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges) {
+    if (liveRanges == null) return false;
+    foreach (var (start, len) in liveRanges)
+      if (offset < start + len && start < offset + length)
+        return true;
+    return false;
+  }
+
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
-    var buffer = ArrayPool<byte>.Shared.Rent((int)Math.Min(length, 64 * 1024));
-    try {
-      var remaining = length;
-      var src = srcOffset;
-      var dst = dstOffset;
-      while (remaining > 0) {
-        var chunk = (int)Math.Min(remaining, buffer.Length);
-        image.Position = src;
-        image.ReadExactly(buffer, 0, chunk);
-        image.Position = dst;
-        image.Write(buffer, 0, chunk);
-        src += chunk;
-        dst += chunk;
-        remaining -= chunk;
-      }
-      image.Flush();
-      if (zeroSource) {
-        Array.Clear(buffer, 0, buffer.Length);
-        remaining = length;
-        src = srcOffset;
-        while (remaining > 0) {
-          var chunk = (int)Math.Min(remaining, buffer.Length);
-          image.Position = src;
-          image.Write(buffer, 0, chunk);
-          src += chunk;
-          remaining -= chunk;
-        }
-        image.Flush();
-      }
-    } finally {
-      ArrayPool<byte>.Shared.Return(buffer);
-    }
+
+    // Overlap-safe: a run shifted forward by less than its own length
+    // overwrites its own tail, and copying that front to back reads bytes
+    // the copy has already replaced.
+    Compression.Core.DiskImage.ExtentCopy.Move(image, srcOffset, dstOffset, length);
+    if (zeroSource)
+      Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, length);
   }
 
   /// <inheritdoc />

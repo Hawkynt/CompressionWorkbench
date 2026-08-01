@@ -39,41 +39,12 @@ public sealed class CpmBlockMover : IFilesystemBlockMover {
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
-    var buffer = ArrayPool<byte>.Shared.Rent((int)Math.Min(length, 64 * 1024));
-    try {
-      var remaining = length;
-      var src = srcOffset;
-      var dst = dstOffset;
-      while (remaining > 0) {
-        var chunk = (int)Math.Min(remaining, buffer.Length);
-        image.Position = src;
-        image.ReadExactly(buffer, 0, chunk);
-        image.Position = dst;
-        image.Write(buffer, 0, chunk);
-        src += chunk;
-        dst += chunk;
-        remaining -= chunk;
-      }
-      // Crash barrier: data must land on disk before metadata references it.
-      image.Flush();
-
-      if (zeroSource) {
-        Array.Clear(buffer, 0, buffer.Length);
-        remaining = length;
-        src = srcOffset;
-        while (remaining > 0) {
-          var chunk = (int)Math.Min(remaining, buffer.Length);
-          image.Position = src;
-          image.Write(buffer, 0, chunk);
-          src += chunk;
-          remaining -= chunk;
-        }
-        // Crash barrier: data must land on disk before metadata references it.
-        image.Flush();
-      }
-    } finally {
-      ArrayPool<byte>.Shared.Return(buffer);
-    }
+    // Overlap-safe: a run shifted forward by less than its own length
+    // overwrites its own tail, and copying that front to back reads bytes
+    // the copy has already replaced.
+    Compression.Core.DiskImage.ExtentCopy.Move(image, srcOffset, dstOffset, length);
+    if (zeroSource)
+      Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, length);
   }
 
   /// <inheritdoc />

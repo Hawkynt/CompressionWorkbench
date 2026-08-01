@@ -25,7 +25,7 @@ namespace FileSystem.Ntfs;
 /// multi-TB NTFS volume needs only ~256 MB of cache RAM regardless of size.
 /// </para>
 /// </summary>
-public sealed class NtfsBlockMover : IFilesystemBlockMover {
+public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataMover {
   private int _bytesPerSector;
   private int _sectorsPerCluster;
   private int _clusterSize;
@@ -126,43 +126,12 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover {
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
-    var buffer = ArrayPool<byte>.Shared.Rent(Math.Min((int)Math.Min(length, 64 * 1024), int.MaxValue));
-    try {
-      var remaining = length;
-      var src = srcOffset;
-      var dst = dstOffset;
-      while (remaining > 0) {
-        var chunk = (int)Math.Min(remaining, buffer.Length);
-        image.Position = src;
-        image.ReadExactly(buffer, 0, chunk);
-        image.Position = dst;
-        image.Write(buffer, 0, chunk);
-        src += chunk;
-        dst += chunk;
-        remaining -= chunk;
-      }
-      // Flush so the data copy lands on disk before any metadata update reaches
-      // it. Without this barrier, the OS could reorder writes such that the new
-      // MFT data-run referencing dst commits BEFORE the dst bytes themselves —
-      // crash-window where the file points at garbage.
-      image.Flush();
-
-      if (zeroSource) {
-        Array.Clear(buffer, 0, buffer.Length);
-        remaining = length;
-        src = srcOffset;
-        while (remaining > 0) {
-          var chunk = (int)Math.Min(remaining, buffer.Length);
-          image.Position = src;
-          image.Write(buffer, 0, chunk);
-          src += chunk;
-          remaining -= chunk;
-        }
-        image.Flush();
-      }
-    } finally {
-      ArrayPool<byte>.Shared.Return(buffer);
-    }
+    // Overlap-safe: a run shifted forward by less than its own length
+    // overwrites its own tail, and copying that front to back reads bytes
+    // the copy has already replaced.
+    Compression.Core.DiskImage.ExtentCopy.Move(image, srcOffset, dstOffset, length);
+    if (zeroSource)
+      Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, length);
   }
 
   /// <inheritdoc />
@@ -213,6 +182,152 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover {
     // Step 3: Clear old cluster bits in $Bitmap.
     if (bitmapRuns != null && bitmapRuns.Count > 0)
       MutateBitmapBitsStream(image, bitmapRuns, oldLcn, clusterCount, setBits: false);
+    image.Flush();
+  }
+
+  // ── IFilesystemMetadataMover ──────────────────────────────────────────
+
+  /// <summary>
+  /// MFT record numbers of the system files whose position is recorded
+  /// somewhere that can be rewritten. Record 7 ($Boot) is absent on purpose:
+  /// the boot sector is what tells everything else where to look, and nothing
+  /// points at it. $Volume and root are resident inside their records, so they
+  /// occupy no clusters of their own to move.
+  /// </summary>
+  private static readonly Dictionary<string, int> SystemFileRecords =
+    new(StringComparer.OrdinalIgnoreCase) {
+      ["$MFT"] = 0, ["$MFTMirr"] = 1, ["$LogFile"] = 2, ["$AttrDef"] = 4,
+      ["$Bitmap"] = 6, ["$Secure"] = 9, ["$UpCase"] = 10,
+    };
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> RelocatableMetadata { get; } =
+    SystemFileRecords.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// Moves one of the volume's own structures. Each system file's clusters are
+  /// described by the data runs in its MFT record, so repointing it is the same
+  /// edit a file gets — except for the two the boot sector names directly, and
+  /// for the two that describe themselves.
+  /// </summary>
+  /// <remarks>
+  /// <para>$MFT is the awkward one: its own record lives inside it, so the copy
+  /// that must be patched is the one at the destination, not the one the boot
+  /// sector still points at. The boot sector is rewritten afterwards, which is
+  /// also the point of no return — until then the volume still reads through
+  /// the old copy, which is intact.</para>
+  ///
+  /// <para>$Bitmap is the other: its bits record its own allocation. Its record
+  /// is patched first so the bits are then read and written through the runs
+  /// that describe where it now lives, rather than through the ones that
+  /// describe where it used to.</para>
+  /// </remarks>
+  public void UpdateMetadataAfterMove(Stream image, string metadataName,
+      long oldOffset, long newOffset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(metadataName);
+    if (!SystemFileRecords.TryGetValue(metadataName, out var recordIndex))
+      throw new NotSupportedException(
+        $"NTFS: '{metadataName}' is not a structure this volume can be repointed at.");
+
+    var oldLcn = oldOffset / _clusterSize;
+    var newLcn = newOffset / _clusterSize;
+    var clusterCount = (length + _clusterSize - 1) / _clusterSize;
+    if (clusterCount <= 0 || oldLcn == newLcn) return;
+
+    // The MFT's own record travels with it, so the copy to patch is the one at
+    // the destination. Everything below then reads records through it.
+    var movingMft = recordIndex == 0;
+    if (movingMft) _mftOffset = newOffset;
+
+    using (var cache = new SectorCache(image)) {
+      PatchMftDataRunsStream(image, cache, recordIndex, oldLcn, newLcn, clusterCount);
+    }
+    image.Flush();
+
+    // Once the runs say where the structure now is, the allocation follows.
+    using (var cache = new SectorCache(image)) {
+      var bitmapRuns = LoadBitmapRunsStream(cache);
+      if (bitmapRuns is { Count: > 0 }) {
+        MutateBitmapBitsStream(image, bitmapRuns, newLcn, clusterCount, setBits: true);
+        image.Flush();
+
+        // The old clusters are free again — except the ones something else has
+        // moved onto, which are not this structure's to release.
+        for (var i = 0L; i < clusterCount; i++) {
+          var clusterOffset = (oldLcn + i) * _clusterSize;
+          if (IsLive(clusterOffset, _clusterSize, liveRanges)) continue;
+          MutateBitmapBitsStream(image, bitmapRuns, oldLcn + i, 1, setBits: false);
+        }
+        image.Flush();
+      }
+    }
+
+    // The boot sector names two of them outright; without this the volume would
+    // still look for the MFT where it no longer is.
+    if (movingMft || recordIndex == 1) {
+      Span<byte> lcn = stackalloc byte[8];
+      BinaryPrimitives.WriteInt64LittleEndian(lcn, newLcn);
+      image.Position = movingMft ? 0x30 : 0x38;
+      image.Write(lcn);
+      image.Flush();
+      if (movingMft) _mftCluster = newLcn;
+      RefreshBackupBootSector(image);
+    }
+
+    // $MFTMirr carries a copy of the first four MFT records, and a driver
+    // compares the two. Repointing any of those records leaves the copy stale —
+    // ntfsfix reports "$MFTMirr does not match $MFT" and refuses the volume —
+    // so the mirror is refreshed from the records it mirrors.
+    if (recordIndex <= 3 || recordIndex == 1)
+      RefreshMftMirror(image);
+  }
+
+  /// <summary>Whether any live range covers part of this cluster.</summary>
+  private static bool IsLive(long offset, long length,
+      IReadOnlyList<(long Offset, long Length)>? liveRanges) {
+    if (liveRanges == null) return false;
+    foreach (var (start, len) in liveRanges)
+      if (offset < start + len && start < offset + length)
+        return true;
+    return false;
+  }
+
+  /// <summary>
+  /// Copies the boot sector over the backup NTFS keeps in the volume's last
+  /// sector. The two are compared, so changing where the MFT lives in one and
+  /// not the other leaves the volume looking damaged.
+  /// </summary>
+  private void RefreshBackupBootSector(Stream image) {
+    if (_bytesPerSector <= 0 || image.Length < 2L * _bytesPerSector) return;
+
+    var boot = new byte[_bytesPerSector];
+    image.Position = 0;
+    image.ReadExactly(boot);
+    image.Position = image.Length - _bytesPerSector;
+    image.Write(boot);
+    image.Flush();
+  }
+
+  /// <summary>
+  /// Rewrites $MFTMirr from the first four MFT records. Its own position comes
+  /// from the boot sector, which is authoritative at this point: it has already
+  /// been updated if the mirror itself was what moved.
+  /// </summary>
+  private void RefreshMftMirror(Stream image) {
+    Span<byte> field = stackalloc byte[8];
+    image.Position = 0x38;
+    image.ReadExactly(field);
+    var mirrorOffset = BinaryPrimitives.ReadInt64LittleEndian(field) * _clusterSize;
+    if (mirrorOffset <= 0 || mirrorOffset + 4L * _mftRecordSize > image.Length) return;
+    if (_mftOffset + 4L * _mftRecordSize > image.Length) return;
+
+    var records = new byte[4 * _mftRecordSize];
+    image.Position = _mftOffset;
+    image.ReadExactly(records);
+    image.Position = mirrorOffset;
+    image.Write(records);
     image.Flush();
   }
 

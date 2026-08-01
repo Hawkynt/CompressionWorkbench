@@ -193,14 +193,19 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var extents = ExtExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList();
     options.OnProgress?.Invoke(new DefragProgressEvent("scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
 
-    var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    // Each group's bitmaps and inode table are located by that group's
+    // descriptor, so a metadata placement can gather them where it wants.
+    var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement, movableMetadata: mover.RelocatableMetadata);
     if (moves.Count == 0) {
       options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
       return;
     }
 
     // SB/BGD don't change during defrag — no per-move re-init needed.
-    DefragPlannerExecutor.Execute(archive, options, mover, moves, archive.Length, reinitAfterMove: null);
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, archive.Length,
+      reinitAfterMove: null, metadataMover: mover);
 
     archive.Position = 0;
     var postExtents = ExtExtentMap.Enumerate(archive).ToList();

@@ -76,9 +76,10 @@ public static class DefragPlanner {
     long holeSize = 0,
     long holeAt = -1,
     MetadataZone metadataZone = MetadataZone.Unchanged,
-    LayoutTemplate? layoutTemplate = null)
+    LayoutTemplate? layoutTemplate = null,
+    IReadOnlySet<string>? movableMetadata = null)
     => Validate(PlanCore(extents, dataOrigin, imageSize, clusterSize, profile, mode,
-      interleaveStride, holeSize, holeAt, metadataZone, layoutTemplate), imageSize);
+      interleaveStride, holeSize, holeAt, metadataZone, layoutTemplate, movableMetadata), imageSize);
 
   /// <summary>
   /// Checks that a plan can be executed without destroying data: every move has
@@ -120,7 +121,8 @@ public static class DefragPlanner {
     long holeSize,
     long holeAt,
     MetadataZone metadataZone,
-    LayoutTemplate? layoutTemplate) {
+    LayoutTemplate? layoutTemplate,
+    IReadOnlySet<string>? movableMetadata) {
     ArgumentNullException.ThrowIfNull(extents);
     if (clusterSize <= 0) throw new ArgumentOutOfRangeException(nameof(clusterSize));
     if (interleaveStride < 1 || interleaveStride > 256)
@@ -133,6 +135,30 @@ public static class DefragPlanner {
     var fileExtents = new List<DefragBlockInfo>();
     var freeRegions = new List<(long Offset, long Length)>();
     var forbiddenRaw = new List<(long Start, long End)>();
+
+    // A metadata region the filesystem can repoint is an owner like any other:
+    // it can be laid out where the requested zone wants it instead of pinning
+    // the layout around wherever mkfs happened to put it. Only regions the
+    // format lists are eligible, and only when they arrive as a single run —
+    // relinking a scattered structure is a different operation from repointing
+    // a contiguous one, and no format here offers it.
+    // Only when the caller has asked for a metadata placement: MetadataZone
+    // .Unchanged means what it says — the volume's structures stay where they
+    // are, and an ordinary defragmentation does not shift the MFT under the
+    // user because it happened to be able to.
+    var relocatable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    if (movableMetadata is { Count: > 0 }
+        && (metadataZone != MetadataZone.Unchanged || layoutTemplate is not null)) {
+      var runsPerRegion = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      foreach (var e in extents)
+        if (e.Kind == DefragBlockKind.MetadataReserved && e.FileName is { } n && movableMetadata.Contains(n)) {
+          runsPerRegion.TryGetValue(n, out var count);
+          runsPerRegion[n] = count + 1;
+        }
+      foreach (var (name, count) in runsPerRegion)
+        if (count == 1) relocatable.Add(name);
+    }
+
     foreach (var e in extents) {
       switch (e.Kind) {
         case DefragBlockKind.Used:
@@ -141,6 +167,9 @@ public static class DefragPlanner {
         case DefragBlockKind.Free:
           freeRegions.Add((e.Offset, e.Length));
           break;
+        case DefragBlockKind.MetadataReserved when e.FileName is { } name && relocatable.Contains(name):
+          fileExtents.Add(e);
+          break;
         case DefragBlockKind.MetadataReserved:
         case DefragBlockKind.Bad:
           forbiddenRaw.Add((e.Offset, e.Offset + e.Length));
@@ -148,6 +177,12 @@ public static class DefragPlanner {
       }
     }
     var forbidden = MergeIntervals(forbiddenRaw);
+
+    // Whatever no extent claims is free, whether or not the map bothered to say
+    // so. Several maps report only what is allocated, and the planner then had
+    // nowhere to stage a cycle: a layout that merely exchanges two regions was
+    // refused for want of somewhere to put one of them for a moment.
+    AddUnclaimedSpace(freeRegions, extents, dataOrigin, imageSize);
 
     if (fileExtents.Count == 0) return [];
 
@@ -215,7 +250,10 @@ public static class DefragPlanner {
       var dataSizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
       foreach (var (name, exts) in byFile) {
-        if (IsDirectoryExtent(name)) {
+        // A relocatable structure belongs with the directories: both are the
+        // volume's own bookkeeping, and a request to gather metadata at the
+        // front means the MFT and the bitmaps too, not only the folders.
+        if (IsDirectoryExtent(name) || relocatable.Contains(name)) {
           dirByFile[name] = exts;
           dirSizes[name] = fileSizes[name];
         } else {
@@ -234,6 +272,38 @@ public static class DefragPlanner {
         ? PlanInterleaved(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, mode, interleaveStride)
         : PlanPerformance(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode),
     };
+  }
+
+  /// <summary>
+  /// Adds every stretch of [<paramref name="dataOrigin" />,
+  /// <paramref name="imageSize" />) that no extent claims to
+  /// <paramref name="freeRegions" />, so a map that lists only allocated space
+  /// still gives the planner room to work in.
+  /// </summary>
+  private static void AddUnclaimedSpace(
+      List<(long Offset, long Length)> freeRegions,
+      IReadOnlyList<DefragBlockInfo> extents,
+      long dataOrigin,
+      long imageSize) {
+    if (imageSize <= dataOrigin) return;
+
+    var claimed = new List<(long Start, long End)>();
+    foreach (var e in extents) {
+      if (e.Kind == DefragBlockKind.Free || e.Length <= 0) continue;
+      claimed.Add((e.Offset, e.Offset + e.Length));
+    }
+    foreach (var (offset, length) in freeRegions)
+      if (length > 0) claimed.Add((offset, offset + length));
+
+    var merged = MergeIntervals(claimed);
+    var cursor = dataOrigin;
+    foreach (var (start, end) in merged) {
+      if (end <= cursor) continue;
+      if (start > cursor) freeRegions.Add((cursor, start - cursor));
+      cursor = Math.Max(cursor, end);
+      if (cursor >= imageSize) return;
+    }
+    if (cursor < imageSize) freeRegions.Add((cursor, imageSize - cursor));
   }
 
   // ── Quick profile: per-file consolidation only ─────────────────────────
@@ -860,7 +930,7 @@ public static class DefragPlanner {
         // The staging region has to be somewhere no pending move is headed;
         // otherwise lifting one file out of the way just puts it in the next
         // one's path, and the cycle survives with an extra hop in it.
-        var stageIdx = FindFreeRegionClearOf(freeRegions, AlignUp(stuck.Length, clusterSize), pending);
+        var stageIdx = FindFreeRegionClearOf(freeRegions, AlignUp(stuck.Length, clusterSize), pending, result);
         if (stageIdx < 0)
           // Nowhere to stage the cycle. Executing the remaining moves in any
           // order overwrites data — which is what happened while this emitted
@@ -894,8 +964,15 @@ public static class DefragPlanner {
   /// A free region of at least <paramref name="size" /> bytes that no pending
   /// move is headed for, so parking a run there cannot block anything.
   /// </summary>
+  /// <summary>
+  /// A free region of at least <paramref name="size" /> bytes that no move is
+  /// headed for — neither one still waiting nor one already committed. Staging
+  /// into a region another move has claimed only relocates the collision:
+  /// whichever runs second overwrites the first.
+  /// </summary>
   private static int FindFreeRegionClearOf(
-      List<(long Offset, long Length)> freeRegions, long size, List<ClusterMove> pending) {
+      List<(long Offset, long Length)> freeRegions, long size,
+      List<ClusterMove> pending, List<ClusterMove> committed) {
     for (var i = 0; i < freeRegions.Count; ++i) {
       var (offset, length) = freeRegions[i];
       if (length < size) continue;
@@ -905,6 +982,12 @@ public static class DefragPlanner {
           clear = false;
           break;
         }
+      if (clear)
+        foreach (var move in committed)
+          if (Overlaps(offset, size, move.DstOffset, move.Length)) {
+            clear = false;
+            break;
+          }
       if (clear) return i;
     }
     return -1;

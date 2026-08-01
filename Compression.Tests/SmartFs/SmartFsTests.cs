@@ -74,16 +74,33 @@ public class SmartFsTests {
     Assert.Throws<InvalidDataException>(() => _ = new FileSystem.SmartFs.SmartFsReader(ms));
   }
 
-  [Test, Category("Sad")]
-  public void Defragment_Throws() {
+  /// <summary>
+  /// The descriptor used to refuse both verbs for want of a writer. It has one
+  /// now: it lays a volume out in the state mksmartfs leaves behind, so a
+  /// defragmentation is a fresh layout of the same files.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Defragment_RelaysTheVolume_AndKeepsItsFiles() {
     var d = new FileSystem.SmartFs.SmartFsFormatDescriptor();
-    using var ms = new MemoryStream(BuildMinimalImage());
-    Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
+    var writer = new FileSystem.SmartFs.SmartFsWriter();
+    writer.AddFile("A.BIN", [1, 2, 3, 4]);
+    writer.AddFile("B.BIN", [9, 9, 9]);
+
+    using var ms = new MemoryStream();
+    ms.Write(writer.Build());
+    ms.Position = 0;
+    var before = d.List(ms, null).Select(e => e.Name).ToHashSet();
+
+    ms.Position = 0;
+    d.Defragment(ms);
+
+    ms.Position = 0;
+    Assert.That(d.List(ms, null).Select(e => e.Name).ToHashSet(), Is.EquivalentTo(before));
   }
 
-  [Test, Category("Sad")]
-  public void NoCreatable_Interface() {
+  [Test, Category("HappyPath")]
+  public void Creatable_Interface() {
     var d = new FileSystem.SmartFs.SmartFsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
   }
 }

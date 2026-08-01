@@ -60,7 +60,17 @@ public static class FatExtentMap {
     var totalDataClusters = (int)((totalSectors - firstDataSector) / sectorsPerCluster);
     if (totalDataClusters <= 0) yield break;
 
-    var fatType = totalDataClusters < 4085 ? 12 : totalDataClusters < 65525 ? 16 : 32;
+    // The BPB says outright which variant this is: FAT32 is the one that keeps
+    // its FAT size in the 32-bit field and has no fixed root directory. Reading
+    // the type off the cluster count alone called a small forced-FAT32 volume
+    // FAT16, and the walk then looked for a root directory area that FAT32 does
+    // not have — the map came back with the reserved region and no files at
+    // all, so a wipe saw the whole volume as free.
+    var isFat32ByBpb = BinaryPrimitives.ReadUInt16LittleEndian(bpb.AsSpan(22)) == 0 && rootEntryCount == 0;
+    var fatType = isFat32ByBpb ? 32
+      : totalDataClusters < 4085 ? 12
+      : totalDataClusters < 65525 ? 16
+      : 32;
     var rootCluster = fatType == 32
       ? BinaryPrimitives.ReadInt32LittleEndian(bpb.AsSpan(44))
       : 0;
