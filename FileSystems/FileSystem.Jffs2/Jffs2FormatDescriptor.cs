@@ -271,6 +271,24 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Nodes can be moved where they are: each one carries its own header, its
+    // own CRCs and the version that decides which copy of its range wins, so
+    // nothing has to be repointed and the volume keeps the size it had. The
+    // rebuild below relays the log into a fresh image, which is the garbage
+    // collection a running JFFS2 does in the background.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Buffering the rebuilt image would cap the volume at what a byte[] can
     // hold, so the packing modes stream: each entry is spilled to scratch and
     // the writer pulls it back while emitting nodes.
@@ -297,6 +315,72 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
           try { File.Delete(path); } catch { /* scratch file already gone */ }
       }
     }
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Jffs2BlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    List<DefragBlockInfo> extents;
+    using (var data = new ImageAccessor(archive))
+      extents = EnumerateExtentsCore(data);
+    var planning = Coalesce(extents);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      planning, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    List<DefragBlockInfo> postExtents;
+    using (var data = new ImageAccessor(archive))
+      postExtents = EnumerateExtentsCore(data);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>
+  /// Fuses neighbouring nodes that belong to the same owner into one extent.
+  /// </summary>
+  /// <remarks>
+  /// The map describes the log a node at a time, which is what a wipe needs — a
+  /// node is the unit that is live or superseded. A planner given it that way
+  /// plans one move per node, and the dependency pass is quadratic in the move
+  /// count, so a log of any size took longer to plan than to rewrite. Nodes
+  /// that sit together move together anyway.
+  /// </remarks>
+  private static List<DefragBlockInfo> Coalesce(List<DefragBlockInfo> extents) {
+    var ordered = extents.OrderBy(e => e.Offset).ToList();
+    var result = new List<DefragBlockInfo>(ordered.Count);
+
+    foreach (var extent in ordered) {
+      if (result.Count > 0) {
+        var last = result[^1];
+        if (last.Kind == extent.Kind
+            && string.Equals(last.FileName, extent.FileName, StringComparison.Ordinal)
+            && last.Offset + last.Length == extent.Offset) {
+          result[^1] = new DefragBlockInfo(last.Offset, last.Length + extent.Length,
+            last.Kind, last.FileName);
+          continue;
+        }
+      }
+      result.Add(extent);
+    }
+
+    return result;
   }
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
