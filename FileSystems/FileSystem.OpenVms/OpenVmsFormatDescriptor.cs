@@ -373,4 +373,66 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       wipeClusterTips: false, fileSizeLookup: null);
   }
 
+
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Moves only the files that are out of place, rewriting each one's retrieval
+  /// pointer as its blocks arrive. The pass is kept only if every payload still
+  /// reads back: it can refuse partway — a header it cannot find leaves bytes
+  /// moved with nothing naming them — and the volume goes back as it was then.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => {
+        var reader = new OpenVmsReader(stream);
+        return reader.Entries.Select(reader.Extract).ToList();
+      },
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => { /* the volume is put back as it was */ });
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new OpenVmsBlockMover();
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // A file described by several retrieval pointers needs its whole header map
+    // restated, which this pass cannot do.
+    var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var extent in extents) {
+      if (extent.Kind != DefragBlockKind.Used || extent.FileName is not { } owner) continue;
+      runsPerOwner.TryGetValue(owner, out var count);
+      runsPerOwner[owner] = count + 1;
+    }
+    var fragmented = runsPerOwner.Count(kv => kv.Value > 1);
+    if (fragmented > 0)
+      throw new NotSupportedException(
+        $"OpenVMS: {fragmented} file(s) span more than one retrieval pointer.");
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) return;
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
 }
