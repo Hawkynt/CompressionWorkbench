@@ -18,6 +18,28 @@ public sealed class MinixV2Reader : IDisposable {
   public IReadOnlyList<MinixV2Entry> Entries => _entries;
 
   public ushort Magic { get; private set; }
+
+  /// <summary>Blocks the inode bitmap occupies, from the superblock.</summary>
+  public ushort InodeBitmapBlocks => this._imapBlocks;
+
+  /// <summary>Blocks the zone bitmap occupies, from the superblock.</summary>
+  public ushort ZoneBitmapBlocks => this._zmapBlocks;
+
+  /// <summary>Bytes per block, which is also a zone at this zone size.</summary>
+  public static int ZoneSize => BlockSize;
+
+  /// <summary>Byte offset of the zone bitmap.</summary>
+  public long ZoneBitmapOffset => 2L * BlockSize + (long)this._imapBlocks * BlockSize;
+
+  /// <summary>First zone that may hold file data: the one past the inode table.</summary>
+  public long FirstDataZoneOffset {
+    get {
+      var inodeCount = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(SuperblockOffset, 4));
+      var tableBytes = (long)inodeCount * InodeSize;
+      var end = this.InodeTableOffset() + tableBytes;
+      return (end + BlockSize - 1) / BlockSize * BlockSize;
+    }
+  }
   public int NameLength { get; private set; }
 
   private ushort _imapBlocks;
@@ -112,6 +134,97 @@ public sealed class MinixV2Reader : IDisposable {
       ReadIndirect(ms, zones[9], ref remaining, 3);
 
     return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Where on disk <paramref name="entry" />'s bytes actually sit, as runs of
+  /// whole zones, along with the byte offset of the first pointer that names
+  /// each run.
+  /// </summary>
+  /// <remarks>
+  /// The zone bitmap says which zones are taken and nothing about by whom.
+  /// Reporting a layout without that leaves anything trying to move a file
+  /// with nothing to repoint, so the runs are read from the inode's zone
+  /// pointers — and from the indirect blocks those point at, whose entries are
+  /// pointers in their own right.
+  /// </remarks>
+  public IEnumerable<(long Offset, long Length, long PointerOffset)> EnumerateDataExtents(MinixV2Entry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory) yield break;
+
+    var inode = this.ReadInode((uint)entry.InodeNumber);
+    if (inode == null) yield break;
+    var (_, size, zones) = ParseInode(inode);
+    if (size == 0) yield break;
+
+    var inodeOffset = this.InodeTableOffset() + (long)(entry.InodeNumber - 1) * InodeSize;
+    var remaining = (long)size;
+
+    var runFirstZone = 0u;
+    var runPointer = -1L;
+    var runZones = 0;
+
+    foreach (var (zone, pointerOffset) in this.EnumerateZonePointers(zones, inodeOffset)) {
+      if (remaining <= 0) break;
+      remaining -= BlockSize;
+
+      // A run continues only while the zones stay consecutive and so do the
+      // pointers naming them: a move rewrites the pointers in order, so a gap
+      // in either would put the wrong zones under the wrong pointers.
+      if (runPointer >= 0 && zone == runFirstZone + runZones
+          && pointerOffset == runPointer + (long)runZones * 4) {
+        ++runZones;
+        continue;
+      }
+
+      if (runPointer >= 0)
+        yield return ((long)runFirstZone * BlockSize, (long)runZones * BlockSize, runPointer);
+
+      runFirstZone = zone;
+      runPointer = pointerOffset;
+      runZones = 1;
+    }
+
+    if (runPointer >= 0)
+      yield return ((long)runFirstZone * BlockSize, (long)runZones * BlockSize, runPointer);
+  }
+
+  /// <summary>
+  /// The data zones a file's pointers name, in order, each with the byte offset
+  /// of the pointer itself — in the inode for the direct ones, in an indirect
+  /// block for the rest.
+  /// </summary>
+  private IEnumerable<(uint Zone, long PointerOffset)> EnumerateZonePointers(uint[] zones, long inodeOffset) {
+    for (var i = 0; i < 7; ++i) {
+      if (zones[i] == 0) yield break;
+      yield return (zones[i], inodeOffset + 24 + (long)i * 4);
+    }
+
+    if (zones[7] != 0)
+      foreach (var pair in this.EnumerateIndirectPointers(zones[7], 1))
+        yield return pair;
+
+    if (zones[8] != 0)
+      foreach (var pair in this.EnumerateIndirectPointers(zones[8], 2))
+        yield return pair;
+  }
+
+  /// <summary>The zones an indirect block names, descending as many levels as asked.</summary>
+  private IEnumerable<(uint Zone, long PointerOffset)> EnumerateIndirectPointers(uint zone, int levels) {
+    var blockOffset = this.ZoneOffset(zone);
+    if (blockOffset < 0 || blockOffset + BlockSize > _data.Length) yield break;
+
+    for (var i = 0; i < BlockSize / 4; ++i) {
+      var at = blockOffset + (long)i * 4;
+      var pointer = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan((int)at, 4));
+      if (pointer == 0) continue;
+      if (levels <= 1) {
+        yield return (pointer, at);
+        continue;
+      }
+      foreach (var pair in this.EnumerateIndirectPointers(pointer, levels - 1))
+        yield return pair;
+    }
   }
 
   private void AppendZone(MemoryStream ms, uint zone, ref long remaining) {

@@ -18,7 +18,7 @@ namespace FileSystem.MinixV2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Minix_file_system</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// Minix v2 geometry (1024-byte blocks, 64-byte inodes) is fixed, but the
   /// on-disk directory-name width is a genuine format variant the writer
@@ -158,8 +158,107 @@ public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("MinixV2 defragmentation requires an in-place mover.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("MinixV2 read-only — defragmentation requires a writer.");
+  /// <summary>
+  /// Lays the volume out again. A file's bytes are addressed one zone at a time
+  /// by two-byte pointers in its inode and the indirect blocks below it, so a
+  /// move is the copy, those pointers, and the bit per zone that says whether
+  /// it is taken.
+  /// </summary>
+  /// <remarks>
+  /// This used to refuse outright, on the grounds that the volume was read-only
+  /// and had no writer. It has had both a writer and an in-place modifier for
+  /// some time; what it did not have was a way to say where anything is, which
+  /// <see cref="MinixV2ExtentMap" /> now does.
+  /// </remarks>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The in-place pass is kept only if every payload still reads back: it can
+    // refuse partway, and a rebuild is the honest answer when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadEntries(stream),
+        buildImage: files => {
+          var built = this.BuildImage(files);
+          if (built.Length >= archive.Length) return built;
+          var padded = new byte[archive.Length];
+          Array.Copy(built, padded, built.Length);
+          return padded;
+        }));
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new MinixV2BlockMover();
+    mover.Init(archive);
+
+    var extents = MinixV2ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = MinixV2ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's name and bytes, for the rebuild and the guard.</summary>
+  private static List<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    using var reader = new MinixV2Reader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory)
+                         .Select(e => (e.Name, reader.Extract(e))).ToList();
+  }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => MinixV2ExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zero-fills every zone the bitmap leaves clear — which is where a removed
+  /// file's bytes stay until something else claims them.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = MinixV2ExtentMap.Enumerate(image).ToList();
+    if (extents.Count == 0) return 0;
+
+    Func<string, long>? sizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new MinixV2Reader(image);
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory) sizes[entry.Name] = entry.Size;
+        sizeLookup = name => sizes.TryGetValue(name, out var size) ? size : -1;
+      } catch {
+        sizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length, wipeClusterTips, sizeLookup);
+  }
 }
