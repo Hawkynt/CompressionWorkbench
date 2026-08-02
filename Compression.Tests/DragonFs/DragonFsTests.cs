@@ -85,11 +85,25 @@ public class DragonFsTests {
     }
   }
 
-  [Test, Category("Sad")]
-  public void Defragment_Throws() {
+  /// <summary>
+  /// Defragmenting a volume with nothing to move is a no-op, not a refusal.
+  /// </summary>
+  /// <remarks>
+  /// This used to assert the opposite: the descriptor turned every request down
+  /// on the grounds that the volume was read-only and had no writer. It has had
+  /// both a writer and an in-place modifier for some time; what it lacked was a
+  /// way to say where anything is, which the extent map now provides.
+  /// </remarks>
+  [Test, Category("HappyPath")]
+  public void Defragment_OnAVolumeWithNothingToMove_DoesNothing() {
     var d = new FileSystem.DragonFs.DragonFsFormatDescriptor();
-    using var ms = new MemoryStream(BuildMinimalImage());
-    Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
+    var image = BuildMinimalImage();
+    using var ms = new MemoryStream();
+    ms.Write(image);
+
+    Assert.DoesNotThrow(() => d.Defragment(ms));
+    Assert.That(ms.Length, Is.EqualTo(image.Length),
+      "Defragmenting must leave the volume the size it was.");
   }
 
   [Test, Category("HappyPath")]
