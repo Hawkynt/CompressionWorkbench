@@ -162,6 +162,83 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return memoryStream.ToArray();
   }
 
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Lays the volume out again. A file here is one contiguous run of blocks
+  /// whose start is the anode number in its directory entry, so a move is the
+  /// copy plus four bytes — cheaper than reading every file out and writing a
+  /// fresh volume, which is what the inherited default did for the one mode it
+  /// offered.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The in-place pass is kept only if every payload still reads back: it can
+    // refuse partway, and a rebuild is the honest answer when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadEntries(stream).ToList(),
+        buildImage: files => {
+          var writer = new AmigaPfsWriter();
+          foreach (var (name, data) in files) writer.AddFile(name, data);
+          var built = writer.Build();
+          if (built.Length >= archive.Length) return built;
+          var padded = new byte[archive.Length];
+          Array.Copy(built, padded, built.Length);
+          return padded;
+        }));
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new AmigaPfsBlockMover();
+    mover.Init(archive);
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's name and bytes, for the rebuild and the guard.</summary>
+  private static List<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    stream.Position = 0;
+    using var reader = new AmigaPfsReader(stream);
+    var result = new List<(string Name, byte[] Data)>();
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) continue;
+      using var payload = new MemoryStream();
+      reader.ExtractTo(entry, payload);
+      result.Add((entry.Name, payload.ToArray()));
+    }
+    return result;
+  }
+
   // ── IFilesystemExtentMap + IWipeEmpty ─────────────────────────────────
 
   /// <summary>
