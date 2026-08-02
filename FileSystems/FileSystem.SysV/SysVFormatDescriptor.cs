@@ -45,7 +45,7 @@ namespace FileSystem.SysV;
 /// WSL2 kernel ships without it).
 /// </para>
 /// </remarks>
-public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// s5fs geometry (1024-byte blocks, 64-byte inodes, single-group layout) is
   /// fixed at the classic AT&amp;T variant the writer emits, so the only honoured
@@ -209,5 +209,107 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var (n, d) in files) w.AddFile(n, d);
     w.Finish();
     return ms.ToArray();
+  }
+
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Lays the volume out again. A file's bytes are addressed one block at a
+  /// time by pointers in its inode and the indirect blocks below it, so a move
+  /// is the copy plus those pointers — cheaper than reading every file out and
+  /// writing a fresh volume, which is what the inherited default did for the
+  /// one mode it offered.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The in-place pass is kept only if every payload still reads back: it can
+    // refuse partway, and a rebuild is the honest answer when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadEntries(stream),
+        buildImage: files => {
+          var built = BuildImage(files);
+          if (built.Length >= archive.Length) return built;
+          var padded = new byte[archive.Length];
+          Array.Copy(built, padded, built.Length);
+          return padded;
+        }));
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new SysVBlockMover();
+    mover.Init(archive);
+
+    var extents = SysVExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = SysVExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's name and bytes, for the rebuild and the guard.</summary>
+  private static List<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    using var reader = new SysVReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory)
+                         .Select(e => (e.Name, reader.Extract(e))).ToList();
+  }
+
+  // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => SysVExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zero-fills every block no inode claims — which is where a removed file's
+  /// bytes stay until something else takes them.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var extents = SysVExtentMap.Enumerate(image).ToList();
+    if (extents.Count == 0) return 0;
+
+    Func<string, long>? sizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new SysVReader(image);
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory) sizes[entry.Name] = entry.Size;
+        sizeLookup = name => sizes.TryGetValue(name, out var size) ? size : -1;
+      } catch {
+        sizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, image.Length, wipeClusterTips, sizeLookup);
   }
 }
