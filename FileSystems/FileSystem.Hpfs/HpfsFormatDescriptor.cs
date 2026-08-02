@@ -201,6 +201,32 @@ public sealed class HpfsFormatDescriptor
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Below the streaming cap the layout is changed by moving what is out of
+    // place: a file this reader resolves is one contiguous run recorded in its
+    // fnode's direct allocation list, so a move is the copy, four bytes, and
+    // the bitmap bits. Until this was here a volume under the cap fell through
+    // every branch and Defragment returned having done nothing at all.
+    if (!(archive.CanSeek && archive.Length > MaxBufferedImageBytes)
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+                        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway — a file allocated through the B-tree has no entry
+      // to repoint — and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+        inPlace: () => DefragmentWithPlanner(archive, options),
+        rebuild: () => DefragRebuilder.Rebuild(archive, options,
+          readEntries: stream => ReadFileEntries(stream).ToList(),
+          buildImage: files => {
+            var built = BuildImage(files);
+            if (built.Length >= archive.Length) return built;
+            var padded = new byte[archive.Length];
+            Array.Copy(built, padded, built.Length);
+            return padded;
+          }));
+      return;
+    }
+
     // A volume too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole image, which Build() refuses to
     // produce once the volume passes the array limit.
@@ -216,6 +242,35 @@ public sealed class HpfsFormatDescriptor
         writeEntry: (name, data) => streamWriter!.AddFile(name, data),
         finishWrite: () => streamWriter!.WriteTo(target!));
     }
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new HpfsBlockMover();
+    mover.Init(archive);
+
+    var extents = EnumerateExtentsCore(archive);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = EnumerateExtentsCore(archive);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
   /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
