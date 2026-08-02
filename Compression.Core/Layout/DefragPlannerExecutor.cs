@@ -15,7 +15,7 @@ public static class DefragPlannerExecutor {
   /// <summary>
   /// Executes the supplied <paramref name="moves"/> against <paramref name="archive"/>,
   /// calling <see cref="IFilesystemBlockMover.MoveExtent"/> and
-  /// <see cref="IFilesystemBlockMover.UpdateAllocationAfterMove"/> for each move.
+  /// <see cref="IFilesystemBlockMover.UpdateAllocationAfterMove(Stream, string, long, long, long)"/> for each move.
   /// Emits a <see cref="DefragProgressEvent"/> per move so the UI can animate
   /// read/write head positions in real time.
   /// </summary>
@@ -48,9 +48,15 @@ public static class DefragPlannerExecutor {
     // Where everything ends up. A structure's old home is routinely where a
     // file has just landed, so releasing it wholesale would free space that is
     // in use; the mover is told which ranges to leave alone.
+    // Lifting a run out of the volume writes nothing, so it is not a move for
+    // any purpose but its own: it claims no destination, it is not a second run
+    // of its owner, and it puts nothing anywhere for a relink to track. The
+    // Unpark that follows it carries all of that.
+    var writes = moves.Where(m => m.Staging != DefragStaging.Park).ToList();
+
     var liveRanges = metadataNames.Count == 0
       ? null
-      : moves.Select(m => (m.DstOffset, m.Length)).ToList();
+      : writes.Select(m => (m.DstOffset, m.Length)).ToList();
 
     // An owner with more than one move is fragmented, and its runs have to be
     // relinked as one chain. A mover that cannot do that would write each run
@@ -58,13 +64,13 @@ public static class DefragPlannerExecutor {
     // would be lost. Refuse instead; every caller falls back to a rebuild,
     // which reads each file whole before writing anything.
     var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-    foreach (var move in moves) {
+    foreach (var move in writes) {
       if (IsMetadata(move.FileName)) continue;   // repointed, not relinked
       runsPerOwner.TryGetValue(move.FileName, out var count);
       runsPerOwner[move.FileName] = count + 1;
     }
     var fragmented = runsPerOwner.Where(kv => kv.Value > 1).Select(kv => kv.Key).ToList();
-    if (fragmented.Count > 0 && !mover.SupportsScatteredRelink)
+    if (fragmented.Count > 0 && !mover.SupportsScatteredRelink && !mover.RepointsRunsIndependently)
       throw new InvalidOperationException(
         $"Defragmentation cannot be done in place: {fragmented.Count} fragmented owner(s) " +
         $"({string.Join(", ", fragmented.Take(3))}) would each need their runs relinked as one " +
@@ -75,16 +81,36 @@ public static class DefragPlannerExecutor {
     // The chain tracker describes files; a repointed structure is finished the
     // moment its move is done, so it is kept out of the per-owner relink.
     var fileMoves = metadataNames.Count == 0
-      ? moves
-      : moves.Where(m => !IsMetadata(m.FileName)).ToList();
+      ? writes
+      : writes.Where(m => !IsMetadata(m.FileName)).ToList();
     var relink = mover.SupportsScatteredRelink
       ? new ChainTracker(fileMoves, mover.AllocationBlockSize)
       : null;
+
+    // Somewhere to hold a run whose destination is still occupied and whose
+    // volume has no free region to park it in. Nothing is allocated unless the
+    // plan actually asks for it.
+    var parks = moves.Any(m => m.Staging == DefragStaging.Park);
+
+    // A mover that rebuilds an owner's whole chain works from where its blocks
+    // are, and a run held in memory is nowhere. Movers that repoint each run on
+    // its own have no such view and do not mind.
+    if (parks && (relink != null || !mover.SupportsHeldRuns))
+      throw new InvalidOperationException(
+        $"Defragmentation cannot be done in place: the layout needs a run held out of the volume " +
+        $"while the rest move, which {mover.GetType().Name} does not offer.");
+
+    using var staging = parks ? new DefragStagingBuffer(options.StagingMemoryBudgetBytes) : null;
 
     for (var i = 0; i < moves.Count; i++) {
       var move = moves[i];
 
       // Emit per-move progress so the UI's block chart updates tile-by-tile.
+      var what = move.Staging switch {
+        DefragStaging.Park => "Holding",
+        DefragStaging.Unpark => "Placing",
+        _ => "Moving",
+      };
       options.OnProgress?.Invoke(new DefragProgressEvent(
         Phase: "moving",
         Fraction: (double)(i + 1) / moves.Count,
@@ -92,7 +118,29 @@ public static class DefragPlannerExecutor {
         CurrentWriteOffset: move.DstOffset,
         ImageSize: imageSize,
         BlockMap: null,
-        Status: $"Moving {move.FileName} ({i + 1}/{moves.Count})"));
+        Status: $"{what} {move.FileName} ({i + 1}/{moves.Count})"));
+
+      // Taking a run out of the volume writes nothing and repoints nothing: the
+      // filesystem still records it where it was, which is what puts it down
+      // again later.
+      if (move.Staging == DefragStaging.Park) {
+        staging!.Park(archive, move.StagingSlot, move.SrcOffset, move.Length);
+        continue;
+      }
+
+      if (move.Staging == DefragStaging.Unpark) {
+        staging!.Unpark(archive, move.StagingSlot, move.DstOffset);
+        if (IsMetadata(move.FileName))
+          metadataMover!.UpdateMetadataAfterMove(archive, move.FileName,
+            move.SrcOffset, move.DstOffset, move.Length, liveRanges);
+        else if (relink == null)
+          // The space this run came from was left behind when it was lifted
+          // out, and something else has very likely taken it since.
+          mover.UpdateAllocationAfterMove(archive, move.FileName, move.SrcOffset, move.DstOffset,
+            move.Length, releaseOldSpace: false);
+        reinitAfterMove?.Invoke();
+        continue;
+      }
 
       // Crash-safe move order: COPY first (additive, idempotent), then UPDATE
       // metadata so the file is reachable via the new location, then leave the

@@ -225,7 +225,11 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       layoutTemplate: null,
       // On FAT32 the root directory is an ordinary chain the BPB names, so a
       // metadata placement can move it like any other owner.
-      movableMetadata: mover.RelocatableMetadata);
+      movableMetadata: mover.RelocatableMetadata,
+      // This descriptor runs its own move loop; it does understand runs held
+      // outside the volume, so the planner may reach for that when a full
+      // volume leaves nowhere on disk to park one.
+      allowMemoryStaging: mover.SupportsHeldRuns);
 
     if (moves.Count == 0) {
       // Already defragmented — emit complete event.
@@ -255,6 +259,12 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // file, which truncated multi-run directories (losing entries) and broke
     // multi-run files. Fusing the runs into one contiguous chain happens here.
 
+    // Somewhere to hold a run whose destination is still occupied when the
+    // volume has no free cluster to park it in. Only allocated if the plan asks.
+    using var staging = moves.Any(m => m.Staging == DefragStaging.Park)
+      ? new DefragStagingBuffer(options.StagingMemoryBudgetBytes)
+      : null;
+
     // Phase 1: raw byte moves, in planner order.
     for (var i = 0; i < moves.Count; i++) {
       var move = moves[i];
@@ -266,10 +276,21 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         ImageSize: imageSize,
         BlockMap: null,
         Status: $"Moving block {i + 1} of {moves.Count}: {move.FileName}"));
-      // zeroSource: false — same crash-safety rationale as DefragPlannerExecutor.
-      // Old bytes become orphan data after the FAT-chain repatch below; they're
-      // unreferenced but recoverable until the next allocation reuses the cluster.
-      mover.MoveExtent(archive, move.SrcOffset, move.DstOffset, move.Length, zeroSource: false);
+
+      switch (move.Staging) {
+        case DefragStaging.Park:
+          staging!.Park(archive, move.StagingSlot, move.SrcOffset, move.Length);
+          break;
+        case DefragStaging.Unpark:
+          staging!.Unpark(archive, move.StagingSlot, move.DstOffset);
+          break;
+        default:
+          // zeroSource: false — same crash-safety rationale as DefragPlannerExecutor.
+          // Old bytes become orphan data after the FAT-chain repatch below; they're
+          // unreferenced but recoverable until the next allocation reuses the cluster.
+          mover.MoveExtent(archive, move.SrcOffset, move.DstOffset, move.Length, zeroSource: false);
+          break;
+      }
     }
 
     // Phase 2: per-owner chain relink + dir-pointer repatch. Group the original
@@ -299,11 +320,39 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var finalOf = new Dictionary<long, long>();  // original offset → its final cluster offset
     foreach (var off in originalClusterOffsets) finalOf[off] = off;
     var clusterBytes = (long)mover.ClusterSize;
+    // Clusters whose bytes are out of the volume entirely, waiting to be put
+    // down: while held they occupy no slot, which is the whole point of holding
+    // them, so the simulation has to take them off the map and put them back.
+    var held = new Dictionary<(int Slot, int Index), long>();
+
     foreach (var move in moves) {
       // A single move can span SEVERAL clusters (the planner emits one move per
       // contiguous run). Track every cluster slot the move touches, not just the
       // start, so multi-cluster files/directories relink to the right place.
       var slotCount = (int)((move.Length + clusterBytes - 1) / clusterBytes);
+
+      if (move.Staging == DefragStaging.Park) {
+        for (var k = 0; k < slotCount; k++) {
+          var src = move.SrcOffset + k * clusterBytes;
+          if (!occupant.Remove(src, out var origin)) continue;
+          held[(move.StagingSlot, k)] = origin;
+        }
+        continue;
+      }
+
+      if (move.Staging == DefragStaging.Unpark) {
+        for (var k = 0; k < slotCount; k++) {
+          var dst = move.DstOffset + k * clusterBytes;
+          if (held.Remove((move.StagingSlot, k), out var origin)) {
+            occupant[dst] = origin;
+            finalOf[origin] = dst;
+          } else {
+            occupant[dst] = dst;
+          }
+        }
+        continue;
+      }
+
       for (var k = 0; k < slotCount; k++) {
         var src = move.SrcOffset + k * clusterBytes;
         var dst = move.DstOffset + k * clusterBytes;

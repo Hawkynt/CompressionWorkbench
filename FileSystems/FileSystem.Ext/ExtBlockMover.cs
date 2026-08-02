@@ -244,6 +244,12 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
     return false;
   }
 
+  // RepointsRunsIndependently is deliberately not claimed. Each call does
+  // repoint only the run it is given, but ext keeps per-group descriptors and
+  // relocatable group metadata alongside the bitmap, and moving a fragmented
+  // owner run by run left e2fsck with a group state it rejects. Until that is
+  // understood a fragmented owner goes through the rebuild, as it always did.
+
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
@@ -267,7 +273,12 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   /// Crash mid-3: file reachable via new pointers, old blocks still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
+      long length, bool releaseOldSpace) {
     var blockCount = (int)((length + _blockSize - 1) / _blockSize);
     var oldFirstBlock = OffsetToBlock(oldOffset);
     var newFirstBlock = OffsetToBlock(newOffset);
@@ -285,11 +296,15 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
     PatchInodeBlockPointersStream(image, cache, fileName, oldFirstBlock, newFirstBlock, blockCount);
     image.Flush();
 
-    // Step 3: Release old blocks in bitmap (clear bits).
-    for (var i = 0; i < blockCount; i++)
-      ClearBitmapBitStream(image, _blockBitmapOffset, (int)(oldFirstBlock + (uint)i - _firstDataBlock));
-    cache.Invalidate(_blockBitmapOffset, _blockSize);
-    image.Flush();
+    // Step 3: Release old blocks in bitmap (clear bits) — unless the run was
+    // held outside the volume while the rest moved, in which case it gave its
+    // old blocks up then and something else has very likely taken them.
+    if (releaseOldSpace) {
+      for (var i = 0; i < blockCount; i++)
+        ClearBitmapBitStream(image, _blockBitmapOffset, (int)(oldFirstBlock + (uint)i - _firstDataBlock));
+      cache.Invalidate(_blockBitmapOffset, _blockSize);
+      image.Flush();
+    }
   }
 
   // ── Stream-based bitmap RMW ────────────────────────────────────────────

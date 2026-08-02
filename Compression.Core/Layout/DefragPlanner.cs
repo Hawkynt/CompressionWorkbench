@@ -13,7 +13,38 @@ public sealed record class ClusterMove(
   long SrcOffset,
   long DstOffset,
   long Length,
-  string FileName);
+  string FileName) {
+
+  /// <summary>
+  /// How this move uses the staging buffer, when the volume had nowhere to park
+  /// the run itself.
+  /// </summary>
+  public DefragStaging Staging { get; init; } = DefragStaging.None;
+
+  /// <summary>Which staging slot this move parks into or unparks from.</summary>
+  public int StagingSlot { get; init; } = -1;
+}
+
+/// <summary>What a move does with the staging buffer.</summary>
+public enum DefragStaging {
+
+  /// <summary>An ordinary move: read from the source, write to the destination.</summary>
+  None,
+
+  /// <summary>
+  /// Take the run out of the volume and hold it, leaving the space free for
+  /// something else. Nothing is written and nothing is repointed yet — the
+  /// filesystem still records the run where it was.
+  /// </summary>
+  Park,
+
+  /// <summary>
+  /// Put a held run down at its destination and repoint it there. The move's
+  /// source is where the filesystem still thinks the run is, which is what the
+  /// repointing looks for.
+  /// </summary>
+  Unpark,
+}
 
 /// <summary>
 /// Planner-driven defrag engine. Given the current extent layout (from
@@ -77,9 +108,11 @@ public static class DefragPlanner {
     long holeAt = -1,
     MetadataZone metadataZone = MetadataZone.Unchanged,
     LayoutTemplate? layoutTemplate = null,
-    IReadOnlySet<string>? movableMetadata = null)
+    IReadOnlySet<string>? movableMetadata = null,
+    bool allowMemoryStaging = true)
     => Validate(PlanCore(extents, dataOrigin, imageSize, clusterSize, profile, mode,
-      interleaveStride, holeSize, holeAt, metadataZone, layoutTemplate, movableMetadata),
+      interleaveStride, holeSize, holeAt, metadataZone, layoutTemplate, movableMetadata,
+      allowMemoryStaging),
       imageSize, extents);
 
   /// <summary>
@@ -93,8 +126,13 @@ public static class DefragPlanner {
       IReadOnlyList<DefragBlockInfo> extents) {
     if (moves.Count == 0) return moves;
 
+    // Lifting a run out of the volume writes nothing, so it claims nothing: its
+    // destination field only records where the filesystem still thinks the run
+    // is, for the repointing that happens when it is put back down.
+    var writes = moves.Where(m => m.Staging != DefragStaging.Park).ToList();
+
     var occupied = new List<(long Start, long End)>();
-    foreach (var move in moves) {
+    foreach (var move in writes) {
       if (move.DstOffset < 0 || move.Length <= 0 || move.DstOffset + move.Length > imageSize)
         throw new InvalidOperationException(
           $"Defragmentation plan places {move.Length:N0} bytes of '{move.FileName}' at " +
@@ -120,7 +158,7 @@ public static class DefragPlanner {
     foreach (var extent in extents) {
       if (extent.Kind != DefragBlockKind.Used) continue;
       foreach (var (liveStart, liveEnd) in Subtract(extent.Offset, extent.Offset + extent.Length, vacated))
-        foreach (var move in moves) {
+        foreach (var move in writes) {
           var start = move.DstOffset;
           var end = move.DstOffset + move.Length;
           if (start >= liveEnd || liveStart >= end) continue;
@@ -167,7 +205,8 @@ public static class DefragPlanner {
     long holeAt,
     MetadataZone metadataZone,
     LayoutTemplate? layoutTemplate,
-    IReadOnlySet<string>? movableMetadata) {
+    IReadOnlySet<string>? movableMetadata,
+    bool allowMemoryStaging) {
     ArgumentNullException.ThrowIfNull(extents);
     if (clusterSize <= 0) throw new ArgumentOutOfRangeException(nameof(clusterSize));
     if (interleaveStride < 1 || interleaveStride > 256)
@@ -264,7 +303,7 @@ public static class DefragPlanner {
       fileSizes[name] = exts.Sum(e => e.Length);
 
     if (mode == DefragMode.CarveHole)
-      return PlanCarveHole(byFile, fileSizes, fileExtents, dataOrigin, imageSize, clusterSize, freeRegions, holeSize, holeAt);
+      return PlanCarveHole(byFile, fileSizes, fileExtents, dataOrigin, imageSize, clusterSize, freeRegions, holeSize, holeAt, allowMemoryStaging);
 
     // Layout-template path takes precedence over the classic metadata-zone /
     // profile pipeline. The template captures (a) per-zone byte ranges, (b)
@@ -276,7 +315,7 @@ public static class DefragPlanner {
       return PlanFromTemplate(
         byFile, fileSizes, extents,
         dataOrigin, imageSize, clusterSize,
-        freeRegions, forbidden, mode, layoutTemplate);
+        freeRegions, forbidden, mode, layoutTemplate, allowMemoryStaging);
     }
 
     // When metadata zone placement is requested, separate metadata/directory
@@ -307,15 +346,20 @@ public static class DefragPlanner {
         }
       }
 
+      // Holding a run in memory is for file data. What locates a volume's own
+      // structures is repointed by a different contract, which is told the
+      // ranges that are live once every move has run — a structure that is
+      // nowhere for part of the pass is not something it can be told about.
       return PlanMetadataZone(metadataExtents, dirByFile, dirSizes, dataByFile, dataSizes,
-        dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode, metadataZone);
+        dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode, metadataZone,
+        allowMemoryStaging: false);
     }
 
     return profile switch {
-      LayoutProfile.Quick => PlanQuick(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions),
+      LayoutProfile.Quick => PlanQuick(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, allowMemoryStaging),
       _ => interleaveStride > 1
-        ? PlanInterleaved(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, mode, interleaveStride)
-        : PlanPerformance(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode),
+        ? PlanInterleaved(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, mode, interleaveStride, allowMemoryStaging)
+        : PlanPerformance(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode, allowMemoryStaging),
     };
   }
 
@@ -357,7 +401,8 @@ public static class DefragPlanner {
     Dictionary<string, List<DefragBlockInfo>> byFile,
     Dictionary<string, long> fileSizes,
     long dataOrigin, long imageSize, int clusterSize,
-    List<(long Offset, long Length)> freeRegions) {
+    List<(long Offset, long Length)> freeRegions,
+    bool allowMemoryStaging) {
     var moves = new List<ClusterMove>();
 
     foreach (var (fileName, extents) in byFile) {
@@ -392,7 +437,7 @@ public static class DefragPlanner {
         freeRegions.Add((ext.Offset, AlignUp(ext.Length, clusterSize)));
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize);
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
   }
 
   // ── Performance profile: full zone-based rearrangement ─────────────────
@@ -403,7 +448,8 @@ public static class DefragPlanner {
     long dataOrigin, long imageSize, int clusterSize,
     List<(long Offset, long Length)> freeRegions,
     IReadOnlyList<(long Start, long End)> forbidden,
-    DefragMode mode) {
+    DefragMode mode,
+    bool allowMemoryStaging) {
 
     // Step 1: Classify files into zones.
     var classified = ClassifyFiles(byFile, fileSizes);
@@ -472,7 +518,8 @@ public static class DefragPlanner {
         for (var i = ordered.Count - 1; i >= 0; i--) {
           var (fileName, totalSize, _) = ordered[i];
           if (stationary.Contains(fileName)) continue;
-          var alignedSize = AlignUp(totalSize, clusterSize);
+          var alignedSize = Math.Max(AlignUp(totalSize, clusterSize),
+            PlacedSpan(byFile[fileName], dataOrigin, clusterSize, dataOrigin));
           var target = FindPrevSlot(ceiling, alignedSize, dataOrigin, clusterSize, barrier);
           if (target < 0) { unplaced.Add(fileName); continue; }
           EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
@@ -482,7 +529,8 @@ public static class DefragPlanner {
         var cursor = dataOrigin;
         foreach (var (fileName, totalSize, _) in ordered) {
           if (stationary.Contains(fileName)) continue;
-          var alignedSize = AlignUp(totalSize, clusterSize);
+          var alignedSize = Math.Max(AlignUp(totalSize, clusterSize),
+            PlacedSpan(byFile[fileName], dataOrigin, clusterSize, dataOrigin));
           var target = FindNextSlot(cursor, alignedSize, imageSize, dataOrigin, clusterSize, barrier);
           if (target < 0) { unplaced.Add(fileName); continue; }
           EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
@@ -501,13 +549,32 @@ public static class DefragPlanner {
       barrier = MergeIntervals(raised);
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize);
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
   }
 
   /// <summary>
   /// Emit moves for one file at <paramref name="targetStart"/>, walking its
   /// extents in order. Skips no-op moves (extent already at the right place).
   /// </summary>
+  /// <summary>
+  /// How much room laying <paramref name="srcExtents" /> out from one offset
+  /// actually takes.
+  /// </summary>
+  /// <remarks>
+  /// Not the same as the owner's size rounded up: each run starts on the
+  /// cluster grid, so an owner in several runs is padded between them and needs
+  /// more space than its bytes alone. Reserving only the rounded-up size let
+  /// the next owner be placed inside that padding, and the two destinations
+  /// overlapped.
+  /// </remarks>
+  private static long PlacedSpan(
+      List<DefragBlockInfo> srcExtents, long targetStart, int clusterSize, long dataOrigin) {
+    var target = targetStart;
+    foreach (var ext in srcExtents)
+      target = AlignUpFrom(target + ext.Length, dataOrigin, clusterSize);
+    return target - targetStart;
+  }
+
   private static void EmitFileMoves(
     List<ClusterMove> moves,
     List<DefragBlockInfo> srcExtents,
@@ -653,7 +720,8 @@ public static class DefragPlanner {
     long dataOrigin, long imageSize, int clusterSize,
     List<(long Offset, long Length)> freeRegions,
     DefragMode mode,
-    int stride) {
+    int stride,
+    bool allowMemoryStaging) {
 
     // Step 1: Classify files into zones (same as Performance).
     var classified = ClassifyFiles(byFile, fileSizes);
@@ -758,7 +826,7 @@ public static class DefragPlanner {
       }
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize);
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
   }
 
   // ── CarveHole: reserve a contiguous free region ────────────────────────
@@ -776,7 +844,8 @@ public static class DefragPlanner {
     List<DefragBlockInfo> fileExtents,
     long dataOrigin, long imageSize, int clusterSize,
     List<(long Offset, long Length)> freeRegions,
-    long holeSize, long holeAt) {
+    long holeSize, long holeAt,
+    bool allowMemoryStaging) {
 
     if (holeSize <= 0)
       throw new ArgumentException("HoleSize must be positive for CarveHole.");
@@ -863,7 +932,7 @@ public static class DefragPlanner {
       }
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize);
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
   }
 
   // ── Zone classification ────────────────────────────────────────────────
@@ -928,7 +997,8 @@ public static class DefragPlanner {
   private static IReadOnlyList<ClusterMove> ResolveDependencies(
     List<ClusterMove> rawMoves,
     List<(long Offset, long Length)> freeRegions,
-    int clusterSize) {
+    int clusterSize,
+    bool allowMemoryStaging) {
 
     // Remove no-ops (src == dst).
     rawMoves.RemoveAll(m => m.SrcOffset == m.DstOffset);
@@ -955,6 +1025,7 @@ public static class DefragPlanner {
     // into a run that never finished.
     var maxIter = 2 * pending.Count + 8;
     var iter = 0;
+    var stagingSlot = 0;
 
     while (pending.Count > 0 && iter++ < maxIter) {
       var progress = false;
@@ -965,6 +1036,9 @@ public static class DefragPlanner {
         for (var j = 0; j < pending.Count; j++) {
           if (i == j) continue;
           var other = pending[j];
+          // A run being held in the staging buffer is not in the volume any
+          // more, so where it used to be blocks nothing.
+          if (other.Staging == DefragStaging.Unpark) continue;
           if (Overlaps(move.DstOffset, move.Length, other.SrcOffset, other.Length)) {
             blocked = true;
             break;
@@ -991,34 +1065,58 @@ public static class DefragPlanner {
         // filesystem's chain pointed at the planned destination instead.
         var blockedMove = pending[0];
         var occupantIndex = -1;
-        for (var j = 1; j < pending.Count; ++j)
+        for (var j = 1; j < pending.Count; ++j) {
+          // A run already held out of the volume occupies nothing, so it can
+          // neither block a move nor be lifted a second time.
+          if (pending[j].Staging == DefragStaging.Unpark) continue;
           if (Overlaps(blockedMove.DstOffset, blockedMove.Length, pending[j].SrcOffset, pending[j].Length)) {
             occupantIndex = j;
             break;
           }
+        }
+
+        // Nothing in the volume is in the way, yet nothing can go: what blocks
+        // the first move is a run already held, so lifting that move out too is
+        // what frees the deadlock.
+        if (occupantIndex < 0 && allowMemoryStaging && blockedMove.Staging != DefragStaging.Unpark)
+          occupantIndex = 0;
         if (occupantIndex < 0)
           throw new InvalidOperationException(
-            "Defragmentation cannot be planned in place: a move is blocked by something that " +
-            "does not move, so no ordering of the remaining moves is safe.");
+            "Defragmentation cannot be planned in place: every remaining run is already held and " +
+            "none of their destinations is clear, which no ordering can fix.");
 
         var stuck = pending[occupantIndex];
-        if (!stagedOnce.Add((stuck.FileName, stuck.DstOffset)))
-          throw new InvalidOperationException(
-            "Defragmentation cannot be planned in place: the moves keep blocking each other " +
-            "after staging, so no safe order exists.");
 
         // The staging region has to be somewhere no pending move is headed;
         // otherwise lifting one file out of the way just puts it in the next
         // one's path, and the cycle survives with an extra hop in it.
         var stageIdx = FindFreeRegionClearOf(freeRegions, AlignUp(stuck.Length, clusterSize), pending, result);
-        if (stageIdx < 0)
-          // Nowhere to stage the cycle. Executing the remaining moves in any
-          // order overwrites data — which is what happened while this emitted
-          // them and hoped the byte mover would cope. Every caller falls back
-          // to the rebuild path, which reads each file whole first.
+        if (stageIdx < 0 && !allowMemoryStaging)
           throw new InvalidOperationException(
             $"Defragmentation cannot be planned in place: {pending.Count} move(s) form a cycle " +
             $"and no free region of {AlignUp(stuck.Length, clusterSize):N0} bytes can stage it.");
+
+        if (stageIdx < 0) {
+          // Nowhere on the volume to park the run. Memory is somewhere: lift it
+          // out, let the moves it was blocking run into the space it leaves,
+          // and put it down when its own destination is clear. A full volume
+          // has no free region to offer and used to end the pass here.
+          ParkInMemory(result, pending, occupantIndex, stuck, freeRegions, clusterSize, ref stagingSlot);
+          continue;
+        }
+
+        // Lifting into a free region is the one that could ping-pong: the run
+        // is put back on the volume, so it can block something again. Once each
+        // — after that it goes to memory instead, which it cannot come back
+        // from to block anything.
+        if (!stagedOnce.Add((stuck.FileName, stuck.DstOffset))) {
+          if (!allowMemoryStaging)
+            throw new InvalidOperationException(
+              "Defragmentation cannot be planned in place: the moves keep blocking each other " +
+              "after staging, so no safe order exists.");
+          ParkInMemory(result, pending, occupantIndex, stuck, freeRegions, clusterSize, ref stagingSlot);
+          continue;
+        }
 
         var (stageOff, stageLen) = freeRegions[stageIdx];
         var consumed = AlignUp(stuck.Length, clusterSize);
@@ -1041,9 +1139,24 @@ public static class DefragPlanner {
   }
 
   /// <summary>
-  /// A free region of at least <paramref name="size" /> bytes that no pending
-  /// move is headed for, so parking a run there cannot block anything.
+  /// Lifts a run out of the volume and into the staging buffer, leaving what it
+  /// occupied free for the moves it was blocking, and re-queues it to be put
+  /// down once its own destination is clear.
   /// </summary>
+  private static void ParkInMemory(
+      List<ClusterMove> result, List<ClusterMove> pending, int index, ClusterMove stuck,
+      List<(long Offset, long Length)> freeRegions, int clusterSize, ref int slot) {
+    result.Add(new ClusterMove(stuck.SrcOffset, stuck.SrcOffset, stuck.Length, stuck.FileName) {
+      Staging = DefragStaging.Park,
+      StagingSlot = slot,
+    });
+    pending[index] = stuck with { Staging = DefragStaging.Unpark, StagingSlot = slot };
+    ++slot;
+
+    // The space it came from is free now, and something is waiting for it.
+    freeRegions.Add((stuck.SrcOffset, AlignUp(stuck.Length, clusterSize)));
+  }
+
   /// <summary>
   /// A free region of at least <paramref name="size" /> bytes that no move is
   /// headed for — neither one still waiting nor one already committed. Staging
@@ -1110,7 +1223,8 @@ public static class DefragPlanner {
     List<(long Offset, long Length)> freeRegions,
     IReadOnlyList<(long Start, long End)> forbidden,
     DefragMode mode,
-    MetadataZone zone) {
+    MetadataZone zone,
+    bool allowMemoryStaging) {
 
     // Sort each group by CURRENT offset (not by size) so files near their
     // target position stay put. Same minimum-moves rationale as PlanPerformance.
@@ -1122,7 +1236,7 @@ public static class DefragPlanner {
     // pipeline below.
     if (zone == MetadataZone.BeforeContent)
       return PlanBeforeContent(metadataExtents, dirByFile, dirSizes, dataByFile, dataSizes,
-        dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode);
+        dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode, allowMemoryStaging);
 
     var layoutOrder = new List<(string Name, List<DefragBlockInfo> Extents, long Size)>();
     switch (zone) {
@@ -1175,7 +1289,7 @@ public static class DefragPlanner {
       }
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize);
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
   }
 
   /// <summary>
@@ -1198,7 +1312,8 @@ public static class DefragPlanner {
     long dataOrigin, long imageSize, int clusterSize,
     List<(long Offset, long Length)> freeRegions,
     IReadOnlyList<(long Start, long End)> forbidden,
-    DefragMode mode) {
+    DefragMode mode,
+    bool allowMemoryStaging) {
 
     // Build parent→children mapping. A file's parent is determined by
     // stripping the last path component. For flat names (no "/"), the
@@ -1281,7 +1396,7 @@ public static class DefragPlanner {
       }
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize);
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────
@@ -1319,7 +1434,8 @@ public static class DefragPlanner {
     List<(long Offset, long Length)> freeRegions,
     IReadOnlyList<(long Start, long End)> forbidden,
     DefragMode mode,
-    LayoutTemplate template) {
+    LayoutTemplate template,
+    bool allowMemoryStaging) {
 
     // Build filter contexts from each file. mtime/atime/ctime aren't carried
     // on DefragBlockInfo today — Wave 2 will plumb them through. For now the
@@ -1417,7 +1533,7 @@ public static class DefragPlanner {
       }
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize);
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
   }
 
   private static string ExtractFileName(string fullName) {

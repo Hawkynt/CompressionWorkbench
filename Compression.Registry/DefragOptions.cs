@@ -81,6 +81,19 @@ public sealed record class DefragOptions {
   /// <see cref="DefragMode.CarveHole"/>; ignored otherwise.</summary>
   public long HoleSize { get; init; } = 0;
 
+  /// <summary>
+  /// Bytes a defragmentation may hold in memory while rearranging a volume that
+  /// has nowhere of its own to park a run.
+  /// </summary>
+  /// <remarks>
+  /// A run whose destination is still occupied has to go somewhere, and on a
+  /// volume with no free region left there is nowhere on disk. Memory is the
+  /// answer, and the more of it there is the more of the rearrangement happens
+  /// at memory speed; past this figure the runs go to a scratch file instead,
+  /// which is slower but has no ceiling.
+  /// </remarks>
+  public long StagingMemoryBudgetBytes { get; set; } = 256L * 1024 * 1024;
+
   /// <summary>Byte offset where the carved hole should start. -1 (default) =
   /// auto-pick (carve at the end, immediately after the last live extent).
   /// Ignored except in <see cref="DefragMode.CarveHole"/>.</summary>

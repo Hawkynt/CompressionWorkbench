@@ -45,7 +45,19 @@ public sealed class MinixV1BlockMover : IFilesystemBlockMover {
   /// <summary>First byte a file may occupy: past the bitmaps and the inode table.</summary>
   public long FirstDataByte => this._firstDataByte;
 
+  /// <summary>
+  /// Each call repoints the run it is given and nothing else, so an owner
+  /// scattered over several runs is simply several calls.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
   /// <inheritdoc />
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -58,7 +70,12 @@ public sealed class MinixV1BlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
+      long length, bool releaseOldSpace) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);
     if (this._firstDataByte == 0) this.Init(image);
@@ -77,7 +94,7 @@ public sealed class MinixV1BlockMover : IFilesystemBlockMover {
         $"Minix: zone {newZone} is past the 65535 a sixteen-bit pointer holds.");
 
     var zones = (int)((length + zoneSize - 1) / zoneSize);
-    var pointerOffset = this.FindPointerNaming(image, oldOffset, zones);
+    var pointerOffset = this.FindPointerNaming(image, fileName, oldOffset, zones);
     if (pointerOffset < 0)
       throw new InvalidOperationException(
         $"Minix: no pointer run names zone {oldZone}, so '{fileName}' cannot be repointed.");
@@ -92,7 +109,7 @@ public sealed class MinixV1BlockMover : IFilesystemBlockMover {
     // The bitmap says which zones are taken; leaving it behind would let the
     // next file added to the volume be allocated straight on top of this one.
     for (var i = 0; i < zones; ++i) {
-      this.SetBit(image, oldZone + i, taken: false);
+      if (releaseOldSpace) this.SetBit(image, oldZone + i, taken: false);
       this.SetBit(image, newZone + i, taken: true);
     }
     image.Flush();
@@ -102,11 +119,17 @@ public sealed class MinixV1BlockMover : IFilesystemBlockMover {
   /// The byte offset of the first pointer of the run that starts at
   /// <paramref name="offset" /> and covers <paramref name="zones" />, or -1.
   /// </summary>
-  private long FindPointerNaming(Stream image, long offset, int zones) {
+  private long FindPointerNaming(Stream image, string fileName, long offset, int zones) {
     image.Position = 0;
     using var reader = new MinixV1Reader(image);
-    foreach (var entry in reader.Entries) {
-      if (entry.IsDirectory) continue;
+    // Several records can name one place while a run is being held out of the
+    // volume: the run's own, which still points where it was, and whatever has
+    // since moved in. The one being moved is the one named here.
+    var candidates = reader.Entries
+      .Where(e => !e.IsDirectory)
+      .OrderByDescending(e => string.Equals(e.Name, fileName, StringComparison.OrdinalIgnoreCase));
+
+    foreach (var entry in candidates) {
       foreach (var (runOffset, runLength, pointerOffset) in reader.EnumerateDataExtents(entry)) {
         if (runOffset != offset) continue;
         if (runLength < (long)zones * MinixV1Reader.ZoneSize) continue;

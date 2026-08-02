@@ -91,6 +91,12 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 

@@ -65,7 +65,19 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
   /// <summary>First byte a file may occupy: past the superblock, journal and bitmaps.</summary>
   public long FirstDataByte => this._firstDataByte;
 
+  /// <summary>
+  /// Each call repoints the run it is given and nothing else, so an owner
+  /// scattered over several runs is simply several calls.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
   /// <inheritdoc />
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -78,7 +90,12 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
+      long length, bool releaseOldSpace) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);
     if (this._blockSize == 0) this.Init(image);
@@ -93,7 +110,7 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
     if (oldBlock == newBlock) return;
 
     var blocks = (int)((length + this._blockSize - 1) / this._blockSize);
-    var pointerOffset = this.FindPointerNaming(image, oldOffset, blocks);
+    var pointerOffset = this.FindPointerNaming(image, fileName, oldOffset, blocks);
     if (pointerOffset < 0)
       throw new InvalidOperationException(
         $"ReiserFS: no pointer run names block {oldBlock}, so '{fileName}' cannot be repointed.");
@@ -107,7 +124,7 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
 
     // The bitmap says which blocks are taken; leaving it behind would let the
     // next file added to the volume be allocated straight on top of this one.
-    this.SetBits(image, oldBlock, blocks, allocated: false);
+    if (releaseOldSpace) this.SetBits(image, oldBlock, blocks, allocated: false);
     this.SetBits(image, newBlock, blocks, allocated: true);
     image.Flush();
   }
@@ -116,11 +133,17 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
   /// The byte offset of the first pointer of the run that starts at
   /// <paramref name="offset" /> and covers <paramref name="blocks" />, or -1.
   /// </summary>
-  private long FindPointerNaming(Stream image, long offset, int blocks) {
+  private long FindPointerNaming(Stream image, string fileName, long offset, int blocks) {
     image.Position = 0;
     using var reader = new ReiserFsReader(image);
-    foreach (var entry in reader.Entries) {
-      if (entry.IsDirectory) continue;
+    // Several records can name one place while a run is being held out of the
+    // volume: the run's own, which still points where it was, and whatever has
+    // since moved in. The one being moved is the one named here.
+    var candidates = reader.Entries
+      .Where(e => !e.IsDirectory)
+      .OrderByDescending(e => string.Equals(e.Name, fileName, StringComparison.OrdinalIgnoreCase));
+
+    foreach (var entry in candidates) {
       foreach (var (runOffset, runLength, pointerOffset) in reader.EnumerateDataExtents(entry)) {
         if (runOffset != offset) continue;
         if (runLength < (long)blocks * this._blockSize) continue;

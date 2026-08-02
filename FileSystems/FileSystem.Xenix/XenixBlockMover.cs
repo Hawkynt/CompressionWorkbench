@@ -40,7 +40,19 @@ public sealed class XenixBlockMover : IFilesystemBlockMover {
   /// <summary>First byte a file may occupy: past the superblock and the inode list.</summary>
   public long FirstDataByte => this._firstDataByte;
 
+  /// <summary>
+  /// Each call repoints the run it is given and nothing else, so an owner
+  /// scattered over several runs is simply several calls.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
   /// <inheritdoc />
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
