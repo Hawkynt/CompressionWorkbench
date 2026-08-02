@@ -212,4 +212,96 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return UnusedSpaceWiper.Wipe(image, extents, image.Length, wipeClusterTips, fileSizeLookup);
   }
 
+
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Moves only the files that are out of place, repointing each one's inode
+  /// extent as its blocks arrive. A file here is one contiguous extent named by
+  /// its inode, so a move is the copy and one four-byte write — where a rebuild
+  /// would read and rewrite every file to fix a handful of runs.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The in-place pass is kept only if every payload still reads back. It can
+    // refuse partway — an inode it cannot find leaves the volume with bytes
+    // moved and nothing pointing at them — and a rebuild is the honest answer
+    // when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => {
+        using var reader = new Qnx4Reader(stream);
+        return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+      },
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => {
+          using var reader = new Qnx4Reader(stream);
+          return reader.Entries.Where(e => !e.IsDirectory)
+                               .Select(e => (e.Name, reader.Extract(e))).ToList();
+        },
+        buildImage: files => {
+          var writer = new Qnx4Writer();
+          foreach (var (name, data) in files) writer.AddFile(name, data);
+          using var built = new MemoryStream();
+          writer.WriteTo(built);
+          return built.ToArray();
+        }));
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Qnx4BlockMover();
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // A file across several extents keeps the later ones in an extent block
+    // this pass does not rewrite, so repointing the inode alone would leave the
+    // rest of the file behind. Those volumes are refused.
+    var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var extent in extents) {
+      if (extent.Kind != DefragBlockKind.Used || extent.FileName is not { } owner) continue;
+      runsPerOwner.TryGetValue(owner, out var count);
+      runsPerOwner[owner] = count + 1;
+    }
+    var fragmented = runsPerOwner.Count(kv => kv.Value > 1);
+    if (fragmented > 0)
+      throw new NotSupportedException(
+        $"QNX4: {fragmented} file(s) span more than one extent, which this pass cannot restate.");
+
+    // The mover reads inodes from the root directory cluster, so a file living
+    // in a subdirectory has no inode it can find. Refusing before the first
+    // byte moves keeps a half-moved volume from being the answer — the check
+    // used to happen inside the mover, which is after the moving has begun.
+    var nested = runsPerOwner.Keys.Count(name => name.Contains('/'));
+    if (nested > 0)
+      throw new NotSupportedException(
+        $"QNX4: {nested} file(s) live in subdirectories, whose inodes this pass does not reach.");
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
 }
