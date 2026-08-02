@@ -257,6 +257,24 @@ public sealed class Yaffs2FormatDescriptor
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+    // Chunks can be moved where they are: each one names itself in its spare
+    // area, so nothing has to be repointed afterwards, and the volume keeps the
+    // size it had. The rebuild below repacks the log into a fresh volume, which
+    // is the garbage collection a running YAFFS2 does — but it can only ever
+    // start-pack, so end-packing and hole-carving are the planner's alone.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloads,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Every consolidate mode lands on the same layout here: the writer emits a
     // fresh volume packed from the first data block, and has no way to place
     // files against the tail. Carving a hole is the one request it cannot meet.
@@ -309,6 +327,91 @@ public sealed class Yaffs2FormatDescriptor
     }
   }
 
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Yaffs2BlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    List<DefragBlockInfo> extents;
+    using (var data = new ImageAccessor(archive))
+      extents = EnumerateExtentsCore(data);
+    var planning = Coalesce(extents);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      planning, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    List<DefragBlockInfo> postExtents;
+    using (var data = new ImageAccessor(archive))
+      postExtents = EnumerateExtentsCore(data);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>
+  /// Fuses neighbouring chunks that belong to the same owner into one extent.
+  /// </summary>
+  /// <remarks>
+  /// The map describes the volume a chunk at a time, which is what a wipe needs
+  /// — a chunk is the unit that is live or not. A planner given it that way
+  /// plans one move per chunk, and a megabyte of files is thousands of them:
+  /// the dependency resolution is quadratic in the move count, so the pass took
+  /// longer than reading the whole volume out and writing it back. Runs move as
+  /// a unit anyway, so nothing is lost by saying so.
+  /// </remarks>
+  private static List<DefragBlockInfo> Coalesce(List<DefragBlockInfo> extents) {
+    var ordered = extents.OrderBy(e => e.Offset).ToList();
+    var result = new List<DefragBlockInfo>(ordered.Count);
+
+    foreach (var extent in ordered) {
+      if (result.Count > 0) {
+        var last = result[^1];
+        if (last.Kind == extent.Kind
+            && string.Equals(last.FileName, extent.FileName, StringComparison.Ordinal)
+            && last.Offset + last.Length == extent.Offset) {
+          result[^1] = new DefragBlockInfo(last.Offset, last.Length + extent.Length,
+            last.Kind, last.FileName);
+          continue;
+        }
+      }
+      result.Add(extent);
+    }
+
+    return result;
+  }
+
+  /// <summary>Every file's bytes, for the guard to compare across the pass.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloads(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    using var image = new ImageAccessor(stream);
+    var scan = Yaffs2Scanner.Scan(image);
+    var result = new List<byte[]>();
+    if (!scan.ParseOk) return result;
+
+    foreach (var obj in scan.Objects) {
+      if (obj.Type != Yaffs2Scanner.YObjectType.File) continue;
+      if (!scan.DataChunks.TryGetValue(obj.ObjectId, out var chunks) || chunks.Count == 0) continue;
+      using var payload = new MemoryStream();
+      CopyChunks(image, chunks, obj.Size, payload);
+      result.Add(payload.ToArray());
+    }
+    return result;
+  }
+
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
@@ -343,7 +446,12 @@ public sealed class Yaffs2FormatDescriptor
       var spare = spareBuf.AsSpan();
       var (objId, chunkId, _) = ParseSpare(spare);
 
-      if (chunkId == 0) {
+      // An object header names the object it describes, and object ids start at
+      // one. An erased chunk's spare is all ones, which reads back as neither —
+      // and calling that a header claimed every unwritten chunk in the volume
+      // as the volume's own bookkeeping, so the empty tail of a fresh image
+      // looked like metadata nothing was allowed to use.
+      if (chunkId == 0 && objId > 0) {
         // Object header — metadata
         var name = objectNames.TryGetValue(objId, out var n) ? n : $"obj:{objId}";
         result.Add(new DefragBlockInfo(off, stride, DefragBlockKind.MetadataReserved, $"header:{name}"));

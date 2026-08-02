@@ -79,7 +79,8 @@ public static class DefragPlanner {
     LayoutTemplate? layoutTemplate = null,
     IReadOnlySet<string>? movableMetadata = null)
     => Validate(PlanCore(extents, dataOrigin, imageSize, clusterSize, profile, mode,
-      interleaveStride, holeSize, holeAt, metadataZone, layoutTemplate, movableMetadata), imageSize);
+      interleaveStride, holeSize, holeAt, metadataZone, layoutTemplate, movableMetadata),
+      imageSize, extents);
 
   /// <summary>
   /// Checks that a plan can be executed without destroying data: every move has
@@ -88,7 +89,8 @@ public static class DefragPlanner {
   /// rebuild. Silently executing one wrote files on top of each other and left
   /// them the right length with the wrong bytes.
   /// </summary>
-  private static IReadOnlyList<ClusterMove> Validate(IReadOnlyList<ClusterMove> moves, long imageSize) {
+  private static IReadOnlyList<ClusterMove> Validate(IReadOnlyList<ClusterMove> moves, long imageSize,
+      IReadOnlyList<DefragBlockInfo> extents) {
     if (moves.Count == 0) return moves;
 
     var occupied = new List<(long Start, long End)>();
@@ -107,7 +109,50 @@ public static class DefragPlanner {
             "which another move already claims.");
       occupied.Add((start, end));
     }
+
+    // A destination may only land where something is moving out of. A packing
+    // pass that leaves a file where it is — because it is already at its target
+    // — still owns those bytes, and a plan that writes another file over them
+    // reads back as the right length full of the wrong bytes. Checking the
+    // destinations against each other never caught it: the file being
+    // overwritten has no move to collide with.
+    var vacated = MergeIntervals(moves.Select(m => (m.SrcOffset, m.SrcOffset + m.Length)).ToList());
+    foreach (var extent in extents) {
+      if (extent.Kind != DefragBlockKind.Used) continue;
+      foreach (var (liveStart, liveEnd) in Subtract(extent.Offset, extent.Offset + extent.Length, vacated))
+        foreach (var move in moves) {
+          var start = move.DstOffset;
+          var end = move.DstOffset + move.Length;
+          if (start >= liveEnd || liveStart >= end) continue;
+          throw new InvalidOperationException(
+            $"Defragmentation plan writes '{move.FileName}' to {start:N0}..{end:N0}, which still " +
+            $"holds '{extent.FileName}' and nothing moves it away.");
+        }
+    }
+
     return moves;
+  }
+
+  /// <summary>
+  /// What is left of [<paramref name="start" />, <paramref name="end" />) once
+  /// every interval in <paramref name="covered" /> — which must be sorted and
+  /// disjoint — is taken out of it.
+  /// </summary>
+  private static List<(long Start, long End)> Subtract(long start, long end,
+      IReadOnlyList<(long Start, long End)> covered) {
+    var result = new List<(long Start, long End)>();
+    var cursor = start;
+
+    foreach (var (coveredStart, coveredEnd) in covered) {
+      if (coveredEnd <= cursor) continue;
+      if (coveredStart >= end) break;
+      if (coveredStart > cursor) result.Add((cursor, coveredStart));
+      cursor = Math.Max(cursor, coveredEnd);
+      if (cursor >= end) return result;
+    }
+
+    if (cursor < end) result.Add((cursor, end));
+    return result;
   }
 
   private static IReadOnlyList<ClusterMove> PlanCore(
@@ -506,7 +551,15 @@ public static class DefragPlanner {
         break;
       }
       if (dropTo == null) return candidate;
-      candidate = AlignDownFrom(dropTo.Value - length, minStart, clusterSize);
+
+      // Dropping below the region has to make progress. AlignDownFrom clamps at
+      // minStart rather than going under it, so once a forbidden region sits
+      // within one file-length of the data origin the candidate lands back on
+      // minStart, overlaps the same region, and the search spins there forever.
+      // There is no room below it, and saying so is the answer.
+      var lowered = AlignDownFrom(dropTo.Value - length, minStart, clusterSize);
+      if (lowered >= candidate) return -1;
+      candidate = lowered;
     }
     return -1;
   }
