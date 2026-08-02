@@ -60,6 +60,12 @@ public sealed class FatxBlockMover : IFilesystemBlockMover {
   public long FirstDataByte => this._dataStart;
 
   /// <inheritdoc />
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -95,6 +101,61 @@ public sealed class FatxBlockMover : IFilesystemBlockMover {
 
     for (var i = 0; i < count; ++i)
       this.WriteFatEntry(image, (uint)(oldFirst + i), 0);
+    image.Flush();
+  }
+
+  /// <summary>
+  /// A file's whole allocation can be restated in one call, so a file in
+  /// several pieces is relinked as one chain rather than refused.
+  /// </summary>
+  public bool SupportsScatteredRelink => true;
+
+  /// <summary>The unit an allocation is counted in: one cluster.</summary>
+  public int AllocationBlockSize => this._clusterSize;
+
+  /// <inheritdoc />
+  public void UpdateAllocationScattered(Stream image, string fileName,
+      IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets,
+      IReadOnlySet<long>? blocksLiveElsewhere) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(fileName);
+    ArgumentNullException.ThrowIfNull(oldBlockOffsets);
+    ArgumentNullException.ThrowIfNull(newBlockOffsets);
+    if (this._clusterSize == 0) this.Init(image);
+    if (newBlockOffsets.Count == 0) return;
+
+    var oldClusters = new uint[oldBlockOffsets.Count];
+    for (var i = 0; i < oldClusters.Length; ++i) oldClusters[i] = this.ClusterOf(oldBlockOffsets[i]);
+    var newClusters = new uint[newBlockOffsets.Count];
+    for (var i = 0; i < newClusters.Length; ++i) newClusters[i] = this.ClusterOf(newBlockOffsets[i]);
+
+    var live = new HashSet<uint>();
+    if (blocksLiveElsewhere != null)
+      foreach (var offset in blocksLiveElsewhere) live.Add(this.ClusterOf(offset));
+
+    // The new chain first: nothing reaches it until a record names it.
+    for (var i = 0; i < newClusters.Length; ++i)
+      this.WriteFatEntry(image, newClusters[i],
+        i + 1 < newClusters.Length ? newClusters[i + 1] : this.EndOfChain());
+    image.Flush();
+
+    if (oldClusters.Length > 0 && oldClusters[0] != newClusters[0]) {
+      // By name only. Falling back to a search by cluster alone would repoint
+      // whichever record happened to name it, which is the thing the name is
+      // here to prevent.
+      if (!this.PatchRecord(image, this._rootCluster, oldClusters[0], newClusters[0], [], fileName))
+        throw new InvalidOperationException(
+          $"FATX: no directory record starts at cluster {oldClusters[0]}, so '{fileName}' " +
+          "cannot be repointed.");
+      image.Flush();
+    }
+
+    // Release what this file no longer holds — but not a cluster another file
+    // has just been relinked onto, which would cut its chain.
+    var kept = new HashSet<uint>(newClusters);
+    foreach (var cluster in oldClusters)
+      if (!kept.Contains(cluster) && !live.Contains(cluster))
+        this.WriteFatEntry(image, cluster, 0);
     image.Flush();
   }
 
@@ -141,8 +202,15 @@ public sealed class FatxBlockMover : IFilesystemBlockMover {
   /// Matching on the cluster rather than the name keeps a duplicate name from
   /// repointing the wrong file.
   /// </summary>
+  /// <remarks>
+  /// <paramref name="ownerName" /> settles which record is meant when more than
+  /// one names the same cluster. Relinking one owner at a time after every byte
+  /// has moved routinely leaves two records naming a cluster for a moment — the
+  /// one still to be repointed and one already pointed there — and picking by
+  /// cluster alone then picked whichever came first.
+  /// </remarks>
   private bool PatchRecord(Stream image, uint directoryCluster, uint oldFirst, uint newFirst,
-      HashSet<uint> visited) {
+      HashSet<uint> visited, string? ownerName = null) {
     var cluster = directoryCluster;
     var record = new byte[FatxReader.DirRecordSize];
     var subdirectories = new List<uint>();
@@ -162,6 +230,7 @@ public sealed class FatxBlockMover : IFilesystemBlockMover {
         var first = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(RecordFirstClusterOffset));
         if ((record[1] & 0x10) != 0) { subdirectories.Add(first); continue; }
         if (first != oldFirst) continue;
+        if (ownerName != null && !NameMatches(record, nameLength, ownerName)) continue;
 
         Span<byte> field = stackalloc byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(field, newFirst);
@@ -174,9 +243,20 @@ public sealed class FatxBlockMover : IFilesystemBlockMover {
     }
 
     foreach (var child in subdirectories)
-      if (child >= 1 && !this.IsEndOfChain(child) && this.PatchRecord(image, child, oldFirst, newFirst, visited))
+      if (child >= 1 && !this.IsEndOfChain(child)
+          && this.PatchRecord(image, child, oldFirst, newFirst, visited, ownerName))
         return true;
 
     return false;
+  }
+
+  /// <summary>Whether a record's name is the leaf of <paramref name="path" />.</summary>
+  private static bool NameMatches(byte[] record, byte nameLength, string path) {
+    if (nameLength == 0 || nameLength > FatxReader.DirRecordSize - 2) return false;
+    var name = System.Text.Encoding.ASCII.GetString(record, 2, nameLength);
+    var leaf = path.Replace('\\', '/');
+    var slash = leaf.LastIndexOf('/');
+    if (slash >= 0) leaf = leaf[(slash + 1)..];
+    return string.Equals(name, leaf, StringComparison.OrdinalIgnoreCase);
   }
 }

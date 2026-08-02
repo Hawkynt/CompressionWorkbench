@@ -382,6 +382,36 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // The in-place pass is kept only if every payload still reads back. It can
+    // refuse partway — a layout it cannot order, a record it cannot find — and
+    // a rebuild is the honest answer when it does, rather than the exception
+    // this used to hand the caller.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadFileEntries(stream),
+        buildImage: files => {
+          var writer = new FatxWriter();
+          foreach (var (name, data) in files) writer.AddFile(name, data);
+          var built = writer.Build();
+          if (built.Length >= archive.Length) return built;
+          var padded = new byte[archive.Length];
+          Array.Copy(built, padded, built.Length);
+          return padded;
+        }));
+  }
+
+  /// <summary>Every file's name and bytes, for the rebuild and the guard.</summary>
+  private static List<(string Name, byte[] Data)> ReadFileEntries(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    var reader = new FatxReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory)
+                         .Select(e => (e.Name, reader.Extract(e))).ToList();
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
     var mover = new FatxBlockMover();
     mover.Init(archive);
@@ -390,20 +420,10 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     options.OnProgress?.Invoke(new DefragProgressEvent(
       "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
 
-    // A file in more than one piece needs its whole chain restated, which this
-    // pass cannot do — it repoints a record's first cluster and writes one
-    // chain. Those volumes are refused rather than half-relinked.
-    var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-    foreach (var extent in extents) {
-      if (extent.Kind != DefragBlockKind.Used || extent.FileName is not { } owner) continue;
-      runsPerOwner.TryGetValue(owner, out var count);
-      runsPerOwner[owner] = count + 1;
-    }
-    var fragmented = runsPerOwner.Count(kv => kv.Value > 1);
-    if (fragmented > 0)
-      throw new NotSupportedException(
-        $"FATX: {fragmented} file(s) are in more than one piece, which this pass cannot relink " +
-        "as a single chain.");
+    // A file in more than one piece has its whole chain restated in one call
+    // once every cluster has landed, which the mover now offers; this used to
+    // refuse such volumes outright, so a fragmented FATX volume could not be
+    // defragmented at all.
 
     var moves = Compression.Core.Layout.DefragPlanner.Plan(
       extents, mover.FirstDataByte, archive.Length, mover.ClusterSize,

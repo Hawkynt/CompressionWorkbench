@@ -199,20 +199,20 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var r = new VdfsReader(image);
     var entries = r.Entries;
 
-    // VDFS is packed header → entry-table → file data. The entry table does NOT
-    // start at a fixed offset (the reader honours the header's rootOffset) and can
-    // extend well past a "36 + count*80" estimate, so anchoring the metadata region
-    // on a guessed size let the wiper treat live directory entries as free space and
-    // zero them (live-data loss). Reserve everything up to the FIRST file's data
-    // instead — that provably covers the header, the whole entry table and any
-    // padding, so only genuine trailing free space is ever wiped.
-    var firstData = entries
-      .Where(e => !e.IsDirectory && e.Size > 0)
-      .Select(e => (long)e.DataOffset)
-      .DefaultIfEmpty(image.Length)
-      .Min();
-    if (firstData > 0)
-      yield return new DefragBlockInfo(0, firstData, DefragBlockKind.MetadataReserved, "header+entries");
+    // The entry table is wherever the header says it is, not necessarily ahead
+    // of the file data: adding a file relocates the table, and after that it
+    // sits past everything. Reserving "everything up to the first file" then
+    // left the table itself looking like free space, and wiping the volume
+    // zeroed it — every file went missing at once. Reserve the header and the
+    // table where they actually are, and read their extent from the header.
+    yield return new DefragBlockInfo(0, VdfsReader.DefaultEntryTableOffset,
+      DefragBlockKind.MetadataReserved, "header");
+
+    var tableStart = r.EntryTableOffset;
+    var tableLength = r.EntryTableLength;
+    if (tableStart >= 0 && tableLength > 0 && tableStart + tableLength <= image.Length)
+      yield return new DefragBlockInfo(tableStart, tableLength,
+        DefragBlockKind.MetadataReserved, "entry table");
 
     foreach (var e in entries) {
       if (e.IsDirectory || e.Size <= 0) continue;

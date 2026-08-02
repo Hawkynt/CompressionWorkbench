@@ -95,8 +95,15 @@ public sealed class FatxWriter {
     var nextCluster = 1u; // FATX root lives at cluster 1, not 2 like FAT12/16/32
     PlanClusters(root, ref nextCluster, clusterSize);
     var lastUsedCluster = nextCluster - 1;
+
+    // Leave room to write into. Sized to exactly the clusters the files use,
+    // a freshly created volume has no free run at all and cannot take a single
+    // added file — which is what its own modifier reported. A quarter of what
+    // is in use, and never fewer than a handful of clusters, is enough for the
+    // volume to be usable without making a small one wasteful.
+    var slackClusters = Math.Max(MinimumFreeClusters, lastUsedCluster / 4);
     // Spec heuristic: clusterCount < 0xFFF4 → FAT16, else FAT32.
-    var clusterCount = (long)lastUsedCluster;
+    var clusterCount = (long)lastUsedCluster + slackClusters;
     var fatType = clusterCount < 0xFFF4 ? 16 : 32;
     var entryBytes = fatType == 16 ? 2 : 4;
 
@@ -167,6 +174,12 @@ public sealed class FatxWriter {
   /// whatever <c>sectors_per_cluster</c> the superblock records.
   /// </summary>
   private static readonly int[] SectorsPerClusterCandidates = [4, 8, 16, 32, 64, 128];
+
+  /// <summary>
+  /// Free clusters a volume is never built with fewer of, so even a tiny one
+  /// has somewhere to put a file that is added later.
+  /// </summary>
+  private const uint MinimumFreeClusters = 8;
 
   /// <summary>
   /// Picks the sectors-per-cluster value that minimises file-tail slack plus the

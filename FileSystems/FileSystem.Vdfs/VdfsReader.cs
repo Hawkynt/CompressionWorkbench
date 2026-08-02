@@ -11,6 +11,18 @@ public sealed class VdfsReader : IDisposable {
   private const int EntrySize = 80;
 
   /// <summary>
+  /// Bytes of fixed header the entry table follows when the header names no
+  /// offset of its own.
+  /// </summary>
+  public const int DefaultEntryTableOffset = 36;
+
+  /// <summary>Byte offset the entry table actually starts at.</summary>
+  public long EntryTableOffset { get; private set; }
+
+  /// <summary>Bytes the entry table occupies.</summary>
+  public long EntryTableLength { get; private set; }
+
+  /// <summary>
   /// Random-access view over the container. Copying it into a byte[] capped the
   /// reader at the array limit, which the 32-bit entry offsets do not.
   /// </summary>
@@ -37,7 +49,9 @@ public sealed class VdfsReader : IDisposable {
     var rootOffset = (int)_data.ReadUInt32(32);
 
     // Entries start at rootOffset (or at offset 36 if rootOffset is 0)
-    var entriesStart = rootOffset > 0 ? rootOffset : 36;
+    var entriesStart = rootOffset > 0 ? rootOffset : DefaultEntryTableOffset;
+    this.EntryTableOffset = entriesStart;
+    this.EntryTableLength = (long)entryCount * EntrySize;
 
     for (int i = 0; i < entryCount; i++) {
       var off = entriesStart + i * EntrySize;

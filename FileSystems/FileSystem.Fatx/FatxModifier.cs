@@ -164,6 +164,12 @@ public static class FatxModifier {
     var g = ParseGeometry(image);
     var sanitised = SanitiseName(LeafOf(name));
 
+    // Adding a name that is already there replaces it. Without this the old
+    // record stayed alongside the new one and the volume listed the file twice,
+    // with the older copy's clusters still marked in use — which nothing
+    // noticed while a freshly written volume had no free cluster to add into.
+    RemoveFile(image, sanitised);
+
     // 1. Find a free dirent slot in the root cluster (single-cluster scope).
     var slotOffset = FindFreeDirentSlot(image, g)
       ?? throw new InvalidOperationException(

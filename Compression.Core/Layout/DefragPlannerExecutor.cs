@@ -80,9 +80,11 @@ public static class DefragPlannerExecutor {
     // relink can be told an owner's whole new allocation afterwards.
     // The chain tracker describes files; a repointed structure is finished the
     // moment its move is done, so it is kept out of the per-owner relink.
+    // The tracker is given the parks too: a held run leaves its slot and comes
+    // back somewhere else, and it can only follow that if it is told.
     var fileMoves = metadataNames.Count == 0
-      ? writes
-      : writes.Where(m => !IsMetadata(m.FileName)).ToList();
+      ? moves
+      : moves.Where(m => !IsMetadata(m.FileName)).ToList();
     var relink = mover.SupportsScatteredRelink
       ? new ChainTracker(fileMoves, mover.AllocationBlockSize)
       : null;
@@ -95,7 +97,7 @@ public static class DefragPlannerExecutor {
     // A mover that rebuilds an owner's whole chain works from where its blocks
     // are, and a run held in memory is nowhere. Movers that repoint each run on
     // its own have no such view and do not mind.
-    if (parks && (relink != null || !mover.SupportsHeldRuns))
+    if (parks && !mover.SupportsHeldRuns)
       throw new InvalidOperationException(
         $"Defragmentation cannot be done in place: the layout needs a run held out of the volume " +
         $"while the rest move, which {mover.GetType().Name} does not offer.");
@@ -202,11 +204,45 @@ public static class DefragPlannerExecutor {
       // twice — the chain came out double the length the file needed.
       var occupant = new Dictionary<long, long>();
 
+      // Blocks that are out of the volume entirely, waiting to be put down.
+      // While held they occupy nothing, which is the point of holding them, so
+      // the simulation has to take them off the map and put them back.
+      var held = new Dictionary<(int Slot, long At), long>();
+
       foreach (var move in moves) {
         if (!this._originalByOwner.TryGetValue(move.FileName, out var list))
           this._originalByOwner[move.FileName] = list = [];
 
         var step = blockSize > 0 ? blockSize : move.Length;
+
+        if (move.Staging == DefragStaging.Park) {
+          for (var at = 0L; at < move.Length; at += step) {
+            var from = move.SrcOffset + at;
+            if (!occupant.TryGetValue(from, out var origin)) {
+              origin = from;
+              this._finalOf[from] = from;
+              list.Add(from);
+            }
+            occupant.Remove(from);
+            held[(move.StagingSlot, at)] = origin;
+          }
+          continue;
+        }
+
+        if (move.Staging == DefragStaging.Unpark) {
+          for (var at = 0L; at < move.Length; at += step) {
+            var to = move.DstOffset + at;
+            if (!held.Remove((move.StagingSlot, at), out var origin)) {
+              origin = to;
+              this._finalOf[to] = to;
+              list.Add(to);
+            }
+            occupant[to] = origin;
+            this._finalOf[origin] = to;
+          }
+          continue;
+        }
+
         for (var at = 0L; at < move.Length; at += step) {
           var from = move.SrcOffset + at;
           var to = move.DstOffset + at;

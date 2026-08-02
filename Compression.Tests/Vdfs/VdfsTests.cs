@@ -222,9 +222,21 @@ public class VdfsTests {
     var desc = new FileSystem.Vdfs.VdfsFormatDescriptor();
     var extents = ((Compression.Registry.IFilesystemExtentMap)desc).EnumerateExtents(ms).ToList();
 
-    var meta = extents.First(e => e.Kind == Compression.Registry.DefragBlockKind.MetadataReserved);
-    // Header (16) + fields (20) + 2 entries * 80 = 196
-    Assert.That(meta.Length, Is.EqualTo(196));
+    // The header and the entry table are reserved where they actually are, not
+    // as one span up to the first file. Adding a file relocates the table past
+    // the data, and describing it as the front of the image left it looking
+    // like free space — wiping such a volume zeroed it and every file went
+    // missing. Here the two happen to be adjacent, and the sum is what the
+    // single span used to be: 36 bytes of header plus two 80-byte entries.
+    var meta = extents.Where(e => e.Kind == Compression.Registry.DefragBlockKind.MetadataReserved)
+                      .ToList();
+    Assert.That(meta.Sum(e => e.Length), Is.EqualTo(196));
+    Assert.That(meta.Any(e => e.Offset == 0), Is.True, "The header is not reserved.");
+
+    using var reader = new FileSystem.Vdfs.VdfsReader(new MemoryStream(img));
+    Assert.That(meta.Any(e => e.Offset == reader.EntryTableOffset
+                           && e.Length == reader.EntryTableLength), Is.True,
+      "The entry table is not reserved where the header says it is.");
 
     var used = extents.Where(e => e.Kind == Compression.Registry.DefragBlockKind.Used).ToList();
     Assert.That(used, Has.Count.EqualTo(2));
