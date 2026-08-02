@@ -158,6 +158,19 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Lays the image out again by writing it anew.
+  /// </summary>
+  /// <remarks>
+  /// A file's data blocks could be moved — the inode records where they start —
+  /// but that field lives inside a metadata block the writer compresses.
+  /// Patching it means compressing the block again, which changes its length,
+  /// which shifts every metadata block after it and invalidates every offset
+  /// stored into them: the inode references in the directory table, the
+  /// directory references in the inodes, and the table pointers in the
+  /// superblock. So this is a rebuild, and the extent map above is what tells
+  /// the truth about where the bytes are.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options)
     => DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
@@ -190,18 +203,55 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return 0;
   }
 
+  /// <summary>
+  /// Reports where the image's bytes actually are: the superblock and the
+  /// metadata tables as structure, and each file's compressed data blocks under
+  /// its name, at the offset its inode records.
+  /// </summary>
+  /// <remarks>
+  /// <para>This used to walk a cursor forward by each file's uncompressed size,
+  /// which described a volume that does not exist — the bytes on disk are
+  /// compressed and sit where the inode says. Anything reading that map was
+  /// handed offsets belonging to nothing.</para>
+  ///
+  /// <para>A file small enough to live in a shared fragment has no run of its
+  /// own and none is reported: its bytes are part of a block several files
+  /// share, which no single one of them owns.</para>
+  /// </remarks>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    yield return new DefragBlockInfo(0, SquashFsConstants.SuperblockSize, DefragBlockKind.MetadataReserved, "superblock");
-    var r = new SquashFsReader(image, leaveOpen: true);
-    long offset = SquashFsConstants.SuperblockSize;
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory || e.IsSymlink) continue;
-      if (e.Size > 0) {
-        yield return new DefragBlockInfo(offset, e.Size, DefragBlockKind.Used, e.FullPath);
-        offset += e.Size;
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      var reader = new SquashFsReader(image, leaveOpen: true);
+
+      var owned = new List<(long Start, long End)>();
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory || entry.IsSymlink) continue;
+        var (offset, length) = entry.DataExtent;
+        if (length <= 0 || offset < 0 || offset + length > image.Length) continue;
+        result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, entry.FullPath));
+        owned.Add((offset, offset + length));
       }
+      owned.Sort((a, b) => a.Start.CompareTo(b.Start));
+
+      // The image is packed: the superblock leads, the data blocks follow, and
+      // the inode, directory and fragment tables trail. Whatever no file claims
+      // is one of those, not free space.
+      var cursor = 0L;
+      foreach (var (start, end) in owned) {
+        if (start > cursor)
+          result.Add(new DefragBlockInfo(cursor, start - cursor, DefragBlockKind.MetadataReserved,
+            cursor == 0 ? "superblock" : "fragments and tables"));
+        cursor = Math.Max(cursor, end);
+      }
+      if (cursor < image.Length)
+        result.Add(new DefragBlockInfo(cursor, image.Length - cursor,
+          DefragBlockKind.MetadataReserved, "fragments and tables"));
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
     }
-    if (offset < image.Length)
-      yield return new DefragBlockInfo(offset, image.Length - offset, DefragBlockKind.MetadataReserved, "metadata-tables");
+    return result;
   }
 }

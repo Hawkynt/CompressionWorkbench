@@ -13,6 +13,13 @@ public sealed class CramFsEntry {
   /// <summary>Uncompressed file size in bytes (0 for directories).</summary>
   public int Size { get; init; }
 
+  /// <summary>
+  /// Byte offset of this entry's own inode. The inode records where the file's
+  /// data starts, so anything moving the data has to know where to write the
+  /// new position down.
+  /// </summary>
+  public int InodeOffset { get; init; }
+
   /// <summary>Unix mode bits including file type and permissions.</summary>
   public ushort Mode { get; init; }
 

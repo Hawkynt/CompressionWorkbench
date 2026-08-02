@@ -451,27 +451,54 @@ public static class DefragPlanner {
     // a data-region origin that isn't a multiple of clusterSize from 0).
     var moves = new List<ClusterMove>();
 
-    if (mode == DefragMode.ConsolidateAtEnd) {
-      // Place files in reverse so the LAST file in the ordered list lands at
-      // the highest valid offset.
-      var ceiling = AlignDownFrom(imageSize, dataOrigin, clusterSize);
-      for (var i = ordered.Count - 1; i >= 0; i--) {
-        var (fileName, totalSize, _) = ordered[i];
-        var alignedSize = AlignUp(totalSize, clusterSize);
-        var target = FindPrevSlot(ceiling, alignedSize, dataOrigin, clusterSize, forbidden);
-        if (target < 0) break; // no room — leave remaining files where they are
-        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
-        ceiling = target;
+    // A file the sweep cannot place stays where it is, and where it is has to
+    // be off limits to everything else — otherwise the files that were placed
+    // get destinations on top of it, which reads back as the right length full
+    // of the wrong bytes. Which files those are is only known after a sweep, so
+    // each one that could not be placed is added to the forbidden set and the
+    // sweep runs again. Every round strictly grows that set, so the file count
+    // bounds the rounds.
+    var stationary = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var barrier = forbidden;
+
+    for (var round = 0; round <= ordered.Count; ++round) {
+      moves.Clear();
+      var unplaced = new List<string>();
+
+      if (mode == DefragMode.ConsolidateAtEnd) {
+        // Place files in reverse so the LAST file in the ordered list lands at
+        // the highest valid offset.
+        var ceiling = AlignDownFrom(imageSize, dataOrigin, clusterSize);
+        for (var i = ordered.Count - 1; i >= 0; i--) {
+          var (fileName, totalSize, _) = ordered[i];
+          if (stationary.Contains(fileName)) continue;
+          var alignedSize = AlignUp(totalSize, clusterSize);
+          var target = FindPrevSlot(ceiling, alignedSize, dataOrigin, clusterSize, barrier);
+          if (target < 0) { unplaced.Add(fileName); continue; }
+          EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
+          ceiling = target;
+        }
+      } else {
+        var cursor = dataOrigin;
+        foreach (var (fileName, totalSize, _) in ordered) {
+          if (stationary.Contains(fileName)) continue;
+          var alignedSize = AlignUp(totalSize, clusterSize);
+          var target = FindNextSlot(cursor, alignedSize, imageSize, dataOrigin, clusterSize, barrier);
+          if (target < 0) { unplaced.Add(fileName); continue; }
+          EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
+          cursor = target + alignedSize;
+        }
       }
-    } else {
-      var cursor = dataOrigin;
-      foreach (var (fileName, totalSize, _) in ordered) {
-        var alignedSize = AlignUp(totalSize, clusterSize);
-        var target = FindNextSlot(cursor, alignedSize, imageSize, dataOrigin, clusterSize, forbidden);
-        if (target < 0) break; // no room
-        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize, dataOrigin);
-        cursor = target + alignedSize;
+
+      if (unplaced.Count == 0) break;
+
+      var raised = new List<(long Start, long End)>(barrier);
+      foreach (var fileName in unplaced) {
+        stationary.Add(fileName);
+        foreach (var extent in byFile[fileName])
+          raised.Add((extent.Offset, extent.Offset + extent.Length));
       }
+      barrier = MergeIntervals(raised);
     }
 
     return ResolveDependencies(moves, freeRegions, clusterSize);

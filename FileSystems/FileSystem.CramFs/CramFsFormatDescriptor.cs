@@ -121,18 +121,76 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new CramFsReader(stream);
-        return r.Entries.Where(e => e.IsRegularFile).Select(e => (e.FullPath, r.Extract(e)));
-      },
-      buildImage: files => {
-        using var ms = new MemoryStream();
-        using (var w = new CramFsWriter(ms, leaveOpen: true))
-          foreach (var (n, d) in files) w.AddFile(n, d);
-        return ms.ToArray();
-      });
+  /// <summary>
+  /// Lays the image out again. A file is a block pointer table followed by the
+  /// compressed blocks it ends, and its inode says where that pair starts — so
+  /// a move is the copy, one field, and the same delta added to every entry in
+  /// the table, which is cheaper than decompressing every file and compressing
+  /// it back.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The in-place pass is kept only if every payload still reads back: it can
+    // refuse partway, and a rebuild is the honest answer when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadEntries(stream),
+        buildImage: files => {
+          using var ms = new MemoryStream();
+          using (var w = new CramFsWriter(ms, leaveOpen: true))
+            foreach (var (n, d) in files) w.AddFile(n, d);
+          var built = ms.ToArray();
+          if (built.Length >= archive.Length) return built;
+          var padded = new byte[archive.Length];
+          Array.Copy(built, padded, built.Length);
+          return padded;
+        }));
+  }
+
+  /// <summary>Plans the moves the layout needs, commits them, and restamps.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new CramFsBlockMover();
+    mover.Init(archive);
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // The superblock's checksum covers the whole image, so it is stamped once
+    // the bytes have stopped moving rather than after every move.
+    CramFsBlockMover.RestampChecksum(archive);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's path and bytes, for the rebuild and the guard.</summary>
+  private static List<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    var reader = new CramFsReader(stream);
+    return reader.Entries.Where(e => e.IsRegularFile)
+                         .Select(e => (e.FullPath, reader.Extract(e))).ToList();
+  }
 
   /// <summary>
   /// CramFS is a compressed, read-only ROM filesystem: the superblock, inode
@@ -153,16 +211,57 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return 0;
   }
 
+  /// <summary>
+  /// Reports where the image's bytes actually are: the superblock and the inode
+  /// area as structure, and each file's block pointer table and compressed
+  /// blocks under its name.
+  /// </summary>
+  /// <remarks>
+  /// This used to walk a cursor forward by each file's uncompressed size, which
+  /// described a volume that does not exist — the bytes on disk are compressed
+  /// and sit wherever the inode says. Anything driven off that map operated on
+  /// offsets that belonged to nothing.
+  /// </remarks>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    yield return new DefragBlockInfo(0, CramFsConstants.SuperblockSize, DefragBlockKind.MetadataReserved, "superblock");
-    var r = new CramFsReader(image);
-    long offset = CramFsConstants.SuperblockSize;
-    foreach (var e in r.Entries) {
-      if (!e.IsRegularFile) continue;
-      if (e.Size > 0) {
-        yield return new DefragBlockInfo(offset, e.Size, DefragBlockKind.Used, e.FullPath);
-        offset += e.Size;
+    ArgumentNullException.ThrowIfNull(image);
+    var result = new List<DefragBlockInfo>();
+    try {
+      if (image.CanSeek) image.Position = 0;
+      var reader = new CramFsReader(image);
+
+      var owned = new List<(long Start, long End)>();
+      var firstData = image.Length;
+      foreach (var entry in reader.Entries) {
+        if (!entry.IsRegularFile) continue;
+        var (offset, length) = reader.DataExtent(entry);
+        if (length <= 0) continue;
+        result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, entry.FullPath));
+        owned.Add((offset, offset + length));
+        firstData = Math.Min(firstData, offset);
       }
+      owned.Sort((a, b) => a.Start.CompareTo(b.Start));
+
+      // The superblock and every inode with its name sit ahead of the first
+      // file's table; nothing of the volume's own is written past it. So the
+      // prefix is structure and whatever no file claims after it is space
+      // nothing holds — alignment padding in a freshly written image, and a
+      // gap wherever something has since been moved out of.
+      if (firstData > 0 && firstData <= image.Length)
+        result.Add(new DefragBlockInfo(0, firstData, DefragBlockKind.MetadataReserved,
+          "superblock and inodes"));
+
+      var cursor = firstData;
+      foreach (var (start, end) in owned) {
+        if (start > cursor)
+          result.Add(new DefragBlockInfo(cursor, start - cursor, DefragBlockKind.Free));
+        cursor = Math.Max(cursor, end);
+      }
+      if (cursor < image.Length)
+        result.Add(new DefragBlockInfo(cursor, image.Length - cursor, DefragBlockKind.Free));
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      return [];
     }
+    return result;
   }
 }

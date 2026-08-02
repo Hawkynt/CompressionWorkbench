@@ -98,6 +98,7 @@ public sealed class CramFsReader : IDisposable {
     var end = dirDataStart + dirInode.size;
 
     while (pos < end && pos + CramFsConstants.InodeSize <= this._image.Length) {
+      var inodeOffset = pos;
       var inode = this.ReadInode(pos);
       pos += CramFsConstants.InodeSize;
 
@@ -122,6 +123,7 @@ public sealed class CramFsReader : IDisposable {
         Uid        = inode.uid,
         Gid        = inode.gid,
         DataOffset = inode.offset * 4,
+        InodeOffset = inodeOffset,
       };
 
       this._entries.Add(entry);
@@ -129,6 +131,35 @@ public sealed class CramFsReader : IDisposable {
       if (entry.IsDirectory)
         this.WalkDirectory(inode, fullPath);
     }
+  }
+
+  /// <summary>
+  /// Where on disk <paramref name="entry" />'s bytes actually sit: its block
+  /// pointer table followed by the compressed blocks the table ends.
+  /// </summary>
+  /// <remarks>
+  /// A CramFS file is not stored at an offset that follows from its logical
+  /// size — it is compressed, and its inode says where its table begins. The
+  /// table's last entry is the byte the file ends at, so the pair bounds the
+  /// whole footprint.
+  /// </remarks>
+  public (long Offset, long Length) DataExtent(CramFsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (!entry.IsRegularFile || entry.Size <= 0 || entry.DataOffset <= 0) return (0, 0);
+
+    var blocks = (entry.Size + CramFsConstants.PageSize - 1) / CramFsConstants.PageSize;
+    var tableStart = entry.DataOffset;
+    if (tableStart + blocks * 4 > this._image.Length) return (0, 0);
+
+    var end = (long)this.ReadU32(tableStart + (blocks - 1) * 4);
+    if (end <= tableStart || end > this._image.Length) return (0, 0);
+    return (tableStart, end - tableStart);
+  }
+
+  /// <summary>How many block pointers a file's table holds.</summary>
+  public static int BlockCount(CramFsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    return (entry.Size + CramFsConstants.PageSize - 1) / CramFsConstants.PageSize;
   }
 
   // ── File decompression ───────────────────────────────────────────────────────

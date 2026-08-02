@@ -13,6 +13,9 @@ internal static class CramFsConstants {
   /// <summary>Total size of the superblock in bytes.</summary>
   public const int SuperblockSize = 76;
 
+  /// <summary>Byte offset of the superblock's checksum over the whole image.</summary>
+  public const int CrcOffset = 32;
+
   /// <summary>
   /// Byte offset of the root inode inside the superblock. The volume name is a
   /// 16-byte field at 48, so the inode starts at 64 — writing it at 60 put the

@@ -40,4 +40,20 @@ public sealed class SquashFsEntry {
   internal uint FragmentOffset { get; init; }
   internal uint FileSize { get; init; }
   internal uint[] BlockSizes { get; init; } = [];
+
+  /// <summary>
+  /// Where this file's data blocks actually sit, and how many bytes of them
+  /// there are: the start the inode records, and the compressed sizes summed.
+  /// Zero length when the file has no blocks of its own — an empty file, or one
+  /// small enough to live entirely in a shared fragment.
+  /// </summary>
+  internal (long Offset, long Length) DataExtent {
+    get {
+      if (this.IsDirectory || this.BlockSizes.Length == 0) return (0, 0);
+      var length = 0L;
+      foreach (var size in this.BlockSizes)
+        length += size & ~SquashFsConstants.BlockUncompressedFlag;
+      return length > 0 ? (this.BlocksStart, length) : (0, 0);
+    }
+  }
 }
