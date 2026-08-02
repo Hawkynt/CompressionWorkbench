@@ -174,6 +174,133 @@ public sealed class XenixReader : IDisposable {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
+  /// <summary>
+  /// Where on disk everything the volume holds actually sits: each file's data
+  /// blocks under its name, and every directory block and indirect block as
+  /// structure, with the byte offset of the pointer that names each run.
+  /// </summary>
+  /// <remarks>
+  /// This filesystem tracks its free space with a chained cache in the
+  /// superblock rather than a bitmap, so what is taken can only be answered by
+  /// walking the inodes. Doing so also answers by whom, which is what anything
+  /// moving a file needs.
+  /// </remarks>
+  public IEnumerable<(long Offset, long Length, long PointerOffset, string? Owner)> EnumerateLayout() {
+    // The root's own blocks belong to nobody in the entry list — it is what the
+    // list was walked from — so it is claimed first. Leaving it out reported
+    // the root directory as space nothing holds, and a wipe then zeroed it.
+    var inodes = new List<(int Number, bool IsDirectory, string Name)> { (RootInode, true, "") };
+    foreach (var entry in this._entries)
+      inodes.Add((entry.InodeNumber, entry.IsDirectory, entry.Name));
+
+    foreach (var (inodeNumber, isDirectory, name) in inodes) {
+      var inode = this.ReadInode((uint)inodeNumber);
+      if (inode == null) continue;
+      var (_, size, zones) = ParseInode(inode);
+      if (size == 0) continue;
+
+      var inodeOffset = this.InodeTableOffset() + (long)(inodeNumber - 1) * InodeSize;
+      var owner = isDirectory ? null : name;
+      var remaining = (long)size;
+
+      var runFirstBlock = 0u;
+      var runPointer = -1L;
+      var runBlocks = 0;
+
+      foreach (var (block, pointerOffset, isPointerBlock) in this.EnumerateBlockPointers(zones, inodeOffset)) {
+        // An indirect block is the volume's own bookkeeping wherever it sits,
+        // and it is never part of a file's run.
+        if (isPointerBlock) {
+          yield return (this.BlockOffset(block), this.BlockSize, -1, null);
+          continue;
+        }
+
+        if (remaining <= 0) break;
+        remaining -= this.BlockSize;
+
+        // A run continues only while the blocks stay consecutive and so do the
+        // pointers naming them: a move rewrites the pointers in order, so a gap
+        // in either would put the wrong blocks under the wrong pointers.
+        if (runPointer >= 0 && block == runFirstBlock + runBlocks
+            && pointerOffset == runPointer + (long)runBlocks * 3) {
+          ++runBlocks;
+          continue;
+        }
+
+        if (runPointer >= 0)
+          yield return (this.BlockOffset(runFirstBlock), (long)runBlocks * this.BlockSize, runPointer, owner);
+
+        runFirstBlock = block;
+        runPointer = pointerOffset;
+        runBlocks = 1;
+      }
+
+      if (runPointer >= 0)
+        yield return (this.BlockOffset(runFirstBlock), (long)runBlocks * this.BlockSize, runPointer, owner);
+    }
+  }
+
+  /// <summary>
+  /// The blocks a file's pointers name, in order, each with the byte offset of
+  /// the pointer itself and whether the block is a pointer block rather than
+  /// data.
+  /// </summary>
+  private IEnumerable<(uint Block, long PointerOffset, bool IsPointerBlock)> EnumerateBlockPointers(
+      uint[] zones, long inodeOffset) {
+    for (var i = 0; i < 10; ++i) {
+      if (zones[i] == 0) yield break;
+      yield return (zones[i], inodeOffset + 12 + (long)i * 3, false);
+    }
+
+    for (var level = 1; level <= 3; ++level) {
+      var root = zones[9 + level];
+      if (root == 0) continue;
+      yield return (root, -1, true);
+      foreach (var triple in this.EnumerateIndirectPointers(root, level))
+        yield return triple;
+    }
+  }
+
+  /// <summary>The blocks an indirect block names, descending as many levels as asked.</summary>
+  private IEnumerable<(uint Block, long PointerOffset, bool IsPointerBlock)> EnumerateIndirectPointers(
+      uint block, int levels) {
+    var blockOffset = this.BlockOffset(block);
+    if (blockOffset < 0 || blockOffset + this.BlockSize > this._data.Length) yield break;
+
+    for (var i = 0; i < this.BlockSize / 4; ++i) {
+      var at = blockOffset + (long)i * 4;
+      var pointer = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan((int)at, 4));
+      if (pointer == 0) continue;
+      if (levels <= 1) {
+        yield return (pointer, at, false);
+        continue;
+      }
+      yield return (pointer, -1, true);
+      foreach (var triple in this.EnumerateIndirectPointers(pointer, levels - 1))
+        yield return triple;
+    }
+  }
+
+  /// <summary>Bytes a pointer to a data block occupies inside an inode.</summary>
+  public const int InodePointerBytes = 3;
+
+  /// <summary>Bytes a pointer occupies inside an indirect block.</summary>
+  public const int IndirectPointerBytes = 4;
+
+  /// <summary>
+  /// First byte a file may occupy. <c>s_isize</c> is the number of the first
+  /// data block, not how many blocks the inode list spans — reading it the
+  /// other way put the boundary past the root directory and the first file,
+  /// and everything below it was then reported as the volume's own.
+  /// </summary>
+  public long FirstDataByte {
+    get {
+      var firstDataBlock = BinaryPrimitives.ReadUInt16LittleEndian(
+        this._data.AsSpan(1024, 2));
+      return (long)firstDataBlock * this.BlockSize;
+    }
+  }
+
   public byte[] Extract(XenixEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
