@@ -13,7 +13,7 @@ cannot claim something the code does not do.
 | [Amiga Professional FS](AmigaPfs.md) | moving (`AmigaPfsBlockMover`) | yes | yes |
 | [APFS](Apfs.md) | rebuilding | yes | yes |
 | [Apple DOS 3.3](AppleDos.md) | moving (`AppleDosBlockMover`) | yes | yes |
-| [Apple UCSD Pascal](ApplePascal.md) | rebuilding | yes | yes |
+| [Apple UCSD Pascal](ApplePascal.md) | moving (`ApplePascalBlockMover`) | yes | yes |
 | [ATR (Atari 8-bit)](Atari8.md) | moving (`Atari8BlockMover`) | yes | yes |
 | [BBC DFS](Bbc.md) | moving (`BbcBlockMover`) | yes | yes |
 | [BcacheFS](BcacheFs.md) | moving (`BcacheFsBlockMover`) | yes | yes |

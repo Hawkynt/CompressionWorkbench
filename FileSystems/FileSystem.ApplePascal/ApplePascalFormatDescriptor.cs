@@ -160,8 +160,42 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
         using var reader = new ApplePascalReader(stream);
         return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
       },
-      inPlace: () => RebuildVia(archive, options),
-      rebuild: () => { /* the rebuild is what was just tried; leave the volume as it was */ });
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => RebuildVia(archive, options));
+  }
+
+  /// <summary>Plans the moves the layout needs, commits them, and re-sorts.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new ApplePascalBlockMover();
+    mover.Init(archive);
+
+    var extents = ApplePascalExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // The p-System measures free space by the gaps between consecutive entries,
+    // so the directory has to end up in block order or the volume reads as full
+    // of overlapping files.
+    mover.SortDirectory(archive);
+
+    archive.Position = 0;
+    var postExtents = ApplePascalExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
   private void RebuildVia(Stream archive, DefragOptions options) {

@@ -349,6 +349,17 @@ public static class DoubleSpaceInPlaceModifier {
     return found == count ? result : null;
   }
 
+  /// <summary>The first run of free sectors of the wanted size at or after a point.</summary>
+  private static int Search(bool[] used, Context ctx, int runSectors, int from) {
+    for (var s = from; s + runSectors <= ctx.DataLenSectors; s++) {
+      var ok = true;
+      for (var k = 0; k < runSectors; k++)
+        if (used[s + k]) { ok = false; break; }
+      if (ok) return s;
+    }
+    return -1;
+  }
+
   private static int FindFirstFreePhysicalSector(byte[] disk, Context ctx) {
     // Walk every MDFAT entry, find max(physSector + runSectors) for any used
     // entry — this is the first sector at the tail of the in-use region.
@@ -388,13 +399,13 @@ public static class DoubleSpaceInPlaceModifier {
         used[physSector + s] = true;
     }
 
-    for (var s = Math.Max(0, startHint); s + runSectors <= ctx.DataLenSectors; s++) {
-      var ok = true;
-      for (var k = 0; k < runSectors; k++)
-        if (used[s + k]) { ok = false; break; }
-      if (ok) return s;
-    }
-    return -1;
+    // From the hint first: appending past the last run keeps a freshly written
+    // volume tidy and costs no search. But the hint is where the last run ends,
+    // and a volume whose layout has been packed against the tail has all of its
+    // free space in front of that — looking only forwards reported such a
+    // volume as full when most of it was empty.
+    var found = Search(used, ctx, runSectors, Math.Max(0, startHint));
+    return found >= 0 ? found : Search(used, ctx, runSectors, 0);
   }
 
   // =========================================================================
