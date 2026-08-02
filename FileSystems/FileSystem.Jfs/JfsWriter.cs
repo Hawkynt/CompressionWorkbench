@@ -1350,7 +1350,44 @@ public sealed class JfsWriter {
   /// <summary>The block holding dmap <paramref name="index" />: the map is contiguous.</summary>
   private static int DmapBlockAt(int index) => FirstDmapBlock + index;
 
-  private void WriteBlockMap(SparseBlockImage image, int usableBlocks, bool[] allocated) {
+  /// <summary>
+  /// Writes the block allocation map — every dmap page, the level-0 dmapctl
+  /// above them and the bmap control page — for the given allocation, over an
+  /// existing volume.
+  /// </summary>
+  /// <remarks>
+  /// Moving a file changes which blocks are taken, and the map records that in
+  /// more than a bitmap: each dmap carries a free-block count and a tree of
+  /// free-buddy exponents, and the pages above it summarise those. Flipping the
+  /// bits alone leaves the summaries describing a volume that no longer exists,
+  /// which fsck.jfs reports. Laying the whole map down again from the new
+  /// allocation is both simpler and exact.
+  /// </remarks>
+  internal static void RewriteBlockMap(Stream image, int usableBlocks, bool[] allocated) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(allocated);
+
+    var scratch = new SparseBlockImage(BlockSize, (long)usableBlocks * BlockSize);
+    WriteBlockMap(scratch, usableBlocks, allocated);
+
+    foreach (var block in BlockMapPages(usableBlocks)) {
+      var at = (long)block * BlockSize;
+      if (at + BlockSize > image.Length) continue;
+      image.Position = at;
+      image.Write(scratch.Read(at, BlockSize));
+    }
+    image.Flush();
+  }
+
+  /// <summary>The blocks the allocation map itself occupies.</summary>
+  private static IEnumerable<int> BlockMapPages(int usableBlocks) {
+    yield return BmapBlock;
+    yield return L0DmapctlBlock;
+    for (var i = 0; i < DmapCount(usableBlocks); ++i)
+      yield return DmapBlockAt(i);
+  }
+
+  private static void WriteBlockMap(SparseBlockImage image, int usableBlocks, bool[] allocated) {
     var ndmaps = DmapCount(usableBlocks);
 
     var dmapMaxes = new sbyte[ndmaps];

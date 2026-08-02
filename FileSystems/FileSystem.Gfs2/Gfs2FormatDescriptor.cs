@@ -252,6 +252,24 @@ public sealed class Gfs2FormatDescriptor
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Moving what is out of place beats writing the volume out again: a file's
+    // out-of-line bytes are addressed by eight-byte tree pointers, so a move is
+    // the copy, those pointers, and the two bits per block in the resource
+    // group that say whether it is taken.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway — a file stuffed into its own dinode has no run of
+      // its own — and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Every mode streams: end-pack and carve-hole order their entries from
     // scratch inside the rebuilder, so none of them has to fall back to the
     // buffered path that a volume past two gigabytes cannot use.
@@ -346,6 +364,36 @@ public sealed class Gfs2FormatDescriptor
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Gfs2BlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = Gfs2ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = Gfs2ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Gfs2ExtentMap.Enumerate(image);
 

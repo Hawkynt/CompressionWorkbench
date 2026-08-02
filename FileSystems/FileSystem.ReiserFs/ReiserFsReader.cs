@@ -302,6 +302,74 @@ public sealed class ReiserFsReader : IDisposable {
     return written;
   }
 
+  /// <summary>
+  /// Where on disk <paramref name="entry" />'s bytes actually sit, as runs of
+  /// whole blocks, along with the byte offset of the first pointer that names
+  /// each run.
+  /// </summary>
+  /// <remarks>
+  /// <para>Only the indirect items are reported. A DIRECT item holds the file's
+  /// tail inside a tree leaf, which is the volume's own bookkeeping — it cannot
+  /// be moved without moving the leaf, and it is not a run of its own.</para>
+  ///
+  /// <para>The block bitmap says which blocks are taken and nothing about by
+  /// whom. Reporting a layout without that leaves anything trying to move a
+  /// file with nothing to repoint, so the runs are read from the pointer arrays
+  /// that name them.</para>
+  /// </remarks>
+  public IEnumerable<(long Offset, long Length, long PointerOffset)> EnumerateDataExtents(ReiserFsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory) yield break;
+
+    var bodyParts = new List<BodyPart>();
+    var sdSize = -1L;
+    CollectFileItems(_rootBlock, entry.ObjectId, entry.DirId, bodyParts, ref sdSize);
+    if (bodyParts.Count == 0 || sdSize == 0) yield break;
+    bodyParts.Sort(static (a, b) => a.KeyOffset.CompareTo(b.KeyOffset));
+
+    foreach (var part in bodyParts) {
+      if (!part.Indirect) continue;
+
+      var ptrCount = part.Length / 4;
+      var runFirstBlock = 0L;
+      var runPointer = -1L;
+      var runBlocks = 0;
+
+      for (var p = 0; p < ptrCount; ++p) {
+        var pointerOffset = part.Offset + p * 4;
+        var block = (long)U32(pointerOffset);
+        var usable = block != 0 && block * _blockSize >= 0
+                  && block * _blockSize + _blockSize <= _len;
+
+        // A run continues only while the blocks stay consecutive and so do the
+        // pointers naming them: a move rewrites the pointers in order, so a gap
+        // in either would put the wrong blocks under the wrong pointers.
+        if (usable && runPointer >= 0 && block == runFirstBlock + runBlocks) {
+          ++runBlocks;
+          continue;
+        }
+
+        if (runPointer >= 0)
+          yield return (runFirstBlock * _blockSize, (long)runBlocks * _blockSize, runPointer);
+
+        if (usable) {
+          runFirstBlock = block;
+          runPointer = pointerOffset;
+          runBlocks = 1;
+        } else {
+          runPointer = -1;
+          runBlocks = 0;
+        }
+      }
+
+      if (runPointer >= 0)
+        yield return (runFirstBlock * _blockSize, (long)runBlocks * _blockSize, runPointer);
+    }
+  }
+
+  /// <summary>Block size in bytes, as the superblock records it.</summary>
+  public int BlockSize => this._blockSize;
+
   /// <summary>One body item: where it lives in the image, and whether it is a pointer array.</summary>
   private readonly record struct BodyPart(ulong KeyOffset, long Offset, int Length, bool Indirect);
 

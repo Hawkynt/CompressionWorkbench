@@ -23,6 +23,9 @@ public sealed class JfsReader : IDisposable {
   private readonly long _len;
   private readonly List<JfsEntry> _entries = [];
   private int _blockSize;
+
+  /// <summary>Block size in bytes, as the superblock records it.</summary>
+  public int BlockSize => this._blockSize;
   private long _filesetInodeTableOffset;
 
   public IReadOnlyList<JfsEntry> Entries => _entries;
@@ -303,6 +306,53 @@ public sealed class JfsReader : IDisposable {
     var xtOff = inodeOff + XtreeDataOffset;
     if (xtOff + 32 > _len) return 0;
     return this.WriteExtents(xtOff, size, destination);
+  }
+
+  /// <summary>
+  /// Where on disk <paramref name="entry" />'s bytes actually sit, one xtree
+  /// extent at a time, along with the byte offset of the descriptor that names
+  /// each of them.
+  /// </summary>
+  /// <remarks>
+  /// The block allocation map says which blocks are taken; it does not say by
+  /// whom. Reporting a layout without that leaves anything trying to move a
+  /// file with nothing to repoint, so the extents are read from the file's own
+  /// xtree, which is where the answer lives.
+  /// </remarks>
+  public IEnumerable<(long Offset, long Length, long DescriptorOffset)> EnumerateDataExtents(JfsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory) yield break;
+
+    var inodeOff = InodeOffset(entry.InodeNumber);
+    if (inodeOff < 0 || inodeOff + InodeSize > _len) yield break;
+    var size = (long)U64(inodeOff + 24);
+    if (size <= 0) yield break;
+
+    var xtOff = inodeOff + XtreeDataOffset;
+    if (xtOff + 32 > _len) yield break;
+
+    var nextIdx = U16(xtOff + 18);
+    var maxEntry = U16(xtOff + 20);
+    const int XtentryStart = 2;
+
+    var covered = 0L;
+    for (var i = XtentryStart; i < nextIdx && i < maxEntry; i++) {
+      var xadOff = xtOff + i * 16;
+      if (xadOff + 16 > _len) yield break;
+      var pxd = _img.Read(xadOff + 8, 8);
+      var extLen = (int)ReadPxdLength(pxd);
+      var extAddr = (long)ReadPxdAddress(pxd);
+      if (extLen == 0 || extAddr == 0) continue;
+
+      var dataOff = extAddr * _blockSize;
+      var remaining = size - covered;
+      if (remaining <= 0) yield break;
+      var len = Math.Min((long)extLen * _blockSize, remaining);
+      if (dataOff < 0 || dataOff + len > _len || len <= 0) continue;
+
+      yield return (dataOff, len, xadOff + 8);
+      covered += len;
+    }
   }
 
   /// <summary>Copies the extents an xtree root names, up to <paramref name="size" /> bytes.</summary>

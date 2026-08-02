@@ -190,6 +190,23 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Moving what is out of place beats writing the volume out again: a file's
+    // out-of-line bytes are addressed by four-byte pointers in an indirect
+    // item, so a move is the copy, those pointers, and the bitmap bits.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway — a file small enough to live entirely in a DIRECT
+      // item has no run of its own — and a rebuild is the honest answer then.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Buffering the rebuilt image would cap the volume at what a byte[] can
     // hold, so the packing modes stream: each entry is spilled to scratch and
     // the writer pulls it back while laying out the tree.
@@ -287,6 +304,37 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// bitmaps, journal, tree and data alike — so what the bitmap leaves clear is
   /// exactly the free space, whatever a file once wrote into it.
   /// </summary>
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new ReiserFsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var descriptor = new ReiserFsFormatDescriptor();
+    var extents = descriptor.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = descriptor.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
@@ -300,6 +348,27 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var blockSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(44));
       if (blockSize == 0) blockSize = 4096;
       if (blockCount <= 0 || blockCount * blockSize > accessor.Length + blockSize) return [];
+
+      // Files first: their runs come from the pointer arrays that name them,
+      // which is the only place the ownership is written down. The bitmap below
+      // says which blocks are taken and nothing about by whom.
+      var owned = new List<(long Start, long End)>();
+      try {
+        image.Position = 0;
+        using var reader = new ReiserFsReader(image);
+        foreach (var entry in reader.Entries) {
+          if (entry.IsDirectory) continue;
+          foreach (var (offset, length, _) in reader.EnumerateDataExtents(entry)) {
+            if (length <= 0) continue;
+            result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, entry.Name));
+            owned.Add((offset, offset + length));
+          }
+        }
+      } catch {
+        // A volume whose tree we cannot walk still gets its allocation reported
+        // below; it simply has no owners to attribute.
+      }
+      owned.Sort((a, b) => a.Start.CompareTo(b.Start));
 
       var blocksPerBitmap = (long)blockSize * 8;
       long runStart = -1;
@@ -316,20 +385,47 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
           continue;
         }
         if (runStart >= 0) {
-          result.Add(new DefragBlockInfo(runStart * blockSize, (block - runStart) * blockSize,
-            DefragBlockKind.MetadataReserved));
+          AddUnowned(result, owned, runStart * blockSize, block * blockSize);
           runStart = -1;
         }
       }
       if (runStart >= 0)
-        result.Add(new DefragBlockInfo(runStart * blockSize, (blockCount - runStart) * blockSize,
-          DefragBlockKind.MetadataReserved));
+        AddUnowned(result, owned, runStart * blockSize, blockCount * blockSize);
+
+      // The bitmap only describes the blocks the superblock counts. Anything
+      // past them is not free space — it is outside the filesystem — and
+      // leaving it unreported invites a layout pass to put files there.
+      var described = blockCount * blockSize;
+      if (described < accessor.Length)
+        result.Add(new DefragBlockInfo(described, accessor.Length - described,
+          DefragBlockKind.MetadataReserved, "past the filesystem"));
     } catch {
       // An image we cannot read the bitmap from claims nothing; wiping it would
       // zero live data.
       return [];
     }
     return result;
+  }
+
+  /// <summary>
+  /// Reports the parts of an allocated run that no file claims as the volume's
+  /// own structures. Reporting the whole run would describe a file's blocks
+  /// twice — once under its name and once as immovable — and a layout pass
+  /// would then refuse to move anything.
+  /// </summary>
+  private static void AddUnowned(List<DefragBlockInfo> result,
+      List<(long Start, long End)> owned, long start, long end) {
+    var cursor = start;
+    foreach (var (ownedStart, ownedEnd) in owned) {
+      if (ownedEnd <= cursor) continue;
+      if (ownedStart >= end) break;
+      if (ownedStart > cursor)
+        result.Add(new DefragBlockInfo(cursor, ownedStart - cursor, DefragBlockKind.MetadataReserved));
+      cursor = Math.Max(cursor, ownedEnd);
+      if (cursor >= end) return;
+    }
+    if (cursor < end)
+      result.Add(new DefragBlockInfo(cursor, end - cursor, DefragBlockKind.MetadataReserved));
   }
 
   /// <inheritdoc />

@@ -124,7 +124,7 @@ public sealed class HammerReader : IDisposable {
     var dataChunks = new Dictionary<long, List<DataChunk>>();
 
     var visited = new HashSet<long>();
-    this.WalkNode(this._btreeRoot, visited, inodes, children, dataChunks);
+    this.WalkNode(this._btreeRoot, visited, inodes, children, dataChunks, null);
 
     // Pass 2: resolve the directory tree from the root inode, assembling file bytes.
     var files = new List<FileEntry>();
@@ -180,7 +180,8 @@ public sealed class HammerReader : IDisposable {
   private void WalkNode(long nodeOffset, HashSet<long> visited,
                         Dictionary<long, InodeInfo> inodes,
                         Dictionary<long, List<DirEntry>> children,
-                        Dictionary<long, List<DataChunk>> dataChunks) {
+                        Dictionary<long, List<DataChunk>> dataChunks,
+                        List<(long ObjId, long Offset, long Length, long Element, long Node)>? records) {
     if (nodeOffset == 0 || !visited.Add(nodeOffset))
       return;
 
@@ -205,7 +206,7 @@ public sealed class HammerReader : IDisposable {
         // element (btype 0) which carries no subtree of its own.
         var sub = (long)U64(b + 40);
         if (btype is 'I' or 'L')
-          this.WalkNode(sub, visited, inodes, children, dataChunks);
+          this.WalkNode(sub, visited, inodes, children, dataChunks, records);
         continue;
       }
 
@@ -246,9 +247,69 @@ public sealed class HammerReader : IDisposable {
             if (!dataChunks.TryGetValue(objId, out var chunks))
               dataChunks[objId] = chunks = [];
             chunks.Add(new DataChunk(fileOffset, data));
+            var physical = this.Resolve(dataOff);
+            if (records != null && physical >= 0 && physical + dataLen <= this._len)
+              records.Add((objId, physical, dataLen, b, phys));
           }
           break;
       }
+    }
+  }
+
+  /// <summary>
+  /// Where on disk each file's data records actually sit, along with the byte
+  /// offset of the B-tree element that names each of them and of the node that
+  /// element lives in.
+  /// </summary>
+  /// <remarks>
+  /// The freemap accounts per eight-megabyte big-block: it says how far into
+  /// each one the allocator has appended, and nothing about which file owns
+  /// what. Reporting a layout that way leaves anything trying to move a file
+  /// with nothing to repoint, so the records are read from the B-tree that
+  /// names them.
+  /// </remarks>
+  public IReadOnlyList<DataExtent> EnumerateDataExtents() {
+    if (!this.Valid) return [];
+
+    var inodes = new Dictionary<long, InodeInfo>();
+    var children = new Dictionary<long, List<DirEntry>>();
+    var dataChunks = new Dictionary<long, List<DataChunk>>();
+    var records = new List<(long ObjId, long Offset, long Length, long Element, long Node)>();
+
+    this.WalkNode(this._btreeRoot, new HashSet<long>(), inodes, children, dataChunks, records);
+
+    // A record is only worth reporting under a name, and the name comes from
+    // walking the directory tree the same way a read does.
+    var names = new Dictionary<long, string>();
+    if (children.ContainsKey(ObjidRoot) || inodes.ContainsKey(ObjidRoot))
+      NameSubtree(ObjidRoot, "", children, names, new HashSet<long> { ObjidRoot });
+
+    var result = new List<DataExtent>(records.Count);
+    foreach (var (objId, offset, length, element, node) in records) {
+      if (!names.TryGetValue(objId, out var name)) continue;
+      result.Add(new DataExtent(name, offset, length, element, node));
+    }
+    return result;
+  }
+
+  /// <summary>One data record: its bytes, and where the B-tree records them.</summary>
+  public readonly record struct DataExtent(
+    string Path, long Offset, long Length, long ElementOffset, long NodeOffset);
+
+  private void NameSubtree(long dirObjId, string prefix,
+                           Dictionary<long, List<DirEntry>> children,
+                           Dictionary<long, string> names, HashSet<long> path) {
+    if (!children.TryGetValue(dirObjId, out var entries)) return;
+    foreach (var e in entries) {
+      var name = prefix.Length == 0 ? e.Name : prefix + "/" + e.Name;
+      if (e.ObjType == ObjtypeDirectory) {
+        if (path.Add(e.ObjId)) {
+          this.NameSubtree(e.ObjId, name, children, names, path);
+          path.Remove(e.ObjId);
+        }
+        continue;
+      }
+      if (e.ObjType == ObjtypeRegfile) names[e.ObjId] = name;
     }
   }
 

@@ -43,6 +43,22 @@ public static class HammerExtentMap {
       // reserves — is structure the freemap does not describe.
       result.Add(new DefragBlockInfo(0, volBufBeg, DefragBlockKind.MetadataReserved));
 
+      // Files first: their records come from the B-tree that names them, which
+      // is the only place the ownership is written down. The freemap below
+      // accounts per big-block and says nothing about by whom.
+      var owned = new List<(long Start, long End)>();
+      try {
+        foreach (var extent in reader.EnumerateDataExtents()) {
+          if (extent.Length <= 0) continue;
+          result.Add(new DefragBlockInfo(extent.Offset, extent.Length, DefragBlockKind.Used, extent.Path));
+          owned.Add((extent.Offset, extent.Offset + extent.Length));
+        }
+      } catch {
+        // A volume whose tree we cannot walk still gets its allocation reported
+        // below; it simply has no owners to attribute.
+      }
+      owned.Sort((a, b) => a.Start.CompareTo(b.Start));
+
       for (var offset = 0L; volBufBeg + offset < accessor.Length; offset += BigblockSize) {
         var zone2 = (long)(ZoneRawBuffer << 60) | offset;
         var layer1Offset = layer1Base + Layer1Index(zone2) * Layer1EntrySize;
@@ -72,7 +88,7 @@ public static class HammerExtentMap {
         var used = Math.Max((long)appendOff, BigblockSize - Math.Max(0, bytesFree));
         used = Math.Min(used, span);
         if (used <= 0) continue;
-        result.Add(new DefragBlockInfo(start, used, DefragBlockKind.MetadataReserved));
+        AddUnowned(result, owned, start, start + used);
       }
     } catch {
       // A volume whose freemap we cannot walk claims nothing, and a wipe of it
@@ -85,4 +101,25 @@ public static class HammerExtentMap {
   private static long Layer1Index(long zone2) => (zone2 & BlockmapLayer1Mask) / BlockmapLayer2;
 
   private static long Layer2Index(long zone2) => (zone2 & BlockmapLayer2Mask) / BigblockSize;
+
+  /// <summary>
+  /// Reports the parts of an allocated run that no file claims as the volume's
+  /// own structures. Reporting the whole run would describe a file's bytes
+  /// twice — once under its name and once as immovable — and a layout pass
+  /// would then refuse to move anything.
+  /// </summary>
+  private static void AddUnowned(List<DefragBlockInfo> result,
+      List<(long Start, long End)> owned, long start, long end) {
+    var cursor = start;
+    foreach (var (ownedStart, ownedEnd) in owned) {
+      if (ownedEnd <= cursor) continue;
+      if (ownedStart >= end) break;
+      if (ownedStart > cursor)
+        result.Add(new DefragBlockInfo(cursor, ownedStart - cursor, DefragBlockKind.MetadataReserved));
+      cursor = Math.Max(cursor, ownedEnd);
+      if (cursor >= end) return;
+    }
+    if (cursor < end)
+      result.Add(new DefragBlockInfo(cursor, end - cursor, DefragBlockKind.MetadataReserved));
+  }
 }

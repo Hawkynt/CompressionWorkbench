@@ -44,6 +44,25 @@ public static class Gfs2ExtentMap {
       var first = FindFirstRgrp(accessor, blockSize, volumeBlocks);
       if (first < 0) return [];
 
+      // Files first: their runs come from the metadata trees that name them,
+      // which is the only place the ownership is written down. The bitmaps
+      // below say which blocks are taken and nothing about by whom.
+      var owned = new List<(long Start, long End)>();
+      try {
+        foreach (var entry in reader.Entries) {
+          if (entry.IsDirectory) continue;
+          foreach (var (offset, length, _) in reader.EnumerateDataExtents(entry)) {
+            if (length <= 0) continue;
+            result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, entry.Name));
+            owned.Add((offset, offset + length));
+          }
+        }
+      } catch {
+        // A volume whose directory we cannot walk still gets its allocation
+        // reported below; it simply has no owners to attribute.
+      }
+      owned.Sort((a, b) => a.Start.CompareTo(b.Start));
+
       // Everything ahead of the first resource group — superblock, master
       // directory, rindex, journals — is structure.
       result.Add(new DefragBlockInfo(0, first * blockSize, DefragBlockKind.MetadataReserved));
@@ -76,18 +95,24 @@ public static class Gfs2ExtentMap {
             continue;
           }
           if (runStart >= 0) {
-            result.Add(new DefragBlockInfo((data0 + runStart) * blockSize, (i - runStart) * blockSize,
-              DefragBlockKind.Used));
+            AddUnowned(result, owned, (data0 + runStart) * blockSize, (data0 + i) * blockSize);
             runStart = -1;
           }
         }
         if (runStart >= 0)
-          result.Add(new DefragBlockInfo((data0 + runStart) * blockSize, (data - runStart) * blockSize,
-            DefragBlockKind.Used));
+          AddUnowned(result, owned, (data0 + runStart) * blockSize, (data0 + data) * blockSize);
 
         if (skip == 0) break;
         header += skip;
       }
+
+      // What no resource group covers is not free space — it is outside what
+      // the filesystem accounts for — and leaving it unreported invites a
+      // layout pass to put files there.
+      var described = header * blockSize;
+      if (described > 0 && described < accessor.Length)
+        result.Add(new DefragBlockInfo(described, accessor.Length - described,
+          DefragBlockKind.MetadataReserved, "past the last resource group"));
     } catch {
       // A volume whose groups we cannot walk claims nothing, and a wipe of it
       // would zero live data — so report no extents at all.
@@ -132,6 +157,27 @@ public static class Gfs2ExtentMap {
   }
 
   /// <summary>Reads the two-bit allocation state of a group's data block.</summary>
+  /// <summary>
+  /// Reports the parts of an allocated run that no file claims as the volume's
+  /// own structures. Reporting the whole run would describe a file's blocks
+  /// twice — once under its name and once as immovable — and a layout pass
+  /// would then refuse to move anything.
+  /// </summary>
+  private static void AddUnowned(List<DefragBlockInfo> result,
+      List<(long Start, long End)> owned, long start, long end) {
+    var cursor = start;
+    foreach (var (ownedStart, ownedEnd) in owned) {
+      if (ownedEnd <= cursor) continue;
+      if (ownedStart >= end) break;
+      if (ownedStart > cursor)
+        result.Add(new DefragBlockInfo(cursor, ownedStart - cursor, DefragBlockKind.MetadataReserved));
+      cursor = Math.Max(cursor, ownedEnd);
+      if (cursor >= end) return;
+    }
+    if (cursor < end)
+      result.Add(new DefragBlockInfo(cursor, end - cursor, DefragBlockKind.MetadataReserved));
+  }
+
   private static int ReadBitmapState(ImageAccessor image, long rgHeader, long dataIndex, long blockSize) {
     var rgrpBitmapBytes = blockSize - RgrpHeaderBytes;
     var rbBitmapBytes = blockSize - RbHeaderBytes;

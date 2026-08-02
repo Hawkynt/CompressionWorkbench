@@ -204,6 +204,23 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Moving what is out of place beats writing the aggregate out again: a
+    // file's bytes are addressed by the extent descriptors in its inode's
+    // xtree, so a move is the copy plus eight bytes — and the allocation map
+    // laid down once at the end.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Buffering the rebuilt image would cap the aggregate at what a byte[] can
     // hold, so the packing modes stream: each entry is spilled to scratch and
     // the writer pulls it back while laying out the extents.
@@ -322,6 +339,66 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
+  /// <summary>Plans the moves the layout needs, commits them, and relays the map.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new JfsBlockMover();
+    mover.Init(archive);
+
+    var extents = JfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // What the volume needs for itself, as opposed to what its files hold. The
+    // map already reports the two apart, and the allocation after the moves is
+    // this plus wherever the files end up.
+    var structural = extents
+      .Where(e => e.Kind == DefragBlockKind.MetadataReserved)
+      .Select(e => (e.Offset, e.Length))
+      .ToList();
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = JfsExtentMap.Enumerate(archive).ToList();
+
+    // The map records a free count per page and a tree of free-buddy exponents
+    // above it, so flipping bits would leave the summaries describing a volume
+    // that no longer exists. Laying it down again from the new allocation is
+    // exact, and it is what fsck.jfs checks.
+    // The map describes the aggregate's usable blocks, not the whole image: the
+    // fsck workspace and the log sit past them and are not in it.
+    var usableBlocks = mover.UsableBlocks;
+    var allocated = new bool[usableBlocks];
+    void Claim(long offset, long length) {
+      var first = offset / mover.BlockSize;
+      var last = (offset + length + mover.BlockSize - 1) / mover.BlockSize;
+      for (var block = first; block < last && block < usableBlocks; ++block)
+        if (block >= 0) allocated[block] = true;
+    }
+    foreach (var (offset, length) in structural) Claim(offset, length);
+    foreach (var extent in postExtents)
+      if (extent.Kind == DefragBlockKind.Used) Claim(extent.Offset, extent.Length);
+
+    JfsWriter.RewriteBlockMap(archive, usableBlocks, allocated);
+
+    archive.Position = 0;
+    var finalExtents = JfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, finalExtents, "Defragmentation complete"));
+  }
+
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => JfsExtentMap.Enumerate(image);
 

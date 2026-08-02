@@ -361,6 +361,85 @@ public sealed class Gfs2Reader : IDisposable {
   }
 
   /// <summary>
+  /// Where on disk <paramref name="entry" />'s bytes actually sit, as runs of
+  /// whole blocks, along with the byte offset of the first pointer that names
+  /// each run.
+  /// </summary>
+  /// <remarks>
+  /// <para>The resource groups' bitmaps say which blocks are taken and nothing
+  /// about by whom. Reporting a layout without that leaves anything trying to
+  /// move a file with nothing to repoint, so the runs are read from the
+  /// metadata tree that names them.</para>
+  ///
+  /// <para>A file small enough to be stuffed into its own dinode has no run of
+  /// its own and none is reported: its bytes are part of a metadata block and
+  /// cannot move without it.</para>
+  /// </remarks>
+  public IEnumerable<(long Offset, long Length, long PointerOffset)> EnumerateDataExtents(Gfs2Entry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory) yield break;
+
+    var dinode = this.Block((long)entry.InodeBlock);
+    if (dinode.Length < DinodeHeaderSize) yield break;
+    var magic = BinaryPrimitives.ReadUInt32BigEndian(dinode.AsSpan(0, 4));
+    var type = BinaryPrimitives.ReadUInt32BigEndian(dinode.AsSpan(4, 4));
+    if (magic != MetaMagic || type != MetaTypeDinode) yield break;
+
+    var diSize = (long)BinaryPrimitives.ReadUInt64BigEndian(dinode.AsSpan(56, 8));
+    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(dinode.AsSpan(138, 2));
+    if (diSize <= 0 || diHeight == 0) yield break;
+
+    var blockSize = (long)this.BlockSize;
+    var runFirstBlock = 0L;
+    var runPointer = -1L;
+    var runBlocks = 0;
+
+    foreach (var (dataBlock, pointerOffset) in this.WalkTreePointers(
+        dinode, (long)entry.InodeBlock * blockSize, DinodeHeaderSize, diHeight)) {
+      // A run continues only while the blocks stay consecutive and so do the
+      // pointers naming them: a move rewrites the pointers in order, so a gap
+      // in either would put the wrong blocks under the wrong pointers.
+      if (runPointer >= 0 && dataBlock == runFirstBlock + runBlocks
+          && pointerOffset == runPointer + (long)runBlocks * 8) {
+        ++runBlocks;
+        continue;
+      }
+
+      if (runPointer >= 0)
+        yield return (runFirstBlock * blockSize, (long)runBlocks * blockSize, runPointer);
+
+      runFirstBlock = dataBlock;
+      runPointer = pointerOffset;
+      runBlocks = 1;
+    }
+
+    if (runPointer >= 0)
+      yield return (runFirstBlock * blockSize, (long)runBlocks * blockSize, runPointer);
+  }
+
+  /// <summary>
+  /// The same walk as <see cref="WalkTree" />, but reporting where each pointer
+  /// is written down as well as what it points at.
+  /// </summary>
+  private IEnumerable<(long DataBlock, long PointerOffset)> WalkTreePointers(
+      byte[] block, long blockOffset, int pointerBase, int levels) {
+    var capacity = (block.Length - pointerBase) / 8;
+    for (var i = 0; i < capacity; ++i) {
+      var pointer = (long)BinaryPrimitives.ReadUInt64BigEndian(block.AsSpan(pointerBase + i * 8, 8));
+      if (pointer == 0) continue;
+      var pointerOffset = blockOffset + pointerBase + (long)i * 8;
+      if (levels <= 1) {
+        yield return (pointer, pointerOffset);
+        continue;
+      }
+      var child = this.Block(pointer);
+      if (child.Length == 0) continue;
+      foreach (var leaf in this.WalkTreePointers(child, pointer * this.BlockSize, IndPointerBase, levels - 1))
+        yield return leaf;
+    }
+  }
+
+  /// <summary>
   /// Yields the data blocks a pointer area addresses, descending
   /// <paramref name="levels" /> - 1 levels of indirect blocks on the way.
   /// </summary>

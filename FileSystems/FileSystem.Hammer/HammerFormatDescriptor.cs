@@ -231,6 +231,82 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return ms.ToArray();
   }
 
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Lays the volume out again. A file's bytes live in data records whose
+  /// B-tree elements carry the offset they start at, so a move is the copy,
+  /// that field, and the checksum over the node the element lives in —
+  /// cheaper than reading every file out and writing a fresh volume, which is
+  /// what the inherited default did for the one mode it offered.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The in-place pass is kept only if every payload still reads back: it can
+    // refuse partway — a destination past what the freemap accounts for is not
+    // taken, because the freemap is not rewritten here — and a rebuild is the
+    // honest answer when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadFileEntries(stream).ToList(),
+        buildImage: files => {
+          var writer = new HammerWriter();
+          foreach (var (name, data) in files) writer.AddFile(name, data);
+          writer.VolumeSize = Math.Max(writer.VolumeSize, writer.ComputeAutoSize());
+          using var built = new MemoryStream();
+          writer.WriteTo(built);
+          var bytes = built.ToArray();
+          if (bytes.Length >= archive.Length) return bytes;
+          var padded = new byte[archive.Length];
+          Array.Copy(bytes, padded, bytes.Length);
+          return padded;
+        }));
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new HammerBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = HammerExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = HammerExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's name and bytes, for the rebuild and the guard.</summary>
+  private static List<(string Name, byte[] Data)> ReadFileEntries(Stream stream) {
+    stream.Position = 0;
+    using var reader = HammerReader.Open(stream);
+    return reader.ReadFiles().Select(f => (f.Path, f.Content)).ToList();
+  }
+
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
