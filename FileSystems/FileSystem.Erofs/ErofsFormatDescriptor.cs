@@ -148,6 +148,78 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return new ErofsReader(ms.ToArray());
   }
 
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Lays the image out again. Moving what is out of place beats writing the
+  /// image out anew: EROFS lays a file's blocks out contiguously from the raw
+  /// block address in its inode, so a move is the copy plus four bytes. The
+  /// default this replaces offered start-packing only, through a rebuild.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // The in-place pass is kept only if every payload still reads back: it can
+    // refuse partway — a file laid out in a way the inode does not describe as
+    // one run has nothing here to repoint — and a rebuild is the honest answer
+    // when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => this.DefragmentWithPlanner(archive, options),
+      rebuild: () => DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadEntries(stream).ToList(),
+        buildImage: files => {
+          var writer = new ErofsWriter();
+          foreach (var (name, data) in files) writer.AddFile(name, data);
+          var built = writer.Build();
+          if (built.Length >= archive.Length) return built;
+          var padded = new byte[archive.Length];
+          Array.Copy(built, padded, built.Length);
+          return padded;
+        }));
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new ErofsBlockMover();
+    mover.Init(archive);
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's name and bytes, for the rebuild and the guard.</summary>
+  private static List<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    stream.Position = 0;
+    var reader = new ErofsReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory)
+                         .Select(e => (e.Path, reader.ExtractFile(e))).ToList();
+  }
+
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <summary>

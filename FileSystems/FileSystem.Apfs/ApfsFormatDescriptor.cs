@@ -180,6 +180,23 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Below the streaming cap the volume is read out and laid down again. Until
+    // this was here a volume under the cap fell through every branch and
+    // Defragment returned having done nothing at all, which reads as success.
+    //
+    // This is a rebuild rather than a pass of moves. A file's position lives in
+    // a FILE_EXTENT record inside an FS-tree node, and every node carries a
+    // Fletcher-64 over itself, so repointing one means finding the leaf that
+    // holds it and re-stamping that block — which is a different piece of work
+    // from the single-field rewrites the other formats here need.
+    if (!(archive.CanSeek && archive.Length > MaxBufferedImageBytes)) {
+      var sourceLength = archive.Length;
+      DefragRebuilder.Rebuild(archive, options,
+        readEntries: stream => ReadEntries(stream).ToList(),
+        buildImage: files => BuildImage(files, sourceLength));
+      return;
+    }
+
     // A volume too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole image, which Build() refuses to
     // produce once the volume passes the array limit.
