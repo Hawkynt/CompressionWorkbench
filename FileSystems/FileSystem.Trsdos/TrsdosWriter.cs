@@ -99,13 +99,23 @@ public sealed class TrsdosWriter {
     // sequentially without consulting the HIT.)
 
     // Allocate granules outside track 17 starting at track 0 granule 0.
-    var granulesPerTrack = this._sectorsPerTrack / GranuleSize;
-    if (granulesPerTrack < 1) granulesPerTrack = 1;
-    var totalGranules = this._tracks * granulesPerTrack;
+    // Granule g starts at sector g * GranuleSize, counted straight through the
+    // volume — so granules do not line up with tracks unless a track's sector
+    // count is a multiple of five, and the directory track has to be reserved
+    // by the sectors it covers rather than by its track number. Reserving
+    // granule 17*granulesPerTrack instead protects the wrong part of the disk
+    // and leaves the directory free to be allocated to a file.
+    var totalSectors = this._tracks * this._sectorsPerTrack;
+    var totalGranules = Math.Min(totalSectors / GranuleSize, byte.MaxValue + 1);
     var used = new bool[totalGranules];
-    // Reserve track 17 entirely.
-    for (var g = 0; g < granulesPerTrack; g++)
-      used[DirectoryTrack * granulesPerTrack + g] = true;
+    var directoryFirstSector = DirectoryTrack * this._sectorsPerTrack;
+    var directoryLastSector = directoryFirstSector + this._sectorsPerTrack - 1;
+    for (var g = 0; g < totalGranules; g++) {
+      var firstOfGranule = g * GranuleSize;
+      var lastOfGranule = firstOfGranule + GranuleSize - 1;
+      if (lastOfGranule >= directoryFirstSector && firstOfGranule <= directoryLastSector)
+        used[g] = true;
+    }
 
     var dirSectorBase = this.SectorOffset(DirectoryTrack, 2);
     var maxDirBytes = (this._sectorsPerTrack - 2) * SectorSize;

@@ -202,7 +202,32 @@ public sealed class TrsdosFormatDescriptor :
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the volume out again: a rebuild
+    // reads and rewrites every file to fix a handful of runs. A file here is one
+    // contiguous run of granules and its directory entry names the first of
+    // them in a single byte, so a move is the copy plus that byte. The in-place
+    // pass is kept only if every payload still reads back afterwards — it can
+    // refuse partway, and a rebuild is the honest answer when it does.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => {
+          using var reader = new TrsdosReader(stream);
+          return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+        },
+        inPlace: () => this.DefragmentWithPlanner(archive, options),
+        rebuild: () => this.DefragmentByRebuild(archive, options));
+      return;
+    }
+
+    this.DefragmentByRebuild(archive, options);
+  }
+
+  /// <summary>Reads every file out and writes a fresh volume in the asked-for order.</summary>
+  private void DefragmentByRebuild(Stream archive, DefragOptions options) {
     // Capture source geometry so the rebuilt image is the same physical size
     // — otherwise the optimizer would shrink the disk and violate the defrag
     // invariant (stream.Length must not change).
@@ -236,6 +261,35 @@ public sealed class TrsdosFormatDescriptor :
         }
         return built;
       });
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new TrsdosBlockMover();
+    mover.Init(archive);
+
+    var extents = TrsdosExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = TrsdosExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
   // ── IFilesystemExtentMap ───────────────────────────────────────────────

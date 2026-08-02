@@ -146,6 +146,93 @@ public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     Qnx6Modifier.RemoveFiles(archive, entryNames);
   }
 
+  // ── IArchiveDefragmentable ─────────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the volume out again: a rebuild
+    // reads and rewrites every file to fix a handful of runs. A file here is one
+    // contiguous run of blocks and its inode's first direct pointer says where
+    // that run starts, so a move is the copy plus four bytes. The in-place pass
+    // is kept only if every payload still reads back afterwards — it can refuse
+    // partway, and a rebuild is the honest answer when it does.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => {
+          stream.Position = 0;
+          using var reader = new Qnx6Reader(stream);
+          return reader.Entries.Where(e => !e.IsDirectory)
+                               .Select(e => reader.Extract(e)).ToList();
+        },
+        inPlace: () => this.DefragmentWithPlanner(archive, options),
+        rebuild: () => DefragmentByRebuild(archive, options));
+      return;
+    }
+
+    DefragmentByRebuild(archive, options);
+  }
+
+  /// <summary>Reads every file out and writes a fresh volume in the asked-for order.</summary>
+  private static void DefragmentByRebuild(Stream archive, DefragOptions options) {
+    var sourceLength = archive.Length;
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        stream.Position = 0;
+        using var reader = new Qnx6Reader(stream);
+        return reader.Entries.Where(e => !e.IsDirectory)
+                             .Select(e => (e.Name, reader.Extract(e))).ToList();
+      },
+      buildImage: files => {
+        var built = Qnx6Writer.Build(files.ToList());
+        // The defrag contract keeps the volume the size it was; the writer sizes
+        // an image to what the files need, and the mirror superblock has to end
+        // up at the tail the volume actually has.
+        if (built.Length >= sourceLength) return built;
+        const int MirrorSize = 512;
+        var padded = new byte[sourceLength];
+        Array.Copy(built, padded, built.Length);
+        if (sourceLength - MirrorSize >= built.Length)
+          Array.Clear(padded, built.Length - MirrorSize, MirrorSize);
+        Array.Copy(built, built.Length - MirrorSize, padded, sourceLength - MirrorSize, MirrorSize);
+        return padded;
+      });
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Qnx6BlockMover();
+    mover.Init(archive);
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <summary>
@@ -167,6 +254,15 @@ public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
       if (first == long.MaxValue) first = Math.Min(image.Length, 64L * reader.BlockSize);
       result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));
+
+      // The secondary superblock mirrors the primary in the volume's last 512
+      // bytes. Leaving it unclaimed invited anything laying files out against
+      // the tail to write straight over it, which costs the volume the copy
+      // that a power-safe mount falls back on.
+      const int MirrorSize = 512;
+      if (image.Length > first + MirrorSize)
+        result.Add(new DefragBlockInfo(image.Length - MirrorSize, MirrorSize,
+          DefragBlockKind.MetadataReserved, "<superblock mirror>"));
     } catch {
       // An image we cannot walk claims nothing; wiping it would zero live data.
       return [];

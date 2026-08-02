@@ -233,6 +233,35 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Below the streaming cap the layout is changed by moving what is out of
+    // place: a file here is one run of bytes and its file table row holds the
+    // absolute offset it starts at, so a move is the copy plus eight bytes.
+    // Until this was here a domain under the cap fell through every branch and
+    // Defragment returned having done nothing at all.
+    if (!(archive.CanSeek && archive.Length > FullReadCapBytes)
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+                        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => {
+          stream.Position = 0;
+          var reader = new AdvFsReader(stream);
+          return reader.FileTableEntries.Select(reader.ExtractFile).ToList();
+        },
+        inPlace: () => this.DefragmentWithPlanner(archive, options),
+        rebuild: () => DefragRebuilder.Rebuild(archive, options,
+          readEntries: ReadEntries,
+          buildImage: files => {
+            var built = BuildImage(files);
+            if (built.Length >= archive.Length) return built;
+            var padded = new byte[archive.Length];
+            Array.Copy(built, padded, built.Length);
+            return padded;
+          }));
+      return;
+    }
+
     // A domain too large to materialise goes through the streaming rebuilder;
     // BuildImage returns a byte[] of the whole image, and ReadEntries buffers
     // the source, both of which stop at the array limit.
@@ -254,6 +283,67 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
           name, data.LongLength, () => new MemoryStream(data, writable: false)),
         finishWrite: () => { streamWriter!.Finish(); streamWriter.Dispose(); });
     }
+  }
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new AdvFsBlockMover();
+    mover.Init(archive);
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  // ── ILayoutOptimizable ─────────────────────────────────────────────────
+
+  /// <summary>
+  /// Relays the domain through the writer at the requested geometry.
+  /// </summary>
+  /// <remarks>
+  /// The generic default drives its rebuild off the surface entry list, which
+  /// carries the three synthetic views this reader exposes — the whole-image
+  /// view, the metadata sheet and the RBMT page — alongside the real files.
+  /// Rebuilding from that wrote the views into the new domain as files, so the
+  /// entry set grew every pass and the verb refused the result as lossy. The
+  /// file table is the list of what the domain actually holds.
+  /// </remarks>
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    source.Position = 0;
+    var reader = new AdvFsReader(source);
+    using (var writer = new AdvFsWriter(target, leaveOpen: true)) {
+      foreach (var entry in reader.FileTableEntries)
+        writer.AddFile(entry.Name, reader.ExtractFile(entry));
+      writer.Finish();
+    }
+
+    // A caller that asked for a larger domain gets one: the file table records
+    // absolute offsets, so trailing free space costs nothing to describe.
+    if (options.ImageSize > target.Length && target.CanSeek)
+      target.SetLength(options.ImageSize);
   }
 
   // ── Shared rebuild delegates ────────────────────────────────────────
