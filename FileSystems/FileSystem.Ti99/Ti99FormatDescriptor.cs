@@ -245,6 +245,27 @@ public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the disk out again: a file here
+    // is one run named by its descriptor, so a move is the copy and a two-byte
+    // repack. The pass is kept only if every payload still reads back — it can
+    // refuse partway, and the rebuild below is the honest answer when it does.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => {
+          using var reader = new Ti99Reader(stream);
+          return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+        },
+        inPlace: () => { this.DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Detect mode once upfront so the rebuilt image matches the source.
     archive.Position = 0;
     var isTifiles = archive.Length >= 8
@@ -286,4 +307,43 @@ public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var extents = Ti99ExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, lookup);
   }
+
+  /// <summary>
+  /// Moves only the files that are out of place, repointing each one's
+  /// descriptor as its sectors arrive.
+  /// </summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Ti99BlockMover();
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var runsPerOwner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var extent in extents) {
+      if (extent.Kind != DefragBlockKind.Used || extent.FileName is not { } owner) continue;
+      runsPerOwner.TryGetValue(owner, out var count);
+      runsPerOwner[owner] = count + 1;
+    }
+    var fragmented = runsPerOwner.Count(kv => kv.Value > 1);
+    if (fragmented > 0)
+      throw new NotSupportedException(
+        $"TI-99: {fragmented} file(s) are in more than one piece, which this pass cannot restate.");
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) return;
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
 }
