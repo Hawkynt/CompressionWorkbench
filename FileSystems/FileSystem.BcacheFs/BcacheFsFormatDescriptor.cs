@@ -217,6 +217,24 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Moving what is out of place beats writing the image out again: a file in
+    // the payload area is one contiguous run of blocks and its directory entry
+    // records where that run starts, so a move is the copy plus eight bytes.
+    // It is also what lets the other two modes work at all — the rebuild lays
+    // every file out from the start of the payload area and can do nothing
+    // else.
+    {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        inPlace: () => { this.DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
       throw new NotSupportedException(
         $"BcacheFS defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
@@ -296,6 +314,35 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   // ── IFilesystemExtentMap + IWipeEmpty ─────────────────────────────────
+
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new BcacheFsBlockMover();
+    mover.Init(archive);
+
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
 
   /// <summary>
   /// Reports the image's layout: the superblock slots and the payload directory
