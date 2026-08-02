@@ -266,9 +266,21 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var flat = reader.Extract(reader.Entries[0]);
     var geom = (reader.SectorsPerTrack, reader.Sides, reader.StartTrack, reader.EndTrack);
 
-    // Read all files from the inner FAT image.
+    // Read all files from the inner FAT image. An MSA is a wrapper: what is
+    // inside is normally an Atari FAT volume, but nothing makes it so, and a
+    // payload that is not one has no layout this can rearrange. Saying so
+    // beats letting the FAT reader's complaint out as if the wrapper itself
+    // were corrupt.
     using var fatStream = new MemoryStream(flat, writable: false);
-    var fatReader = new FatReader(fatStream);
+    FatReader fatReader;
+    try {
+      fatReader = new FatReader(fatStream);
+    } catch (InvalidDataException ex) {
+      throw new NotSupportedException(
+        "MSA: the wrapped image is not a FAT volume, so there is no layout to lay out again — " +
+        ex.Message.Split('\n')[0], ex);
+    }
+
     var files = fatReader.Entries
       .Where(e => !e.IsDirectory)
       .Select(e => (e.Name, fatReader.Extract(e)))

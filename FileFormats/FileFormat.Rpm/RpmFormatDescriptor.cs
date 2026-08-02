@@ -25,7 +25,11 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new RpmReader(stream);
-        using var payload = r.GetPayloadStream();
+        // The decompressed one: a package's payload is a compressed cpio
+        // archive, and every other operation here reads it that way. Reading
+        // the raw bytes handed the cpio reader the compressor's own header,
+        // which it rejected — so defragmenting any package threw.
+        using var payload = r.GetDecompressedPayloadStream();
         var cpioReader = new FileFormat.Cpio.CpioReader(payload);
         return cpioReader.ReadAll()
           .Where(x => !x.Entry.IsDirectory)

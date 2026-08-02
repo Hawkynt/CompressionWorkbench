@@ -99,9 +99,16 @@ public sealed class WrapsterReader : IDisposable {
       var offset = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(pos));
       pos += 4;
 
-      // Offsets are relative to data start
-      // But in some versions they're absolute
-      var actualOffset = offset < dataStart ? dataStart + offset : offset;
+      // Offsets are relative to where the data begins; some versions write
+      // them absolute instead. Telling the two apart by whether the value is
+      // smaller than the data start is wrong the moment a file begins further
+      // into the data than the header is long — which is every file past the
+      // first couple — and those were then read from the wrong place. Read it
+      // as relative when that lands inside the archive, which is what the
+      // writer means, and only fall back to absolute when it does not.
+      var relative = dataStart + (long)offset;
+      var actualOffset = relative + size <= _data.Length ? (int)relative : offset;
+      if (actualOffset < 0 || actualOffset > _data.Length) actualOffset = (int)Math.Min(relative, _data.Length);
       if (actualOffset + size > _data.Length) size = Math.Max(0, _data.Length - actualOffset);
 
       _entries.Add(new WrapsterEntry {
