@@ -11,7 +11,7 @@ cannot claim something the code does not do.
 | [Acorn ADFS](Adfs.md) | moving (`AdfsBlockMover`) | no | yes |
 | [AdvFS (Tru64 UNIX)](AdvFs.md) | moving (`AdvFsBlockMover`) | yes | yes |
 | [Amiga Professional FS](AmigaPfs.md) | moving (`AmigaPfsBlockMover`) | yes | yes |
-| [APFS](Apfs.md) | rebuilding | yes | yes |
+| [APFS](Apfs.md) | moving (`ApfsBlockMover`) | yes | yes |
 | [Apple DOS 3.3](AppleDos.md) | moving (`AppleDosBlockMover`) | yes | yes |
 | [Apple UCSD Pascal](ApplePascal.md) | moving (`ApplePascalBlockMover`) | yes | yes |
 | [ATR (Atari 8-bit)](Atari8.md) | moving (`Atari8BlockMover`) | yes | yes |

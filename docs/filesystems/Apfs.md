@@ -37,8 +37,15 @@ Apple File System container image (full-scope in-place mutation: omap + FS-tree 
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `ApfsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -59,6 +66,14 @@ The writer emits real NXSB and APSB superblocks, container and volume object map
 The FS B-tree grows automatically: when the inode / directory-record / file-extent records overflow a single node, they spill into several leaf nodes beneath an internal index node (a 2-level tree), so directories with many entries round-trip correctly. The tree depth is capped at two levels — the internal root holds one separator per leaf, which bounds the volume at a few hundred thousand small files (ample for image creation); a deeper tree is not emitted.
 
 Scope cuts: single container / single volume / single checkpoint / FS B-tree limited to two levels (root + leaves) / no snapshots / no encryption / no clones / no inline compression / no reaper / no spaceman (the allocation file is unused in a read-only writer context — macOS would require it for mount, but fsck_apfs structural validation of the superblocks and B-trees still passes).
+
+### ApfsLayout
+
+Where an APFS container keeps its own structures, and where each file's extent record says its bytes are.
+
+The container's blocks are not all at the front. Every change made in place allocates from the image's tail — new B-tree nodes, new object map entries — so a volume that has been written to since it was made has its trees scattered past the file data. Anything that treats "past the last file" as free space is therefore writing over the map of the volume.
+
+A file's position is one field: phys_block_num in its file extent record, in a leaf of the filesystem tree. Each block carries its own Fletcher-64, so rewriting that field means rewriting one leaf's checksum and nothing else — no tree rebuild, and no growth.
 
 ## Parameters
 

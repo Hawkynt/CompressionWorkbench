@@ -171,6 +171,53 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
+  /// Largest container the in-place pass is offered for. Its guard holds a copy
+  /// of the image to compare payloads across the pass, and a container is half
+  /// a gigabyte before it holds anything at all.
+  /// </summary>
+  private const long PlannerImageCap = 1024L * 1024 * 1024;
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new ApfsReader(stream);
+    return reader.Entries
+      .Where(e => !e.IsDirectory && !e.IsSymlink && e.Size > 0)
+      .Select(reader.Extract)
+      .ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the extents into it, repointing as it goes.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new ApfsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>
   /// Mode-aware APFS defragmentor via read-extract-rebuild dispatch through
   /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values
   /// supported. The writer always emits a fresh contiguous-from-start image
@@ -180,15 +227,29 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Moving what is out of place beats writing the container out again. A
+    // file's position is one field — the physical block in its FILE_EXTENT
+    // record — and every block carries a Fletcher-64 over itself, so a move is
+    // the copy, eight bytes, and one leaf's checksum taken again.
+    //
+    // Deliberately not through the in-place modifier, which rebuilds the trees
+    // and allocates the new nodes from the image's tail: that grows the
+    // container, and a layout pass must leave its size alone.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Below the streaming cap the volume is read out and laid down again. Until
     // this was here a volume under the cap fell through every branch and
     // Defragment returned having done nothing at all, which reads as success.
-    //
-    // This is a rebuild rather than a pass of moves. A file's position lives in
-    // a FILE_EXTENT record inside an FS-tree node, and every node carries a
-    // Fletcher-64 over itself, so repointing one means finding the leaf that
-    // holds it and re-stamping that block — which is a different piece of work
-    // from the single-field rewrites the other formats here need.
     if (!(archive.CanSeek && archive.Length > MaxBufferedImageBytes)) {
       var sourceLength = archive.Length;
       DefragRebuilder.Rebuild(archive, options,
@@ -304,6 +365,22 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
       if (first == long.MaxValue) first = Math.Min(image.Length, 1L << 20);
       result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));
+
+      // The container's own blocks are not all in front of the file data. Every
+      // change made in place allocates from the tail, so a container written to
+      // since it was made has trees and object maps past the last file — and
+      // anything reading that as free space writes over the map of the volume.
+      if (image.CanSeek) {
+        image.Position = 0;
+        var layout = ApfsLayout.Read(image);
+        if (layout != null)
+          foreach (var block in layout.MetadataBlocks.OrderBy(b => b)) {
+            var at = (long)block * layout.BlockSize;
+            if (at < first || at + layout.BlockSize > image.Length) continue;
+            result.Add(new DefragBlockInfo(at, layout.BlockSize,
+              DefragBlockKind.MetadataReserved, "APFS container structure"));
+          }
+      }
     } catch {
       // An image we cannot walk claims nothing; wiping it would zero live data.
       return [];
