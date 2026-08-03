@@ -43,9 +43,9 @@ the bytes that actually move rather than the whole volume.
 
 | Property | Value | Meaning |
 |---|---|---|
-| Repoints runs independently | no | whether a file in several pieces can be moved one piece at a time |
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
 | Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
-| Holds runs outside the volume | no | whether a full volume can be rearranged by lifting a run into memory |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
