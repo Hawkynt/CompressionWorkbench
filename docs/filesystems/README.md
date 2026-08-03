@@ -85,7 +85,7 @@ cannot claim something the code does not do.
 | [DEC RT-11 (RX01)](Rt11.md) | moving (`Rt11BlockMover`) | yes | yes |
 | [Amiga SFS](Sfs.md) | rebuilding | no | no |
 | [SmartFS](SmartFs.md) | moving (`SmartFsBlockMover`) | no | no |
-| [SquashFS](SquashFs.md) | rebuilding | yes | yes |
+| [SquashFS](SquashFs.md) | moving (`SquashFsBlockMover`) | yes | yes |
 | [UNIX System V FS](SysV.md) | moving (`SysVBlockMover`) | yes | yes |
 | [Transactional FAT (TFAT)](TFat.md) | rebuilding | yes | yes |
 | [TFS (BBN Trans-FS)](Tfs.md) | — | no | no |

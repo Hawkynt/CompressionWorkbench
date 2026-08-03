@@ -38,8 +38,15 @@ Linux compressed read-only filesystem
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `SquashFsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -54,6 +61,14 @@ Reads a SquashFS version 4 filesystem image.
 ### SquashFsWriter
 
 Writes a SquashFS version 4 filesystem image using gzip (zlib) compression for data blocks. Metadata blocks (inodes, directories, IDs) use zlib compression with automatic fallback to uncompressed when compression does not reduce size.
+
+### SquashFsLayout
+
+Reads the inode table out of its metadata blocks and finds the field in each regular file's inode that says where its data starts.
+
+The table is a run of metadata blocks, each a two-byte length followed by that many bytes — deflated unless the top bit of the length says otherwise. So a field inside it cannot simply be written to: the block has to be taken apart, changed, and put together again.
+
+Which is only expressible if the result still fits. A block's length is its own header, and every table after it is found by an offset in the superblock, so a block that grew would move all of them. One that shrinks is padded back to the length it had, which a deflate stream tolerates because it ends where its own final block ends.
 
 ## Parameters
 
