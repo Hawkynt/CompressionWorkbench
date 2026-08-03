@@ -337,7 +337,11 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // directory from the root for every move and the cost grew with the square
     // of the move count — a half-megabyte image had not finished planning after
     // ten minutes. The records are located once now.
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+    // The guard below snapshots the image to compare payloads across the pass,
+    // so it is only offered where a snapshot fits; a volume past the cap takes
+    // the streaming path.
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
         or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
       var planned = false;
       // The in-place pass is kept only if every payload still reads back: it

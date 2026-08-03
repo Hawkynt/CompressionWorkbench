@@ -226,7 +226,10 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // unit that can move is the whole record: a file's bytes sit behind its
     // header at an offset nothing writes down, so header and data travel
     // together and only the fields naming them are rewritten.
-    if (archive.CanSeek) {
+    // The guard below snapshots the image to compare payloads across the pass,
+    // so it is only offered where a snapshot fits; a volume past the cap takes
+    // the streaming path.
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
       var planned = false;
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.

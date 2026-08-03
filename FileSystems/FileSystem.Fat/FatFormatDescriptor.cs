@@ -177,6 +177,21 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── Planner-driven defrag path ─────────────────────────────────────────
 
+  /// <summary>
+  /// Lays the volume out again in place, with no rebuild behind it.
+  /// </summary>
+  /// <remarks>
+  /// TFAT is this layout with a tag and a pair of sequence numbers on top, so
+  /// it moves its clusters with this and puts its own markers back afterwards.
+  /// A caller that needs the rebuild as a fallback wants
+  /// <see cref="Defragment(Stream, DefragOptions)" /> instead.
+  /// </remarks>
+  public void DefragmentInPlace(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    this.DefragmentWithPlanner(archive, options);
+  }
+
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
     var stride = Math.Max(1, options.InterleaveStride);
@@ -353,15 +368,27 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       }
 
+      // Read every source slot before writing any destination. A run that
+      // shifts by less than its own length has slots that are both: writing as
+      // we went made a later slot read the origin the earlier one had just put
+      // there, and the owner's clusters came back in an order that was not the
+      // order its chain is in — the file kept every byte and read as noise.
+      var origins = new long[slotCount];
       for (var k = 0; k < slotCount; k++) {
         var src = move.SrcOffset + k * clusterBytes;
+        origins[k] = occupant.TryGetValue(src, out var origin) ? origin : -1;
+      }
+
+      for (var k = 0; k < slotCount; k++)
+        occupant.Remove(move.SrcOffset + k * clusterBytes);
+
+      for (var k = 0; k < slotCount; k++) {
         var dst = move.DstOffset + k * clusterBytes;
-        if (occupant.TryGetValue(src, out var origin)) {
-          occupant[dst] = origin;
-          finalOf[origin] = dst;
-          if (src != dst) occupant.Remove(src);
+        if (origins[k] >= 0) {
+          occupant[dst] = origins[k];
+          finalOf[origins[k]] = dst;
         } else {
-          // Source slot holds no tracked original (e.g. free staging bytes).
+          // Source slot held no tracked original (e.g. free staging bytes).
           occupant[dst] = dst;
         }
       }

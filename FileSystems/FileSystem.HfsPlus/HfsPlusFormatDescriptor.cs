@@ -345,7 +345,11 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // descriptor whichever run had moved, so a file in more than one piece kept
     // its length and lost its contents. It repoints the descriptor that moved
     // now.
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+    // The guard below snapshots the image to compare payloads across the pass,
+    // so it is only offered where a snapshot fits; a volume past the cap takes
+    // the streaming path.
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
         or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
       var planned = false;
       // The in-place pass is kept only if every payload still reads back: it

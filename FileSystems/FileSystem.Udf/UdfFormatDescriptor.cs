@@ -243,6 +243,13 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Largest volume the in-place pass is offered for. Its guard holds a copy
+  /// of the image to compare payloads across the pass, so a volume past this
+  /// takes the streaming path instead.
+  /// </summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
+
   /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
   private static IReadOnlyList<byte[]> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
@@ -306,7 +313,10 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // sequence, partition, file set, directories — once in Init and remembers
     // where each file entry sits. Walking it again per move is what kept this
     // path unused.
-    if (archive.CanSeek) {
+    // The guard below snapshots the image to compare payloads across the pass,
+    // so it is only offered where a snapshot fits; a volume past the cap takes
+    // the streaming path.
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
       var planned = false;
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.

@@ -128,7 +128,87 @@ public sealed class TFatWriter {
   /// Applies the same markers as <see cref="StampTfat(byte[])" /> directly to a stream.
   /// Every site is at a BPB-derived offset, so only the boot sector has to be read back.
   /// </summary>
-  private void StampTfatOnStream(Stream disk) {
+  /// <summary>
+  /// The transaction sequence each FAT copy currently carries.
+  /// </summary>
+  /// <remarks>
+  /// Read these before a layout pass. The four bytes sit at the end of a FAT
+  /// region, which is FAT's to write — a pass that rewrites the allocation
+  /// takes them with it.
+  /// </remarks>
+  public static (uint First, uint Second) ReadSequences(Stream disk) {
+    ArgumentNullException.ThrowIfNull(disk);
+    var (first, second) = SequenceOffsets(disk);
+    return (ReadSequence(disk, first, 1), ReadSequence(disk, second, 2));
+  }
+
+  /// <summary>
+  /// Puts the TFAT markers back on a volume whose contents have been moved
+  /// about, restoring the transaction sequences it carried before.
+  /// </summary>
+  /// <remarks>
+  /// A defragmentation pass rewrites both FAT copies and the directory
+  /// entries, and it knows nothing about the four bytes at the end of each FAT
+  /// region or the tag in the boot sector. Handing back the sequences read
+  /// before the pass keeps the two copies in the step they were in.
+  /// </remarks>
+  public static void RestampMarkers(Stream disk, uint firstSequence, uint secondSequence) {
+    ArgumentNullException.ThrowIfNull(disk);
+    new TFatWriter().StampTfatOnStream(disk, firstSequence, secondSequence);
+  }
+
+  /// <summary>
+  /// Copies the FAT the volume is currently reading from over the other one,
+  /// so both describe the same allocation.
+  /// </summary>
+  /// <remarks>
+  /// TFAT keeps the two copies deliberately apart: a change is written into
+  /// the idle one and becomes current with a single write of its sequence
+  /// number, which leaves the other holding the allocation as it was before.
+  /// Anything that treats the copies as interchangeable — a layout pass, most
+  /// of all — reads whichever it happens to pick, and on a volume mid-way
+  /// through that protocol the two do not agree. Bringing them together first
+  /// gives up the rollback copy, which a layout pass gives up anyway.
+  /// </remarks>
+  public static void SyncFatCopies(Stream disk) {
+    ArgumentNullException.ThrowIfNull(disk);
+    var (firstSeq, secondSeq) = ReadSequences(disk);
+    if (firstSeq == secondSeq) return;
+
+    var (firstAt, secondAt) = SequenceOffsets(disk);
+    var bodyLength = secondAt - firstAt - 4;
+    if (bodyLength <= 0) return;
+
+    var from = secondSeq > firstSeq ? secondAt - bodyLength : firstAt - bodyLength;
+    var to = secondSeq > firstSeq ? firstAt - bodyLength : secondAt - bodyLength;
+    if (from < 0 || to < 0 || from + bodyLength > disk.Length || to + bodyLength > disk.Length) return;
+
+    var body = new byte[bodyLength];
+    disk.Position = from;
+    disk.ReadExactly(body);
+    disk.Position = to;
+    disk.Write(body);
+    disk.Flush();
+  }
+
+  /// <summary>Where each FAT region's trailing sequence number sits.</summary>
+  private static (long First, long Second) SequenceOffsets(Stream disk) {
+    var boot = new byte[512];
+    disk.Position = 0;
+    disk.ReadExactly(boot, 0, (int)Math.Min(disk.Length, boot.Length));
+
+    var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(11));
+    if (bytesPerSector is 0 or > 4096) bytesPerSector = 512;
+    var reserved = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(14));
+    var small = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(22));
+    var fatSectors = small == 0 ? BinaryPrimitives.ReadInt32LittleEndian(boot.AsSpan(36)) : small;
+
+    var regionLength = (long)fatSectors * bytesPerSector;
+    var first = (long)reserved * bytesPerSector;
+    return (first + regionLength - 4, first + 2 * regionLength - 4);
+  }
+
+  private void StampTfatOnStream(Stream disk, uint? firstSequence = null, uint? secondSequence = null) {
     var boot = new byte[512];
     disk.Position = 0;
     disk.ReadExactly(boot, 0, Math.Min(boot.Length, (int)Math.Min(disk.Length, boot.Length)));
@@ -164,11 +244,14 @@ public sealed class TFatWriter {
 
     var fat1Off = (long)rsv * bps;
     var fatRegionLen = (long)fatSize * bps;
+    var first = fat1Off + fatRegionLen - 4;
+    var second = fat1Off + 2 * fatRegionLen - 4;
+
     var seq = new byte[4];
-    BinaryPrimitives.WriteUInt32BigEndian(seq, _initialSequence);
-    WriteAt(fat1Off + fatRegionLen - 4, seq);
-    BinaryPrimitives.WriteUInt32BigEndian(seq, _initialSequence + 1);
-    WriteAt(fat1Off + fatRegionLen + fatRegionLen - 4, seq);
+    BinaryPrimitives.WriteUInt32BigEndian(seq, firstSequence ?? this._initialSequence);
+    WriteAt(first, seq);
+    BinaryPrimitives.WriteUInt32BigEndian(seq, secondSequence ?? this._initialSequence + 1);
+    WriteAt(second, seq);
 
     if (fatType == 32) {
       var bkOff = 6L * bps;
@@ -176,6 +259,17 @@ public sealed class TFatWriter {
       WriteAt(bkOff + reserved1Offset, [0x01]);
     }
     disk.Flush();
+  }
+
+  /// <summary>The sequence a FAT region already carries, or a default.</summary>
+  private static uint ReadSequence(Stream disk, long at, uint fallback) {
+    if (at < 0 || at + 4 > disk.Length) return fallback;
+
+    Span<byte> field = stackalloc byte[4];
+    disk.Position = at;
+    disk.ReadExactly(field);
+    var sequence = BinaryPrimitives.ReadUInt32BigEndian(field);
+    return sequence == 0 ? fallback : sequence;
   }
 
   private byte[] StampTfat(byte[] disk) {

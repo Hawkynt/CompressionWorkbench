@@ -276,9 +276,52 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// fresh contiguous-from-start image and the TFAT post-pass re-stamps the
   /// transactional sequence markers so both FAT copies stay in lock-step.
   /// </summary>
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new TFatReader(stream, leaveOpen: true);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+
+    // TFAT is FAT's layout with a tag in the boot sector and a transaction
+    // sequence at the end of each FAT region, so its clusters move the way
+    // FAT's do — the cluster chain is rewritten in both copies and the
+    // directory entry follows it. The markers are put back afterwards from
+    // what the volume already carries, because a layout pass knows nothing
+    // about them.
+    // The guard below snapshots the image to compare payloads across the pass,
+    // so it is only offered where a snapshot fits; a volume past the cap takes
+    // the streaming path.
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => {
+          // Read before, written back after: the sequences live at the end of
+          // each FAT region, which the layout pass rewrites along with the
+          // allocation it describes.
+          var (first, second) = TFatWriter.ReadSequences(archive);
+
+          // A pass over the clusters reads whichever copy it picks, and after a
+          // transaction the two do not agree — the idle one still describes the
+          // allocation as it was before. It is brought up to date first, or a
+          // file whose chain only the current copy knows is relinked from a
+          // chain that is not there.
+          TFatWriter.SyncFatCopies(archive);
+          new FileSystem.Fat.FatFormatDescriptor().DefragmentInPlace(archive, options);
+          TFatWriter.RestampMarkers(archive, first, second);
+          planned = true;
+        },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
 
     // Defrag preserves the outer size. Build() defaults to 2880 sectors, so omitting
     // the sector count silently rewrote any non-floppy volume as a 1.44 MB image.
