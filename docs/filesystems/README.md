@@ -64,7 +64,7 @@ cannot claim something the code does not do.
 | [Minix V2 FS](MinixV2.md) | moving (`MinixV2BlockMover`) | yes | yes |
 | [MSA (Magic Shadow Archiver)](Msa.md) | rebuilding | yes | yes |
 | [NIB (Commodore nibble dump)](Nib.md) | — | no | no |
-| [NILFS v1](Nilfs1.md) | rebuilding | yes | yes |
+| [NILFS v1](Nilfs1.md) | moving (`Nilfs1BlockMover`) | yes | yes |
 | [NILFS2](Nilfs2.md) | rebuilding | yes | yes |
 | [NSS (Novell Storage Services)](Nss.md) | rebuilding | no | no |
 | [NTFS](Ntfs.md) | moving (`NtfsBlockMover`) | yes | yes |
