@@ -18,16 +18,27 @@ namespace FileSystem.Zfs;
 /// </list>
 /// </summary>
 /// <summary>
-/// Why this pool is laid out again by rebuilding rather than by moving.
+/// Why this pool is laid out again by rebuilding rather than by moving, and
+/// what is actually in the way.
 /// </summary>
 /// <remarks>
-/// A block is named by a device address inside a block pointer, and the block
-/// pointer carries a Fletcher-4 over what it points at. Moving bytes leaves
-/// that check good but breaks every one above it: the pointer sits in an
-/// indirect block whose own check sits in the pointer above, up to the
-/// uberblock. The pool also accounts for free space in its metaslabs' space
-/// maps, which are logs of allocations rather than a bitmap to restate. Both
-/// have to be rewritten together, which is what the rebuild does.
+/// <para>A block is named by a device address inside a block pointer, and the
+/// block pointer carries a Fletcher-4 over what it points at. Moving bytes
+/// leaves that check good — the bytes do not change — but breaks every one
+/// above it: the pointer sits in an indirect block whose own check sits in the
+/// pointer above, up to the uberblock. That is the same shape HAMMER2 turned
+/// out to have, and HAMMER2 moves in place.</para>
+///
+/// <para>The space maps are not the obstacle they were first written down as.
+/// This writer sets <c>metaslab_array</c> to zero, so a pool it produces has
+/// none, and nothing but the pointers records where a block is.</para>
+///
+/// <para>What is left is the length of the chain. Reaching a file's data means
+/// the uberblock, the meta object set, a dnode array, the dataset's own object
+/// set, another dnode array, and then the file's indirect blocks — and a mover
+/// has to know the byte offset of every pointer along that path, which nothing
+/// here records today. It is the largest of the walks, not a different kind of
+/// problem.</para>
 /// </remarks>
 public sealed class ZfsFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
