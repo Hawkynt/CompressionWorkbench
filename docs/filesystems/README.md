@@ -56,7 +56,7 @@ cannot claim something the code does not do.
 | [JFS](Jfs.md) | moving (`JfsBlockMover`) | yes | yes |
 | [JFS1 (OS/2 original IBM JFS)](Jfs1.md) | moving (`Jfs1BlockMover`) | yes | yes |
 | [HP LIF (Logical Interchange Format)](Lif.md) | moving (`LifBlockMover`) | yes | yes |
-| [LittleFS](LittleFs.md) | rebuilding | yes | yes |
+| [LittleFS](LittleFs.md) | moving (`LittleFsBlockMover`) | yes | yes |
 | [MFS (Macintosh File System)](Mfs.md) | moving (`MfsBlockMover`) | yes | yes |
 | [MFS-1 (Acorn Master File System v1)](Mfs1.md) | moving (`Mfs1BlockMover`) | yes | yes |
 | [Minix FS](MinixFs.md) | moving (`MinixFsBlockMover`) | yes | yes |
