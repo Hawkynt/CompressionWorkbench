@@ -102,6 +102,6 @@ cannot claim something the code does not do.
 | [Xenix FS](Xenix.md) | moving (`XenixBlockMover`) | yes | yes |
 | [XFS](Xfs.md) | moving (`XfsBlockMover`) | yes | yes |
 | [YAFFS2](Yaffs2.md) | moving (`Yaffs2BlockMover`) | yes | yes |
-| [ZFS](Zfs.md) | rebuilding | no | yes |
+| [ZFS](Zfs.md) | moving (`ZfsBlockMover`) | no | yes |
 | [SCL (ZX Spectrum)](ZxScl.md) | rebuilding | yes | yes |
 
