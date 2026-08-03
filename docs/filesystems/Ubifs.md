@@ -46,6 +46,10 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 UBIFS (Unsorted Block Image File System) descriptor. Read path: triage artifacts (passthrough, node-counts metadata, flat inode + dentry tables) plus real per-file extraction via linear log scan with zlib / stored DATA-node support. Write path (R/W): emits a flat sequence of superblock + master + inode + dentry + zlib-compressed data nodes for Create, and appends fresh INO / DENT / DATA nodes at the journal head for Add / Replace / Remove. Committed nodes stay byte-identical at their original offsets — the kernel-style log-structured invariant (no in-place rewrites until commit-merge) is preserved. Full TNC / LPT commit pipeline (required for kernel mount) is multi-week work and remains out of scope. References:
 
+Why this volume is laid out again by rebuilding rather than by moving.
+
+Nothing here reads the index. A file's data nodes are found by scanning the image for node magic, not by walking the tree that records where they are — the TNC that indexes them and the LPT that accounts for each erase block are not decoded at all. So there is no field to repoint: what would have to be rewritten for a moved node to be found again is a structure this implementation cannot yet read, let alone write.
+
 ### UbifsFileReader
 
 Reads a UBIFS image and extracts file contents by linearly scanning the log for inode, data, and dentry nodes, replaying them in sequence-number (sqnum) order, and reassembling each file from its DATA blocks.

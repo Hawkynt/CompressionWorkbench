@@ -28,6 +28,17 @@ namespace FileSystem.Ubifs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/UBIFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why this volume is laid out again by rebuilding rather than by moving.
+/// </summary>
+/// <remarks>
+/// Nothing here reads the index. A file's data nodes are found by scanning the
+/// image for node magic, not by walking the tree that records where they are —
+/// the TNC that indexes them and the LPT that accounts for each erase block are
+/// not decoded at all. So there is no field to repoint: what would have to be
+/// rewritten for a moved node to be found again is a structure this
+/// implementation cannot yet read, let alone write.
+/// </remarks>
 public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

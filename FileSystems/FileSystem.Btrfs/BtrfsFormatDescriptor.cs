@@ -78,10 +78,14 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// MemoryStream sized to the original.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Planner-driven defragmentation is not wired up here yet. Btrfs addresses
-    // its extents logically and maps them through the chunk tree, so moving
-    // bytes means rewriting that mapping rather than a file's own pointers —
-    // a different operation from the one the planner drives.
+    // Not laid out again by moving. An extent item names a logical address that
+    // the chunk tree maps to a physical one, so moving bytes means rewriting
+    // that mapping rather than a file's own pointer. Three more structures are
+    // keyed on the address that would change: the extent tree's back-references
+    // say who owns it, the checksum tree is keyed by logical address so the
+    // entry itself would have to move, and every node carries a checksum over
+    // itself that would then be stale. That is four trees rewritten together,
+    // which is the rebuild.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 

@@ -17,6 +17,18 @@ namespace FileSystem.Zfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/ZFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why this pool is laid out again by rebuilding rather than by moving.
+/// </summary>
+/// <remarks>
+/// A block is named by a device address inside a block pointer, and the block
+/// pointer carries a Fletcher-4 over what it points at. Moving bytes leaves
+/// that check good but breaks every one above it: the pointer sits in an
+/// indirect block whose own check sits in the pointer above, up to the
+/// uberblock. The pool also accounts for free space in its metaslabs' space
+/// maps, which are logs of allocations rather than a bitmap to restate. Both
+/// have to be rewritten together, which is what the rebuild does.
+/// </remarks>
 public sealed class ZfsFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

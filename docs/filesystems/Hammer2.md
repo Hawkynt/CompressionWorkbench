@@ -46,6 +46,12 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 Read-only descriptor for HAMMER2 (DragonFly BSD newer) filesystem images. Surfaces the volume-data sector at offset 0 plus a structured metadata bundle and the raw image. Walking the HAMMER2 cluster B-tree (radix-tree chains, blockrefs, indirect blocks) is explicitly out of scope (multi-week effort). Magic: 8-byte uint64 at offset 0 = `HAMMER2_VOLUME_ID_HBO` (`0x48414d3205172011`) or `HAMMER2_VOLUME_ID_ABO` (`0x11201705324d4148`). The descriptor's `MagicSignatures` list covers the HBO form (LE serialisation: `11 20 17 05 32 4D 41 48`); the ABO form is recognised by the parser but is rare in practice (only arises when a HAMMER2 image is cross-mounted on opposite-endian hardware). Confidence 0.85: an 8-byte magic at offset 0 is high-confidence but the detector does no secondary sanity check (e.g. volume size plausibility, fstype UUID match). References:
 
+Why this volume is laid out again by rebuilding rather than by moving, and what it would take to change that.
+
+A file's bytes are named by a blockref's device offset, and the check beside it is over the bytes it points at — which a move does not change. So the offset itself is one field, and the data's own check survives.
+
+What does not survive is every check above it. A blockref lives inside its parent block, and the parent's check lives in the blockref that names the parent, and so on up to the volume header, which carries CRCs over its own sectors. Repointing one block therefore means taking a chain of checks again, from the block holding the blockref up to the header. That is the work this would need — it is bounded and the primitives are here, but it is not the single-field rewrite the formats that do move in place need.
+
 ### Hammer2Reader
 
 Walks a HAMMER2 (DragonFly BSD) filesystem image and extracts the regular files living in its PFS roots. The walk mirrors the kernel's on-disk topology (`sys/vfs/hammer2/hammer2_disk.h`):

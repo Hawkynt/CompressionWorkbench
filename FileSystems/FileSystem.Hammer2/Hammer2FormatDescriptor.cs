@@ -30,6 +30,23 @@ namespace FileSystem.Hammer2;
 ///   <item><description><c>https://gitweb.dragonflybsd.org/dragonfly.git/blob/HEAD:/sys/vfs/hammer2/DESIGN</c></description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why this volume is laid out again by rebuilding rather than by moving, and
+/// what it would take to change that.
+/// </summary>
+/// <remarks>
+/// <para>A file's bytes are named by a blockref's device offset, and the check
+/// beside it is over the bytes it points at — which a move does not change. So
+/// the offset itself is one field, and the data's own check survives.</para>
+///
+/// <para>What does not survive is every check above it. A blockref lives inside
+/// its parent block, and the parent's check lives in the blockref that names
+/// the parent, and so on up to the volume header, which carries CRCs over its
+/// own sectors. Repointing one block therefore means taking a chain of checks
+/// again, from the block holding the blockref up to the header. That is the
+/// work this would need — it is bounded and the primitives are here, but it is
+/// not the single-field rewrite the formats that do move in place need.</para>
+/// </remarks>
 public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>

@@ -46,6 +46,10 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 Descriptor for ZFS pool images — four 256 KB vdev labels (NVList + uberblock ring) around the pool data area; WORM pool writer + reader round-trip. References:
 
+Why this pool is laid out again by rebuilding rather than by moving.
+
+A block is named by a device address inside a block pointer, and the block pointer carries a Fletcher-4 over what it points at. Moving bytes leaves that check good but breaks every one above it: the pointer sits in an indirect block whose own check sits in the pointer above, up to the uberblock. The pool also accounts for free space in its metaslabs' space maps, which are logs of allocations rather than a bitmap to restate. Both have to be rewritten together, which is what the rebuild does.
+
 ### ZfsReader
 
 Reads a ZFS pool image produced by `ZfsWriter` (and compatible minimal spec-aligned images). Traverses: vdev label → highest-TXG uberblock → MOS objset → object directory ZAP → DSL dataset → dataset objset → master node / ROOT dir ZAP → file dnodes. Validates Fletcher-4 checksums on all traversed blocks.
