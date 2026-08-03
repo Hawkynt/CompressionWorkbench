@@ -86,7 +86,7 @@ public sealed class RomFsReader {
       // checksum at offset+12 (not validated here)
 
       var next = (long)(nextAndType & 0xFFFFFFF0u); // upper 28 bits (lower nibble zeroed)
-      var type = (int)(nextAndType & 0x0F);          // lower 4 bits
+      var type = (int)(nextAndType & 0x07);          // low three bits; bit three is "executable"
 
       // Name starts at offset+16, null-terminated, padded to 16-byte boundary from entry start
       var nameOffset = offset + 16;

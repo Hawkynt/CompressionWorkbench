@@ -282,20 +282,73 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new IsoBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var descriptor = new IsoFormatDescriptor();
+    var extents = descriptor.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = descriptor.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's bytes, for the guard to compare across the pass.</summary>
+  private static IReadOnlyList<byte[]> ReadEntriesForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new IsoReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
   /// <summary>
   /// Mode-aware ISO 9660 defragmentor via read-extract-rebuild dispatch through
   /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported;
   /// image is repacked with files reordered per mode.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Planner-driven defragmentation was tried here and pulled back out: on a
-    // half-megabyte image the planning pass had not returned after ten minutes.
-    // IsoBlockMover re-reads the primary volume descriptor and walks the
-    // directory records from the root for every move, so the cost grows with
-    // the square of the move count. It needs the directory record located once
-    // per file rather than once per move before the planner is worth wiring up.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the image out again: a file is
+    // one contiguous extent by the standard, and its directory record names the
+    // sector it starts at, so a move is the copy plus that field.
+    //
+    // This was tried once and pulled back out, because the mover walked the
+    // directory from the root for every move and the cost grew with the square
+    // of the move count — a half-megabyte image had not finished planning after
+    // ten minutes. The records are located once now.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadEntriesForGuard(stream),
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
 
     // An image too large to materialise goes through the streaming rebuilder;
     // buildImage returns a byte[] of the whole image, which Build refuses to

@@ -102,10 +102,9 @@ public static class RomFsModifier {
     BinaryPrimitives.WriteUInt32BigEndian(sizeBuf, (uint)newFullSize);
     image.Write(sizeBuf);
 
-    // Re-patch superblock checksum.
-    PatchSuperblockChecksum(image, imageData);
-
-    // Write back the patched last-entry's nextAndType.
+    // Write back the patched last-entry's nextAndType. This has to reach the
+    // image before the superblock checksum is taken: on a small image that
+    // record is inside the 512 bytes the checksum covers.
     if (firstFileOffset > 0 && firstFileOffset < imageData.Length) {
       var lastOffset = FindLastSiblingOffsetExcluding(imageData, firstFileOffset, appendOffset);
       if (lastOffset >= 0) {
@@ -120,6 +119,31 @@ public static class RomFsModifier {
         image.Write(csBuf);
       }
     }
+
+    PadToBlock(image);
+
+    // Re-patch superblock checksum, from the image as it now stands.
+    PatchSuperblockChecksum(image, imageData);
+  }
+
+  /// <summary>
+  /// Rounds the image out to a whole 1024-byte block with zeros.
+  /// </summary>
+  /// <remarks>
+  /// A loop device rounds down to whole blocks, so an image that ends part way
+  /// through one loses its tail — and with it whichever record was written
+  /// last. The padding sits past the size the superblock records, so no reader
+  /// walks into it.
+  /// </remarks>
+  private static void PadToBlock(Stream image) {
+    const int blockSize = 1024;
+    var over = image.Length % blockSize;
+    if (over == 0) return;
+
+    var padding = new byte[blockSize - over];
+    image.Position = image.Length;
+    image.Write(padding);
+    image.Flush();
   }
 
   /// <summary>
@@ -171,12 +195,13 @@ public static class RomFsModifier {
           BinaryPrimitives.WriteUInt32BigEndian(csBuf, ReadUInt32BE(imageData, prevOffset + 12));
           image.Write(csBuf);
         }
-        // Note: if prevOffset == -1, this is the first entry. For a complete
-        // implementation we'd need to relocate the second entry to the first
-        // position. For simplicity with our writer's output, we zero the entry's
-        // inode-equivalent (set type to 0 and name to empty so the reader skips it).
-        // Actually, we just rebuild via the descriptor's fallback for this edge case.
+        // Note: if prevOffset == -1, this is the first entry. Every chain our
+        // writer lays down opens with its own "." record, so a named file is
+        // never first and there is nothing to relocate.
 
+        // The chain change lands inside the 512 bytes the superblock's checksum
+        // covers, and Linux refuses a volume whose total is not zero.
+        PatchSuperblockChecksum(image, imageData);
         return true;
       }
 
@@ -201,15 +226,22 @@ public static class RomFsModifier {
     return (volumeName, nameStart + paddedNameLen);
   }
 
+  /// <summary>
+  /// Rewrites the superblock checksum, which covers the first 512 bytes of the
+  /// image — or the whole image when it is shorter.
+  /// </summary>
+  /// <remarks>
+  /// Summing the superblock alone leaves the records and payload bytes that
+  /// share those 512 bytes out of the total, and Linux refuses such a volume
+  /// with "bad initial checksum". Adding or removing an entry moves those bytes
+  /// around, so the sum has to be taken again from the image as it now stands.
+  /// </remarks>
   private static void PatchSuperblockChecksum(Stream image, byte[] imageData) {
-    // Re-read the superblock header from the stream (since fullSize was patched).
-    var nameStart = 16;
-    var nameEnd = nameStart;
-    while (nameEnd < imageData.Length && imageData[nameEnd] != 0) nameEnd++;
-    var paddedNameLen = Align16(nameEnd - nameStart + 1);
-    var sbLen = 16 + paddedNameLen;
+    _ = imageData;
+    var covered = (int)(Math.Min(512L, image.Length) & ~3L);
+    if (covered <= 0) return;
 
-    var sbBuf = new byte[sbLen];
+    var sbBuf = new byte[covered];
     image.Position = 0;
     image.ReadExactly(sbBuf);
 
@@ -217,7 +249,7 @@ public static class RomFsModifier {
     WriteUInt32BEInPlace(sbBuf, 12, 0);
 
     uint sum = 0;
-    for (var i = 0; i < sbLen; i += 4)
+    for (var i = 0; i < covered; i += 4)
       sum += ReadUInt32BE(sbBuf, i);
 
     var checksum = (uint)(-(int)sum);

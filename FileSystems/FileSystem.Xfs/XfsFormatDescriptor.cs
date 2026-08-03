@@ -66,9 +66,15 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Planner-driven defragmentation is not wired up here yet. XfsBlockMover
-    // exists but throws for the extent shapes a real volume uses, so every plan
-    // would end in the rebuild below anyway.
+    // Planner-driven defragmentation is not wired up here. XfsBlockMover
+    // rewrites one BMBT record of a single-extent, extents-format inode and
+    // nothing else: a file in more than one piece, or one whose extents have
+    // grown into a b-tree, throws. Even for the shapes it does take, an XFS
+    // volume records free space twice more — the bno and cnt b-trees of the
+    // allocation group and the counters in its header — and a move that leaves
+    // those behind is a volume xfs_repair calls corrupt. Restating them is a
+    // different piece of work from repointing a file, so every plan would end
+    // in the rebuild below anyway.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 

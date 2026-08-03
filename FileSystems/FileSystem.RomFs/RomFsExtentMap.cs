@@ -62,7 +62,7 @@ public static class RomFsExtentMap {
       var size = (int)ReadUInt32BE(data, offset + 8);
 
       var next = (long)(nextAndType & 0xFFFFFFF0u);
-      var type = (int)(nextAndType & 0x0F);
+      var type = (int)(nextAndType & 0x07);   // bit three is the executable flag, not the type
 
       var nameOffset = offset + 16;
       var nameEnd = nameOffset;

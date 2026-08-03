@@ -26,6 +26,146 @@ public sealed class UdfBlockMover : IFilesystemBlockMover {
 
   public long FirstDataByte => 0;
 
+  /// <summary>A sector. An allocation descriptor names one, not a byte.</summary>
+  public int BlockSize => SectorSize;
+
+  /// <summary>
+  /// Each call repoints the descriptor naming the run it is given and leaves
+  /// the file entry's other descriptors alone, so an owner in several runs is
+  /// simply several calls.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
+  /// <summary>Where the partition begins, and each file's entry inside it.</summary>
+  /// <remarks>
+  /// Read once. Walking anchor, volume descriptor sequence, partition, file set
+  /// and root directory again for every move costs the square of the move
+  /// count, which is why this mover was written and then not used.
+  /// </remarks>
+  private int _partitionStart = -1;
+  private readonly Dictionary<string, int> _fileEntryOf = new(StringComparer.OrdinalIgnoreCase);
+
+  /// <summary>Reads the descriptor chain once and notes where every file entry is.</summary>
+  public void Init(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    this._fileEntryOf.Clear();
+    this._partitionStart = -1;
+
+    using var cache = new SectorCache(image);
+    if (image.Length < (AvdpLba + 1) * SectorSize) return;
+
+    var anchor = new byte[SectorSize];
+    cache.Read((long)AvdpLba * SectorSize, anchor);
+    if (BinaryPrimitives.ReadUInt16LittleEndian(anchor) != 2) return;
+
+    var vdsLocation = (int)BinaryPrimitives.ReadUInt32LittleEndian(anchor.AsSpan(20));
+    var vdsLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(anchor.AsSpan(16));
+
+    int partitionStart = 0, fileSetLbn = 0;
+    var sector = new byte[SectorSize];
+    for (var i = 0; i < vdsLength / SectorSize && i < 64; ++i) {
+      var at = (long)(vdsLocation + i) * SectorSize;
+      if (at + SectorSize > image.Length) break;
+      cache.Read(at, sector);
+      var tag = BinaryPrimitives.ReadUInt16LittleEndian(sector);
+      if (tag == 5) partitionStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(188));
+      else if (tag == 6) fileSetLbn = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(252));
+      else if (tag == 8) break;
+    }
+
+    var fileSetOffset = (long)(partitionStart + fileSetLbn) * SectorSize;
+    if (fileSetOffset + SectorSize > image.Length) return;
+    cache.Read(fileSetOffset, sector);
+    var rootIcb = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(404));
+
+    this._partitionStart = partitionStart;
+
+    this.IndexDirectory(image, cache, partitionStart, rootIcb, string.Empty, 0);
+  }
+
+  /// <summary>
+  /// Notes where every file entry below <paramref name="dirIcbLbn" /> lives,
+  /// under the same slash-joined path the reader gives it.
+  /// </summary>
+  private void IndexDirectory(Stream image, SectorCache cache, int partitionStart, int dirIcbLbn,
+      string basePath, int depth) {
+    if (depth > 64) return;
+
+    var dirBytes = ReadDirectoryBytes(image, cache, partitionStart, dirIcbLbn);
+    if (dirBytes == null) return;
+
+    var pos = 0;
+    while (pos + 38 < dirBytes.Length) {
+      if (BinaryPrimitives.ReadUInt16LittleEndian(dirBytes.AsSpan(pos)) != 257) break;
+
+      var implementationUseLength = BinaryPrimitives.ReadUInt16LittleEndian(dirBytes.AsSpan(pos + 36));
+      var nameLength = dirBytes[pos + 19];
+      var flags = dirBytes[pos + 18];
+      var childIcb = (int)BinaryPrimitives.ReadUInt32LittleEndian(dirBytes.AsSpan(pos + 24));
+      var isParent = (flags & 0x08) != 0;
+      var isDeleted = (flags & 0x04) != 0;
+      var isDirectory = (flags & 0x02) != 0;
+
+      if (!isParent && !isDeleted && nameLength > 0) {
+        var name = ReadFileIdentifier(dirBytes, pos + 38 + implementationUseLength, nameLength);
+        var path = basePath.Length == 0 ? name : $"{basePath}/{name}";
+        if (isDirectory)
+          this.IndexDirectory(image, cache, partitionStart, childIcb, path, depth + 1);
+        else
+          this._fileEntryOf[path] = childIcb;
+      }
+
+      pos += (38 + implementationUseLength + nameLength + 3) & ~3;
+    }
+  }
+
+  /// <summary>The bytes of the directory whose file entry sits at the given block, or null.</summary>
+  private static byte[]? ReadDirectoryBytes(Stream image, SectorCache cache, int partitionStart,
+      int icbLbn) {
+    var at = (long)(partitionStart + icbLbn) * SectorSize;
+    if (at < 0 || at + SectorSize > image.Length) return null;
+
+    var entry = ArrayPool<byte>.Shared.Rent(SectorSize);
+    try {
+      cache.Read(at, entry.AsSpan(0, SectorSize));
+      var tag = BinaryPrimitives.ReadUInt16LittleEndian(entry.AsSpan(0));
+      if (tag is not (261 or 266)) return null;
+
+      var descriptorType = BinaryPrimitives.ReadUInt16LittleEndian(entry.AsSpan(34)) & 0x07;
+      var informationLength = (long)BinaryPrimitives.ReadUInt64LittleEndian(entry.AsSpan(56));
+      int extendedAttributeLength, allocationLength, allocationAt;
+      if (tag == 261) {
+        extendedAttributeLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(168));
+        allocationLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(172));
+        allocationAt = 176 + extendedAttributeLength;
+      } else {
+        extendedAttributeLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(208));
+        allocationLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(212));
+        allocationAt = 216 + extendedAttributeLength;
+      }
+
+      return ReadAllocDataStream(image, cache, entry, partitionStart, allocationAt, allocationLength,
+        descriptorType, informationLength);
+    } finally {
+      ArrayPool<byte>.Shared.Return(entry);
+    }
+  }
+
+  /// <summary>Decodes a file identifier, which names its own character set in its first byte.</summary>
+  private static string ReadFileIdentifier(byte[] bytes, int at, int length) {
+    if (at + length > bytes.Length) return string.Empty;
+    var name = length > 1 && bytes[at] == 8 ? Encoding.UTF8.GetString(bytes, at + 1, length - 1)
+      : length > 1 && bytes[at] == 16 ? Encoding.BigEndianUnicode.GetString(bytes, at + 1, length - 1)
+      : Encoding.ASCII.GetString(bytes, at, length);
+    return name.TrimEnd('\0');
+  }
+
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
@@ -50,43 +190,21 @@ public sealed class UdfBlockMover : IFilesystemBlockMover {
   /// require only a handful of sector reads/writes per move.
   /// </remarks>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(fileName);
+    if (this._partitionStart < 0) this.Init(image);
+    if (this._partitionStart < 0) return;
+
+    if (!this._fileEntryOf.TryGetValue(fileName, out var fileEntryLbn))
+      throw new InvalidOperationException(
+        $"UDF: no file entry was found for '{fileName}', so it cannot be repointed.");
+
+    var oldLbn = (int)((oldOffset / SectorSize) - this._partitionStart);
+    var newLbn = (int)((newOffset / SectorSize) - this._partitionStart);
+    if (oldLbn == newLbn) return;
+
     using var cache = new SectorCache(image);
-
-    // Parse context: AVDP → VDS → PD + LVD → FSD → root FE.
-    if (image.Length < (AvdpLba + 1) * SectorSize) return;
-    var avdpOff = (long)AvdpLba * SectorSize;
-    Span<byte> sectorBuf = stackalloc byte[SectorSize];
-    cache.Read(avdpOff, sectorBuf);
-    if (BinaryPrimitives.ReadUInt16LittleEndian(sectorBuf) != 2) return;
-    var mainVdsLoc = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.Slice(20));
-    var mainVdsLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.Slice(16));
-
-    int partStart = 0, fsdLbn = 0;
-    var vdsSectors = mainVdsLen / SectorSize;
-    for (var i = 0; i < vdsSectors && i < 64; i++) {
-      var off = (long)(mainVdsLoc + i) * SectorSize;
-      if (off + SectorSize > image.Length) break;
-      cache.Read(off, sectorBuf);
-      var tag = BinaryPrimitives.ReadUInt16LittleEndian(sectorBuf);
-      if (tag == 5) partStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.Slice(188));
-      else if (tag == 6) fsdLbn = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.Slice(252));
-      else if (tag == 8) break;
-    }
-
-    var fsdOff = (long)(partStart + fsdLbn) * SectorSize;
-    if (fsdOff + SectorSize > image.Length) return;
-    cache.Read(fsdOff, sectorBuf);
-    var rootIcbLbn = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.Slice(404));
-
-    var oldLbn = (int)((oldOffset / SectorSize) - partStart);
-    var newLbn = (int)((newOffset / SectorSize) - partStart);
-
-    // Walk directory to find matching file's FE.
-    var fileFeLbn = FindFileIcbStream(image, cache, partStart, rootIcbLbn, fileName);
-    if (fileFeLbn < 0) return;
-
-    // Patch the file's FE allocation descriptors in place (targeted sector write).
-    PatchFileEntryStream(image, cache, partStart, fileFeLbn, oldLbn, newLbn);
+    PatchFileEntryStream(image, cache, this._partitionStart, fileEntryLbn, oldLbn, newLbn);
     image.Flush();
   }
 

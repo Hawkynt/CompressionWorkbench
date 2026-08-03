@@ -277,6 +277,53 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <inheritdoc/>
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new HfsPlusBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement,
+      movableMetadata: (mover as IFilesystemMetadataMover)?.RelocatableMetadata);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null, metadataMover: mover as IFilesystemMetadataMover);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+
+    // Whichever runs moved, the bitmap is right only once they all have: a
+    // run's old home is routinely another run's new one.
+    mover.SettleAllocationBitmap(archive, postExtents
+      .Where(e => e.Kind != DefragBlockKind.Free)
+      .Select(e => (e.Offset, e.Length)));
+
+    archive.Position = 0;
+    postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  /// <summary>Every file's bytes, for the guard to compare across the pass.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new HfsPlusReader(stream, leaveOpen: true);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -287,17 +334,29 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// values converge on a clean repack.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Planner-driven defragmentation was tried here and pulled back out. It
-    // works on a volume laid out fresh — thirty runs across five metadata
-    // placements, three modes and two interleave strides came back clean — but
-    // on a volume that has had files removed and re-added it loses one on the
-    // end-packing mode, and offering the allocation and catalog forks to a
-    // metadata placement at the same time loses file contents on Front, Back
-    // and Middle. HfsPlusBlockMover rewrites a fork's first extent rather than
-    // its whole extent record, which is the shape of both faults. Until it can
-    // restate a record, the rebuild is what runs.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the volume out again: a fork's
+    // extent descriptors say where each of its runs sits, so a move is the copy
+    // plus the four bytes of the descriptor that named it.
+    //
+    // This was tried once and pulled back out: the mover rewrote a fork's first
+    // descriptor whichever run had moved, so a file in more than one piece kept
+    // its length and lost its contents. It repoints the descriptor that moved
+    // now.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: stream => ReadPayloadsForGuard(stream),
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
 
     // A volume too large to materialise goes through the streaming rebuilder;
     // buildImage returns a byte[] of the whole volume, which Build refuses to

@@ -31,6 +31,7 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
   private int _blockSize;
   private uint _catalogStartBlock;
   private uint _catalogBlockCount;
+  private uint _totalBlocks;
   private long _imageLength;
 
   public long FirstDataByte => 0;
@@ -60,6 +61,7 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
       throw new InvalidDataException("HFS+ volume header has zero block size.");
 
     // catalogFile.extents[0] lives at VH+288 (startBlock) and VH+292 (blockCount).
+    _totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(vh[44..]);
     _catalogStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh[288..]);
     _catalogBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh[292..]);
     _imageLength = image.Length;
@@ -86,6 +88,20 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
   /// memory — multi-TB HFS+ images require only a few sector reads/writes
   /// per move.
   /// </remarks>
+  /// <summary>
+  /// Each call repoints the extent descriptor naming the run it is given and
+  /// leaves the fork's other descriptors alone, so an owner in several runs is
+  /// simply several calls.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
+  /// <inheritdoc />
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     if (_blockSize == 0)
       Init(image);
@@ -113,11 +129,12 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
     PatchCatalogStartBlockStream(image, cache, fileName, oldBlock, newBlock);
     image.Flush();
 
-    // Step 3: Release old blocks in allocation bitmap.
-    for (var i = 0; i < blockCount; i++)
-      ClearBitmapBitStream(image, bitmapBase, oldBlock + (uint)i);
-    cache.Invalidate(bitmapBase, blockCount * 2 + 1);
-    image.Flush();
+    // The old blocks are deliberately not released here. A fork's runs are
+    // moved one at a time, and one run's old home is routinely where another
+    // run has just landed — clearing it marks live blocks free, and the next
+    // file added to the volume is written straight over them. The caller
+    // settles the bitmap once every run has moved, from where they all ended
+    // up, which is the only point at which the answer is knowable.
 
     // Step 4: Mirror alternate volume header (last 1024 bytes contain the
     // alternate VH at offset image.Length-1024; field layout matches primary).
@@ -129,6 +146,52 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
       image.Write(vh);
       image.Flush();
     }
+  }
+
+  /// <summary>
+  /// Writes the allocation bitmap from the runs the volume actually holds.
+  /// </summary>
+  /// <remarks>
+  /// Called once a layout pass has finished. Releasing a run's old blocks as it
+  /// moves cannot be right while other runs are still moving: an old home is
+  /// routinely another run's new one, and clearing it hands live space out
+  /// twice. From the finished layout the answer is simply what is covered.
+  /// </remarks>
+  public void SettleAllocationBitmap(Stream image, IEnumerable<(long Offset, long Length)> live) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(live);
+    if (this._blockSize == 0) this.Init(image);
+
+    var bitmapBase = AllocationFileOffset(image);
+    var totalBlocks = this._totalBlocks > 0
+      ? (int)Math.Min(this._totalBlocks, this._imageLength / this._blockSize)
+      : (int)(this._imageLength / this._blockSize);
+    var claimed = new bool[totalBlocks];
+
+    foreach (var (offset, length) in live) {
+      if (length <= 0) continue;
+      var first = offset / this._blockSize;
+      var last = (offset + length + this._blockSize - 1) / this._blockSize;
+      for (var block = first; block < last && block < totalBlocks; ++block)
+        if (block >= 0) claimed[block] = true;
+    }
+
+    var free = 0;
+    for (var block = 0; block < totalBlocks; ++block) {
+      if (claimed[block]) SetBitmapBitStream(image, bitmapBase, (uint)block);
+      else { ClearBitmapBitStream(image, bitmapBase, (uint)block); ++free; }
+    }
+
+    // The header carries the free count as a number of its own, and fsck reads
+    // it rather than counting the bitmap. Leaving it behind is how a volume
+    // that is otherwise sound reads as corrupt.
+    Span<byte> freeBlocks = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32BigEndian(freeBlocks, (uint)free);
+    image.Position = VolumeHeaderOffset + 48;
+    image.Write(freeBlocks);
+
+    MirrorAlternateVolumeHeader(image);
+    image.Flush();
   }
 
   // ── IFilesystemMetadataMover ──────────────────────────────────────────
@@ -315,18 +378,35 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
         if (recordType != 2) continue; // file records only
 
         const int dataForkOffset = 88;
-        var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(dataOffset + dataForkOffset + 16));
-        if (startBlock == oldBlock &&
-            (name.Equals(fileName, StringComparison.OrdinalIgnoreCase) ||
-             fileName.Equals("*", StringComparison.Ordinal))) {
-          // Targeted 4-byte write at the absolute offset of the startBlock field.
+        const int extentRecordOffset = 16;      // past logicalSize, clumpSize, totalBlocks
+        const int extentCount = 8;              // descriptors an HFS+ fork holds
+        const int extentSize = 8;               // startBlock + blockCount, each four bytes
+
+        if (!name.Equals(fileName, StringComparison.OrdinalIgnoreCase)
+            && !fileName.Equals("*", StringComparison.Ordinal)) continue;
+
+        // A fork is eight extent descriptors, not one. Looking only at the
+        // first meant a file in more than one piece had whichever piece moved
+        // written over its first — the file kept its length and lost its
+        // contents, which is why this mover was written and then not used.
+        for (var extent = 0; extent < extentCount; ++extent) {
+          var descriptor = dataOffset + dataForkOffset + extentRecordOffset + extent * extentSize;
+          if (descriptor + extentSize > nodeSize) break;
+
+          var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(descriptor));
+          var extentBlocks = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(descriptor + 4));
+          if (extentBlocks == 0) break;                       // unused descriptor: the fork ends
+          if (startBlock != oldBlock) continue;
+
+          // Targeted 4-byte write at the absolute offset of this startBlock.
           var fieldOff = nodeOffset + recOffset + 2 + keyLength;
           if ((fieldOff & 1) != 0) fieldOff++;
-          fieldOff += dataForkOffset + 16;
+          fieldOff += dataForkOffset + extentRecordOffset + extent * extentSize;
           BinaryPrimitives.WriteUInt32BigEndian(patched, newBlock);
           image.Position = fieldOff;
           image.Write(patched);
           cache.Invalidate(fieldOff, 4);
+          break;
         }
       }
       currentNode = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(0));

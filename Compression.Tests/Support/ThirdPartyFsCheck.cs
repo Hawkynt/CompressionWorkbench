@@ -60,6 +60,9 @@ internal static class ThirdPartyFsCheck {
     ["Fat"] = new("vfat", "", true, "fsck.fat", "-n {0}", [0, 1]),
     ["FatPlus"] = new("vfat", "", true, "fsck.fat", "-n {0}", [0, 1]),
     ["Gfs2"] = new("gfs2", "lockproto=lock_nolock", false, null, "", []),
+    // 7-Zip's HFS handler speaks HFS+ and refuses classic HFS, so the kernel
+    // driver is the outside opinion here.
+    ["Hfs"] = new("hfs", "", false, null, "", []),
     ["HfsPlus"] = new("hfsplus", "", true, "fsck.hfsplus", "-n {0}", [0]),
     ["Hpfs"] = new("hpfs", "", false, null, "", []),
     ["Iso"] = new("iso9660", "", true, null, "", []),
@@ -154,7 +157,8 @@ internal static class ThirdPartyFsCheck {
       // Ownership options let the invoking user read what was mounted; drivers
       // that do not know them reject the mount, so they are only added for the
       // ones that do.
-      if (strategy.MountType is "adfs" or "vfat" or "exfat" or "hfsplus" or "iso9660" or "udf" or "hpfs" or "ntfs3")
+      if (strategy.MountType is "adfs" or "vfat" or "exfat" or "hfs" or "hfsplus" or "iso9660"
+          or "udf" or "hpfs" or "ntfs3")
         options += $",uid={Uid},gid={Gid}";
 
       var (_, stderr, exit) = Sudo($"mount -t {strategy.MountType} -o {options} {Quote(imagePath)} {Quote(mountPoint)}");

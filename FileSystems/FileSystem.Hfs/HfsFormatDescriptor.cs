@@ -219,6 +219,52 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new HfsReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the runs into it, repointing as it goes.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new HfsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = HfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = HfsExtentMap.Enumerate(archive).ToList();
+
+    // Whichever runs moved, the bitmap is right only once they all have: a
+    // run's old home is routinely another run's new one.
+    mover.SettleAllocationBitmap(archive, postExtents
+      .Where(e => e.Kind != DefragBlockKind.Free)
+      .Select(e => (e.Offset, e.Length)));
+
+    archive.Position = 0;
+    postExtents = HfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   /// <summary>
   /// Mode-aware HFS defragmentor via read-extract-rebuild dispatch through
   /// <see cref="DefragRebuilder"/>. The writer always emits a contiguous,
@@ -226,10 +272,30 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// values converge on a clean repack.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Planner-driven defragmentation is not wired up here yet. HfsBlockMover
-    // patches a catalog record's first extent, which is enough for a file that
-    // moves in one piece; the volume bitmap and the extents overflow file it
-    // would also have to keep in step are not handled.
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the volume out again: a fork is
+    // three extent descriptors in its catalog record, so a move is the copy
+    // plus the two bytes of the descriptor that named the run.
+    //
+    // The mover used to rewrite the record's first descriptor whichever run had
+    // moved, and to release the old blocks as it went — the first lost a
+    // fragmented file's contents, the second handed live space out twice. It
+    // repoints the descriptor that moved now, and the bitmap is settled once
+    // the pass is over.
+    if (archive.CanSeek) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new HfsReader(stream);

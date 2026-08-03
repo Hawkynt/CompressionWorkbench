@@ -27,8 +27,83 @@ public sealed class IsoBlockMover : IFilesystemBlockMover {
   /// <summary>Byte offset of the first data sector (sector 0).</summary>
   public long FirstDataByte => 0;
 
+  /// <summary>A sector. A directory record names one, not a byte.</summary>
+  public int BlockSize => SectorSize;
+
   /// <summary>Sector size.</summary>
   public int SectorSize_ => SectorSize;
+
+  /// <summary>
+  /// Each call repoints the record it is given and nothing else, so an owner
+  /// in several runs — which this format cannot produce — would be several
+  /// calls.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full image be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
+  /// <summary>
+  /// Where each file's directory record sits, keyed by the sector it names.
+  /// </summary>
+  /// <remarks>
+  /// Built once. Finding the record by walking the directory from the root on
+  /// every move costs the square of the move count, and on a half-megabyte
+  /// image the planning pass had not finished after ten minutes — which is why
+  /// this mover was written and then not used.
+  /// </remarks>
+  private readonly Dictionary<int, long> _recordOfExtent = [];
+
+  /// <summary>Reads the directory once and notes where every record is.</summary>
+  public void Init(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    this._recordOfExtent.Clear();
+
+    using var cache = new SectorCache(image);
+    var pvdOffset = (long)PvdLba * SectorSize;
+    if (pvdOffset + SectorSize > image.Length) return;
+
+    var pvd = new byte[SectorSize];
+    cache.Read(pvdOffset, pvd);
+    var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(156 + 2));
+    var rootLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(156 + 10));
+
+    foreach (var (extent, at) in Records(image, cache, rootLba, rootLength))
+      this._recordOfExtent[extent] = at;
+  }
+
+  /// <summary>Every directory record, as the extent it names and where it sits.</summary>
+  private static IEnumerable<(int Extent, long At)> Records(Stream image, SectorCache cache,
+      int rootLba, int rootLength) {
+    var rootOffset = (long)rootLba * SectorSize;
+    var end = Math.Min(rootOffset + rootLength, image.Length);
+    var sector = new byte[SectorSize];
+
+    for (var sectorOffset = rootOffset; sectorOffset < end; sectorOffset += SectorSize) {
+      var inSector = (int)Math.Min(SectorSize, end - sectorOffset);
+      cache.Read(sectorOffset, sector.AsSpan(0, inSector));
+
+      var pos = 0;
+      while (pos < inSector) {
+        var recordLength = sector[pos];
+        if (recordLength == 0) break;                        // padding to the sector end
+        if (recordLength < 33 || pos + recordLength > inSector) break;
+
+        var extent = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(pos + 2));
+        var nameLength = sector[pos + 32];
+        if (nameLength > 0 && nameLength <= recordLength - 33) {
+          var first = sector[pos + 33];
+          // "." and ".." name the directory itself and its parent.
+          if (!(nameLength == 1 && (first == 0 || first == 1)))
+            yield return (extent, sectorOffset + pos);
+        }
+        pos += recordLength;
+      }
+    }
+  }
 
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -52,25 +127,26 @@ public sealed class IsoBlockMover : IFilesystemBlockMover {
   /// handful of sector reads/writes per move.
   /// </remarks>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
-    using var cache = new SectorCache(image);
+    ArgumentNullException.ThrowIfNull(image);
+    if (this._recordOfExtent.Count == 0) this.Init(image);
 
     var oldLba = (int)(oldOffset / SectorSize);
     var newLba = (int)(newOffset / SectorSize);
+    if (oldLba == newLba) return;
 
-    // Read PVD to find root directory.
-    var pvdOff = (long)PvdLba * SectorSize;
-    if (pvdOff + SectorSize > image.Length) return;
-    Span<byte> pvd = stackalloc byte[SectorSize];
-    cache.Read(pvdOff, pvd);
+    if (!this._recordOfExtent.Remove(oldLba, out var recordOffset))
+      throw new InvalidOperationException(
+        $"ISO 9660: no directory record names sector {oldLba}, so '{fileName}' cannot be repointed.");
 
-    var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.Slice(156 + 2));
-    var rootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.Slice(156 + 10));
-
-    // Patch the directory record in place — streaming sector reads + targeted
-    // sector writes back. Cache invalidation is implicit because we don't
-    // re-read the patched sector here.
-    PatchRootDirStream(image, cache, rootLba, rootLen, fileName, oldLba, newLba);
+    // The extent is recorded twice, once each way round, as the standard asks.
+    Span<byte> patch = stackalloc byte[8];
+    BinaryPrimitives.WriteUInt32LittleEndian(patch, (uint)newLba);
+    BinaryPrimitives.WriteUInt32BigEndian(patch[4..], (uint)newLba);
+    image.Position = recordOffset + 2;
+    image.Write(patch);
     image.Flush();
+
+    this._recordOfExtent[newLba] = recordOffset;
   }
 
   /// <summary>

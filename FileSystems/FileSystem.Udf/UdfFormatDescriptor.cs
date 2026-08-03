@@ -243,6 +243,51 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadEntriesForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new UdfReader(stream, leaveOpen: true);
+    var contents = new List<byte[]>();
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) continue;
+      using var buffer = new MemoryStream();
+      reader.ExtractTo(entry, buffer);
+      contents.Add(buffer.ToArray());
+    }
+
+    return contents;
+  }
+
+  /// <summary>Plans the new layout and moves the runs into it, repointing as it goes.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new UdfBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = UdfExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = UdfExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   /// <summary>
   /// Mode-aware UDF 2.01 defragmentor via read-extract-rebuild dispatch
   /// through <see cref="DefragRebuilder"/>. The writer always emits a fresh
@@ -250,13 +295,28 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// + root FE and a packed file-data region.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Planner-driven defragmentation is not wired up here yet. UdfBlockMover
-    // can repoint a file entry, but like the ISO mover it re-parses the
-    // descriptor chain — anchor, volume descriptor sequence, partition, file
-    // set — on every move, and that has to be done once before the planner is
-    // worth using.
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the volume out again: a file's
+    // extents are named by allocation descriptors in its file entry, so a move
+    // is the copy plus those eight bytes.
+    //
+    // The mover reads the descriptor chain — anchor, volume descriptor
+    // sequence, partition, file set, directories — once in Init and remembers
+    // where each file entry sits. Walking it again per move is what kept this
+    // path unused.
+    if (archive.CanSeek) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadEntriesForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
     // Every consolidate mode lands on the same layout here: the writer emits a
     // fresh volume packed from the first data block, and has no way to place
     // files against the tail. Carving a hole is the one request it cannot meet.

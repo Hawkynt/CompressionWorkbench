@@ -20,6 +20,18 @@ public static class HfsExtentMap {
   private const byte RecFile = 2;
   private const byte RecFolder = 1;
 
+  /// <summary>Offset of the data fork's extent record inside a file record.</summary>
+  private const int DataForkExtents = 74;
+
+  /// <summary>Offset of the resource fork's extent record inside a file record.</summary>
+  private const int ResourceForkExtents = 86;
+
+  /// <summary>Descriptors an extent record holds before the overflow file takes over.</summary>
+  private const int ExtentsPerRecord = 3;
+
+  /// <summary>Bytes a catalog file record occupies.</summary>
+  private const int FileRecordLength = 102;
+
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
@@ -51,7 +63,41 @@ public static class HfsExtentMap {
         DefragBlockKind.MetadataReserved, FileName: "HFS volume bitmap");
     }
 
-    // Catalog file extent (drCTExtRec[0]).
+    // The alternate MDB, in the second-to-last sector. Leaving it out of the
+    // map reads it as free space, and an end-packed layout puts a file there.
+    var alternateMdb = (data.Length / 512 - 2) * 512;
+    if (alternateMdb > MdbOffset && alternateMdb + 512 <= data.Length)
+      yield return new DefragBlockInfo(alternateMdb, 512,
+        DefragBlockKind.MetadataReserved, FileName: "HFS alternate MDB");
+
+    // The extents overflow file, which the MDB names the same way it names the
+    // catalog. It is where a file's fourth and further extents live, so a
+    // layout that reads it as free space writes over the map of itself.
+    for (var e = 0; e < ExtentsPerRecord; ++e) {
+      var start = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(MdbOffset + 134 + e * 4));
+      var blocks = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(MdbOffset + 136 + e * 4));
+      if (blocks == 0) break;
+
+      var at = firstBlockOffset + (long)start * blockSize;
+      var span = (long)blocks * blockSize;
+      if (at + span > data.Length) break;
+      yield return new DefragBlockInfo(at, span,
+        DefragBlockKind.MetadataReserved, FileName: "HFS extents overflow file");
+    }
+
+    // Catalog file extents. The second and third are as real as the first.
+    for (var e = 1; e < ExtentsPerRecord; ++e) {
+      var start = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(MdbOffset + 150 + e * 4));
+      var blocks = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(MdbOffset + 152 + e * 4));
+      if (blocks == 0) break;
+
+      var at = firstBlockOffset + (long)start * blockSize;
+      var span = (long)blocks * blockSize;
+      if (at + span > data.Length) break;
+      yield return new DefragBlockInfo(at, span,
+        DefragBlockKind.MetadataReserved, FileName: "HFS catalog file");
+    }
+
     var catalogStartBlock = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(MdbOffset + 150));
     var catalogBlockCount = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(MdbOffset + 152));
     if (catalogBlockCount == 0) yield break;
@@ -102,17 +148,29 @@ public static class HfsExtentMap {
 
         var recType = data[dataPos];
         if (recType == RecFile && !string.IsNullOrEmpty(name)) {
-          if (dataPos + 78 > data.Length) continue;
-          var filLgLen = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(dataPos + 26));
-          var extStart = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(dataPos + 74));
-          var extBlocks = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(dataPos + 76));
-          if (extBlocks > 0) {
-            var fileOff = firstBlockOffset + (long)extStart * blockSize;
-            var fileLen = Math.Min((long)filLgLen, (long)extBlocks * blockSize);
-            if (fileLen <= 0) fileLen = (long)extBlocks * blockSize;
-            if (fileOff + fileLen > data.Length) fileLen = Math.Max(0, data.Length - fileOff);
-            if (fileLen > 0)
-              yield return new DefragBlockInfo(fileOff, fileLen, DefragBlockKind.Used, name);
+          if (dataPos + FileRecordLength > data.Length) continue;
+
+          // Both forks, and all three descriptors of each. A file in more than
+          // one piece had its second and third pieces read as free space, which
+          // is an invitation to write another file over them.
+          foreach (var (extentRecord, forkLength) in new[] {
+              (DataForkExtents, BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(dataPos + 26))),
+              (ResourceForkExtents, BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(dataPos + 36))) }) {
+            var remaining = (long)forkLength;
+            for (var e = 0; e < ExtentsPerRecord; ++e) {
+              var at = dataPos + extentRecord + e * 4;
+              var extStart = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(at));
+              var extBlocks = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(at + 2));
+              if (extBlocks == 0) break;
+
+              var span = (long)extBlocks * blockSize;
+              var fileOff = firstBlockOffset + (long)extStart * blockSize;
+              var fileLen = remaining > 0 ? Math.Min(remaining, span) : span;
+              remaining -= span;
+              if (fileOff + fileLen > data.Length) fileLen = Math.Max(0, data.Length - fileOff);
+              if (fileLen > 0)
+                yield return new DefragBlockInfo(fileOff, fileLen, DefragBlockKind.Used, name);
+            }
           }
         }
         // Folder records contribute no data extents — skip.

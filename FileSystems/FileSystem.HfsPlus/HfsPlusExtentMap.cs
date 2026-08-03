@@ -59,6 +59,30 @@ public static class HfsPlusExtentMap {
       }
     }
 
+    // The alternate volume header lives in the second-to-last sector, and the
+    // last sector is reserved with it. Reading them as free space is what lets
+    // an end-packed layout write a file over the volume's own spare copy.
+    if (image.Length >= VolumeHeaderOffset + 1024)
+      yield return new DefragBlockInfo(image.Length - 1024, 1024,
+        DefragBlockKind.MetadataReserved, FileName: "HFS+ alternate volume header");
+
+    // The extents overflow file, the attributes file and the startup file. The
+    // volume header names them exactly as it names the catalog, and a layout
+    // that does not know they are there writes over them.
+    foreach (var (forkOffset, forkName) in new[] {
+        (192, "HFS+ extents overflow file"),
+        (352, "HFS+ attributes file"),
+        (432, "HFS+ startup file") }) {
+      var startBlock = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(forkOffset + 16, 4));
+      var blockCount = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(forkOffset + 20, 4));
+      if (blockCount == 0) continue;
+
+      var at = (long)startBlock * blockSize;
+      var span = (long)blockCount * blockSize;
+      if (at < 0 || at + span > image.Length) continue;
+      yield return new DefragBlockInfo(at, span, DefragBlockKind.MetadataReserved, FileName: forkName);
+    }
+
     // Catalog file extent[0] at VH offset 272+16=288 / 272+20=292.
     var catalogStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(288, 4));
     var catalogBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(292, 4));

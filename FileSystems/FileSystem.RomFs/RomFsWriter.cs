@@ -97,24 +97,38 @@ public sealed class RomFsWriter : IDisposable {
     var fullSize = buf.Count;
     WriteUInt32BE(buf, 8, (uint)fullSize);
 
-    // Patch checksums for every header block
-    // The ROMFS spec says checksum covers all headers. Simple approach: checksum the superblock
-    // (first Align16(16+namePadded) bytes with checksum field set to 0) so that
-    // sum of all uint32 words = 0 mod 2^32.
-    PatchSuperblockChecksum(buf, namePadded);
+    // Every record header sums to zero on its own; the superblock's checksum
+    // covers the first 512 bytes of the finished image.
+    PatchSuperblockChecksum(buf);
+
+    // A block device rounds down to whole blocks, and Linux reads ROMFS in
+    // 1024-byte ones. An image whose length is not a multiple of that loses its
+    // tail the moment it is attached to a loop device, and the mount fails
+    // reading a record that is no longer there. The padding sits past the size
+    // the superblock records, so nothing else notices it.
+    for (var pad = buf.Count; pad % 1024 != 0; ++pad) buf.Add(0);
 
     buf.WriteTo(_output);
   }
 
-  // Writes all entries for a single directory level into buf.
-  // Returns the offset where this directory's first child entry starts (for specInfo of parent's
-  // "." entry) or -1 if the directory has no children.
+  /// <summary>
+  /// Writes one directory level and returns where its chain starts, which is
+  /// the record its parent points at.
+  /// </summary>
+  /// <remarks>
+  /// Every chain opens with its own "." and ".." records. Linux takes the
+  /// record just past the superblock as the root inode and follows its spec to
+  /// reach the root's contents, so a chain that opens with an ordinary file
+  /// gives the mount a root that is not a directory — which is exactly how our
+  /// images used to read, and why none of them would mount.
+  /// </remarks>
   private static long WriteDirectory(
       ImageBuilder buf,
       string dirPath,
       SortedSet<string> allDirs,
       List<(string Path, FilePayload Payload)> allFiles,
-      Dictionary<string, long> nodeOffsets) {
+      Dictionary<string, long> nodeOffsets,
+      long parentChainStart = -1) {
 
     // Collect children of this directory
     var childDirs  = allDirs.Where(d => d.Length > 0 && GetParent(d) == dirPath)
@@ -122,18 +136,28 @@ public sealed class RomFsWriter : IDisposable {
     var childFiles = allFiles.Where(f => GetParent(f.Path) == dirPath)
                              .OrderBy(f => f.Path).ToList();
 
-    if (childDirs.Count == 0 && childFiles.Count == 0) return -1;
-
     // The first child entry starts at current buf position
     var firstChildOffset = buf.Count;
     nodeOffsets[dirPath] = firstChildOffset;
 
+    // "." names this chain; ".." names the one above it, and the root's points
+    // back at itself.
+    var dotSpec = firstChildOffset;
+    var dotDotSpec = parentChainStart < 0 ? firstChildOffset : parentChainStart;
+
     // Enumerate all child entries (dirs first, then files) to build the list
     // We need to know offsets ahead of time for "next" pointers, so we compute sizes first.
 
+    // A directory record carries the executable bit alongside its type. Without
+    // it Linux gives the directory mode 0644, and nothing inside can be reached
+    // by anyone but root.
+    const int directoryType = 1 | 8;
+
     var entryList = new List<(string Name, int Type, long Size, string FullPath)>();
+    entryList.Add((".", directoryType, 0, ""));
+    entryList.Add(("..", directoryType, 0, ""));
     foreach (var d in childDirs)
-      entryList.Add((GetLeaf(d), 1, 0, d));
+      entryList.Add((GetLeaf(d), directoryType, 0, d));
     foreach (var (path, payload) in childFiles)
       entryList.Add((GetLeaf(path), 2, payload.Size, path));
 
@@ -170,8 +194,12 @@ public sealed class RomFsWriter : IDisposable {
       //           will be back-patched; for files = 0
       var specInfoOffset = buf.Count + 4; // offset within buf where specInfo lives
 
+      // "." and ".." know where they point before anything is written; every
+      // other directory's spec is back-patched once its children have a home.
+      var spec = i == 0 ? (uint)dotSpec : i == 1 ? (uint)dotDotSpec : 0u;
+
       WriteUInt32BEToList(buf, nextAndType);
-      WriteUInt32BEToList(buf, 0u);             // specInfo placeholder
+      WriteUInt32BEToList(buf, spec);
       WriteUInt32BEToList(buf, (uint)size);
       WriteUInt32BEToList(buf, 0u);             // checksum placeholder
 
@@ -182,7 +210,7 @@ public sealed class RomFsWriter : IDisposable {
       for (var j = nameBytes.Length + 1; j < paddedName; j++) buf.Add(0);
 
       // Write file data (for regular files)
-      if (type == 2) {
+      if ((type & 7) == 2) {
         // Find file data
         var payload = allFiles.First(f => f.Path == fullPath).Payload;
         buf.AddPayload(payload);
@@ -191,7 +219,7 @@ public sealed class RomFsWriter : IDisposable {
       }
 
       // Store specInfo offset for back-patching (dirs only)
-      if (type == 1) {
+      if ((type & 7) == 1) {
         // We'll recurse into this dir after writing all entries at this level;
         // record where to patch specInfo
         entryList[i] = (name, type, size, fullPath); // keep same
@@ -210,25 +238,20 @@ public sealed class RomFsWriter : IDisposable {
       }
     }
 
-    // Now recurse into subdirectories and back-patch specInfo
-    for (var i = 0; i < entryList.Count; i++) {
+    // Now recurse into subdirectories and back-patch specInfo. The first two
+    // records are this directory's own "." and "..", which already point where
+    // they should.
+    for (var i = 2; i < entryList.Count; i++) {
       var (_, type, _, fullPath) = entryList[i];
-      if (type != 1) continue;
+      if ((type & 7) != 1) continue;
 
       // specInfo for this entry lives at: entryOffsets[i] + 4
       var specInfoBufOffset = entryOffsets[i] + 4;
 
-      var childFirst = WriteDirectory(buf, fullPath, allDirs, allFiles, nodeOffsets);
-      if (childFirst >= 0) {
-        // Back-patch specInfo with the offset of the first child entry
-        WriteUInt32BE(buf, specInfoBufOffset, (uint)childFirst);
-      } else {
-        // Empty directory: point specInfo to itself (the "." convention in romfs
-        // for empty dirs is to point specInfo to the dir's own header offset).
-        // Since we have no "." entry here (we write the actual named entries),
-        // use 0 to indicate no children.
-        WriteUInt32BE(buf, specInfoBufOffset, 0u);
-      }
+      // A directory always has a chain — its own "." and ".." at the least.
+      var childFirst = WriteDirectory(buf, fullPath, allDirs, allFiles, nodeOffsets,
+        firstChildOffset);
+      WriteUInt32BE(buf, specInfoBufOffset, (uint)childFirst);
     }
 
     // Back-patch entry checksums
@@ -250,15 +273,26 @@ public sealed class RomFsWriter : IDisposable {
     WriteUInt32BE(buf, entryOffset + 12, (uint)(-(int)sum));
   }
 
-  // Superblock checksum: sum of all uint32 words in the superblock (magic+fullSize+checksum+volname)
-  // with checksum field = 0, must total 0 mod 2^32.
-  private static void PatchSuperblockChecksum(ImageBuilder buf, int namePaddedLen) {
-    // Superblock = 16 bytes fixed header + namePaddedLen bytes volume name
-    var sbLen = 16 + namePaddedLen;
-    // checksum at offset 12 is already 0
+  /// <summary>
+  /// Writes the superblock checksum, which covers the first 512 bytes of the
+  /// image — or the whole image when it is shorter.
+  /// </summary>
+  /// <remarks>
+  /// Summing the superblock alone is what the field looks like it means, and it
+  /// is what this wrote for a long time; Linux sums the first 512 bytes and
+  /// refuses the volume with "bad initial checksum" when the total is not zero.
+  /// Those 512 bytes reach past the superblock into the first records and their
+  /// data, so the sum has to be taken once the image is assembled.
+  /// </remarks>
+  private static void PatchSuperblockChecksum(ImageBuilder buf) {
+    var covered = (int)(Math.Min(512L, buf.Count) & ~3L);
+    if (covered <= 0) return;
+
+    // The checksum field itself is still zero and counts as zero in the sum.
+    var prefix = buf.ReadImage(0, covered);
     uint sum = 0;
-    for (var i = 0; i < sbLen; i += 4)
-      sum += ReadUInt32BEFromList(buf, i);
+    for (var i = 0; i < covered; i += 4)
+      sum += BinaryPrimitives.ReadUInt32BigEndian(prefix.AsSpan(i));
     WriteUInt32BE(buf, 12, (uint)(-(int)sum));
   }
 
@@ -380,6 +414,54 @@ public sealed class RomFsWriter : IDisposable {
       var last = this._segments[^1];
       this._segments[^1] = (last.ImageOffset, last.MetaStart, (int)(this._position - last.ImageOffset));
       this._segmentStart = -1;
+    }
+
+    /// <summary>
+    /// Reads <paramref name="length" /> bytes of the finished image from
+    /// <paramref name="imageOffset" />, payload bytes included.
+    /// </summary>
+    /// <remarks>
+    /// The superblock checksum covers the first 512 bytes, and on a small image
+    /// those run past the headers into a file's own bytes — which are not held
+    /// here, only pointed at. Reading them back is a prefix of each payload,
+    /// not the whole of it.
+    /// </remarks>
+    public byte[] ReadImage(long imageOffset, int length) {
+      this.CloseSegment();
+      var result = new byte[length];
+
+      foreach (var (segOffset, metaStart, segLength) in this._segments) {
+        var from = Math.Max(imageOffset, segOffset);
+        var to = Math.Min(imageOffset + length, segOffset + segLength);
+        for (var at = from; at < to; ++at)
+          result[at - imageOffset] = this._meta[metaStart + (int)(at - segOffset)];
+      }
+
+      foreach (var (payloadOffset, payload) in this._payloads) {
+        var from = Math.Max(imageOffset, payloadOffset);
+        var to = Math.Min(imageOffset + length, payloadOffset + payload.Size);
+        if (to <= from) continue;
+
+        using var source = payload.Open();
+        var skip = from - payloadOffset;
+        var scratch = new byte[64 * 1024];
+        while (skip > 0) {
+          var n = source.Read(scratch, 0, (int)Math.Min(scratch.Length, skip));
+          if (n <= 0) break;
+          skip -= n;
+        }
+
+        var remaining = (int)(to - from);
+        var written = (int)(from - imageOffset);
+        while (remaining > 0) {
+          var n = source.Read(result, written, remaining);
+          if (n <= 0) break;
+          written += n;
+          remaining -= n;
+        }
+      }
+
+      return result;
     }
 
     private int MetaIndex(long imageOffset) {
