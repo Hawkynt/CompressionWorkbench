@@ -92,8 +92,8 @@ cannot claim something the code does not do.
 | [TI-99/4A DSR](Ti99.md) | moving (`Ti99BlockMover`) | yes | yes |
 | [TR-DOS](TrDos.md) | moving (`TrDosBlockMover`) | yes | yes |
 | [TRSDOS / LDOS](Trsdos.md) | moving (`TrsdosBlockMover`) | yes | yes |
-| [TUX2](Tux2.md) | rebuilding | yes | yes |
-| [TUX3](Tux3.md) | rebuilding | yes | yes |
+| [TUX2](Tux2.md) | moving (`Tux2BlockMover`) | yes | yes |
+| [TUX3](Tux3.md) | moving (`Tux3BlockMover`) | yes | yes |
 | [UBIFS](Ubifs.md) | moving (`UbifsBlockMover`) | no | yes |
 | [UDF](Udf.md) | moving (`UdfBlockMover`) | yes | yes |
 | [UFS](Ufs.md) | moving (`UfsBlockMover`) | yes | yes |
