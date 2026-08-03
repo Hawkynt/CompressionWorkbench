@@ -111,10 +111,24 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("Nss read-only — defragmentation requires a writer.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// There is nothing here to lay out again, and the reason is not the missing
+  /// writer.
+  /// </summary>
+  /// <remarks>
+  /// A pass that moves blocks needs no writer — it needs to know where a file's
+  /// bytes are, and that is what this reader cannot say. NSS's object tree has
+  /// no verifiable public spec, so <see cref="NssReader" /> locates the pool,
+  /// superblock and volume anchors and stops: what it lists are those three
+  /// anchors, not files. Until something can name a byte as belonging to a
+  /// file, a pass has no subject to move.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("Nss read-only — defragmentation requires a writer.");
+    => throw new NotSupportedException(
+      "NSS defragmentation has nothing to move: the object tree has no verifiable public spec, so " +
+      "this reader surfaces pool, superblock and volume anchors rather than files.");
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;

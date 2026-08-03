@@ -154,16 +154,21 @@ public class VxFsTests {
     }
   }
 
+  /// <summary>
+  /// The refusal has to name the reason it is really refused for: not the
+  /// missing writer, which a block-moving pass does not need, but that this
+  /// reader stops at the superblock and so no byte can be named as a file's.
+  /// </summary>
   [Test, Category("ErrorHandling")]
-  public void Defragment_Throws_NotSupported() {
+  public void Defragment_Throws_BecauseNoByteBelongsToAFile() {
     var d = new FileSystem.VxFs.VxFsFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
     Assert.That(() => d.Defragment(ms), Throws.TypeOf<NotSupportedException>()
-                                              .With.Message.Contains("read-only"));
+                                              .With.Message.Contains("nothing to move"));
     ms.Position = 0;
     Assert.That(() => d.Defragment(ms, new DefragOptions()),
                 Throws.TypeOf<NotSupportedException>()
-                      .With.Message.Contains("read-only"));
+                      .With.Message.Contains("superblock"));
   }
 
   [Test, Category("HappyPath")]

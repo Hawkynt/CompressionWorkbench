@@ -167,17 +167,26 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Amiga SFS defragment is unsupported in this implementation. SFS is
-  /// read-only here — there is no writer (object-container B+ tree, bitmap
-  /// chain, directory hash table, and free-extent tree all cross-reference
-  /// each other and are checksummed; partial writes corrupt the volume).
-  /// The descriptor advertises the capability so capability surfaces stay
-  /// honest, but actual defragment requires writer infrastructure that is
-  /// out of scope (see class remarks for the multi-week justification).
+  /// There is nothing here to lay out again, and the reason is not the missing
+  /// writer.
   /// </summary>
+  /// <remarks>
+  /// <para>A pass that moves blocks needs no writer — it needs to know where a
+  /// file's bytes are, and that is what this reader cannot say. It parses the
+  /// root block at offset 0 and stops there: the object containers that hold
+  /// the files, and the B-tree of extents that says which blocks each one owns,
+  /// are not walked. So what it lists is the volume as a whole plus that root
+  /// block, and a pass has no subject to move.</para>
+  ///
+  /// <para>Reading those would be the work, and it would have to be the first
+  /// work: nothing here can create an SFS volume either, so there would be no
+  /// image to check the result against.</para>
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) =>
     throw new NotSupportedException(
-      "Amiga SFS is read-only in this implementation; defragment would require a full SFS writer (B+ object tree, bitmap chain, directory hash table, free-extent tree).");
+      "Amiga SFS defragmentation has nothing to move: this reader parses the root block and does " +
+      "not walk the object containers or the extent B-tree, so no byte can be named as belonging " +
+      "to a file.");
 
   // Bounded — SFS root block is at offset 0 with magic "SFS\0"; we only need the
   // first few KB for header surfacing.

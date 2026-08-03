@@ -118,10 +118,24 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("VxFs read-only — defragmentation requires a writer.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// There is nothing here to lay out again, and the reason is not the missing
+  /// writer.
+  /// </summary>
+  /// <remarks>
+  /// A pass that moves blocks needs no writer — it needs to know where a file's
+  /// bytes are, and that is what this reader cannot say. It parses the
+  /// superblock at offset 1024 and nothing beyond it: no inode list, no extent
+  /// descriptors, so what it lists is the volume as a whole plus that
+  /// superblock. Until something can name a byte as belonging to a file, a pass
+  /// has no subject to move.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("VxFs read-only — defragmentation requires a writer.");
+    => throw new NotSupportedException(
+      "VxFS defragmentation has nothing to move: this reader parses the superblock and no inode " +
+      "list or extent descriptors, so no byte can be named as belonging to a file.");
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;

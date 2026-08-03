@@ -123,20 +123,26 @@ public class NssTests {
     Assert.That(names, Does.Not.Contain("volume_header.bin"));
   }
 
+  /// <summary>
+  /// The refusal has to name the reason it is really refused for: not the
+  /// missing writer, which a block-moving pass does not need, but that this
+  /// reader surfaces anchors rather than files and so the pass has no subject.
+  /// </summary>
   [Test, Category("ErrorHandling")]
-  public void Defragment_Throws_NotSupported() {
+  public void Defragment_Throws_BecauseNoByteBelongsToAFile() {
     var d = new FileSystem.Nss.NssFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
     var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
-    Assert.That(ex!.Message, Does.Contain("read-only"));
+    Assert.That(ex!.Message, Does.Contain("nothing to move"));
+    Assert.That(ex.Message, Does.Contain("anchors"));
   }
 
   [Test, Category("ErrorHandling")]
-  public void DefragmentWithOptions_Throws_NotSupported() {
+  public void DefragmentWithOptions_Throws_BecauseNoByteBelongsToAFile() {
     var d = new FileSystem.Nss.NssFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
     var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms, new DefragOptions()));
-    Assert.That(ex!.Message, Does.Contain("read-only"));
+    Assert.That(ex!.Message, Does.Contain("nothing to move"));
   }
 
   [Test, Category("HappyPath")]
