@@ -94,7 +94,7 @@ cannot claim something the code does not do.
 | [TRSDOS / LDOS](Trsdos.md) | moving (`TrsdosBlockMover`) | yes | yes |
 | [TUX2](Tux2.md) | rebuilding | yes | yes |
 | [TUX3](Tux3.md) | rebuilding | yes | yes |
-| [UBIFS](Ubifs.md) | rebuilding | no | yes |
+| [UBIFS](Ubifs.md) | moving (`UbifsBlockMover`) | no | yes |
 | [UDF](Udf.md) | moving (`UdfBlockMover`) | yes | yes |
 | [UFS](Ufs.md) | moving (`UfsBlockMover`) | yes | yes |
 | [VDFS](Vdfs.md) | moving (`VdfsBlockMover`) | yes | yes |

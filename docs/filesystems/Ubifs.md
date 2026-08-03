@@ -31,14 +31,21 @@ Unsorted Block Image File System (Linux raw-flash) — linear log scan w/ zlib d
 | wipe free space | no | zero what no file holds |
 | shrink | yes | reduce the volume to what it needs |
 | optimise layout | yes | re-lay the volume at a chosen geometry |
-| report layout | no | say where every byte belongs |
+| report layout | yes | say where every byte belongs |
 | move blocks | no | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `UbifsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -69,6 +76,14 @@ What this writer emits: a linear node stream — superblock, master, root-direct
 What's NOT emitted (out of scope — these require a full wandering-tree commit pipeline and a kernel-mountable image is a multi-week project): LPT (LEB Properties Tree), TNC (Tree Node Cache) index B+tree, commit-start / reference / orphan nodes, journal heads, padding/garbage-collection markers. A real mkfs.ubifs wires these together so the kernel can mount the result; our reader operates on a linear log scan and does not need them. Tests therefore validate self-round-trip, not kernel mount.
 
 Compression: DATA nodes are zlib (DEFLATE) compressed when that shrinks the payload, otherwise stored. LZO/ZSTD are not emitted.
+
+### UbifsLayout
+
+Finds every node in a UBIFS image and says which file's bytes it carries.
+
+What this writer emits is a linear log of nodes and nothing else — no index tree, no erase-block accounting, no journal heads. The reader replays that log, taking the highest sequence number for each inode and block. So a node's position is recorded nowhere at all: it is found by looking for the magic at the head of it.
+
+That is what makes a node movable without repointing anything. What it does mean is that the bytes left behind have to go: a copy of a node still carrying its magic is a second node, and the log would replay both.
 
 ## Parameters
 
