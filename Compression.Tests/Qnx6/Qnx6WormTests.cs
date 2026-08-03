@@ -51,9 +51,20 @@ public class Qnx6WormTests {
     d.Create(ms, inputs, new FormatCreateOptions());
     var img = ms.ToArray();
     var primary = img.AsSpan(0x2000, 512).ToArray();
-    var secondary = img.AsSpan(img.Length - 512, 512).ToArray();
+
+    // The mirror does not go at the end of the image. A driver looks for it at
+    // the block count the superblock records, plus the boot and superblock
+    // areas in front of the filesystem — so that is where it has to be, and an
+    // image that merely ends there is a coincidence rather than a contract.
+    var blockSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(0x2000 + 0x30, 4));
+    var numBlocks = BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(0x2000 + 0x3C, 4));
+    var mirrorAt = (int)((numBlocks + (0x2000 + 0x1000) / blockSize) * blockSize);
+    Assert.That(mirrorAt + 512, Is.LessThanOrEqualTo(img.Length),
+      "the mirror must be inside the image");
+
+    var secondary = img.AsSpan(mirrorAt, 512).ToArray();
     Assert.That(secondary, Is.EqualTo(primary).AsCollection,
-      "secondary superblock mirror at tail must be byte-identical to primary — that's the power-safe contract.");
+      "the mirror must be byte-identical to the primary — that's the power-safe contract.");
   }
 
   [Test, Category("HappyPath")]

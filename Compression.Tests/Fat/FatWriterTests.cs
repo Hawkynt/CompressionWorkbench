@@ -636,8 +636,18 @@ public class FatWriterTests {
 
   // ── TFAT marker test ──────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Asking for a transactional volume must not make the volume look damaged.
+  /// </summary>
+  /// <remarks>
+  /// BS_Reserved1 is where FAT records that a volume was not cleanly
+  /// unmounted. This writer used to set it as a TFAT marker, which had
+  /// <c>fsck.fat</c> report a dirty bit and possible corruption on every such
+  /// volume and exit non-zero. Whatever else the option does, it must leave
+  /// that byte alone.
+  /// </remarks>
   [Test, Category("Spec")]
-  public void TransactionFat_SetsReservedByte_InBootSector() {
+  public void TransactionFat_LeavesTheDirtyByteAlone() {
     var w = new FileSystem.Fat.FatWriter();
     w.AddFile("t.txt", new byte[1]);
 
@@ -645,8 +655,8 @@ public class FatWriterTests {
     var diskTfat   = w.Build(transactionFat: true);
 
     // FAT12/16: BS_Reserved1 is at byte 37.
-    Assert.That(diskNormal[37], Is.EqualTo(0x00), "No TFAT: reserved byte must be 0");
-    Assert.That(diskTfat[37],   Is.EqualTo(0x01), "TFAT: reserved byte must be 1");
+    Assert.That(diskNormal[37], Is.EqualTo(0x00), "no TFAT: the byte stays clear");
+    Assert.That(diskTfat[37],   Is.EqualTo(0x00), "TFAT either: it is not ours to write");
   }
 
   // ── VolumeLabel test ──────────────────────────────────────────────────────

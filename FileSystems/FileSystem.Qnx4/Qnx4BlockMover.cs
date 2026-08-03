@@ -24,16 +24,19 @@ public sealed class Qnx4BlockMover : IFilesystemBlockMover {
   private const int InodeSize = 64;
 
   /// <summary>Offset of the first extent's block number inside an inode.</summary>
-  private const int InodeFirstExtentOffset = 0x14;
+  private const int InodeFirstExtentOffset = Qnx4Layout.InExtentBlock;
 
-  /// <summary>Offset of the extra-extent count inside an inode.</summary>
-  private const int InodeExtraExtentsOffset = 0x1C;
+  /// <summary>Offset of the extent count inside an inode.</summary>
+  private const int InodeExtraExtentsOffset = Qnx4Layout.InNumExtents;
 
   /// <summary>Offset of the status byte inside an inode.</summary>
-  private const int InodeStatusOffset = 0x3D;
+  private const int InodeStatusOffset = Qnx4Layout.InStatus;
 
-  /// <summary>Block holding the root directory cluster, and how many blocks it spans.</summary>
-  private const uint RootDirBlock = 1;
+  /// <summary>
+  /// The root directory, and how many blocks it spans. Block 1 is the
+  /// superblock, so the directory starts after it.
+  /// </summary>
+  private const uint RootDirBlock = 2;
   private const uint RootDirBlocks = 4;
 
   /// <summary>Allocation unit in bytes.</summary>
@@ -59,8 +62,10 @@ public sealed class Qnx4BlockMover : IFilesystemBlockMover {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);
 
-    var oldBlock = (uint)(oldOffset / Qnx4Reader.BlockSize);
-    var newBlock = (uint)(newOffset / Qnx4Reader.BlockSize);
+    // An extent's block number counts from one, so the value in an inode is
+    // one more than the block it names.
+    var oldBlock = Qnx4Layout.ExtentValueFor(oldOffset / Qnx4Reader.BlockSize);
+    var newBlock = Qnx4Layout.ExtentValueFor(newOffset / Qnx4Reader.BlockSize);
     if (oldBlock == newBlock) return;
 
     // The inode is found by the extent it still names rather than by the file's

@@ -94,9 +94,11 @@ public sealed class Qnx6Reader : IDisposable {
     // The inode root node points at the inode table block(s). For our Stage 1
     // reader we assume the inode table sits at the first block pointer
     // (sb+0x48+8 — root_node size field is 8 bytes, then the first ptr is u32).
+    // A block pointer here counts from the filesystem's own block zero, which
+    // sits past the boot and superblock areas — not from the start of the
+    // image.
     var inodeTablePtr = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x48 + 8));
-    if (inodeTablePtr == 0) return;
-    var inodeTableOffset = (long)inodeTablePtr * this.BlockSize;
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(inodeTablePtr, this.BlockSize);
     if (inodeTableOffset + InodeSize > this._data.Length) return;
 
     // Root directory is inode 1 (after the reserved inode 0). For our
@@ -116,9 +118,9 @@ public sealed class Qnx6Reader : IDisposable {
     if (!isDir) return;
 
     // Walk first direct block as directory.
-    var firstBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.Slice(0x24));
-    if (firstBlock == 0) return;
-    var blockOff = (long)firstBlock * this.BlockSize;
+    var firstBlock = this.FirstDataBlockOf(inode);
+    if (firstBlock < 0) return;
+    var blockOff = Qnx6Geometry.ByteOffsetOf(firstBlock, this.BlockSize);
     if (blockOff + this.BlockSize > this._data.Length) return;
 
     const int entrySize = 32;
@@ -160,14 +162,13 @@ public sealed class Qnx6Reader : IDisposable {
     if (entry.IsDirectory || entry.Size <= 0) return false;
     var sb = this._data.Read(SuperblockOffset, 512).AsSpan();
     var inodeTablePtr = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x48 + 8));
-    if (inodeTablePtr == 0) return false;
-    var inodeTableOffset = (long)inodeTablePtr * this.BlockSize;
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(inodeTablePtr, this.BlockSize);
     var inodeOff = inodeTableOffset + (long)(entry.InodeNumber - 1) * InodeSize;
     if (inodeOff + InodeSize > this._data.Length) return false;
     var inode = this._data.Read(inodeOff, InodeSize).AsSpan();
-    var firstBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.Slice(0x24));
-    if (firstBlock == 0) return false;
-    offset = (long)firstBlock * this.BlockSize;
+    var firstBlock = this.FirstDataBlockOf(inode);
+    if (firstBlock < 0) return false;
+    offset = Qnx6Geometry.ByteOffsetOf(firstBlock, this.BlockSize);
     if (offset < 0 || offset >= this._data.Length) return false;
     // Whole blocks: the tail of the last one is slack, not another file's.
     length = Math.Min((entry.Size + this.BlockSize - 1) / this.BlockSize * this.BlockSize,
@@ -175,19 +176,41 @@ public sealed class Qnx6Reader : IDisposable {
     return length > 0;
   }
 
+
+  /// <summary>
+  /// Where an inode's first block actually is.
+  /// </summary>
+  /// <remarks>
+  /// An inode's pointers name single blocks, and when a file needs more than
+  /// the sixteen an inode holds they name blocks of pointers instead — how many
+  /// levels deep is in the inode. This writer lays a file down as one run, so
+  /// the first block is enough to find the rest; what it is not is always
+  /// pointer zero.
+  /// </remarks>
+  private long FirstDataBlockOf(ReadOnlySpan<byte> inode) {
+    var levels = inode[0x64];
+    var pointer = BinaryPrimitives.ReadUInt32LittleEndian(inode.Slice(0x24));
+    for (var level = 0; level < levels; ++level) {
+      var table = Qnx6Geometry.ByteOffsetOf(pointer, this.BlockSize);
+      if (table < 0 || table + 4 > this._data.Length) return -1;
+      pointer = BinaryPrimitives.ReadUInt32LittleEndian(this._data.Read(table, 4));
+    }
+
+    return pointer;
+  }
+
   public byte[] Extract(Qnx6Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var sb = this._data.Read(SuperblockOffset, 512).AsSpan();
     var inodeTablePtr = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x48 + 8));
-    if (inodeTablePtr == 0) return [];
-    var inodeTableOffset = (long)inodeTablePtr * this.BlockSize;
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(inodeTablePtr, this.BlockSize);
     var inodeOff = inodeTableOffset + (long)(entry.InodeNumber - 1) * InodeSize;
     if (inodeOff + InodeSize > this._data.Length) return [];
     var inode = this._data.Read(inodeOff, InodeSize).AsSpan();
-    var firstBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.Slice(0x24));
-    if (firstBlock == 0) return [];
-    var blockOff = (long)firstBlock * this.BlockSize;
+    var firstBlock = this.FirstDataBlockOf(inode);
+    if (firstBlock < 0) return [];
+    var blockOff = Qnx6Geometry.ByteOffsetOf(firstBlock, this.BlockSize);
     if (blockOff < 0 || blockOff >= this._data.Length) return [];
     var take = (int)Math.Min(entry.Size, this._data.Length - blockOff);
     return this._data.Read(blockOff, take).AsSpan().ToArray();

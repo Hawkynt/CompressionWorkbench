@@ -16,24 +16,48 @@ public class Qnx4Tests {
   private const int InodeSize = 64;
   private const uint FileBlock = 5;
 
+  /// <summary>
+  /// A minimal volume built by hand, following the on-disk struct rather than
+  /// the one this project used to assume.
+  /// </summary>
+  /// <remarks>
+  /// Block 1 is the superblock: four inode entries, the first of which
+  /// describes the root directory. The directory itself lives elsewhere, an
+  /// extent's block number counts from one, and the mode and status bytes sit
+  /// at 0x32 and 0x3F — not 0x20 and 0x3D, which is where the first timestamp
+  /// and a padding byte actually are.
+  /// </remarks>
   private static byte[] BuildMinimalQnx4() {
     var image = new byte[32 * BlockSize];
+    const uint rootDirBlock = 2;
 
-    // Inode entry #0 in block 1 (offset 512):
-    var inodeOff = BlockSize + 0 * InodeSize;
-    var name = "hello"u8.ToArray();
-    name.CopyTo(image.AsSpan(inodeOff)); // name in first 16 bytes (NUL-padded)
+    // The superblock's first entry: the root directory.
+    WriteEntry(image, BlockSize, "/", size: 2 * InodeSize,
+      extentBlock: rootDirBlock + 1, extentSize: 1, mode: 0x41ED);
+
+    // The root directory: .bitmap first, because a driver looks for it, then
+    // the one file.
+    var dir = (int)(rootDirBlock * BlockSize);
+    WriteEntry(image, dir, ".bitmap", size: BlockSize,
+      extentBlock: 7, extentSize: 1, mode: 0x81A4);
+
     var content = "Hello QNX4!\n"u8.ToArray();
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(inodeOff + 0x10), (uint)content.Length);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(inodeOff + 0x14), FileBlock);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(inodeOff + 0x18), 1);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(inodeOff + 0x20), 0x81A4); // regular + 0644
-    image[inodeOff + 0x3D] = 0x08; // ACTIVE
-
-    // File data at block 5
+    WriteEntry(image, dir + InodeSize, "hello", size: (uint)content.Length,
+      extentBlock: FileBlock + 1, extentSize: 1, mode: 0x81A4);
     content.CopyTo(image.AsSpan((int)(FileBlock * BlockSize)));
 
     return image;
+  }
+
+  private static void WriteEntry(
+      byte[] image, int at, string name, uint size, uint extentBlock, uint extentSize, ushort mode) {
+    Encoding.ASCII.GetBytes(name).CopyTo(image.AsSpan(at));
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(at + 0x10), size);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(at + 0x14), extentBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(at + 0x18), extentSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(at + 0x30), 1);      // di_num_xtnts
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(at + 0x32), mode);
+    image[at + 0x3F] = 0x01;                                                   // QNX4_FILE_USED
   }
 
   [Test, Category("HappyPath")]
@@ -73,8 +97,9 @@ public class Qnx4Tests {
   [Test, Category("Sad")]
   public void Reader_RejectsCorruptedImage() {
     var img = BuildMinimalQnx4();
-    // Strip ACTIVE byte
-    img[BlockSize + 0x3D] = 0x00;
+    // Blank the name of the superblock's first entry. The root is found by
+    // that entry being called "/", so a volume without it is not one.
+    img.AsSpan(BlockSize, 16).Clear();
     using var ms = new MemoryStream(img);
     Assert.Throws<InvalidDataException>(() => new FileSystem.Qnx4.Qnx4Reader(ms));
   }

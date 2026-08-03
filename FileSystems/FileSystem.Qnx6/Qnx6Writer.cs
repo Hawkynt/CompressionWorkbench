@@ -54,7 +54,24 @@ public sealed class Qnx6Writer {
   private const int MaxNameLen = 27;
   internal const int MaxDirents = BlockSize / DirentSize;          // 32
 
-  private sealed record FileEntry(string Name, FilePayload Payload, uint InodeNumber, uint FirstBlock, uint BlockCount);
+  /// <summary>
+  /// The two entries every QNX6 directory opens with. A driver reads the root
+  /// directory's first two records and refuses the volume unless they are
+  /// named "." and ".." exactly, so they are not optional and they are not
+  /// free: they cost two of the entries a directory block holds.
+  /// </summary>
+  private const int DotEntries = 2;
+  internal const int MaxFiles = MaxDirents - DotEntries;
+
+  /// <summary>Pointers an inode holds before it has to point at a block of them.</summary>
+  private const int DirectPointers = 16;
+
+  /// <summary>Block pointers one indirect block holds.</summary>
+  private const int PointersPerBlock = BlockSize / 4;
+
+  private sealed record FileEntry(
+    string Name, FilePayload Payload, uint InodeNumber,
+    uint FirstBlock, uint BlockCount, uint IndirectBlock, uint IndirectCount);
 
   /// <summary>
   /// Builds a complete QNX6 image holding <paramref name="files"/>. Order of
@@ -118,7 +135,7 @@ public sealed class Qnx6Writer {
       var nameBytes = Encoding.ASCII.GetByteCount(leaf);
       if (nameBytes is 0 or > MaxNameLen) continue;
       accepted.Add((leaf, d));
-      if (accepted.Count >= MaxDirents) break;
+      if (accepted.Count >= MaxFiles) break;
     }
 
     // Inode layout:
@@ -140,24 +157,42 @@ public sealed class Qnx6Writer {
     var dataBlockCursor = rootDirBlockActual + 1;
 
     // Assign file extents (contiguous, one run per file).
+    // A block pointer in a QNX6 inode names one block, not the start of a run.
+    // Sixteen of them fit inside the inode; past that the inode points at
+    // blocks of pointers instead, and says how many levels deep that goes.
     var planned = new List<FileEntry>(accepted.Count);
     for (var i = 0; i < accepted.Count; i++) {
       var (name, payload) = accepted[i];
       var blocks = payload.Size == 0 ? 0u : (uint)((payload.Size + BlockSize - 1) / BlockSize);
+
+      var indirectCount = blocks <= DirectPointers
+        ? 0u
+        : (blocks + PointersPerBlock - 1) / PointersPerBlock;
+      if (indirectCount > DirectPointers)
+        throw new InvalidOperationException(
+          $"QNX6: '{name}' needs {indirectCount} pointer blocks; an inode holds {DirectPointers}, " +
+          "and this writer goes one level deep.");
+
+      var indirectBlock = indirectCount == 0 ? 0u : dataBlockCursor;
+      dataBlockCursor += indirectCount;
       var firstBlock = blocks == 0 ? 0u : dataBlockCursor;
-      planned.Add(new FileEntry(name, payload, InodeNumber: (uint)(i + 2), firstBlock, BlockCount: blocks));
       dataBlockCursor += blocks;
+
+      planned.Add(new FileEntry(name, payload, InodeNumber: (uint)(i + 2),
+        firstBlock, BlockCount: blocks, indirectBlock, indirectCount));
     }
 
     // Total volume size — round up to block boundary, then add one extra
     // block to hold the secondary superblock mirror at the tail.
-    var dataBlocksUsed = dataBlockCursor;
-    var primaryRegionBlocks = dataBlocksUsed;
-    // Need room for: blocks 0..primaryRegionBlocks-1, plus 512 trailing bytes
-    // for the secondary superblock. Pad to the nearest block boundary above
-    // the secondary so the file size is block-aligned.
-    var totalSizeBytes = (long)primaryRegionBlocks * BlockSize + SuperblockSize;
-    // Round up to the next block boundary so the image is block-aligned.
+    // The block numbers a QNX6 volume records are not device blocks: the driver
+    // adds the boot and superblock areas to every one. So the count in the
+    // superblock is the count of blocks after those, and the mirror superblock
+    // goes exactly where that count says — not wherever the image happens to
+    // end.
+    var blocksBefore = Qnx6Geometry.BlocksBefore(BlockSize);
+    var filesystemBlocks = (uint)(dataBlockCursor - blocksBefore);
+    var mirrorBlock = filesystemBlocks + blocksBefore;
+    var totalSizeBytes = mirrorBlock * BlockSize + SuperblockSize;
     var rem = totalSizeBytes % BlockSize;
     if (rem != 0) totalSizeBytes += BlockSize - rem;
     // Only the blocks the filesystem populates are held: file payloads are
@@ -169,10 +204,10 @@ public sealed class Qnx6Writer {
     // ── Primary superblock ─────────────────────────────────────────────────
     WriteSuperblock(
       image.At(SuperblockOffset, SuperblockSize),
-      inodeTablePtr: InodeTableBlock,
+      inodeTablePtr: (uint)(InodeTableBlock - blocksBefore),
       numInodes: (uint)totalInodes,
-      numBlocks: (uint)(totalSizeBytes / BlockSize),
-      freeInodes: (uint)Math.Max(0, MaxDirents - accepted.Count),
+      numBlocks: filesystemBlocks,
+      freeInodes: (uint)Math.Max(0, MaxFiles - accepted.Count),
       freeBlocks: 0,
       serial: 1,
       ctime: (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds());
@@ -181,34 +216,52 @@ public sealed class Qnx6Writer {
     var inodeTableOff = InodeTableBlock * BlockSize;
 
     // Root directory inode (inode 1, offset 0 in inode table).
-    var dirSize = (ulong)(accepted.Count * DirentSize);
+    var dirSize = (ulong)((accepted.Count + DotEntries) * DirentSize);
     WriteInode(
       image.At(inodeTableOff, InodeSize),
       size: dirSize,
       mode: 0x41ED, // S_IFDIR | 0755
-      firstBlock: rootDirBlockActual);
+      directory: true,
+      levels: 0,
+      pointers: [(uint)(rootDirBlockActual - blocksBefore)]);
 
     // File inodes (inode 2..N).
     foreach (var entry in planned) {
       var inodeOff = inodeTableOff + (entry.InodeNumber - 1) * InodeSize;
-      WriteInode(
-        image.At(inodeOff, InodeSize),
-        size: (ulong)entry.Payload.Size,
-        mode: 0x81A4, // S_IFREG | 0644
-        firstBlock: entry.FirstBlock);
+      var inode = image.At(inodeOff, InodeSize);
+
+      if (entry.IndirectCount == 0) {
+        // Small enough to name every block from inside the inode.
+        WriteInode(inode, (ulong)entry.Payload.Size, 0x81A4, directory: false, levels: 0,
+          pointers: Enumerable.Range(0, (int)entry.BlockCount)
+            .Select(b => (uint)(entry.FirstBlock + b - blocksBefore)).ToArray());
+      } else {
+        // One level of indirection: the inode names blocks of pointers, and
+        // those name the file's blocks.
+        for (var p = 0u; p < entry.IndirectCount; ++p) {
+          var table = image.At((entry.IndirectBlock + p) * BlockSize, BlockSize);
+          for (var k = 0; k < PointersPerBlock; ++k) {
+            var logical = p * PointersPerBlock + (uint)k;
+            if (logical >= entry.BlockCount) break;
+            BinaryPrimitives.WriteUInt32LittleEndian(
+              table.Slice(k * 4), (uint)(entry.FirstBlock + logical - blocksBefore));
+          }
+        }
+
+        WriteInode(inode, (ulong)entry.Payload.Size, 0x81A4, directory: false, levels: 1,
+          pointers: Enumerable.Range(0, (int)entry.IndirectCount)
+            .Select(b => (uint)(entry.IndirectBlock + b - blocksBefore)).ToArray());
+      }
     }
 
     // ── Root directory dirents ─────────────────────────────────────────────
     var dirOff = rootDirBlockActual * BlockSize;
+    WriteDirent(image.At(dirOff, DirentSize), 1, ".");
+    WriteDirent(image.At(dirOff + DirentSize, DirentSize), 1, "..");
     for (var i = 0; i < planned.Count; i++) {
       var entry = planned[i];
-      var direntOff = dirOff + i * DirentSize;
-      var dirent = image.At(direntOff, DirentSize);
-      BinaryPrimitives.WriteUInt32LittleEndian(dirent, entry.InodeNumber);
-      var nameBytes = Encoding.ASCII.GetBytes(entry.Name);
-      dirent[4] = (byte)nameBytes.Length;
-      nameBytes.CopyTo(dirent.Slice(5));
-      // Remaining bytes of the dirent are left zero (the spec pads with NULs).
+      var direntOff = dirOff + (i + DotEntries) * DirentSize;
+      WriteDirent(image.At(direntOff, DirentSize), entry.InodeNumber, entry.Name);
     }
 
     // ── File data extents ──────────────────────────────────────────────────
@@ -221,7 +274,7 @@ public sealed class Qnx6Writer {
     // Mirror identical bytes at the tail. This is the power-safe contract:
     // primary and secondary are byte-identical, so torn-write detection just
     // diffs the two halves.
-    var secondaryOff = image.TotalBytes - SuperblockSize;
+    var secondaryOff = mirrorBlock * BlockSize;
     image.Write(secondaryOff, image.At(SuperblockOffset, SuperblockSize));
 
     return image;
@@ -239,8 +292,7 @@ public sealed class Qnx6Writer {
 
     // +0x00 sb_magic
     BinaryPrimitives.WriteUInt32LittleEndian(sb, Qnx6Reader.MagicQnx6);
-    // +0x04 sb_checksum — left zero; the reader does not validate it. (A
-    //                    real driver computes CRC32 over the rest of the SB.)
+    // +0x04 sb_checksum — written last, once the rest of the block is final.
     BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x04), 0);
     // +0x08 sb_serial
     BinaryPrimitives.WriteUInt64LittleEndian(sb.Slice(0x08), serial);
@@ -265,20 +317,40 @@ public sealed class Qnx6Writer {
     BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x3C), numBlocks);
     // +0x40 sb_free_blocks
     BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x40), freeBlocks);
-    // +0x44 sb_num_levels
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(0x44), 0);
-    // +0x46 sb_indir_levs
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(0x46), 0);
+    // +0x44 sb_allocgroup
     // +0x48 sb_inode_root: size (u64) + 16×ptr (u32) + 4×levels (u8) + 12 pad.
     //         size: total inode table bytes — we record the table extent
     //               here so a recovery tool can size the inode array.
     BinaryPrimitives.WriteUInt64LittleEndian(sb.Slice(0x48), (ulong)numInodes * InodeSize);
-    // First ptr at +0x50 = inode table block.
+    // First ptr at +0x50 = inode table block, as the filesystem numbers it.
     BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x50), inodeTablePtr);
     // Remaining ptrs and levels stay zero (we use a flat array, not a B-tree).
+    // The Bitmap, Longfile and Unknown root nodes that follow stay zero too,
+    // which reads as "no levels" and is what a driver sanity-checks them for.
+
+    // Last: the checksum, over everything the driver checks — bytes 8 to 511.
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x04), Qnx6Geometry.Checksum(sb));
   }
 
-  private static void WriteInode(Span<byte> inode, ulong size, ushort mode, uint firstBlock) {
+  /// <summary>Writes one 32-byte directory record.</summary>
+  private static void WriteDirent(Span<byte> dirent, uint inode, string name) {
+    var nameBytes = Encoding.ASCII.GetBytes(name);
+    BinaryPrimitives.WriteUInt32LittleEndian(dirent, inode);
+    dirent[4] = (byte)nameBytes.Length;
+    nameBytes.CopyTo(dirent.Slice(5));
+    // The rest stays zero; the format pads names with NULs.
+  }
+
+  /// <summary>Fills one inode, naming every block it owns.</summary>
+  /// <remarks>
+  /// Each pointer names a single block. Leaving the rest of them zero — as this
+  /// once did, on the assumption that a file's blocks simply follow its first —
+  /// gives a file whose first block reads correctly and whose every block after
+  /// it reads as whatever happens to sit at the volume's block zero.
+  /// </remarks>
+  private static void WriteInode(
+      Span<byte> inode, ulong size, ushort mode, bool directory, byte levels,
+      IReadOnlyList<uint> pointers) {
     // +0x00 di_size
     BinaryPrimitives.WriteUInt64LittleEndian(inode, size);
     // +0x08..0x1F  uid/gid/times — left zero (epoch).
@@ -286,15 +358,15 @@ public sealed class Qnx6Writer {
     BinaryPrimitives.WriteUInt16LittleEndian(inode.Slice(0x20), mode);
     // +0x22 di_ext_mode
     BinaryPrimitives.WriteUInt16LittleEndian(inode.Slice(0x22), 0);
-    // +0x24 di_block_ptr[0] — first direct pointer.
-    BinaryPrimitives.WriteUInt32LittleEndian(inode.Slice(0x24), firstBlock);
-    // +0x28..0x63 di_block_ptr[1..15] — left zero. The reader only consults
-    //                                   ptr[0]; large files are laid out
-    //                                   contiguously starting at ptr[0].
-    // +0x64 di_filelevels — 0 (no indirection — direct ptrs only).
-    inode[0x64] = 0;
-    // +0x65 di_status — 0x01 = allocated.
-    inode[0x65] = 0x01;
+    // +0x24 di_block_ptr[0..15]
+    for (var i = 0; i < pointers.Count && i < DirectPointers; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(inode.Slice(0x24 + i * 4), pointers[i]);
+    // +0x64 di_filelevels — how many blocks of pointers stand between the
+    //                       inode and the file's own blocks.
+    inode[0x64] = levels;
+    // +0x65 di_status — a directory and a plain file are told apart here as
+    //                   well as by the mode, and the two must agree.
+    inode[0x65] = directory ? (byte)0x01 : (byte)0x03;
     // +0x66..0x73 di_unknown — zero.
   }
 }

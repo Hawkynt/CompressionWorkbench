@@ -40,6 +40,12 @@ public static class Qnx6Modifier {
   private const int MaxNameLen = 27;
   private const int MaxDirents = BlockSize / DirentSize;            // 32
   private const int InodesPerBlock = BlockSize / InodeSize;         // 8
+
+  /// <summary>Pointers an inode holds before it has to point at a block of them.</summary>
+  private const uint DirectPointers = 16;
+
+  /// <summary>Block pointers one indirect block holds.</summary>
+  private const uint PointersPerBlock = BlockSize / 4;
   private const uint MagicQnx6 = Qnx6Reader.MagicQnx6;
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -91,13 +97,26 @@ public static class Qnx6Modifier {
     // mirror lives in the last 512 bytes of the file; we always re-allocate
     // the mirror at the new tail after extending.
     var blocksNeeded = data.Length == 0 ? 0u : (uint)((data.Length + BlockSize - 1) / BlockSize);
-    var firstBlock = blocksNeeded == 0 ? 0u : (uint)FindNextFreeDataBlock(img, sb);
 
-    // Extend image if necessary: we need room for blocksNeeded data blocks
-    // starting at firstBlock, plus the 512-byte mirror at the tail.
+    // A pointer names one block, and only sixteen fit in an inode. Past that
+    // the inode points at blocks of pointers, which have to be allocated too.
+    var indirectNeeded = blocksNeeded <= DirectPointers
+      ? 0u
+      : (blocksNeeded + PointersPerBlock - 1) / PointersPerBlock;
+    if (indirectNeeded > DirectPointers)
+      throw new NotSupportedException(
+        $"QNX6: a file of {data.Length} bytes needs {indirectNeeded} pointer blocks; an inode " +
+        $"holds {DirectPointers}, and this goes one level deep.");
+
+    var cursor = blocksNeeded == 0 ? 0u : (uint)FindNextFreeDataBlock(img, sb);
+    var indirectBlock = indirectNeeded == 0 ? 0u : cursor;
+    cursor += indirectNeeded;
+    var firstBlock = blocksNeeded == 0 ? 0u : cursor;
+
+    // Extend image if necessary: room for the pointer blocks and the data,
+    // plus the mirror superblock behind them.
     if (blocksNeeded > 0) {
-      var endByte = (long)(firstBlock + blocksNeeded) * BlockSize + SuperblockSize;
-      // Round to block boundary.
+      var endByte = Qnx6Geometry.ByteOffsetOf(firstBlock + blocksNeeded, BlockSize) + SuperblockSize;
       var rem = endByte % BlockSize;
       if (rem != 0) endByte += BlockSize - rem;
       if (endByte > img.Length)
@@ -106,15 +125,29 @@ public static class Qnx6Modifier {
 
     // Write the file data extent.
     if (blocksNeeded > 0)
-      data.CopyTo(img.AsSpan((int)(firstBlock * BlockSize), data.Length));
+      data.CopyTo(img.AsSpan((int)Qnx6Geometry.ByteOffsetOf(firstBlock, BlockSize), data.Length));
+
+    // And the blocks of pointers naming it, when there are any.
+    for (var p = 0u; p < indirectNeeded; ++p) {
+      var table = img.AsSpan((int)Qnx6Geometry.ByteOffsetOf(indirectBlock + p, BlockSize), BlockSize);
+      table.Clear();
+      for (var k = 0; k < PointersPerBlock; ++k) {
+        var logical = p * PointersPerBlock + (uint)k;
+        if (logical >= blocksNeeded) break;
+        BinaryPrimitives.WriteUInt32LittleEndian(table.Slice(k * 4), firstBlock + logical);
+      }
+    }
 
     // Write the inode for the new file (slot inodeNumber).
-    var inodeTableOffset = (long)sb.InodeTablePtr * BlockSize;
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(sb.InodeTablePtr, BlockSize);
     var inodeOff = inodeTableOffset + (long)(inodeNumber - 1) * InodeSize;
-    WriteFileInode(img.AsSpan((int)inodeOff, InodeSize), (ulong)data.Length, firstBlock);
+    WriteFileInode(img.AsSpan((int)inodeOff, InodeSize), (ulong)data.Length,
+      indirectNeeded == 0 ? firstBlock : indirectBlock,
+      indirectNeeded == 0 ? blocksNeeded : indirectNeeded,
+      levels: indirectNeeded == 0 ? (byte)0 : (byte)1);
 
     // Append the dirent to the root directory block.
-    var dirBlockOff = (long)sb.RootDirFirstBlock * BlockSize;
+    var dirBlockOff = Qnx6Geometry.ByteOffsetOf(sb.RootDirFirstBlock, BlockSize);
     var direntOff = (int)dirBlockOff + dirents.Count * DirentSize;
     var dirent = img.AsSpan(direntOff, DirentSize);
     dirent.Clear();
@@ -205,7 +238,7 @@ public static class Qnx6Modifier {
     var freeBlocks = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x40));
 
     // Root dir = inode 1 (offset 0 in inode table). First direct ptr at +0x24.
-    var inodeTableOffset = (long)inodeTablePtr * BlockSize;
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(inodeTablePtr, BlockSize);
     var rootInodeOff = inodeTableOffset;
     if (rootInodeOff + InodeSize > img.Length)
       throw new InvalidDataException("QNX6: inode table out of bounds.");
@@ -217,7 +250,7 @@ public static class Qnx6Modifier {
   private static List<(uint Inum, byte NameLen, string Name, int SlotIndex)> ReadDirents(byte[] img, SuperblockState sb) {
     var result = new List<(uint, byte, string, int)>();
     if (sb.RootDirFirstBlock == 0) return result;
-    var dirOff = (long)sb.RootDirFirstBlock * BlockSize;
+    var dirOff = Qnx6Geometry.ByteOffsetOf(sb.RootDirFirstBlock, BlockSize);
     if (dirOff + BlockSize > img.Length) return result;
 
     for (var slot = 0; slot < MaxDirents; slot++) {
@@ -248,7 +281,7 @@ public static class Qnx6Modifier {
     // Walk the inode array looking for di_status == 0 (free). Start at slot 1
     // (inode 2 — slot 0 is the root inode and always allocated). Bounds is the
     // inode-array region between inode-table-block and root-dir-block.
-    var inodeTableOffset = (long)sb.InodeTablePtr * BlockSize;
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(sb.InodeTablePtr, BlockSize);
     var inodeArrayBlocks = (long)sb.RootDirFirstBlock - sb.InodeTablePtr;
     var inodeArraySlots = inodeArrayBlocks * InodesPerBlock;
     if (inodeArraySlots < 2)
@@ -273,7 +306,7 @@ public static class Qnx6Modifier {
     // last data-block address claimed by any file inode. The mirror sits in
     // the tail 512 bytes; we ignore it for extent placement and re-emit it
     // afterwards.
-    var inodeTableOffset = (long)sb.InodeTablePtr * BlockSize;
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(sb.InodeTablePtr, BlockSize);
     var inodeArrayBlocks = (long)sb.RootDirFirstBlock - sb.InodeTablePtr;
     var inodeArraySlots = inodeArrayBlocks * InodesPerBlock;
     long cursor = sb.RootDirFirstBlock + 1; // first slot past the root dir block
@@ -287,8 +320,15 @@ public static class Qnx6Modifier {
       var size = BinaryPrimitives.ReadUInt64LittleEndian(img.AsSpan((int)off, 8));
       var firstPtr = BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan((int)off + 0x24, 4));
       if (firstPtr == 0 || size == 0) continue;
+
+      // A file past sixteen blocks has its pointers in blocks of their own,
+      // laid down immediately before its data — so the first pointer names
+      // those, not the data, and the file reaches further than its size alone
+      // suggests. Missing that hands the next file blocks already in use.
       var blocks = (size + BlockSize - 1) / BlockSize;
-      var endExclusive = (long)firstPtr + (long)blocks;
+      var levels = img[(int)off + 0x64];
+      var indirect = levels == 0 ? 0UL : (blocks + PointersPerBlock - 1) / PointersPerBlock;
+      var endExclusive = (long)firstPtr + (long)indirect + (long)blocks;
       if (endExclusive > cursor) cursor = endExclusive;
     }
     return (int)cursor;
@@ -297,8 +337,8 @@ public static class Qnx6Modifier {
   private static bool RemoveInternal(byte[] img, SuperblockState sb, string leaf) {
     if (!TryFindDirent(img, sb, leaf, out var found)) return false;
 
-    var dirOff = (long)sb.RootDirFirstBlock * BlockSize;
-    var inodeTableOffset = (long)sb.InodeTablePtr * BlockSize;
+    var dirOff = Qnx6Geometry.ByteOffsetOf(sb.RootDirFirstBlock, BlockSize);
+    var inodeTableOffset = Qnx6Geometry.ByteOffsetOf(sb.InodeTablePtr, BlockSize);
     var inodeOff = inodeTableOffset + (long)(found.Inum - 1) * InodeSize;
     if (inodeOff + InodeSize > img.Length) return false;
 
@@ -310,7 +350,7 @@ public static class Qnx6Modifier {
     var firstPtr = BinaryPrimitives.ReadUInt32LittleEndian(inode.Slice(0x24, 4));
     if (firstPtr != 0 && size != 0) {
       var blocks = (long)((size + BlockSize - 1) / BlockSize);
-      var dataOff = (long)firstPtr * BlockSize;
+      var dataOff = Qnx6Geometry.ByteOffsetOf(firstPtr, BlockSize);
       var dataLen = blocks * BlockSize;
       if (dataOff >= 0 && dataOff + dataLen <= img.Length)
         img.AsSpan((int)dataOff, (int)dataLen).Clear();
@@ -365,24 +405,37 @@ public static class Qnx6Modifier {
       if (fb > uint.MaxValue) fb = uint.MaxValue;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(0x40), (uint)fb);
     }
-    // sb_num_blocks must stay in sync with the actual image size — the writer
-    // sets it to totalSizeBytes/BlockSize.
-    var numBlocks = (uint)(img.Length / BlockSize);
+    // sb_num_blocks counts the filesystem's own blocks — the ones after the
+    // boot and superblock areas — because that is what the driver adds its
+    // offset to when it goes looking for the mirror superblock.
+    var numBlocks = (uint)(img.Length / BlockSize - Qnx6Geometry.BlocksBefore(BlockSize));
     BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(0x3C), numBlocks);
   }
 
-  private static void WriteFileInode(Span<byte> inode, ulong size, uint firstBlock) {
+  private static void WriteFileInode(
+      Span<byte> inode, ulong size, uint firstPointer, uint pointerCount, byte levels) {
     inode.Clear();
     BinaryPrimitives.WriteUInt64LittleEndian(inode, size);
     BinaryPrimitives.WriteUInt16LittleEndian(inode.Slice(0x20), 0x81A4); // S_IFREG | 0644
-    BinaryPrimitives.WriteUInt32LittleEndian(inode.Slice(0x24), firstBlock);
-    inode[0x65] = 0x01; // di_status = allocated
+    for (var i = 0u; i < pointerCount && i < DirectPointers; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(inode.Slice(0x24 + (int)i * 4), firstPointer + i);
+    inode[0x64] = levels;
+    inode[0x65] = 0x03; // di_status: a plain file, as opposed to a directory
   }
 
+  /// <summary>
+  /// Writes the superblock's copy where the driver looks for it: at the block
+  /// count the superblock itself records, plus the areas in front of the
+  /// filesystem. Anywhere else and the volume does not mount.
+  /// </summary>
   private static void MirrorSuperblock(byte[] img) {
-    var secondaryOff = img.Length - SuperblockSize;
-    img.AsSpan(SuperblockOffset, SuperblockSize)
-      .CopyTo(img.AsSpan(secondaryOff, SuperblockSize));
+    var numBlocks = BinaryPrimitives.ReadUInt32LittleEndian(
+      img.AsSpan(SuperblockOffset + 0x3C, 4));
+    var secondaryOff = Qnx6Geometry.ByteOffsetOf(numBlocks, BlockSize);
+    if (secondaryOff + SuperblockSize > img.Length) secondaryOff = img.Length - SuperblockSize;
+    var primary = img.AsSpan(SuperblockOffset, SuperblockSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(primary.Slice(0x04), Qnx6Geometry.Checksum(primary));
+    primary.CopyTo(img.AsSpan((int)secondaryOff, SuperblockSize));
   }
 
   private static string FlattenLeafName(string name) {

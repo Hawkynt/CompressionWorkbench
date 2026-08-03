@@ -158,6 +158,9 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// is the boot/root/bitmap region as structure plus one run per live entry.
   /// Blocks no live inode names are what a removal left behind.
   /// </summary>
+  /// <summary>The first block a file may occupy: past the volume's own structures.</summary>
+  private const uint FirstDataBlock = 8;
+
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
@@ -168,7 +171,8 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       var first = long.MaxValue;
       foreach (var e in reader.Entries) {
         if (e.FirstExtentBlock == 0 || e.ExtentBlockCount == 0) continue;
-        var offset = (long)e.FirstExtentBlock * Qnx4Reader.BlockSize;
+        // An extent's block number counts from one.
+        var offset = Qnx4Layout.ByteOffsetOf(e.FirstExtentBlock);
         if (offset < 0 || offset >= image.Length) continue;
         var length = Math.Min((long)e.ExtentBlockCount * Qnx4Reader.BlockSize, image.Length - offset);
         if (length <= 0) continue;
@@ -177,8 +181,16 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
           e.IsDirectory ? null : e.Name));
         first = Math.Min(first, offset);
       }
-      if (first == long.MaxValue) first = Math.Min(image.Length, 64L * Qnx4Reader.BlockSize);
-      result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));
+
+      // The structure at the front is the boot block, the superblock, the root
+      // directory and the two system files — a fixed region, not "everything
+      // up to the first file still listed". Measuring it the second way made
+      // the region grow over the space a removal freed, so a wipe treated a
+      // deleted file's bytes as structure and left them where they were.
+      var structureEnd = Math.Min(image.Length, (long)FirstDataBlock * Qnx4Reader.BlockSize);
+      _ = first;
+      result.Add(new DefragBlockInfo(0, structureEnd, DefragBlockKind.MetadataReserved));
+      result.Sort((a, b) => a.Offset.CompareTo(b.Offset));
     } catch {
       // An image we cannot walk claims nothing; wiping it would zero live data.
       return [];

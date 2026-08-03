@@ -51,7 +51,10 @@ internal static class ThirdPartyFsCheck {
     ["Efs"] = new("efs", "", false, null, "", []),
     ["Erofs"] = new("erofs", "", false, "fsck.erofs", "{0}", [0]),
     ["ExFat"] = new("exfat", "", true, "fsck.exfat", "-n {0}", [0, 1]),
-    ["Ext"] = new("ext2", "", true, "fsck.ext4", "-fn {0}", [0]),
+    // Our ext volumes carry extents and a journal, which is ext4 — the ext2
+    // driver refuses them by feature, and asking for it read "superblock is
+    // corrupt" when nothing was wrong with the volume at all.
+    ["Ext"] = new("ext4", "", true, "fsck.ext4", "-fn {0}", [0]),
     // "ext1" is the original extended filesystem — magic 0x137D, not ext2's
     // 0xEF53. Linux dropped it in 2.1 and e2fsprogs never spoke it, so the only
     // outside reader that might is 7-Zip's ext handler.

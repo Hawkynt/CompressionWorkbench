@@ -44,10 +44,12 @@ public static class Qnx4Modifier {
   private const int MaxShortName = 16;
 
   // Reserved layout (LBA):
-  private const uint RootDirStart = 1; // blocks 1..4
-  private const uint BitmapBlock = 5;
-  private const uint InodesBlock = 6;
-  private const uint FirstDataBlock = 7;
+  // Block 1 is the superblock, so the root directory starts after it.
+  private const uint SuperBlock = Qnx4Layout.SuperBlock;   // 1
+  private const uint RootDirStart = 2; // blocks 2..5
+  private const uint BitmapBlock = 6;
+  private const uint InodesBlock = 7;
+  private const uint FirstDataBlock = 8;
 
   // QNX4 inode status flags.
   private const byte FileUsed = 0x01;
@@ -98,7 +100,7 @@ public static class Qnx4Modifier {
     var slot = FindFreeRootSlot(rootCluster);
     if (slot < 0)
       throw new NotSupportedException(
-        $"QNX4: root cluster full (max {(InodesPerBlock * RootDirBlocks) - 3} user files in flat root). " +
+        $"QNX4: root cluster full (max {(InodesPerBlock * RootDirBlocks) - 2} user files in flat root). " +
         "Subdirectory emission is out of scope for the current R/W writer.");
 
     // Allocate a contiguous extent — zero-byte files still reserve one block
@@ -154,31 +156,34 @@ public static class Qnx4Modifier {
 
     var rootCluster = ReadRootCluster(image);
 
-    // Walk user slots (entries 3..31) looking for the matching name.
-    for (var slot = 3; slot < InodesPerBlock * RootDirBlocks; slot++) {
-      var status = rootCluster[SlotOffset(slot) + 0x3D];
+    // Walk the user slots. They start at 2: the root directory holds .bitmap
+    // and .inodes, and the root's own entry lives in the superblock rather
+    // than here — starting at 3 skipped the first file every time.
+    for (var slot = 2; slot < InodesPerBlock * RootDirBlocks; slot++) {
+      var status = rootCluster[SlotOffset(slot) + Qnx4Layout.InStatus];
       if (!IsLiveStatus(status)) continue;
       var entryName = ReadInodeName(rootCluster.AsSpan(SlotOffset(slot), MaxShortName));
       if (!string.Equals(entryName, leaf, StringComparison.Ordinal)) continue;
 
       // Found it. Pull the extent record.
-      var xtntBlk = BinaryPrimitives.ReadUInt32LittleEndian(rootCluster.AsSpan(SlotOffset(slot) + 0x14));
-      var xtntCnt = BinaryPrimitives.ReadUInt32LittleEndian(rootCluster.AsSpan(SlotOffset(slot) + 0x18));
+      var xtntBlk = BinaryPrimitives.ReadUInt32LittleEndian(rootCluster.AsSpan(SlotOffset(slot) + Qnx4Layout.InExtentBlock));
+      var xtntCnt = BinaryPrimitives.ReadUInt32LittleEndian(rootCluster.AsSpan(SlotOffset(slot) + Qnx4Layout.InExtentSize));
       if (xtntCnt == 0) xtntCnt = 1; // matches reader convention
 
       // Free + wipe the data extent.
       var bitmap = ReadBitmap(image);
-      if (xtntBlk >= FirstDataBlock && xtntCnt > 0) {
+      var dataBlock = xtntBlk == 0 ? 0u : xtntBlk - 1;
+      if (dataBlock >= FirstDataBlock && xtntCnt > 0) {
         if (wipeData) {
           var extentBytes = (long)xtntCnt * BlockSize;
-          var dataOff = (long)xtntBlk * BlockSize;
+          var dataOff = (long)dataBlock * BlockSize;
           if (dataOff + extentBytes <= image.Length) {
             image.Position = dataOff;
             image.Write(new byte[extentBytes]);
           }
         }
         for (var b = 0u; b < xtntCnt; b++)
-          SetBitmapBit(bitmap, xtntBlk + b, false);
+          SetBitmapBit(bitmap, dataBlock + b, false);
         WriteBitmap(image, bitmap);
       }
 
@@ -211,9 +216,10 @@ public static class Qnx4Modifier {
   }
 
   private static int FindFreeRootSlot(byte[] rootCluster) {
-    // Entries 0..2 are reserved (root self-ref + .bitmap + .inodes).
-    for (var slot = 3; slot < InodesPerBlock * RootDirBlocks; slot++) {
-      var status = rootCluster[SlotOffset(slot) + 0x3D];
+    // Entries 0 and 1 are .bitmap and .inodes; the root's own entry is not
+    // here at all, it is the first of the four in the superblock.
+    for (var slot = 2; slot < InodesPerBlock * RootDirBlocks; slot++) {
+      var status = rootCluster[SlotOffset(slot) + Qnx4Layout.InStatus];
       if (status == 0) return slot;
     }
     return -1;
@@ -225,13 +231,17 @@ public static class Qnx4Modifier {
     var nameBytes = Encoding.UTF8.GetBytes(name);
     var nameLen = Math.Min(nameBytes.Length, MaxShortName);
     nameBytes.AsSpan(0, nameLen).CopyTo(buf.AsSpan(0, MaxShortName));
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x10), size);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x14), firstExtentBlock);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x18), extentBlockCount);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x1C), 0u);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0x20), (ushort)(SIfreg | PermFile));
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(Qnx4Layout.InSize), size);
+    // An extent's block number counts from one, so the block it names is one
+    // lower on disk.
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      buf.AsSpan(Qnx4Layout.InExtentBlock), Qnx4Layout.ExtentValueFor(firstExtentBlock));
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(Qnx4Layout.InExtentSize), extentBlockCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(Qnx4Layout.InMode), (ushort)(SIfreg | PermFile));
     // Times/uid/gid/zero stay zero. Status = USED.
-    buf[0x3D] = FileUsed;
+    buf[Qnx4Layout.InStatus] = FileUsed;
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(Qnx4Layout.InNumExtents), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(Qnx4Layout.InNlink), 1);
 
     image.Position = (long)RootDirStart * BlockSize + SlotOffset(slot);
     image.Write(buf);
@@ -248,26 +258,27 @@ public static class Qnx4Modifier {
   /// this initially, but every Add/Remove changes the count. We recount from
   /// the cluster snapshot for accuracy — cheap, the cluster is 2 KB.
   /// </summary>
-  /// <param name="image">Underlying stream — the new <c>di_size</c> is
-  /// written back at LBA 1 + entry 0 + 0x10.</param>
+  /// <param name="image">Underlying stream — the new <c>di_size</c> is written
+  /// back into the superblock's first entry, which is where the root
+  /// directory's own inode lives.</param>
   /// <param name="rootCluster">Snapshot of LBA 1-4 used to count live entries
   /// without re-reading the stream.</param>
   /// <param name="addedSlot">Slot index just added; used to seed the count
   /// when the caller has not yet flushed the new dirent. Pass -1 for the
   /// remove path (the slot is already cleared on-disk).</param>
   private static void UpdateRootSelfSize(Stream image, byte[] rootCluster, int addedSlot) {
-    var live = 0;
+    // The size has to reach the last slot in use, not merely count the ones
+    // that are. A directory walk stops at the size, so counting live entries
+    // hides every entry past the first hole — which is exactly what removing a
+    // file leaves behind.
+    var lastUsed = -1;
     for (var slot = 0; slot < InodesPerBlock * RootDirBlocks; slot++) {
-      var status = rootCluster[SlotOffset(slot) + 0x3D];
-      if (IsLiveStatus(status)) live++;
+      var status = rootCluster[SlotOffset(slot) + Qnx4Layout.InStatus];
+      if (IsLiveStatus(status)) lastUsed = slot;
     }
-    if (addedSlot >= 0) {
-      // Caller snapshotted before flushing the new dirent; account for it.
-      var snapshotStatus = rootCluster[SlotOffset(addedSlot) + 0x3D];
-      if (!IsLiveStatus(snapshotStatus)) live++;
-    }
-    var newSize = (uint)(InodeSize * live);
-    image.Position = (long)RootDirStart * BlockSize + SlotOffset(0) + 0x10;
+    if (addedSlot > lastUsed) lastUsed = addedSlot;
+    var newSize = (uint)(InodeSize * (lastUsed + 1));
+    image.Position = (long)SuperBlock * BlockSize + Qnx4Layout.InSize;
     var buf = new byte[4];
     BinaryPrimitives.WriteUInt32LittleEndian(buf, newSize);
     image.Write(buf);

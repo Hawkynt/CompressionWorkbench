@@ -96,15 +96,19 @@ public class TFatPlannedDefragTests {
     var after = image.ToArray();
     Assert.That(after, Has.Length.EqualTo(before.Length), "the volume keeps its size");
 
-    // The tag and the transactional byte live at one of two places depending on
-    // which extended BPB the volume uses; whichever it was, it is still there.
+    // The tag lives at one of two places depending on which extended BPB the
+    // volume uses; whichever it was, it is still there.
     var tag = Encoding.ASCII.GetString(after, 54, 8);
     var tag32 = Encoding.ASCII.GetString(after, 82, 8);
     Assert.That(tag.StartsWith("TFAT", StringComparison.Ordinal)
       || tag32.StartsWith("TFAT", StringComparison.Ordinal),
       "the boot sector must still say the volume is TFAT");
-    Assert.That(after[37] == 0x01 || after[65] == 0x01,
-      "the transactional marker byte must still be set");
+
+    // And the byte beside it is still clear. It is FAT's unclean-unmount flag,
+    // not a place to leave a marker: a pass that set it would hand back a
+    // volume every checker calls dirty and possibly corrupt.
+    Assert.That(after[37], Is.EqualTo(0), "BS_Reserved1 must stay clear on FAT12/16");
+    Assert.That(after[65], Is.EqualTo(0), "and on FAT32");
 
     Assert.Multiple(() => {
       Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan((int)(first + regionLength - 4))),

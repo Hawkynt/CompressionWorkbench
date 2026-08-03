@@ -79,7 +79,7 @@ Streaming: only the BPB + the first FAT copy + (FAT12/16) fixed root dir are kep
 | `ImageSize` | Enum | `Auto (fit to files)` | `Auto (fit to files)`, `720 KB (3.5" DD)`, `1.44 MB (3.5" HD)`, `1.68 MB (DMF)`, `2.88 MB (3.5" ED)`, `160 KB (5.25" SS/SD)`, `180 KB (5.25" SS/SD)`, `320 KB (5.25" DS/DD)`, `360 KB (5.25" DS/DD)`, `1.2 MB (5.25" HD)`, `650 MB (CD)`, `700 MB (CD)`, `4.7 GB (DVD-5)`, `8.5 GB (DVD-9)`, `25 GB (BD-SL)`, `50 GB (BD-DL)`, `100 GB (BD-XL)`, `128 GB (BD-XL)`, `15 GB (HD DVD-SL)`, `30 GB (HD DVD-DL)`, `32 MB`, `128 MB`, `512 MB`, `1 GB`, `2 GB`, `4 GB` | Auto sizes the image to exactly hold the files being stored (recommended). Fixed presets match floppy, optical and card formats. |
 | `LongFilenames` | Boolean | `true` | any | VFAT LFN entries preserve mixed-case names and names > 8.3 chars. Disable only for strict DOS 8.3 compatibility (no VFAT). |
 | `RootEntries` | Enum | `Auto` | `Auto`, `16 (DMF)`, `32`, `64`, `112`, `224`, `512` | Max items in the root directory (FAT12/16 only; FAT32 has no limit). Microsoft DMF Win95 disks used 16 to reclaim those sectors for data. Auto: 224 for FAT12, 512 for FAT16. |
-| `TransactionFat` | Boolean | `false` | any | Marks the image for transaction-based FAT updates (Windows Embedded/CE crash-safe style). Sets BS_Reserved1 = 0x01 in the boot sector. |
+| `TransactionFat` | Boolean | `false` | any | Marks the image for transaction-based FAT updates (Windows Embedded/CE crash-safe style). The marker is the TFAT tag in BS_FilSysType; BS_Reserved1 is left alone, because that is where FAT records an unclean unmount. |
 | `VolumeLabel` | String | `` | any | Volume name shown by file managers (max 11 chars, ASCII only). |
 
 ## Storage methods

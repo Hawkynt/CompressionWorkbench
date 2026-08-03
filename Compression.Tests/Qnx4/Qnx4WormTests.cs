@@ -127,14 +127,16 @@ public class Qnx4WormTests {
   [Test, Category("Sad")]
   public void Writer_TooManyFiles_ThrowsCleanly() {
     var w = new Qnx4Writer();
-    // Flat-root cluster = 4 blocks × 8 inodes = 32 slots, minus 3 system slots → 29 user slots.
-    for (var i = 0; i < 30; i++)
+    // The root directory is 4 blocks of 8 entries = 32 slots, of which
+    // .bitmap and .inodes take two — the root's own entry is in the
+    // superblock, not here — leaving 30 for files.
+    for (var i = 0; i < 31; i++)
       w.AddFile($"f{i:00}", [(byte)i]);
 
     using var ms = new MemoryStream();
     var ex = Assert.Throws<InvalidOperationException>(() => w.WriteTo(ms));
     Assert.That(ex!.Message, Does.Contain("WORM scope"));
-    Assert.That(ex.Message, Does.Contain("29"));
+    Assert.That(ex.Message, Does.Contain("30"));
   }
 
   [Test, Category("HappyPath")]
@@ -164,18 +166,22 @@ public class Qnx4WormTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // Entry 1 of block 1 must be ".bitmap"
-    var bitmapNameOff = BlockSize + InodeSize;
+    // .bitmap belongs in the root directory, which is where a driver looks for
+    // it before it will mount anything — not in the superblock, whose four
+    // entries are the root, the inode file and the two boot slots.
+    var bitmapNameOff = 2 * BlockSize;
     var bitmapName = ReadInodeName(image.AsSpan(bitmapNameOff, 16));
     Assert.That(bitmapName, Is.EqualTo(".bitmap"));
 
-    // Entry 2 of block 1 must be ".inodes"
-    var inodesNameOff = BlockSize + 2 * InodeSize;
+    // .inodes is the second root directory entry, and also the superblock's
+    // second slot — this checks the directory's copy.
+    var inodesNameOff = 2 * BlockSize + InodeSize;
     var inodesName = ReadInodeName(image.AsSpan(inodesNameOff, 16));
     Assert.That(inodesName, Is.EqualTo(".inodes"));
 
-    // Bitmap block (LBA 5) must have boot bit set as proof we wrote a bitmap
-    var bitmapBlockOff = 5 * BlockSize;
+    // The bitmap sits at LBA 6 now: the superblock takes block 1 and the root
+    // directory the four after it.
+    var bitmapBlockOff = 6 * BlockSize;
     Assert.That(image[bitmapBlockOff] & 1, Is.EqualTo(1),
       ".bitmap byte 0 bit 0 (boot block allocated) must be set.");
   }
@@ -212,9 +218,12 @@ public class Qnx4WormTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // Entry 0 of block 1 is the root inode → status at 0x23D = 0x09 (USED|LINK)
-    Assert.That(image[0x23D], Is.EqualTo(0x09),
-      "Root inode status byte must be USED|LINK (0x09).");
+    // Entry 0 of block 1 is the root inode, and its status byte is at 0x3F of
+    // that entry — not 0x3D, which is padding. It says USED and nothing else:
+    // the LINK bit marks an entry as a long-name link record, and a driver
+    // that saw it would read the root's name field as a 48-byte link instead.
+    Assert.That(image[0x200 + 0x3F], Is.EqualTo(0x01),
+      "the root entry must be marked used, and not as a link.");
 
     var d = new Qnx4FormatDescriptor();
     var sig = d.MagicSignatures.FirstOrDefault(s => s.Bytes[0] == 0x09 && s.Offset == 0x23D);

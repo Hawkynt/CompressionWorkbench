@@ -30,8 +30,10 @@ public class Qnx4RwTests {
 
   private const int BlockSize = 512;
   private const int InodeSize = 64;
-  private const uint BitmapBlock = 5;
-  private const int MaxUserFiles = 29; // 32 slots minus 3 system entries
+  // Block 1 is the superblock — four inode entries describing the volume — so
+  // the root directory starts at 2 and everything after it moved up one.
+  private const uint BitmapBlock = 6;
+  private const int MaxUserFiles = 30; // 32 slots minus .bitmap and .inodes
 
   /// <summary>Builds a fresh single-file QNX4 image via the WORM writer so
   /// every R/W test starts from a known-good baseline.</summary>
@@ -228,8 +230,10 @@ public class Qnx4RwTests {
     var r = new Qnx4Reader(image);
     var entry = r.Entries.Single(e => e.Name == "track.bin");
 
+    // The bitmap is indexed by blocks on disk, while an extent counts its
+    // blocks from one — so the bit for an extent sits one place lower.
     var bitmap = ReadBitmap(image);
-    for (var b = entry.FirstExtentBlock; b < entry.FirstExtentBlock + entry.ExtentBlockCount; b++) {
+    for (var b = entry.FirstExtentBlock - 1; b < entry.FirstExtentBlock - 1 + entry.ExtentBlockCount; b++) {
       var byteIdx = (int)(b >> 3);
       var bitMask = 1 << (int)(b & 7);
       Assert.That(bitmap[byteIdx] & bitMask, Is.Not.EqualTo(0),
@@ -245,7 +249,7 @@ public class Qnx4RwTests {
     image.Position = 0;
     var r = new Qnx4Reader(image);
     var entry = r.Entries.Single(e => e.Name == "trash.bin");
-    var startBlock = entry.FirstExtentBlock;
+    var startBlock = entry.FirstExtentBlock - 1;   // the bitmap counts from zero
     var blockCount = entry.ExtentBlockCount;
 
     Qnx4Modifier.RemoveFile(image, "trash.bin");

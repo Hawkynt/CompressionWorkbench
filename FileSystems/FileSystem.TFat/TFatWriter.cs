@@ -13,7 +13,6 @@ namespace FileSystem.TFat;
 ///
 /// <list type="number">
 ///   <item><description>Stamp <c>BS_FilSysType</c> with "TFAT12  ", "TFAT16  ", or "TFAT32  " (replaces the plain FAT type tag).</description></item>
-///   <item><description>Set <c>BS_Reserved1</c> byte (offset 37 for FAT12/16, offset 65 for FAT32) to <c>0x01</c> as a redundant TFAT marker.</description></item>
 ///   <item><description>Write a 4-byte big-endian transaction sequence number to the last 4 bytes of each FAT region. Initially FAT1.seq=1, FAT2.seq=2 — FAT2 is the committed (active) copy.</description></item>
 ///   <item><description>Both FATs hold identical chain data; subsequent transactional updates will alternate which copy is current.</description></item>
 /// </list>
@@ -231,7 +230,6 @@ public sealed class TFatWriter {
     var tagBytes = Encoding.ASCII.GetBytes(fatType switch {
       12 => "TFAT12  ", 16 => "TFAT16  ", _ => "TFAT32  " });
     var fsTypeOffset = fatType == 32 ? 82 : 54;
-    var reserved1Offset = fatType == 32 ? 65 : 37;
 
     void WriteAt(long offset, ReadOnlySpan<byte> bytes) {
       if (offset < 0 || offset + bytes.Length > disk.Length) return;
@@ -240,7 +238,6 @@ public sealed class TFatWriter {
     }
 
     WriteAt(fsTypeOffset, tagBytes);
-    WriteAt(reserved1Offset, [0x01]);
 
     var fat1Off = (long)rsv * bps;
     var fatRegionLen = (long)fatSize * bps;
@@ -256,7 +253,6 @@ public sealed class TFatWriter {
     if (fatType == 32) {
       var bkOff = 6L * bps;
       WriteAt(bkOff + fsTypeOffset, tagBytes);
-      WriteAt(bkOff + reserved1Offset, [0x01]);
     }
     disk.Flush();
   }
@@ -291,7 +287,10 @@ public sealed class TFatWriter {
     var totalClusters = (totalSec - firstDataSec) / spc;
     var fatType = totalClusters < 4085 ? 12 : totalClusters < 65525 ? 16 : 32;
 
-    // 1) Stamp BS_FilSysType with TFAT tag.
+    // 1) Stamp BS_FilSysType with the TFAT tag. That is the whole marker:
+    //    BS_Reserved1, which this used to set as well, is where FAT records an
+    //    unclean unmount, and setting it made every FAT checker call the
+    //    volume dirty and possibly corrupt.
     var tag = fatType switch {
       12 => "TFAT12  ",
       16 => "TFAT16  ",
@@ -300,10 +299,6 @@ public sealed class TFatWriter {
     var tagBytes = Encoding.ASCII.GetBytes(tag);
     var fsTypeOffset = fatType == 32 ? 82 : 54;
     tagBytes.CopyTo(disk, fsTypeOffset);
-
-    // 2) Set BS_Reserved1 byte to 0x01.
-    var reserved1Offset = fatType == 32 ? 65 : 37;
-    disk[reserved1Offset] = 0x01;
 
     // 3) Write transaction sequence numbers to the trailing 4 bytes of each FAT.
     var fat1Off = rsv * bps;
@@ -320,10 +315,8 @@ public sealed class TFatWriter {
     // (sector 6) so a recovery tool that reads the backup still sees TFAT.
     if (fatType == 32) {
       var bkOff = 6 * bps;
-      if (bkOff + fsTypeOffset + 8 <= disk.Length) {
+      if (bkOff + fsTypeOffset + 8 <= disk.Length)
         tagBytes.CopyTo(disk, bkOff + fsTypeOffset);
-        disk[bkOff + reserved1Offset] = 0x01;
-      }
     }
 
     return disk;
