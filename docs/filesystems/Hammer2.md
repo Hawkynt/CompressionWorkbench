@@ -31,14 +31,21 @@ HAMMER2 (DragonFly BSD newer) filesystem image — volume-data sector surface on
 | wipe free space | no | zero what no file holds |
 | shrink | yes | reduce the volume to what it needs |
 | optimise layout | yes | re-lay the volume at a chosen geometry |
-| report layout | no | say where every byte belongs |
+| report layout | yes | say where every byte belongs |
 | move blocks | no | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `Hammer2BlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -46,11 +53,11 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 Read-only descriptor for HAMMER2 (DragonFly BSD newer) filesystem images. Surfaces the volume-data sector at offset 0 plus a structured metadata bundle and the raw image. Walking the HAMMER2 cluster B-tree (radix-tree chains, blockrefs, indirect blocks) is explicitly out of scope (multi-week effort). Magic: 8-byte uint64 at offset 0 = `HAMMER2_VOLUME_ID_HBO` (`0x48414d3205172011`) or `HAMMER2_VOLUME_ID_ABO` (`0x11201705324d4148`). The descriptor's `MagicSignatures` list covers the HBO form (LE serialisation: `11 20 17 05 32 4D 41 48`); the ABO form is recognised by the parser but is rare in practice (only arises when a HAMMER2 image is cross-mounted on opposite-endian hardware). Confidence 0.85: an 8-byte magic at offset 0 is high-confidence but the detector does no secondary sanity check (e.g. volume size plausibility, fstype UUID match). References:
 
-Why this volume is laid out again by rebuilding rather than by moving, and what it would take to change that.
+How this volume is laid out again by moving.
 
 A file's bytes are named by a blockref's device offset, and the check beside it is over the bytes it points at — which a move does not change. So the offset itself is one field, and the data's own check survives.
 
-What does not survive is every check above it. A blockref lives inside its parent block, and the parent's check lives in the blockref that names the parent, and so on up to the volume header, which carries CRCs over its own sectors. Repointing one block therefore means taking a chain of checks again, from the block holding the blockref up to the header. That is the work this would need — it is bounded and the primitives are here, but it is not the single-field rewrite the formats that do move in place need.
+What does not survive is every check above it. A blockref lives inside its parent block, and the parent's check lives in the blockref that names the parent, and so on up to the volume headers, which carry CRCs over their own sectors. Repointing one block therefore means taking that chain of checks again, from the block holding the blockref outwards, and stamping the headers once the pass is over.
 
 ### Hammer2Reader
 
@@ -65,6 +72,14 @@ Writes a single-volume HAMMER2 (DragonFly BSD) filesystem image that DragonFly r
 The on-disk topology mirrors newfs_hammer2 exactly: the volume header lives in the first of four redundant 64 KB slots (only slot #0 is populated by newfs, the kernel rolls the others forward on the first sync), the boot area starts at 4 MB, the aux area at 12 MB, and the reserved topology area (where the inodes live) begins at 20 MB (allocator_beg). HAMMER2 builds its freemap lazily, so a freshly formatted volume carries no freemap blocks at all — exactly what newfs_hammer2 writes.
 
 Files passed to `AddFile` are materialised in the labelled PFS root exactly the way the DragonFly kernel lays them down: each file gets a regular-file inode (HAMMER2_OBJTYPE_REGFILE) keyed in the root blockset by its inode number, plus a HAMMER2_BREF_TYPE_DIRENT blockref keyed by hammer2_dirhash(name) carrying the filename inline. Payloads up to 512 bytes are embedded directly in the inode's union (HAMMER2_OPFLAG_DIRECTDATA); larger payloads are written to an allocated HAMMER2_BREF_TYPE_DATA block sized to the next power-of-two logical buffer. When the root's four embedded blockrefs overflow they spill into a HAMMER2_BREF_TYPE_INDIRECT block. All data blocks are stored uncompressed (HAMMER2_COMP_NONE) and protected by an xxHash64 check.
+
+### Hammer2Layout
+
+Walks a HAMMER2 volume's blockref tree and notes where every block sits, together with the chain of checks that has to be taken again when one of them moves.
+
+A blockref names its block by a device offset with the block's radix in the low bits, and carries a check over the bytes it points at. Moving those bytes leaves that check good — the bytes do not change — but the blockref itself lives inside its parent block, and the parent's check lives in the blockref that names the parent, and so on up to the volume header, which carries CRCs over its own sectors.
+
+So a move is one field plus a chain of checks, and the chain is what this records: for each block, every enclosing block in turn and the field its check belongs in.
 
 ## Parameters
 

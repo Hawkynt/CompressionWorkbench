@@ -31,8 +31,7 @@ namespace FileSystem.Hammer2;
 /// </list>
 /// </summary>
 /// <summary>
-/// Why this volume is laid out again by rebuilding rather than by moving, and
-/// what it would take to change that.
+/// How this volume is laid out again by moving.
 /// </summary>
 /// <remarks>
 /// <para>A file's bytes are named by a blockref's device offset, and the check
@@ -41,13 +40,123 @@ namespace FileSystem.Hammer2;
 ///
 /// <para>What does not survive is every check above it. A blockref lives inside
 /// its parent block, and the parent's check lives in the blockref that names
-/// the parent, and so on up to the volume header, which carries CRCs over its
-/// own sectors. Repointing one block therefore means taking a chain of checks
-/// again, from the block holding the blockref up to the header. That is the
-/// work this would need — it is bounded and the primitives are here, but it is
-/// not the single-field rewrite the formats that do move in place need.</para>
+/// the parent, and so on up to the volume headers, which carry CRCs over their
+/// own sectors. Repointing one block therefore means taking that chain of
+/// checks again, from the block holding the blockref outwards, and stamping the
+/// headers once the pass is over.</para>
 /// </remarks>
-public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap {
+
+  /// <summary>
+  /// Largest volume the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  // ── IFilesystemExtentMap ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Where the volume keeps its bytes: the volume headers, the inodes and the
+  /// indirect blocks as structure, and each file's data blocks under its name.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+
+    Hammer2Layout.Layout? layout;
+    try {
+      layout = Hammer2Layout.Read(image);
+    } catch {
+      // A volume we cannot walk claims nothing; wiping it would zero live data.
+      yield break;
+    }
+
+    if (layout == null) yield break;
+
+    foreach (var (offset, length) in layout.Structure.OrderBy(s => s.Offset))
+      yield return new DefragBlockInfo(offset, length, DefragBlockKind.MetadataReserved,
+        "HAMMER2 structure");
+
+    foreach (var block in layout.DataBlocks.OrderBy(b => b.Offset))
+      yield return new DefragBlockInfo(block.Offset, block.Length, DefragBlockKind.Used, block.Owner);
+  }
+
+  // ── IArchiveDefragmentable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Lays the volume out again by moving what is out of place. A blockref names
+  /// its block by a device offset, and the check beside it covers bytes a move
+  /// does not change — so the move is that one field plus the chain of checks
+  /// above it, up to the volume headers' own CRCs.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException(
+        $"HAMMER2 can only rebuild a volume packed from the start; got {options.Mode}.");
+
+    RebuildVerb.RebuildInPlace(archive, this, this);
+  }
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new Hammer2Reader(stream);
+    var contents = new List<byte[]>();
+    foreach (var file in reader.EnumerateFiles()) {
+      using var buffer = new MemoryStream();
+      reader.ExtractTo(file, buffer);
+      contents.Add(buffer.ToArray());
+    }
+
+    return contents;
+  }
+
+  /// <summary>Plans the new layout and moves the blocks into it, repointing as it goes.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Hammer2BlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // The headers sit above every check the pass rewrote.
+    mover.SettleVolumeHeaders(archive);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
 
   /// <summary>
   /// Sole tunable the HAMMER2 writer honours: the PFS label

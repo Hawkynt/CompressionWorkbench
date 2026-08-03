@@ -45,7 +45,7 @@ cannot claim something the code does not do.
 | [GFS (Sistina/Red Hat, original)](Gfs1.md) | moving (`Gfs1BlockMover`) | yes | yes |
 | [GFS2 (Global File System 2)](Gfs2.md) | moving (`Gfs2BlockMover`) | yes | yes |
 | [HAMMER (DragonFly BSD)](Hammer.md) | moving (`HammerBlockMover`) | yes | yes |
-| [HAMMER2 (DragonFly BSD)](Hammer2.md) | rebuilding | no | yes |
+| [HAMMER2 (DragonFly BSD)](Hammer2.md) | moving (`Hammer2BlockMover`) | no | yes |
 | [HFS (Classic)](Hfs.md) | moving (`HfsBlockMover`) | yes | yes |
 | [HFS+](HfsPlus.md) | moving (`HfsPlusBlockMover`) | yes | yes |
 | [HPFS](Hpfs.md) | moving (`HpfsBlockMover`) | yes | yes |
