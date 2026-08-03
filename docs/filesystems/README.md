@@ -79,7 +79,7 @@ cannot claim something the code does not do.
 | [QNX4 FS](Qnx4.md) | moving (`Qnx4BlockMover`) | yes | yes |
 | [QNX6 Neutrino FS](Qnx6.md) | moving (`Qnx6BlockMover`) | yes | yes |
 | [ReFS](Refs.md) | — | no | no |
-| [Reiser4](Reiser4.md) | rebuilding | yes | yes |
+| [Reiser4](Reiser4.md) | moving (`Reiser4BlockMover`) | yes | yes |
 | [ReiserFS](ReiserFs.md) | moving (`ReiserFsBlockMover`) | yes | yes |
 | [ROMFS](RomFs.md) | moving (`RomFsBlockMover`) | yes | yes |
 | [DEC RT-11 (RX01)](Rt11.md) | moving (`Rt11BlockMover`) | yes | yes |
