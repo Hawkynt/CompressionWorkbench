@@ -33,6 +33,15 @@ namespace FileSystem.VxFs;
 ///   <item><description>Wikipedia "Veritas File System"</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why there is nothing here to lay out again.
+/// </summary>
+/// <remarks>
+/// This reads the superblock and the header region around it, and nothing
+/// else. There is no file enumeration and no extraction, so nothing in this
+/// implementation knows where any file's bytes are — which is what a layout
+/// pass would have to be planned against. Writing that reader comes first; the
+/// defragmentation would follow from it.
 public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "VxFs";
   public string DisplayName => "VxFS (Veritas)";

@@ -42,10 +42,6 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 ## How a volume is laid out
 
-### Tux3FormatDescriptor
-
-Read+WORM descriptor for TUX3 — Daniel Phillips's version-tree successor to TUX2 (linux-tux3 prototype). Magic "TUX3SUPR" sits at file offset 4096 (the start of the superblock block). The WORM writer emits a single-version image (no version chain, no atomic-commit log) — the documented superblock prefix plus a sentinel "TUX3WORM" file table at block 2 that `Tux3Reader` walks. Full itable/otable/atable B-tree traversal of real linux-tux3 prototype dumps is out of scope. References:
-
 ### Tux3Reader
 
 Detection / metadata-surface reader for TUX3 — Daniel Phillips's successor to TUX2, a version-tree based filesystem with copy-on-write metadata and atomic commit semantics. The Tux3 prototype lives in the linux-tux3 tree on kernel.org and uses a superblock magic of "TUX3SUPR" (8 ASCII bytes). Full B-tree traversal of itable / atable is multi-week work; this reader surfaces the parsed superblock as structured metadata plus the raw image. Superblock layout (the documented prefix; little-endian; sits at file offset 4096 == one 4KiB block): 0x00 8 bytes Magic = "TUX3SUPR" 0x08 u64 birthday 0x10 u64 flags 0x18 u64 iroot (root of itable B-tree) 0x20 u64 oroot (root of otable B-tree) 0x28 u64 aroot (root of atable B-tree) 0x30 u64 blockbits 0x38 u64 volblocks 0x40 u64 freeblocks 0x48 u64 nextalloc 0x50 u32 atomgen 0x54 u32 freeatom ...
@@ -74,7 +70,6 @@ Round-trips through `Tux3Reader`. Real linux-tux3 prototype dumps that use the i
 
 ## Further reading
 
-- https://github.com/OGAWAHirofumi/linux-tux3 — the linux-tux3 prototype tree — canonical source
-- https://en.wikipedia.org/wiki/Tux3 — Wikipedia article
-- Daniel Phillips's Tux3 design postings (LKML / tux3 mailing list)
+The implementation cites no sources. Adding a `<list type="bullet">` of them
+to the descriptor's doc comment will bring them through to here.
 

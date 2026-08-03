@@ -65,6 +65,13 @@ namespace FileSystem.Sfs;
 /// mutation tractable; SFS does not share either property.
 /// </para>
 /// </remarks>
+/// <summary>
+/// Why there is nothing here to lay out again.
+/// </summary>
+/// <remarks>
+/// The root block is surfaced as a blob and the rest of the volume is not
+/// decoded: no object container, no b-tree, no bitmap chain. So there are no
+/// files whose bytes could be moved, and no map to plan a move against.
 public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "Sfs";
   public string DisplayName => "Amiga SFS";

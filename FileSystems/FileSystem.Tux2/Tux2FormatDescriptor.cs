@@ -19,6 +19,21 @@ namespace FileSystem.Tux2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tux3</c> — Wikipedia article covering the phase-tree lineage</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why there is nothing here to lay out again.
+/// </summary>
+/// <remarks>
+/// <para>The records run end to end from the header: a name length, the name, a
+/// data length, the data, then the next one. The reader walks that by adding
+/// each record's length to a cursor, so a gap anywhere makes everything after
+/// it unreadable — the only layout this format can express is packed from the
+/// front.</para>
+///
+/// <para>Which is the layout it is always already in. Removing a file writes
+/// the container out compacted rather than leaving a hole, so there is never
+/// space between records to close up. A pass over one of these would find
+/// nothing to move on every volume it was ever handed.</para>
+/// </remarks>
 public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── Synthetic, non-file entries the reader always surfaces ──────────────

@@ -34,6 +34,14 @@ namespace FileSystem.Nss;
 ///   <item><description>NetWare 6.5 NSS Storage Management Services documentation</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why there is nothing here to lay out again.
+/// </summary>
+/// <remarks>
+/// What this surfaces are anchors — the pool, superblock and volume headers at
+/// the offsets they were found — not files. Nothing here decodes the object
+/// store, so nothing knows where a file's bytes are, and there is no layout to
+/// plan against until something does.
 public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "Nss";
   public string DisplayName => "NSS (Novell Storage Services)";

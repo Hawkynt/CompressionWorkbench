@@ -15,6 +15,15 @@ namespace FileSystem.ZxScl;
 ///   <item><description>SCL format notes in ZX Spectrum emulator documentation (World of Spectrum formats reference)</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why there is nothing here to lay out again.
+/// </summary>
+/// <remarks>
+/// A file's data is found by adding up the lengths of every file before it —
+/// the directory records a length in sectors and nothing else, so position is
+/// implied by order. A gap would shift every file after it away from where the
+/// directory implies it is. And no gap ever exists: removing a file shifts the
+/// payloads back over it and truncates, so the archive is always packed.
 public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.

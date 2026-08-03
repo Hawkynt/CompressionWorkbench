@@ -21,6 +21,16 @@ namespace FileSystem.Tux3;
 ///   <item><description>Daniel Phillips's Tux3 design postings (LKML / tux3 mailing list)</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why there is nothing here to lay out again.
+/// </summary>
+/// <remarks>
+/// The records run end to end and the reader walks them by adding each one's
+/// length to a cursor, so a gap makes everything after it unreadable: packed
+/// from the front is the only layout expressible. And it is the one the
+/// container is always in, because removing a file writes it out compacted
+/// rather than leaving a hole. See <see cref="Tux2FormatDescriptor" />, which
+/// has the same shape.
 public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── Synthetic, non-file entries the reader always surfaces ──────────────

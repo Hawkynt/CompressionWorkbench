@@ -42,10 +42,6 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 ## How a volume is laid out
 
-### ZxSclFormatDescriptor
-
-Descriptor for ZX Spectrum SCL archives ("SINCLAIR" signature) — the header+catalogue TR-DOS file container convertible to .trd images. References:
-
 ### ZxSclReader
 
 Reader for ZX Spectrum `.scl` archives.
@@ -64,7 +60,6 @@ Layout:
 
 ## Further reading
 
-- https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS_filesystem — the TR-DOS catalogue structures the SCL container carries
-- https://en.wikipedia.org/wiki/TR-DOS — Wikipedia article — covers the SCL container
-- SCL format notes in ZX Spectrum emulator documentation (World of Spectrum formats reference)
+The implementation cites no sources. Adding a `<list type="bullet">` of them
+to the descriptor's doc comment will bring them through to here.
 

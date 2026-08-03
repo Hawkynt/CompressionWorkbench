@@ -46,6 +46,12 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 Read+WORM descriptor for TUX2 — Daniel Phillips's 2002 phase-tree filesystem proposal (OLS 2002 paper, never-stabilised research format). Recognises a deterministic header pattern (magic "TUX2FS\0\0" at offset 0) so research images we generate round-trip through the reader. Writer emits a single-phase image only (no alpha/beta phases, no version chain) — real legacy prototype images would need a custom parser matching the specific snapshot of the in-progress code that produced them. References:
 
+Why there is nothing here to lay out again.
+
+The records run end to end from the header: a name length, the name, a data length, the data, then the next one. The reader walks that by adding each record's length to a cursor, so a gap anywhere makes everything after it unreadable — the only layout this format can express is packed from the front.
+
+Which is the layout it is always already in. Removing a file writes the container out compacted rather than leaving a hole, so there is never space between records to close up. A pass over one of these would find nothing to move on every volume it was ever handed.
+
 ### Tux2Reader
 
 Detection-only / synthetic-image reader for TUX2 — Daniel Phillips's 2000-era "phase tree" filesystem proposal. TUX2 was a research design (atomic phase-tree commits, copy-on-write metadata) that never reached a stable on-disk layout shipped to end users. No public spec for the in-progress prototype's on-disk format ever stabilised; the project was eventually superseded by TUX3. Because no canonical TUX2 images exist in the wild, this reader recognises a deterministic synthetic header — a chosen 8-byte ASCII magic "TUX2FS\0\0" at offset 0 followed by a small JSON-ish payload — so that the descriptor at least round-trips its own synthetic images for testing. Real TUX2 prototype dumps (if any survive) would need a custom parser matching the specific cvs-era code path that produced them. Synthetic header layout (little-endian): 0x00 8 bytes Magic = "TUX2FS\0\0" 0x08 u32 version (1) 0x0C u32 file_count 0x10 ... per-file records: u16 name_len name (UTF-8, name_len bytes) u32 data_len data (data_len bytes)

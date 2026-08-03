@@ -42,10 +42,6 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 ## How a volume is laid out
 
-### NssFormatDescriptor
-
-Read-only descriptor for NSS (Novell Storage Services) — the pool-based, object-aware filesystem that replaced NWFS386 from NetWare 5+ onwards and remains the default for Novell / OpenText Open Enterprise Server. **HONEST DISCLAIMER**: NSS's on-disk format was never publicly documented by Novell. This descriptor identifies NSS-shaped images by scanning for Novell's embedded ASCII anchors ("NSS Pool", "NSSVolume", "SuperBlk", "Novell", "NetWare") in the first 1 MB of the partition. We can locate the pool descriptor and volume / superblock anchors and surface their byte offsets, but we **cannot** walk the object tree or reconstruct files — the layout (block allocation, "Beast" object records, trustee ACL trees) is proprietary. Magic: `"NSS Pool"` — 8 ASCII bytes detected within the first 1 MB via free-form scan. Confidence 0.70 — distinctive enough to seed a match but lower than well-specified filesystems because (a) the layout is RE'd, not vendor-published; (b) the magic is a brand string that can theoretically appear in non-NSS contexts; (c) we cannot validate the surrounding structure. References:
-
 ### NssReader
 
 Best-effort NSS image reader. Parses no object tree — only surfaces the anchors NssHeaders located. Because the on-disk layout is proprietary and lacks a verifiable public spec, we never claim to reconstruct files; we expose the located pool/volume/superblock offsets as synthetic entries the user can correlate with the raw image.
@@ -56,7 +52,6 @@ Best-effort NSS image reader. Parses no object tree — only surfaces the anchor
 
 ## Further reading
 
-- Novell (OpenText) NSS File System Administration Guide — operational docs only
-- https://en.wikipedia.org/wiki/Novell_Storage_Services — pool/volume/object overview
-- NetWare 6.5 NSS Storage Management Services documentation
+The implementation cites no sources. Adding a `<list type="bullet">` of them
+to the descriptor's doc comment will bring them through to here.
 
