@@ -173,6 +173,15 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+    // Not laid out again by moving, and the reason is the log rather than any
+    // checksum. A payload's position is written down as an offset from the
+    // start of the segment that describes it, and the reader finds the next
+    // segment by carrying on from where the previous segment's payloads end. So
+    // a payload cannot leave the segment it belongs to: moving one past the
+    // next segment's header hides that header, and moving one before its own
+    // segment's payload start is a negative offset the format cannot express.
+    // Compacting across segments means writing the segments again, which is
+    // what the rebuild below does.
     // Every consolidate mode lands on the same layout here: the writer emits a
     // fresh volume packed from the first data block, and has no way to place
     // files against the tail. Carving a hole is the one request it cannot meet.

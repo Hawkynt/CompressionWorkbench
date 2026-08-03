@@ -204,6 +204,19 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
+  /// Why this image is laid out again by rebuilding rather than by moving.
+  /// </summary>
+  /// <remarks>
+  /// A file's data blocks sit where its inode says, and the inode sits inside a
+  /// metadata block the writer deflates. Repointing one means decompressing
+  /// that block, changing the field and compressing it again — and the result
+  /// is a different length, which moves every table that follows it and every
+  /// offset into them: the directory entries, the fragment table, the fields in
+  /// the superblock. Storing the block uncompressed instead does not help,
+  /// since uncompressed is the larger of the two. So there is no way to change
+  /// where a file lives without writing the tables again, which is the rebuild.
+  /// </remarks>
+  /// <summary>
   /// Reports where the image's bytes actually are: the superblock and the
   /// metadata tables as structure, and each file's compressed data blocks under
   /// its name, at the offset its inode records.
