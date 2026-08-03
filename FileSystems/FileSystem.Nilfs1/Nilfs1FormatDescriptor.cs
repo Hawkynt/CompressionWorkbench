@@ -186,7 +186,14 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new Nilfs1Reader(stream);
-    return reader.Entries.Select(reader.Extract).ToList();
+
+    // The reader injects a view of the whole image beside the real files.
+    // Comparing that across a pass compares the pass to itself: the image
+    // changed, so it always differs.
+    return reader.Entries
+      .Where(e => !SyntheticEntries.Contains(e.Name))
+      .Select(reader.Extract)
+      .ToList();
   }
 
   /// <summary>Plans a layout inside the base segment's area and moves the payloads.</summary>

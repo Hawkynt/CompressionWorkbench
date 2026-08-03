@@ -37,8 +37,15 @@ NILFS2 continuous-snapshot log-structured filesystem — Create emits a kernel-m
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `Nilfs2BlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -67,6 +74,14 @@ On-disk layout (4 KiB blocks shown; any legal block size works).
 Why the log comes first. The sufile is a single block, so it can only describe block_size / 16 segments. With the payload ahead of the log, a volume of any size pushed the log into a segment the sufile could not address. Keeping the log at the front bounds the sufile slot for every volume size, and lets the payload be streamed rather than held in memory.
 
 Scope. Single checkpoint (cno=1), single partial segment. Each embedded user file uses a NILFS direct block map, so files in the mountable root directory are capped at `MaxKernelFileBlocks` blocks; the writer-private directory always carries every file in full for the reader. Snapshots / multi-checkpoint chains are out of scope.
+
+### Nilfs2Layout
+
+Finds the payloads the private directory holds and the eight bytes that say where each one starts.
+
+A payload's position is written down as an offset from the start of the segment that describes it. For the base segment that offset is a field in its directory, and moving a payload is a change to that field — provided the payload stays inside the base segment's own area.
+
+It has to. The reader finds the first appended segment by carrying on from where the base payloads end, and each further one from where the previous segment's payloads end; a payload that reached past a segment header would hide it, and one before its own segment's payload start is a negative offset the format cannot express.
 
 ## Parameters
 

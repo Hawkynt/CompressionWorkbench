@@ -65,7 +65,7 @@ cannot claim something the code does not do.
 | [MSA (Magic Shadow Archiver)](Msa.md) | rebuilding | yes | yes |
 | [NIB (Commodore nibble dump)](Nib.md) | — | no | no |
 | [NILFS v1](Nilfs1.md) | moving (`Nilfs1BlockMover`) | yes | yes |
-| [NILFS2](Nilfs2.md) | rebuilding | yes | yes |
+| [NILFS2](Nilfs2.md) | moving (`Nilfs2BlockMover`) | yes | yes |
 | [NSS (Novell Storage Services)](Nss.md) | rebuilding | no | no |
 | [NTFS](Ntfs.md) | moving (`NtfsBlockMover`) | yes | yes |
 | [NWFS (Novell NetWare 386 Traditional Filesystem)](Nwfs.md) | — | no | no |
