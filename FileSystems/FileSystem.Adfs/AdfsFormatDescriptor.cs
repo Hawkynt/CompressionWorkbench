@@ -21,7 +21,107 @@ namespace FileSystem.Adfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System</c> — Wikipedia overview of the ADFS variants</description></item>
 /// </list>
 /// </summary>
-public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFilesystemExtentMap, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// Largest disc the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass; an ADFS disc is far below
+  /// this, but a truncated or padded image need not be.
+  /// </summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
+
+  // ── IFilesystemExtentMap ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Where an old-map disc keeps its bytes: the free-space map, the root
+  /// directory, and each file's contiguous run of sectors. A new-map disc
+  /// describes nothing here — see <see cref="AdfsExtentMap" />.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => AdfsExtentMap.Enumerate(image);
+
+  // ── IArchiveDefragmentable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Lays the disc out again by moving what is out of place. An old-map file
+  /// is one contiguous run and its directory entry says which sector it starts
+  /// at, so a move is the copy plus three bytes; the free-space map is written
+  /// once from the finished layout.
+  /// </summary>
+  /// <remarks>
+  /// New-map discs fall through to the rebuild the default gives: there a file
+  /// is a fragment identifier resolved through a zone bitmap, and moving one
+  /// means rewriting that map rather than the entry.
+  /// </remarks>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException(
+        $"ADFS can only rebuild a disc packed from the start; got {options.Mode}.");
+
+    RebuildVerb.RebuildInPlace(archive, this, this);
+  }
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new AdfsReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the runs into it, repointing as it goes.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new AdfsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = AdfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = AdfsExtentMap.Enumerate(archive).ToList();
+
+    // Whichever runs moved, the free map is right only once they all have: a
+    // run's old home is routinely another run's new one.
+    mover.SettleFreeMap(archive, postExtents
+      .Where(e => e.Kind != DefragBlockKind.Free)
+      .Select(e => (e.Offset, e.Length)));
+
+    archive.Position = 0;
+    postExtents = AdfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 

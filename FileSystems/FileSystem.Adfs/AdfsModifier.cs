@@ -284,7 +284,7 @@ public static class AdfsModifier {
 
   // ── Directory navigation ─────────────────────────────────────────────
 
-  private static int CountDirectoryEntries(byte[] dir) {
+  internal static int CountDirectoryEntries(byte[] dir) {
     for (var i = 0; i < MaxDirEntries; i++) {
       var off = DirEntriesOffset + i * DirEntrySize;
       if ((dir[off] & 0x7F) == 0) return i;
@@ -393,7 +393,7 @@ public static class AdfsModifier {
         $"ADFS-L modifier expects a {AdfsWriter.DiskSizeL}-byte image (got {s.Length}).");
   }
 
-  private static byte[] ReadSector(Stream s, int sectorIndex) {
+  internal static byte[] ReadSector(Stream s, int sectorIndex) {
     var buf = new byte[SectorSize];
     s.Position = (long)sectorIndex * SectorSize;
     var read = 0;
@@ -405,12 +405,12 @@ public static class AdfsModifier {
     return buf;
   }
 
-  private static void WriteSector(Stream s, int sectorIndex, byte[] data) {
+  internal static void WriteSector(Stream s, int sectorIndex, byte[] data) {
     s.Position = (long)sectorIndex * SectorSize;
     s.Write(data, 0, SectorSize);
   }
 
-  private static byte[] ReadDirectory(Stream s) {
+  internal static byte[] ReadDirectory(Stream s) {
     var buf = new byte[DirectorySize];
     s.Position = RootDirOffset;
     var read = 0;
@@ -422,7 +422,7 @@ public static class AdfsModifier {
     return buf;
   }
 
-  private static void WriteDirectory(Stream s, byte[] dir) {
+  internal static void WriteDirectory(Stream s, byte[] dir) {
     s.Position = RootDirOffset;
     s.Write(dir, 0, DirectorySize);
   }
@@ -434,10 +434,10 @@ public static class AdfsModifier {
 
   // ── 24-bit LE helpers ─────────────────────────────────────────────────
 
-  private static uint ReadUInt24LittleEndian(ReadOnlySpan<byte> src) =>
+  internal static uint ReadUInt24LittleEndian(ReadOnlySpan<byte> src) =>
     (uint)(src[0] | (src[1] << 8) | (src[2] << 16));
 
-  private static void WriteUInt24LittleEndian(Span<byte> dst, uint v) {
+  internal static void WriteUInt24LittleEndian(Span<byte> dst, uint v) {
     dst[0] = (byte)(v & 0xFF);
     dst[1] = (byte)((v >> 8) & 0xFF);
     dst[2] = (byte)((v >> 16) & 0xFF);

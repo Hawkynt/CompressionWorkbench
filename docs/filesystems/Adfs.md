@@ -35,14 +35,21 @@ Acorn ADFS (BBC Micro / Archimedes / RISC OS) filesystem — read + R/W (ADFS-L 
 | wipe free space | no | zero what no file holds |
 | shrink | yes | reduce the volume to what it needs |
 | optimise layout | yes | re-lay the volume at a chosen geometry |
-| report layout | no | say where every byte belongs |
+| report layout | yes | say where every byte belongs |
 | move blocks | no | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `AdfsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -65,6 +72,14 @@ Layout. One 1024-byte sector per block, one map zone, one map bit per sector:
 Bounds. A single zone's bitmap is one sector — 8192 bits, of which 512 are the header and disc record — so a volume holds at most `MaxSectors` sectors (7.5 MB), and every fragment costs at least idlen + 1 sectors. Multi-zone maps, share offsets for small files, and F+ big directories are out of scope.
 
 Cross-checked against the kernel's fs/adfs: adfs_checkdiscrecord, adfs_validate_dr0, adfs_map_layout, lookup_zone, scan_free_map, adfs_calczonecheck and adfs_dir_checkbyte.
+
+### AdfsExtentMap
+
+Describes where an old-map ADFS disc keeps its bytes: the two free-space map sectors, the root directory, and each file's run of sectors.
+
+An old-map ADFS file is one contiguous run. Its directory entry carries the sector it starts at and its length in bytes, which is the whole of what says where it is — so a run can be moved and the entry rewritten.
+
+New-map discs are not described here. There a file is a fragment identifier resolved through a zone bitmap, and neither the fragment's position nor its length is written down anywhere a move could rewrite.
 
 ## Parameters
 

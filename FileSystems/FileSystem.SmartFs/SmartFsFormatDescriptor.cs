@@ -19,7 +19,21 @@ namespace FileSystem.SmartFs;
 /// </list>
 /// </summary>
 public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveDefragmentable {
+    IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
+
+  /// <summary>
+  /// Largest volume the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
+
+  /// <summary>
+  /// Where the volume keeps its bytes: the format sector and the directory
+  /// chain pinned, every sector a file's chain runs through as its own.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => SmartFsExtentMap.Enumerate(image);
+
   public string Id => "SmartFs";
   public string DisplayName => "SmartFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -91,6 +105,24 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the volume out again: a file is
+    // a chain of sectors, and each sector is named by exactly one field — the
+    // directory entry, or the sector before it. So a move is the copy plus two
+    // bytes, and putting a file's sectors in order is what makes it read in one
+    // sweep instead of hopping about the flash.
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new SmartFsReader(stream);
@@ -102,6 +134,55 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
         foreach (var (n, d) in files) w.AddFile(n, d);
         return w.Build();
       });
+  }
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new SmartFsReader(stream);
+    return reader.Entries
+      .Where(e => !e.IsDirectory && !IsSynthetic(e.Name))
+      .Select(reader.Extract)
+      .ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the sectors into it, repointing as it goes.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new SmartFsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = SmartFsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = SmartFsExtentMap.Enumerate(archive).ToList();
+
+    // Whichever sectors moved, what is free is known only once they all have:
+    // a sector's old home is routinely another's new one.
+    mover.SettleFreeSectors(archive, postExtents
+      .Where(e => e.Kind != DefragBlockKind.Free)
+      .Select(e => (e.Offset, e.Length)));
+
+    archive.Position = 0;
+    postExtents = SmartFsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
   /// <summary>

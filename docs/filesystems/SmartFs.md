@@ -32,14 +32,21 @@ SmartFS wear-levelled raw-flash filesystem (Apache NuttX). Reads the format sect
 | wipe free space | no | zero what no file holds |
 | shrink | no | reduce the volume to what it needs |
 | optimise layout | no | re-lay the volume at a chosen geometry |
-| report layout | no | say where every byte belongs |
+| report layout | yes | say where every byte belongs |
 | move blocks | no | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `SmartFsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -58,6 +65,14 @@ Builds a SmartFS volume: a format sector, a root directory, and a sector chain p
 The volume this emits is what a freshly formatted flash looks like before wear levelling has moved anything: logical sector N sits in physical sector N, every sector's sequence number is zero, and the free sectors past the last file are erased. That is the state mksmartfs leaves behind plus the files, so NuttX reads it as an ordinary volume.
 
 Names are limited to `MaxNameLength` characters, which is the directory entry's fixed name field — the format has nowhere to put a longer one.
+
+### SmartFsExtentMap
+
+Describes where a SmartFS volume keeps its bytes, one sector at a time.
+
+A file is a chain of sectors: the directory entry names the first, and each sector's chain header names the one after it. A sector can therefore sit anywhere the volume has room, and moving one means rewriting whichever field named it — the entry, or the previous sector's next field.
+
+The format sector and the root directory stay where they are: the reader starts at logical sector three and works outwards, and the signature is looked for in the first bytes of the volume.
 
 ### SmartFsLayout
 

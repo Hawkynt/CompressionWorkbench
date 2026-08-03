@@ -8,7 +8,7 @@ cannot claim something the code does not do.
 | Filesystem | Defragments by | Wipes | Edits in place |
 |---|---|---|---|
 | [ADF](Adf.md) | moving (`AdfBlockMover`) | yes | yes |
-| [Acorn ADFS](Adfs.md) | rebuilding | no | yes |
+| [Acorn ADFS](Adfs.md) | moving (`AdfsBlockMover`) | no | yes |
 | [AdvFS (Tru64 UNIX)](AdvFs.md) | moving (`AdvFsBlockMover`) | yes | yes |
 | [Amiga Professional FS](AmigaPfs.md) | moving (`AmigaPfsBlockMover`) | yes | yes |
 | [APFS](Apfs.md) | rebuilding | yes | yes |
@@ -84,7 +84,7 @@ cannot claim something the code does not do.
 | [ROMFS](RomFs.md) | moving (`RomFsBlockMover`) | yes | yes |
 | [DEC RT-11 (RX01)](Rt11.md) | moving (`Rt11BlockMover`) | yes | yes |
 | [Amiga SFS](Sfs.md) | rebuilding | no | no |
-| [SmartFS](SmartFs.md) | rebuilding | no | no |
+| [SmartFS](SmartFs.md) | moving (`SmartFsBlockMover`) | no | no |
 | [SquashFS](SquashFs.md) | rebuilding | yes | yes |
 | [UNIX System V FS](SysV.md) | moving (`SysVBlockMover`) | yes | yes |
 | [Transactional FAT (TFAT)](TFat.md) | rebuilding | yes | yes |
