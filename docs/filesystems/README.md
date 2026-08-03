@@ -19,7 +19,7 @@ cannot claim something the code does not do.
 | [BcacheFS](BcacheFs.md) | moving (`BcacheFsBlockMover`) | yes | yes |
 | [BFS](Bfs.md) | moving (`BfsBlockMover`) | yes | yes |
 | [Btrfs Filesystem Image](Btrfs.md) | moving (`BtrfsBlockMover`) | yes | yes |
-| [Coherent FS](Coherent.md) | rebuilding | no | yes |
+| [Coherent FS](Coherent.md) | moving (`CoherentBlockMover`) | no | yes |
 | [CPC DSK](CpcDsk.md) | moving (`CpcDskBlockMover`) | yes | yes |
 | [CP/M 2.2 (8" SSSD)](Cpm.md) | moving (`CpmBlockMover`) | yes | yes |
 | [CramFS](CramFs.md) | moving (`CramFsBlockMover`) | yes | yes |

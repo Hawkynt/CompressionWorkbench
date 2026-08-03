@@ -18,7 +18,89 @@ namespace FileSystem.Coherent;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Coherent_(operating_system)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFilesystemExtentMap {
+
+  /// <summary>
+  /// Largest volume the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
+
+  // ── IFilesystemExtentMap ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Where the volume keeps its bytes: the superblock and the inode table, each
+  /// file's blocks under its name, and the indirect blocks that name them.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => CoherentExtentMap.Enumerate(image);
+
+  // ── IArchiveDefragmentable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Lays the volume out again by moving what is out of place. A block is named
+  /// once — by a zone slot in the inode, or by an entry in an indirect block —
+  /// so a move is the copy plus three bytes.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException(
+        $"Coherent can only rebuild a volume packed from the start; got {options.Mode}.");
+
+    RebuildVerb.RebuildInPlace(archive, this, this);
+  }
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new CoherentReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the blocks into it, repointing as it goes.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new CoherentBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
   public string Id => "Coherent";
   public string DisplayName => "Coherent FS";
   public FormatCategory Category => FormatCategory.Archive;

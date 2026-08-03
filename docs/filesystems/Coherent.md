@@ -31,14 +31,21 @@ Mark Williams Coherent OS filesystem image — true in-place R/W via V7-style in
 | wipe free space | no | zero what no file holds |
 | shrink | yes | reduce the volume to what it needs |
 | optimise layout | no | re-lay the volume at a chosen geometry |
-| report layout | no | say where every byte belongs |
+| report layout | yes | say where every byte belongs |
 | move blocks | no | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `CoherentBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -53,6 +60,20 @@ Reader for Mark Williams Coherent OS file system (1983-1995). Coherent is a comm
 ### CoherentWriter
 
 Builds minimal Mark Williams Coherent OS filesystem images compatible with `CoherentReader`. WORM emission: produces a fresh image; existing content is overwritten. Layout (BlockSize = 512, matches the reader's hard-coded assumptions): `block 0 boot block (zeros) block 1 padding (zeros) block 2.. inode list — 8 inodes per block, root = inode 2. The Coherent superblock structure overlaps the start of the inode list area: the magic 0xFD18 lives at file offset 1528 (= 1024 + 504), which falls into the same 512-byte block as inode 1. Inode 1 is reserved on V7- derived UNIX layouts so the overlap is benign — we never emit a real inode at index 1. block 2+isize data zones (directories then files)` The writer fills in V7-flavoured superblock fields (s_isize, s_fsize, s_nfree/s_free free-block cache, s_ninode/s_inode free-inode cache, s_time, magic 0xFD18) so an external Coherent-aware reader can mount the image (the in-tree reader only checks the magic). Files use direct zone pointers (up to 10 per inode, 5120 bytes with 512-byte blocks). Larger files use one single-indirect zone (extra 512/3 ≈ 170 zones = 87,040 bytes). Larger still falls back to the double-indirect zone slot for up to ~14.5 MB per file. The directory hierarchy is flat: every input is added under the root inode using its leaf filename (Coherent dir entries are 16 bytes total, 14 bytes for the name, so longer names are truncated).
+
+### CoherentExtentMap
+
+Describes where a Coherent volume keeps its bytes: the superblock, the inode table, each file's data blocks, and the indirect blocks that name them.
+
+A file's blocks are named one at a time — ten of them in the inode itself, the rest through one, two or three levels of indirect block, each pointer three bytes in the byte order a PDP-11 wrote. So a block can be moved and the pointer that named it rewritten.
+
+Nothing described this volume before, which is why wiping one zeroed live bytes: a map that claims nothing reads as a volume that is entirely free.
+
+### CoherentLayout
+
+Walks a Coherent volume's inodes and notes every block a file occupies, together with the three bytes that name it.
+
+A zone address is three bytes in the order a PDP-11 wrote them — the high byte first, then the low two little-endian — and a file's length is a 32-bit number stored as two 16-bit halves, high half first. Both are read here the way `CoherentReader` reads them, so what this describes and what that extracts are the same volume.
 
 ## Storage methods
 
