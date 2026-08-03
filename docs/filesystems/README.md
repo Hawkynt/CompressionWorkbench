@@ -103,5 +103,5 @@ cannot claim something the code does not do.
 | [XFS](Xfs.md) | moving (`XfsBlockMover`) | yes | yes |
 | [YAFFS2](Yaffs2.md) | moving (`Yaffs2BlockMover`) | yes | yes |
 | [ZFS](Zfs.md) | moving (`ZfsBlockMover`) | no | yes |
-| [SCL (ZX Spectrum)](ZxScl.md) | rebuilding | yes | yes |
+| [SCL (ZX Spectrum)](ZxScl.md) | moving (`ZxSclBlockMover`) | yes | yes |
 
