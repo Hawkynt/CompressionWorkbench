@@ -124,25 +124,25 @@ public class NssTests {
   }
 
   /// <summary>
-  /// The refusal has to name the reason it is really refused for: not the
-  /// missing writer, which a block-moving pass does not need, but that this
-  /// reader surfaces anchors rather than files and so the pass has no subject.
+  /// A pool this did not write is still refused, and for the reason it is
+  /// really refused for: Novell never published the object tree, so nothing
+  /// here can name a byte of one as belonging to a file. That the container we
+  /// write can be laid out does not change what a real pool is.
   /// </summary>
   [Test, Category("ErrorHandling")]
-  public void Defragment_Throws_BecauseNoByteBelongsToAFile() {
+  public void Defragment_OfAPoolWeDidNotWrite_Throws() {
     var d = new FileSystem.Nss.NssFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
     var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
-    Assert.That(ex!.Message, Does.Contain("nothing to move"));
-    Assert.That(ex.Message, Does.Contain("anchors"));
+    Assert.That(ex!.Message, Does.Contain("no verifiable public spec"));
   }
 
   [Test, Category("ErrorHandling")]
-  public void DefragmentWithOptions_Throws_BecauseNoByteBelongsToAFile() {
+  public void DefragmentWithOptions_OfAPoolWeDidNotWrite_Throws() {
     var d = new FileSystem.Nss.NssFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
     var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms, new DefragOptions()));
-    Assert.That(ex!.Message, Does.Contain("nothing to move"));
+    Assert.That(ex!.Message, Does.Contain("no verifiable public spec"));
   }
 
   [Test, Category("HappyPath")]

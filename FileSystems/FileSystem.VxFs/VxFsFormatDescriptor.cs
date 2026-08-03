@@ -33,21 +33,27 @@ namespace FileSystem.VxFs;
 ///   <item><description>Wikipedia "Veritas File System"</description></item>
 /// </list>
 /// </summary>
-/// <summary>
-/// Why there is nothing here to lay out again.
-/// </summary>
 /// <remarks>
-/// This reads the superblock and the header region around it, and nothing
-/// else. There is no file enumeration and no extraction, so nothing in this
-/// implementation knows where any file's bytes are — which is what a layout
-/// pass would have to be planned against. Writing that reader comes first; the
-/// defragmentation would follow from it.
-public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+/// <para>The walk to the files is implemented in <see cref="VxFsVolume" /> and
+/// the volumes this writes are mounted by the kernel's own <c>freevxfs</c>
+/// driver, so the superblock surface above is no longer all there is: files are
+/// listed, extracted, written and laid out again.</para>
+///
+/// <para>What is written is the plainest shape the driver accepts — one fileset,
+/// direct extents only, a flat root directory. Immediate data, extent trees and
+/// subdirectories are shapes it reads and this does not write.</para>
+/// </remarks>
+public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
+
+  /// <summary>Entries that describe the volume rather than live in it.</summary>
+  private static readonly HashSet<string> SyntheticNames =
+    new(StringComparer.Ordinal) { "FULL.vxfs", "metadata.ini", "superblock.bin" };
   public string Id => "VxFs";
   public string DisplayName => "VxFS (Veritas)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
+    | FormatCapabilities.CanCreate;
   public string DefaultExtension => ".vxfs";
   public IReadOnlyList<string> Extensions => [".vxfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -61,7 +67,7 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "VxFS (Veritas File System) image — header-surface read-only.";
+    "VxFS (Veritas File System) volume — files, and a layout pass over them.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -89,6 +95,15 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (reader.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "superblock.bin", reader.HeaderRaw.LongLength, reader.HeaderRaw.LongLength, "stored", false, false, null));
+
+    // And the files themselves, when the walk to them lands.
+    using (var full = new MemoryStream(image, writable: false)) {
+      var volume = new VxFsVolume(full);
+      if (volume.Valid)
+        foreach (var file in volume.Files)
+          entries.Add(new ArchiveEntryInfo(idx++, file.Name, file.Size, file.Size, "stored", false, false, null));
+    }
+
     return entries;
   }
 
@@ -115,27 +130,114 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(reader), files);
     if (reader.Valid)
       WriteIfMatch(outputDir, "superblock.bin", reader.HeaderRaw, files);
+
+    using var full = new MemoryStream(image, writable: false);
+    var volume = new VxFsVolume(full);
+    if (!volume.Valid) return;
+    foreach (var file in volume.Files)
+      WriteIfMatch(outputDir, file.Name, volume.Read(file), files);
   }
+
+  /// <summary>Writes a volume the Veritas driver mounts, holding the given files.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var writer = new VxFsWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var data = input.InMemoryContent ?? File.ReadAllBytes(input.FullPath);
+      writer.AddFile(input.ArchiveName, data);
+    }
+
+    var image = writer.Build();
+    output.Write(image, 0, image.Length);
+    output.Flush();
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => VxFsExtentMap.Enumerate(image);
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  /// <summary>
-  /// There is nothing here to lay out again, and the reason is not the missing
-  /// writer.
-  /// </summary>
+  /// <summary>Moves the blocks that are out of place and repoints the inodes.</summary>
   /// <remarks>
-  /// A pass that moves blocks needs no writer — it needs to know where a file's
-  /// bytes are, and that is what this reader cannot say. It parses the
-  /// superblock at offset 1024 and nothing beyond it: no inode list, no extent
-  /// descriptors, so what it lists is the volume as a whole plus that
-  /// superblock. Until something can name a byte as belonging to a file, a pass
-  /// has no subject to move.
+  /// <para>A file's blocks are named by direct extents inside its own inode, so
+  /// a move is a copy and a rewritten pair of numbers. Everything the driver
+  /// walks on its way to the files — the superblock, the object location table,
+  /// the raw inode array, the fileset headers, both inode lists and the root
+  /// directory — is off limits, because a volume with a file on top of any of
+  /// them stops being mountable.</para>
+  ///
+  /// <para>The inodes are written back once the pass is over. One run's old
+  /// home is routinely another's new one, and an inode rewritten halfway
+  /// through would describe a layout that no longer holds.</para>
   /// </remarks>
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException(
-      "VxFS defragmentation has nothing to move: this reader parses the superblock and no inode " +
-      "list or extent descriptors, so no byte can be named as belonging to a file.");
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (!archive.CanSeek || archive.Length > PlannerImageCap)
+      throw new NotSupportedException(
+        "VxFS defragmentation needs a seekable volume small enough to verify by reading it back.");
+
+    var planned = false;
+    // The pass is kept only if every file still reads back: a mover can refuse
+    // partway, and leaving the volume as it was is the honest answer when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: ReadPayloadsForGuard,
+      inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+      rebuild: () => planned = false);
+
+    if (!planned)
+      throw new NotSupportedException(
+        "VxFS defragmentation could not lay this volume out in place, and there is no rebuild to " +
+        "fall back on: a file's blocks must stay clear of the structures the driver walks.");
+  }
+
+  /// <summary>Largest volume held in memory twice for the guarded pass.</summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var volume = new VxFsVolume(stream);
+    if (!volume.Valid)
+      throw new InvalidDataException($"VxFS: {volume.Status}.");
+    return volume.Files.Select(volume.Read).ToList();
+  }
+
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    var mover = new VxFsBlockMover();
+    archive.Position = 0;
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = VxFsExtentMap.Enumerate(archive).ToList();
+    if (extents.Count == 0) return;
+
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+    mover.Settle(archive);
+
+    archive.Position = 0;
+    var postExtents = VxFsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
@@ -163,15 +265,22 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-  // 64 KB cap — superblock at offset 1024 fits easily; speculative carver scans
-  // therefore can't pull a multi-GB image into memory.
-  private const int HeaderReadCap = 64 * 1024;
-
+  /// <summary>
+  /// Reads the volume, up to the same ceiling the layout pass works under.
+  /// </summary>
+  /// <remarks>
+  /// This used to stop after 64 KiB, which was enough while the only thing read
+  /// was the superblock at offset 1024. It is not enough now: the files live
+  /// wherever their extents say, and a prefix of a volume lists the ones near
+  /// the front and truncates the rest — including <c>FULL.vxfs</c>, which is
+  /// supposed to be the image itself. The cap remains so a speculative carver
+  /// scan cannot pull an unbounded image into memory.
+  /// </remarks>
   private static byte[] ReadAllBounded(Stream stream) {
     using var ms = new MemoryStream();
-    var buf = new byte[8192];
+    var buf = new byte[64 * 1024];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+    while (ms.Length < PlannerImageCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }

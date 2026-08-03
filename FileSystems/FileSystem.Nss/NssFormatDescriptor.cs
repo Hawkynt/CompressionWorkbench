@@ -34,20 +34,25 @@ namespace FileSystem.Nss;
 ///   <item><description>NetWare 6.5 NSS Storage Management Services documentation</description></item>
 /// </list>
 /// </summary>
-/// <summary>
-/// Why there is nothing here to lay out again.
-/// </summary>
 /// <remarks>
-/// What this surfaces are anchors — the pool, superblock and volume headers at
-/// the offsets they were found — not files. Nothing here decodes the object
-/// store, so nothing knows where a file's bytes are, and there is no layout to
-/// plan against until something does.
-public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+/// <para>What this surfaces of a real pool is still only anchors — the pool,
+/// superblock and volume headers at the offsets they were found. Nothing here
+/// decodes Novell's object store, because nothing public describes it.</para>
+///
+/// <para>What it can do is write a container of its own, carrying those anchors
+/// where a real pool carries them and a flat directory behind them, and lay
+/// that out again. <see cref="NssLayout" /> says what is in it and why. The two
+/// are told apart by a magic behind the pool anchor, so a real pool is detected
+/// exactly as it was and refused for anything that would need to know where a
+/// file's bytes are.</para>
+/// </remarks>
+public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
   public string Id => "Nss";
   public string DisplayName => "NSS (Novell Storage Services)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
+    | FormatCapabilities.CanCreate;
   public string DefaultExtension => ".nss";
   public IReadOnlyList<string> Extensions => [".nss"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -87,6 +92,14 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", r.HeaderRaw.LongLength, r.HeaderRaw.LongLength, "stored", false, false, null));
     foreach (var e in r.Entries)
       entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", false, false, null));
+
+    // And the files themselves, when this is a container we wrote.
+    stream.Position = 0;
+    var volume = new NssVolume(stream);
+    if (volume.Valid)
+      foreach (var file in volume.Files)
+        entries.Add(new ArchiveEntryInfo(idx++, file.Name, file.Size, file.Size, "stored", false, false, null));
+
     return entries;
   }
 
@@ -108,27 +121,113 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         WriteFile(outputDir, e.Name, data);
       }
     }
+
+    stream.Position = 0;
+    var volume = new NssVolume(stream);
+    if (!volume.Valid) return;
+    foreach (var file in volume.Files)
+      WriteIfMatch(outputDir, file.Name, volume.Read(file), files);
   }
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  /// <summary>
-  /// There is nothing here to lay out again, and the reason is not the missing
-  /// writer.
-  /// </summary>
+  /// <summary>Writes a container holding the given files.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var writer = new NssWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      writer.AddFile(input.ArchiveName, input.InMemoryContent ?? File.ReadAllBytes(input.FullPath));
+    }
+
+    var image = writer.Build();
+    output.Write(image, 0, image.Length);
+    output.Flush();
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    return new NssVolume(image).Enumerate().ToList();
+  }
+
+  /// <summary>Moves the files that are out of place and rewrites the directory.</summary>
   /// <remarks>
-  /// A pass that moves blocks needs no writer — it needs to know where a file's
-  /// bytes are, and that is what this reader cannot say. NSS's object tree has
-  /// no verifiable public spec, so <see cref="NssReader" /> locates the pool,
-  /// superblock and volume anchors and stops: what it lists are those three
-  /// anchors, not files. Until something can name a byte as belonging to a
-  /// file, a pass has no subject to move.
+  /// <para>A file's position is one field in the directory, so a move is a copy
+  /// and one number. What a pass cannot do is anything at all to a real NSS
+  /// pool: its object tree has no public spec, nothing here can say which byte
+  /// belongs to which file, and the container magic behind the pool anchor is
+  /// what tells the two apart.</para>
+  ///
+  /// <para>So a pool this did not write is refused, and says why.</para>
   /// </remarks>
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException(
-      "NSS defragmentation has nothing to move: the object tree has no verifiable public spec, so " +
-      "this reader surfaces pool, superblock and volume anchors rather than files.");
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (!archive.CanSeek || archive.Length > PlannerImageCap)
+      throw new NotSupportedException(
+        "NSS defragmentation needs a seekable container small enough to verify by reading it back.");
+
+    var planned = false;
+    // The pass is kept only if every file still reads back: a mover can refuse
+    // partway, and leaving the container as it was is the honest answer then.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: ReadPayloadsForGuard,
+      inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+      rebuild: () => planned = false);
+
+    if (!planned)
+      throw new NotSupportedException(
+        "NSS defragmentation has nothing it can move here: the object tree of a real pool has no " +
+        "verifiable public spec, so no byte of one can be named as belonging to a file.");
+  }
+
+  /// <summary>Largest container held in memory twice for the guarded pass.</summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var volume = new NssVolume(stream);
+    if (!volume.Valid)
+      throw new InvalidDataException($"NSS: {volume.Status}.");
+    return volume.Files.Select(volume.Read).ToList();
+  }
+
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    var mover = new NssBlockMover();
+    archive.Position = 0;
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = new NssVolume(archive).Enumerate().ToList();
+    if (extents.Count == 0) return;
+
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = new NssVolume(archive).Enumerate().ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;

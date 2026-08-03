@@ -4,23 +4,28 @@ using FileSystem.Nss;
 namespace Compression.Tests.Nss;
 
 /// <summary>
-/// WORM-state contract tests for NSS. The descriptor is pinned at R-only with
-/// anchor-detection-only metadata — these tests fail any drive-by upgrade that
-/// adds CanCreate/CanModify before Novell's on-disk format is publicly
-/// documented (it never has been, as far as we know).
+/// What NSS may and may not claim. Writing a container of our own is one thing;
+/// claiming to write, or to edit, a pool NetWare would mount is another, and
+/// these tests fail any drive-by upgrade that starts claiming the second.
 /// </summary>
 [TestFixture]
 public class NssWormTests {
 
+  /// <summary>
+  /// The container this writes is its own, documented as such, and carries the
+  /// anchors so detection is unchanged. What must stay unclaimed is editing a
+  /// pool in place: that would need the object tree Novell never published.
+  /// </summary>
   [Test, Category("HappyPath")]
-  public void Descriptor_StaysReadOnly_NoCanCreate_NoCanModify() {
+  public void Descriptor_WritesItsOwnContainerButNeverEditsAPool() {
     var d = new NssFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
-      "NSS must not advertise IArchiveCreatable — Novell's on-disk format was never " +
-      "publicly documented, so we cannot emit a NetWare-mountable pool. The 'Beast' " +
-      "object record layout, per-volume B-tree node format, and trustee ACL tree " +
-      "encoding are all proprietary. See Description for the deferred scope.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
+      "NSS writes a container of its own, so it says so.");
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
+      "NSS must not advertise IArchiveModifiable: editing a pool in place would need the " +
+      "object record layout, the per-volume B-tree and the trustee ACL tree, none of which " +
+      "Novell ever published.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
   }
 

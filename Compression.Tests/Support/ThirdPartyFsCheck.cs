@@ -89,6 +89,10 @@ internal static class ThirdPartyFsCheck {
     ["Udf"] = new("udf", "", true, null, "", []),
     ["Ufs"] = new("ufs", "ufstype=44bsd", false, null, "", []),
     ["Vdfs"] = new(null, "", false, null, "", []),
+    // The kernel's freevxfs driver is read-only and has no checker, so mounting
+    // and reading the files back is the whole outside opinion — and the one
+    // that matters, since it is the driver a volume has to satisfy.
+    ["VxFs"] = new("vxfs", "", false, null, "", []),
     ["Xenix"] = new("sysv", "", false, null, "", []),
     ["Xfs"] = new("xfs", "", false, "xfs_repair", "-n {0}", [0]),
   };

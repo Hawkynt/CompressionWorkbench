@@ -66,7 +66,7 @@ cannot claim something the code does not do.
 | [NIB (Commodore nibble dump)](Nib.md) | — | no | no |
 | [NILFS v1](Nilfs1.md) | moving (`Nilfs1BlockMover`) | yes | yes |
 | [NILFS2](Nilfs2.md) | moving (`Nilfs2BlockMover`) | yes | yes |
-| [NSS (Novell Storage Services)](Nss.md) | rebuilding | no | no |
+| [NSS (Novell Storage Services)](Nss.md) | moving (`NssBlockMover`) | no | no |
 | [NTFS](Ntfs.md) | moving (`NtfsBlockMover`) | yes | yes |
 | [NWFS (Novell NetWare 386 Traditional Filesystem)](Nwfs.md) | — | no | no |
 | [NWFS386 (Novell NetWare 386 raw)](Nwfs386.md) | — | no | no |
@@ -83,7 +83,7 @@ cannot claim something the code does not do.
 | [ReiserFS](ReiserFs.md) | moving (`ReiserFsBlockMover`) | yes | yes |
 | [ROMFS](RomFs.md) | moving (`RomFsBlockMover`) | yes | yes |
 | [DEC RT-11 (RX01)](Rt11.md) | moving (`Rt11BlockMover`) | yes | yes |
-| [Amiga SFS](Sfs.md) | rebuilding | no | no |
+| [Amiga SFS](Sfs.md) | moving (`SfsBlockMover`) | no | no |
 | [SmartFS](SmartFs.md) | moving (`SmartFsBlockMover`) | no | no |
 | [SquashFS](SquashFs.md) | moving (`SquashFsBlockMover`) | yes | yes |
 | [UNIX System V FS](SysV.md) | moving (`SysVBlockMover`) | yes | yes |
@@ -98,7 +98,7 @@ cannot claim something the code does not do.
 | [UDF](Udf.md) | moving (`UdfBlockMover`) | yes | yes |
 | [UFS](Ufs.md) | moving (`UfsBlockMover`) | yes | yes |
 | [VDFS](Vdfs.md) | moving (`VdfsBlockMover`) | yes | yes |
-| [VxFS (Veritas)](VxFs.md) | rebuilding | no | no |
+| [VxFS (Veritas)](VxFs.md) | moving (`VxFsBlockMover`) | no | no |
 | [Xenix FS](Xenix.md) | moving (`XenixBlockMover`) | yes | yes |
 | [XFS](Xfs.md) | moving (`XfsBlockMover`) | yes | yes |
 | [YAFFS2](Yaffs2.md) | moving (`Yaffs2BlockMover`) | yes | yes |
