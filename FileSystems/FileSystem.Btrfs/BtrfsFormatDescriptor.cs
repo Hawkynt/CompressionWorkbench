@@ -77,15 +77,85 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Image size preserved by writing back through BtrfsWriter.WriteTo into a
   /// MemoryStream sized to the original.
   /// </summary>
+  /// <summary>
+  /// Largest image the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new BtrfsReader(stream, leaveOpen: true);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the extents into it, repointing as it goes.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new BtrfsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // The data chunk is where a file's extents live, and every tree the volume
+    // needs sits in front of it. Packing from the volume's own first writable
+    // byte would put a file on top of them — btrfs check reads that as a tree
+    // block whose bytenr does not match itself.
+    var firstData = extents
+      .Where(e => e.Kind == DefragBlockKind.Used)
+      .Select(e => e.Offset)
+      .DefaultIfEmpty(mover.FirstDataByte)
+      .Min();
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, Math.Max(firstData, mover.FirstDataByte), archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // The extent tree accounts for every allocated address, so it has to be
+    // told where they went — otherwise the next allocation reads a moved
+    // extent's old home as free and writes over live data.
+    mover.SettleExtentTree(archive);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public void Defragment(Stream archive, DefragOptions options) {
-    // Not laid out again by moving. An extent item names a logical address that
-    // the chunk tree maps to a physical one, so moving bytes means rewriting
-    // that mapping rather than a file's own pointer. Three more structures are
-    // keyed on the address that would change: the extent tree's back-references
-    // say who owns it, the checksum tree is keyed by logical address so the
-    // entry itself would have to move, and every node carries a checksum over
-    // itself that would then be stale. That is four trees rewritten together,
-    // which is the rebuild.
+    // Moving what is out of place beats writing the image out again. This
+    // writer keeps logical and physical the same, so a move is the extent
+    // item's disk_bytenr and the checksum over the leaf holding it — a tree
+    // block's checksum covers itself and nothing else, so no chain follows.
+    //
+    // The checksum tree is left empty by the writer, so there are no per-block
+    // data sums keyed by the address that changes. The extent tree's items are
+    // keyed by it, though, so a layout that would put them out of order is
+    // refused by the guard below rather than written down.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
