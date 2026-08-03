@@ -271,6 +271,18 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// block it stops using, so what no live file or directory claims still
   /// holds whatever was written there last.
   /// </summary>
+  /// <summary>
+  /// Why this volume is laid out again by rebuilding rather than by moving.
+  /// </summary>
+  /// <remarks>
+  /// A file's blocks are a skip-list threaded backwards through the blocks
+  /// themselves: each one opens with pointers to the blocks before it, and the
+  /// entry in the metadata pair names only the last. So moving one block means
+  /// rewriting pointer arrays inside other data blocks, and moving the last
+  /// means writing a fresh commit into the metadata pair — which is a log with
+  /// a checksum per commit, not a field that can be patched. Both are possible;
+  /// neither is the single-field rewrite the other formats here need.
+  /// </remarks>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();

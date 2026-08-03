@@ -251,6 +251,8 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+
+
   /// <summary>
   /// Defragments the inner FAT12 filesystem inside an MSA image. The image is
   /// decoded to a flat disk, the FAT layer is defragmented via rebuild (read all
@@ -258,57 +260,58 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// re-encoded to MSA tracks preserving the original geometry.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
     archive.Position = 0;
     var reader = new MsaReader(archive);
     if (reader.Entries.Count == 0) return;
     var flat = reader.Extract(reader.Entries[0]);
-    var geom = (reader.SectorsPerTrack, reader.Sides, reader.StartTrack, reader.EndTrack);
+    var sectorsPerTrack = reader.SectorsPerTrack;
+    var sides = reader.Sides;
 
-    // Read all files from the inner FAT image. An MSA is a wrapper: what is
-    // inside is normally an Atari FAT volume, but nothing makes it so, and a
-    // payload that is not one has no layout this can rearrange. Saying so
-    // beats letting the FAT reader's complaint out as if the wrapper itself
-    // were corrupt.
-    using var fatStream = new MemoryStream(flat, writable: false);
-    FatReader fatReader;
-    try {
-      fatReader = new FatReader(fatStream);
-    } catch (InvalidDataException ex) {
-      throw new NotSupportedException(
-        "MSA: the wrapped image is not a FAT volume, so there is no layout to lay out again — " +
-        ex.Message.Split('\n')[0], ex);
+    // An MSA is a wrapper. What is inside is a volume in its own right, and it
+    // knows how to lay itself out — by moving its clusters, which keeps the
+    // subdirectories, the volume label and the boot sector as they stand. This
+    // used to read every file out through the FAT reader and write a fresh
+    // volume from them, which lost all of that and refused outright on the
+    // GEMDOS volumes this descriptor itself writes.
+    using var inner = new MemoryStream();
+    inner.Write(flat, 0, flat.Length);
+
+    inner.Position = 0;
+    var isGemdos = FileSystem.Gemdos.GemdosExtentMap.Enumerate(inner).Any();
+    inner.Position = 0;
+    if (isGemdos) {
+      new FileSystem.Gemdos.GemdosFormatDescriptor().Defragment(inner, options);
+    } else {
+      try {
+        _ = new FatReader(inner);
+      } catch (InvalidDataException ex) {
+        throw new NotSupportedException(
+          "MSA: the wrapped image is neither a GEMDOS nor a FAT volume, so there is no layout to " +
+          "lay out again — " + ex.Message.Split('\n')[0], ex);
+      }
+
+      inner.Position = 0;
+      new FileSystem.Fat.FatFormatDescriptor().Defragment(inner, options);
     }
 
-    var files = fatReader.Entries
-      .Where(e => !e.IsDirectory)
-      .Select(e => (e.Name, fatReader.Extract(e)))
-      .ToList();
-
-    // Rebuild the FAT image (FatWriter always start-packs = defragmented).
-    IReadOnlyList<(string Name, byte[] Data)> ordered = options.Mode switch {
-      DefragMode.ConsolidateAtEnd => files.OrderByDescending(f => f.Item2.Length).ToList(),
-      _ => files,
-    };
-
-    var fw = new FatWriter();
-    foreach (var (name, data) in ordered) fw.AddFile(name, data);
-    var totalSectors = flat.Length / 512;
-    var rebuilt = fw.Build(totalSectors: totalSectors);
-    if (rebuilt.Length != flat.Length) {
+    // The wrapper describes a disc of a fixed geometry, so whatever the inner
+    // pass did the flat image has to come back the same length.
+    var rearranged = inner.ToArray();
+    if (rearranged.Length != flat.Length) {
       var sized = new byte[flat.Length];
-      Array.Copy(rebuilt, sized, Math.Min(rebuilt.Length, sized.Length));
-      rebuilt = sized;
+      Array.Copy(rearranged, sized, Math.Min(rearranged.Length, sized.Length));
+      rearranged = sized;
     }
 
-    // Re-encode to MSA.
-    using var ms = new MemoryStream();
-    MsaWriter.Write(ms, rebuilt, geom.SectorsPerTrack, geom.Sides);
-    var msaBytes = ms.ToArray();
+    using var encoded = new MemoryStream();
+    MsaWriter.Write(encoded, rearranged, sectorsPerTrack, sides);
+    var bytes = encoded.ToArray();
     archive.Position = 0;
-    archive.Write(msaBytes, 0, msaBytes.Length);
-    archive.SetLength(msaBytes.Length);
+    archive.Write(bytes, 0, bytes.Length);
+    archive.SetLength(bytes.Length);
   }
 
   // ── IFilesystemExtentMap ─────────────────────────────────────────────

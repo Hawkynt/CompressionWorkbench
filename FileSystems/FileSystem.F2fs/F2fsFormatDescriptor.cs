@@ -229,6 +229,15 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
+    // Not laid out again by moving. Repointing a data block is easy enough —
+    // its address sits in the inode's pointer array, or in one of the node
+    // blocks the inode reaches — but the volume records where its blocks are
+    // three more times over: the segment information table counts what is valid
+    // in each segment, the summary area maps every block back to the node that
+    // owns it, and the checkpoint carries a checksum over the lot. A move that
+    // leaves those behind is a volume fsck calls corrupt, and restating them is
+    // a different piece of work from repointing a file.
+    //
     // Buffering the rebuilt image would cap the volume at what a byte[] can
     // hold, so the packing modes stream: each entry is spilled to scratch and
     // the writer pulls it back while laying out the segments.
