@@ -37,8 +37,15 @@ F2FS flash-friendly filesystem image (R/W via log-structured append; full NAT/SI
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `F2fsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -61,6 +68,12 @@ The main area holds, in order, the populated regions sized to their actual block
 Small directories use inline dentries (F2FS_INLINE_DENTRY) embedded in the inode at i_addr[1] (offset 364). Larger directories spill into regular 4 KiB dentry data blocks organised by the kernel's multi-level hash-bucket scheme (see PlanHashBucketDentries): a name lands in bucket hash % dir_buckets(level) at the lowest level whose target bucket has room, so fsck.f2fs's f2fs_check_dirent_position agrees with where each name is stored.
 
 SIT entries (written for every main segment) encode the valid-block count (low 10 bits) and the segment type (high 6 bits); the SSA footer entry_type classifies each segment as node or data. fsck cross-checks all of these against the reachable inode/dentry tree.
+
+### F2fsLayout
+
+Finds, for every data block of every file, the four bytes that name it.
+
+A block's address lives in the inode's own array of them, or in a direct node one, two or three levels below it. The reader walks that to read a file; this walks it to write one down — which is what a move needs and reading never does.
 
 ## Parameters
 

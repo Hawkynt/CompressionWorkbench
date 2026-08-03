@@ -225,18 +225,87 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// contiguous-from-start multi-segment image (SIT/NAT journals, checkpoint
   /// pack, inline-dentry root).
   /// </summary>
+  /// <summary>
+  /// Largest volume the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new F2fsReader(stream, leaveOpen: true);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans a layout inside the data region and moves the blocks into it.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new F2fsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    var data = extents.Where(e => e.Kind == DefragBlockKind.Used).ToList();
+    if (data.Count == 0) return;
+
+    mover.FindDataRegion(archive, data.Select(e => e.Offset));
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // The plan is bounded by the region rather than the volume: a segment
+    // carries one type for everything in it.
+    var within = extents
+      .Where(e => e.Offset >= mover.FirstDataByte && e.Offset + e.Length <= mover.DataRegionEnd)
+      .ToList();
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      within, mover.FirstDataByte, mover.DataRegionEnd, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      mover.DataRegionEnd, reinitAfterMove: null);
+
+    // The segment table and the summary area are keyed by where a block sits,
+    // so both move with it.
+    mover.SettleSegmentTables(archive);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
-    // Not laid out again by moving. Repointing a data block is easy enough —
-    // its address sits in the inode's pointer array, or in one of the node
-    // blocks the inode reaches — but the volume records where its blocks are
-    // three more times over: the segment information table counts what is valid
-    // in each segment, the summary area maps every block back to the node that
-    // owns it, and the checkpoint carries a checksum over the lot. A move that
-    // leaves those behind is a volume fsck calls corrupt, and restating them is
-    // a different piece of work from repointing a file.
+    // Moving what is out of place beats writing the volume out again. A block's
+    // address is one field, and the two structures that record the same fact —
+    // the segment information table's bitmaps and counts, and the summary area
+    // that maps a block back to its owner — are brought along after the pass.
+    //
+    // A segment carries one type for everything in it, so a pass stays inside
+    // the region already given over to file data; moving a data block into a
+    // segment meant for nodes is what fsck would refuse.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     //
     // Buffering the rebuilt image would cap the volume at what a byte[] can
     // hold, so the packing modes stream: each entry is spilled to scratch and

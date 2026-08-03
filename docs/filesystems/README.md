@@ -36,7 +36,7 @@ cannot claim something the code does not do.
 | [exFAT](ExFat.md) | moving (`ExFatBlockMover`) | yes | yes |
 | [ext2/3/4](Ext.md) | moving (`ExtBlockMover`) | yes | yes |
 | [ext1](Ext1.md) | moving (`Ext1BlockMover`) | yes | yes |
-| [F2FS](F2fs.md) | rebuilding | yes | yes |
+| [F2FS](F2fs.md) | moving (`F2fsBlockMover`) | yes | yes |
 | [FAT Filesystem Image](Fat.md) | moving (`FatBlockMover`) | yes | yes |
 | [FAT+ Filesystem Image (large-file extension)](FatPlus.md) | rebuilding | yes | yes |
 | [FATX (Xbox)](Fatx.md) | moving (`FatxBlockMover`) | yes | yes |
