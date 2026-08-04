@@ -75,8 +75,8 @@ public class ApfsSymlinkTests {
     // ── APSB (block 3) ──
     var apsb = image.AsSpan((int)(ApsbBlock * BlockSize));
     BinaryPrimitives.WriteUInt32LittleEndian(apsb[32..], 0x42535041);    // "APSB"
-    BinaryPrimitives.WriteUInt64LittleEndian(apsb[392..], VolOmapObj);   // apfs_omap_oid (phys)
-    BinaryPrimitives.WriteUInt64LittleEndian(apsb[400..], RootTreeVirtOid); // apfs_root_tree_oid (virt)
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[0x80..], VolOmapObj);      // apfs_omap_oid (phys)
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[0x88..], RootTreeVirtOid); // apfs_root_tree_oid (virt)
 
     // ── volume OMAP object (block 4) → its btree root ──
     WriteOmapObject(image, VolOmapObj, treeBlock: VolOmapTree);
@@ -169,11 +169,12 @@ public class ApfsSymlinkTests {
   }
 
   private static byte[] DrecKey(ulong parent, string name) {
+    // A volume that folds no names keeps the length alone in the key header.
     var nameBytes = Encoding.UTF8.GetBytes(name + "\0");
-    var k = new byte[12 + nameBytes.Length];
+    var k = new byte[10 + nameBytes.Length];
     BinaryPrimitives.WriteUInt64LittleEndian(k, parent | (9UL << 60)); // APFS_TYPE_DIR_REC
-    BinaryPrimitives.WriteUInt32LittleEndian(k.AsSpan(8), (uint)nameBytes.Length & 0x3FF);
-    nameBytes.CopyTo(k, 12);
+    BinaryPrimitives.WriteUInt16LittleEndian(k.AsSpan(8), (ushort)nameBytes.Length);
+    nameBytes.CopyTo(k, 10);
     return k;
   }
 

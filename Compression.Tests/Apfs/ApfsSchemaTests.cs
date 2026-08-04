@@ -32,10 +32,10 @@ public class ApfsSchemaTests {
     desc.Create(ms, [ArchiveInputInfo.InMemory("data.txt", payload)], opts);
     var image = ms.ToArray();
 
-    // APSB volume superblock is block 5 (4 KiB blocks); apfs_volname at +968.
+    // APSB volume superblock is block 5 (4 KiB blocks); apfs_volname at +0x2C0.
     const int apsbBlock = 5;
     const int blockSize = 4096;
-    var volnameSpan = image.AsSpan(apsbBlock * blockSize + 968, 256);
+    var volnameSpan = image.AsSpan(apsbBlock * blockSize + 0x2C0, 256);
     var nul = volnameSpan.IndexOf((byte)0);
     var volname = Encoding.UTF8.GetString(volnameSpan[..(nul < 0 ? 256 : nul)]);
     Assert.That(volname, Is.EqualTo("MyVolume"), "non-default volume label must reach apfs_volname.");
