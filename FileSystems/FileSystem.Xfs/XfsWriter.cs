@@ -1347,9 +1347,13 @@ public sealed class XfsWriter {
     BinaryPrimitives.WriteUInt32BigEndian(log[4..], cycle);             // h_cycle
     BinaryPrimitives.WriteUInt32BigEndian(log[8..], 2);                 // h_version = 2 (LOGV2)
     BinaryPrimitives.WriteUInt32BigEndian(log[12..], 512);              // h_len = 1 BBSIZE
-    // h_tail_lsn points at the block AFTER the unmount record (= the next
-    // block that will be written), indicating "tail has caught up with head"
-    // which xfs_repair interprets as a cleanly unmounted log.
+    // h_tail_lsn points at the block AFTER the unmount record, which xfs_repair
+    // reads as a cleanly unmounted log.
+    //
+    // mkfs.xfs writes (cycle, 0) here — tail equal to the record's own LSN —
+    // and copying that was tried and reverted: xfs_repair then calls the log
+    // dirty and says to mount and replay it. Whatever makes the kernel accept
+    // this log as clean, it is not this field alone.
     var tailLsn = ((ulong)cycle << 32) | 2;
     BinaryPrimitives.WriteUInt64BigEndian(log[16..], lsn);              // h_lsn = (cycle, 0)
     BinaryPrimitives.WriteUInt64BigEndian(log[24..], tailLsn);          // h_tail_lsn = (cycle, 2)
