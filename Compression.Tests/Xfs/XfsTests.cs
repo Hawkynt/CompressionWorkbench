@@ -258,10 +258,13 @@ public class XfsTests {
 
     // xfs_repair requires the root-inode chunk to sit at the agbno computed from
     // XFS_PREALLOC_BLOCKS, which for our 4 KiB/256 B geometry is agbno 72. That
-    // puts rootino at inode number 72×16 = 1152 and the dinode at byte offset
-    // 72 × 4096 = 294 912. Slots 1 and 2 are sb_rbmino / sb_rsumino; user
+    // puts rootino at inode number 8×16 = 128 and the dinode at byte offset
+    // 8 × 4096 = 32 768. Slots 1 and 2 are sb_rbmino / sb_rsumino; user
     // files occupy slots 3+.
-    const int inodeChunkBlock = 72;
+    // The inode chunk sits right past the allocation group's four header
+    // blocks. It used to be at 72 because the log came first; the log lives in
+    // group 1 now, and xfs_repair expects the chunk at 8 accordingly.
+    const int inodeChunkBlock = 8;
     const int blockSize = 4096;
     const int inodeSize = 256;
     const int diCrcOffset = 100;
