@@ -359,12 +359,16 @@ public sealed class XfsWriter {
 
     // Reserve 64 blocks (256 KiB) for an internal log.
     //
-    // The kernel will not mount this: it wants at least 845 blocks, and says
-    // so. Raising the count clears that check and then runs into two more —
-    // the log is not marked clean, so a read-only mount is refused for want of
-    // somewhere to recover into, and moving the log moves the root inode to an
-    // offset xfs_repair calls unaligned. Volumes this writes are therefore
-    // verified with xfs_repair, which passes, and not by mounting.
+    // The kernel will not mount this: it wants at least 845 blocks. Raising
+    // the count to 1024 was tried and reverted, because it only moves the
+    // problem twice over. The log is not marked clean afterwards, so a plain
+    // read-only mount is refused for want of somewhere to recover into —
+    // adding "norecovery" does mount such a volume and lists every file — and
+    // xfs_repair then computes the expected first-inode block from the log's
+    // size, so the inode chunk has to move behind the log rather than sit at
+    // the fixed block below. That is a reordering of the whole allocation
+    // group, not a larger constant. Volumes this writes are therefore verified
+    // with xfs_repair, which passes, and not by mounting.
     const int LogBlocks = 64;
     var logStartAgBno = nextBlock;
     nextBlock += LogBlocks;
