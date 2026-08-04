@@ -4,19 +4,28 @@ using Compression.Registry;
 namespace Compression.Core.Dictionary.Ctw;
 
 /// <summary>
-/// Exposes Context Tree Weighting (CTW) as a benchmarkable building block.
+/// Exposes a most-frequent-symbol context predictor as a benchmarkable building block.
 /// Uses a byte-level context model with depth 2 (previous 2 bytes).
-/// For each byte, it predicts using a context hierarchy (order 2, 1, 0, -1).
+/// For each byte, it predicts the most frequently observed byte in a context hierarchy
+/// (order 2, then 1, then 0) and records a hit/miss bitmap plus literal miss bytes.
 /// Header: 4-byte LE original size, 1-byte max depth, then bit-packed hit/miss flags
 /// followed by miss literal bytes.
 /// </summary>
+/// <remarks>
+/// Despite the historical "CTW" name, this is <b>not</b> the Context Tree Weighting
+/// method of Willems, Shtarkov &amp; Tjalkens: it has no Krichevsky-Trofimov estimator,
+/// no binary context tree and no recursive weighting between a node's own estimate and
+/// its children — it is a simple order-2/1/0 most-frequent-symbol predictor with a
+/// hit/miss flag stream. See <see cref="Entropy.ContextMixing.Ctw.ContextTreeWeightingBuildingBlock"/>
+/// ("BB_ContextTreeWeighting") for a genuine implementation of the CTW method.
+/// </remarks>
 public sealed class CtwBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string Id => "BB_CTW";
   /// <inheritdoc/>
-  public string DisplayName => "CTW";
+  public string DisplayName => "Context Predictor (order-2/1/0)";
   /// <inheritdoc/>
-  public string Description => "Context Tree Weighting, optimal universal compression";
+  public string Description => "Most-frequent-symbol predictor over an order-2/1/0 byte context hierarchy with a hit/miss bitmap; not the Context Tree Weighting (CTW) method despite the legacy block name";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 

@@ -186,6 +186,7 @@ or canonical specification.
 | `BB_Bwt` | [BWT](https://en.wikipedia.org/wiki/Burrows%E2%80%93Wheeler_transform) | Transform | R/W | Burrows-Wheeler Transform, reorders bytes for better compression | [Burrows & Wheeler 1994](https://www.hpl.hp.com/techreports/Compaq-DEC/SRC-RR-124.pdf) |
 | `BB_Mtf` | [MTF](https://en.wikipedia.org/wiki/Move-to-front_transform) | Transform | R/W | Move-to-Front Transform | [Bentley et al. 1986](https://dl.acm.org/doi/10.1145/6138.6151) |
 | `BB_Delta` | [Delta](https://en.wikipedia.org/wiki/Delta_encoding) | Transform | R/W | Delta filter, stores differences between consecutive bytes | — |
+| `BB_DeltaRle` | [Delta](https://en.wikipedia.org/wiki/Delta_encoding) | Transform | R/W | Delta filter followed by run-length encoding of the delta stream; unlike `BB_Delta`, this compresses repetitive data | — |
 | `BB_Rle` | [RLE](https://en.wikipedia.org/wiki/Run-length_encoding) | Transform | R/W | Run-Length Encoding | — |
 | `BB_Dpcm` | [DPCM](https://en.wikipedia.org/wiki/Differential_pulse-code_modulation) | Transform | R/W | Differential PCM, sample-to-sample differences | — |
 
