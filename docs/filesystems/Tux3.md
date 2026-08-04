@@ -37,14 +37,17 @@ TUX3 version-tree research filesystem (linux-tux3) — single-version WORM image
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `Tux3BlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
-
-### Tux3FormatDescriptor
-
-Read+WORM descriptor for TUX3 — Daniel Phillips's version-tree successor to TUX2 (linux-tux3 prototype). Magic "TUX3SUPR" sits at file offset 4096 (the start of the superblock block). The WORM writer emits a single-version image (no version chain, no atomic-commit log) — the documented superblock prefix plus a sentinel "TUX3WORM" file table at block 2 that `Tux3Reader` walks. Full itable/otable/atable B-tree traversal of real linux-tux3 prototype dumps is out of scope. References:
 
 ### Tux3Reader
 
@@ -74,7 +77,6 @@ Round-trips through `Tux3Reader`. Real linux-tux3 prototype dumps that use the i
 
 ## Further reading
 
-- https://github.com/OGAWAHirofumi/linux-tux3 — the linux-tux3 prototype tree — canonical source
-- https://en.wikipedia.org/wiki/Tux3 — Wikipedia article
-- Daniel Phillips's Tux3 design postings (LKML / tux3 mailing list)
+The implementation cites no sources. Adding a `<list type="bullet">` of them
+to the descriptor's doc comment will bring them through to here.
 

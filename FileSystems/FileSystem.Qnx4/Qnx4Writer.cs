@@ -43,12 +43,14 @@ public sealed class Qnx4Writer {
   private const int RootDirBlocks = 4;
   private const int MaxShortName = 16;
 
-  // Reserved layout (LBA):
+  // Reserved layout (LBA). Block 1 is the superblock — four inode entries
+  // describing the volume — so the root directory cannot live there.
   private const uint BootBlock = 0;
-  private const uint RootDirStart = 1;          // blocks 1..4
-  private const uint BitmapBlock = 5;
-  private const uint InodesBlock = 6;
-  private const uint FirstDataBlock = 7;
+  private const uint SuperBlock = Qnx4Layout.SuperBlock;   // 1
+  private const uint RootDirStart = 2;          // blocks 2..5
+  private const uint BitmapBlock = 6;
+  private const uint InodesBlock = 7;
+  private const uint FirstDataBlock = 8;
 
   // QNX4 inode status flags (from linux/fs/qnx4/qnx4.h).
   private const byte FileUsed = 0x01;
@@ -106,7 +108,9 @@ public sealed class Qnx4Writer {
     // Cap: each root-cluster block holds 8 inodes; subtract entry 0 (root
     // self-reference) and 2 system files. Across 4 blocks: 32 - 3 = 29 user
     // files. WORM scope: more than 29 files needs subdirs which we don't emit.
-    const int maxFiles = (InodesPerBlock * RootDirBlocks) - 3;
+    // The root directory holds .bitmap and .inodes as well as the user files;
+    // the driver refuses to mount a volume whose root has no .bitmap in it.
+    const int maxFiles = (InodesPerBlock * RootDirBlocks) - 2;
     if (this._files.Count > maxFiles)
       throw new InvalidOperationException(
         $"QNX4 WORM scope: max {maxFiles} files in flat root (got {this._files.Count}). " +
@@ -132,47 +136,54 @@ public sealed class Qnx4Writer {
     // === Block 0: boot block — zeroed (no QNX4 boot magic; harmless). ===
     // The Linux driver does not validate the boot block.
 
-    // === Blocks 1-4: root directory cluster (32 inodes) ===
-    // Entry 0: root inode "/"  — points to itself (the root dir cluster)
+    // === Block 1: the superblock — four inode entries, not a directory ===
+    // The first of them describes the root directory, and it is the one the
+    // driver reads as the root inode.
+    var rootEntries = 2 + this._files.Count;      // .bitmap, .inodes, then files
+    WriteInode(
+      image, SuperBlock, entryIndex: 0,
+      name: "/", size: (uint)(InodeSize * rootEntries),
+      firstExtentBlock: Qnx4Layout.ExtentValueFor(RootDirStart), extentBlockCount: RootDirBlocks,
+      mode: (ushort)(SIfdir | PermDir), status: FileUsed);
+    WriteInode(
+      image, SuperBlock, entryIndex: 1,
+      name: Qnx4Layout.InodesName, size: BlockSize,
+      firstExtentBlock: Qnx4Layout.ExtentValueFor(InodesBlock), extentBlockCount: 1,
+      mode: (ushort)(SIfreg | PermFile), status: FileUsed);
+    WriteInode(
+      image, SuperBlock, entryIndex: 2,
+      name: ".boot", size: 0,
+      firstExtentBlock: 0, extentBlockCount: 0,
+      mode: (ushort)(SIfreg | PermFile), status: 0);
+    WriteInode(
+      image, SuperBlock, entryIndex: 3,
+      name: ".altboot", size: 0,
+      firstExtentBlock: 0, extentBlockCount: 0,
+      mode: (ushort)(SIfreg | PermFile), status: 0);
+
+    // === Blocks 2..5: the root directory itself ===
+    // .bitmap comes first because the driver scans the root for it and will
+    // not mount a volume that has none.
     WriteInode(
       image, RootDirStart, entryIndex: 0,
-      name: "/", size: (uint)(InodeSize * (3 + this._files.Count)), // dir size = entries × 64
-      firstExtentBlock: RootDirStart, extentBlockCount: RootDirBlocks,
-      mode: (ushort)(SIfdir | PermDir),
-      status: (byte)(FileUsed | FileLink) // 0x09 — matches historical QNX4 root entries
-    );
-
-    // Entry 1: .bitmap — system file holding the block allocation bitmap
+      name: Qnx4Layout.BitmapName, size: BlockSize,
+      firstExtentBlock: Qnx4Layout.ExtentValueFor(BitmapBlock), extentBlockCount: 1,
+      mode: (ushort)(SIfreg | PermFile), status: FileUsed);
     WriteInode(
       image, RootDirStart, entryIndex: 1,
-      name: ".bitmap", size: BlockSize,
-      firstExtentBlock: BitmapBlock, extentBlockCount: 1,
-      mode: (ushort)(SIfreg | PermFile),
-      status: FileUsed
-    );
+      name: Qnx4Layout.InodesName, size: BlockSize,
+      firstExtentBlock: Qnx4Layout.ExtentValueFor(InodesBlock), extentBlockCount: 1,
+      mode: (ushort)(SIfreg | PermFile), status: FileUsed);
 
-    // Entry 2: .inodes — overflow inode storage (kept empty by this writer)
-    WriteInode(
-      image, RootDirStart, entryIndex: 2,
-      name: ".inodes", size: BlockSize,
-      firstExtentBlock: InodesBlock, extentBlockCount: 1,
-      mode: (ushort)(SIfreg | PermFile),
-      status: FileUsed
-    );
-
-    // Entries 3..N: user files
     var dataWrites = new List<(long Offset, FileEntry Entry)>();
     for (var i = 0; i < this._files.Count; i++) {
       var entry = this._files[i];
-      var name = entry.Name;
       var (startBlk, blkCount) = fileExtents[i];
       WriteInode(
-        image, RootDirStart, entryIndex: 3 + i,
-        name: name, size: (uint)Math.Min(entry.Size, uint.MaxValue),
-        firstExtentBlock: startBlk, extentBlockCount: blkCount,
-        mode: (ushort)(SIfreg | PermFile),
-        status: FileUsed
-      );
+        image, RootDirStart, entryIndex: 2 + i,
+        name: entry.Name, size: (uint)Math.Min(entry.Size, uint.MaxValue),
+        firstExtentBlock: Qnx4Layout.ExtentValueFor(startBlk), extentBlockCount: blkCount,
+        mode: (ushort)(SIfreg | PermFile), status: FileUsed);
       dataWrites.Add(((long)startBlk * BlockSize, entry));
     }
 
@@ -231,25 +242,18 @@ public sealed class Qnx4Writer {
     var nameLen = Math.Min(nameBytes.Length, MaxShortName);
     image.Write(offset, nameBytes.AsSpan(0, nameLen));
 
-    // di_size (offset 0x10, 4 bytes LE)
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x10, 4), size);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + Qnx4Layout.InSize, 4), size);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      image.At(offset + Qnx4Layout.InExtentBlock, 4), firstExtentBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      image.At(offset + Qnx4Layout.InExtentSize, 4), extentBlockCount);
 
-    // di_first_xtnt: xtnt_blk (0x14) + xtnt_size (0x18), each u32 LE
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x14, 4), firstExtentBlock);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x18, 4), extentBlockCount);
-
-    // di_num_xtnts (0x1C, u32 LE) — 0 = first extent only
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(offset + 0x1C, 4), 0u);
-
-    // di_mode (0x20, u16 LE)
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(offset + 0x20, 2), mode);
-
-    // di_uid (0x22) / di_gid (0x24) — leave as 0
-    // di_ftime (0x26) / di_mtime (0x2A) / di_atime (0x2E) / di_ctime (0x32) — leave as 0
-    // di_zero (0x36..0x3B) — already zero
-    // di_type (0x3C) — leave 0
-    // di_status (0x3D) — required
-    image[offset + 0x3D] = status;
+    // di_num_xtnts counts the extents the file has, and one is one — not zero.
+    BinaryPrimitives.WriteUInt16LittleEndian(
+      image.At(offset + Qnx4Layout.InNumExtents, 2), extentBlockCount == 0 ? (ushort)0 : (ushort)1);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(offset + Qnx4Layout.InMode, 2), mode);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(offset + Qnx4Layout.InNlink, 2), 1);
+    image[offset + Qnx4Layout.InStatus] = status;
   }
 
   /// <summary>Marks the on-disk bitmap (block 5) so blocks 0..(used-1) are flagged
@@ -265,7 +269,8 @@ public sealed class Qnx4Writer {
 
     // Boot
     MarkBit(image, bitmapOffset, BootBlock);
-    // Root dir cluster
+    // Superblock and root dir cluster
+    MarkBit(image, bitmapOffset, SuperBlock);
     for (var b = 0u; b < RootDirBlocks; b++) MarkBit(image, bitmapOffset, RootDirStart + b);
     // System files
     MarkBit(image, bitmapOffset, BitmapBlock);

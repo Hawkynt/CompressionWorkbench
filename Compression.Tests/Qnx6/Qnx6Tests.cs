@@ -20,15 +20,24 @@ public class Qnx6Tests {
   private const uint RootDirBlock = 17;    // 0x4400
   private const uint FileBlock = 18;       // 0x4800
 
+  /// <summary>
+  /// A minimal volume built by hand. The block numbers stored in the
+  /// superblock and the inodes are the filesystem's own — counted from past
+  /// the boot and superblock areas — while the bytes themselves are placed at
+  /// the matching image offsets. Storing image block numbers instead, as this
+  /// once did, describes a volume whose files sit twelve blocks from where it
+  /// says they do.
+  /// </summary>
   private static byte[] BuildMinimalQnx6() {
     var image = new byte[32 * BlockSize];
+    var before = (uint)((0x2000 + 0x1000) / BlockSize);
 
     // Superblock at 0x2000
     var sb = 0x2000;
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 0, 4), 0x68191122);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 0x30, 4), (uint)BlockSize);
     // Inode-table root node first block ptr at sb+0x48+8
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 0x48 + 8, 4), InodeTableBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 0x48 + 8, 4), InodeTableBlock - before);
 
     // Inode 1 (root dir) at inode_table_offset + 0*128 = 0x4000
     var itOff = (int)(InodeTableBlock * BlockSize);
@@ -37,14 +46,14 @@ public class Qnx6Tests {
     BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(ino1 + 0x00, 8), 32);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ino1 + 0x20, 2), 0x41ED); // S_IFDIR
     // First direct block = RootDirBlock
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ino1 + 0x24, 4), RootDirBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ino1 + 0x24, 4), RootDirBlock - before);
 
     // Inode 2 (file) at itOff + 128
     var content = "QNX6 says hi\n"u8.ToArray();
     var ino2 = itOff + 1 * 128;
     BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(ino2 + 0x00, 8), (ulong)content.Length);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(ino2 + 0x20, 2), 0x81A4); // S_IFREG
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ino2 + 0x24, 4), FileBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(ino2 + 0x24, 4), FileBlock - before);
 
     // Root directory entries at RootDirBlock
     var rd = (int)(RootDirBlock * BlockSize);

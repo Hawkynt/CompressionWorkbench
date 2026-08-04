@@ -37,8 +37,15 @@ ZFS pool image — single-vdev, single-dataset, flat root directory (WORM writer
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `ZfsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -46,13 +53,13 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 Descriptor for ZFS pool images — four 256 KB vdev labels (NVList + uberblock ring) around the pool data area; WORM pool writer + reader round-trip. References:
 
-Why this pool is laid out again by rebuilding rather than by moving, and what is actually in the way.
+How this pool is laid out again by moving.
 
-A block is named by a device address inside a block pointer, and the block pointer carries a Fletcher-4 over what it points at. Moving bytes leaves that check good — the bytes do not change — but breaks every one above it: the pointer sits in an indirect block whose own check sits in the pointer above, up to the uberblock. That is the same shape HAMMER2 turned out to have, and HAMMER2 moves in place.
+A block is named by a device address inside a block pointer, and the block pointer carries a Fletcher-4 over what it points at. Moving bytes leaves that check good — the bytes do not change — and breaks every one above it: the pointer sits in an indirect block whose own check sits in the pointer above, up to the uberblock. So the addresses are written as the pass goes and the checks are taken again from the bottom up once it is over.
 
-The space maps are not the obstacle they were first written down as. This writer sets metaslab_array to zero, so a pool it produces has none, and nothing but the pointers records where a block is.
+The space maps are not an obstacle here. This writer sets metaslab_array to zero, so a pool it produces has none, and nothing but the pointers records where a block is.
 
-What is left is the length of the chain. Reaching a file's data means the uberblock, the meta object set, a dnode array, the dataset's own object set, another dnode array, and then the file's indirect blocks — and a mover has to know the byte offset of every pointer along that path, which nothing here records today. It is the largest of the walks, not a different kind of problem.
+What made this the longest of the walks is the path itself: the uberblock, the meta object set, a dnode array, the dataset's own object set, another dnode array, and then the file's indirect blocks. Every pointer along it is written down once, which is what `ZfsLayout` is for.
 
 ### ZfsReader
 
@@ -63,6 +70,14 @@ Reads a ZFS pool image produced by `ZfsWriter` (and compatible minimal spec-alig
 Writes a minimum-viable WORM ZFS pool image — single-vdev, single-dataset, flat root directory, Fletcher-4 checksums, no compression/encryption/snapshots. Validates round-trip through `ZfsReader`.
 
 Image layout: 0 .. 256 KB L0 vdev label 256K .. 512K L1 vdev label 512K .. (end - 512K) Data area (MOS, DSL, ZAP, file data) end-512K .. end-256K L2 vdev label end-256K .. end L3 vdev label
+
+### ZfsLayout
+
+Walks a pool the way `ZfsReader` does, but writes down where it has been: the byte offset of every block pointer on the path to a file's data, and of every block those pointers name.
+
+A block pointer carries a Fletcher-4 over what it points at, so moving a block leaves its own check good and every check above it stale. Putting that right means knowing the path — which the reader traverses but never records, because reading only ever needs the block in front of it.
+
+The path is long: the uberblock, the meta object set, a dnode array, the dataset's own object set, another dnode array, and then the file's indirect blocks. Each step is written down here once, and the checks are taken again from the bottom up after a layout pass.
 
 ## Parameters
 

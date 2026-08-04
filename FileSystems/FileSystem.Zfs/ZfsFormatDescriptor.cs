@@ -18,27 +18,25 @@ namespace FileSystem.Zfs;
 /// </list>
 /// </summary>
 /// <summary>
-/// Why this pool is laid out again by rebuilding rather than by moving, and
-/// what is actually in the way.
+/// How this pool is laid out again by moving.
 /// </summary>
 /// <remarks>
 /// <para>A block is named by a device address inside a block pointer, and the
 /// block pointer carries a Fletcher-4 over what it points at. Moving bytes
-/// leaves that check good — the bytes do not change — but breaks every one
+/// leaves that check good — the bytes do not change — and breaks every one
 /// above it: the pointer sits in an indirect block whose own check sits in the
-/// pointer above, up to the uberblock. That is the same shape HAMMER2 turned
-/// out to have, and HAMMER2 moves in place.</para>
+/// pointer above, up to the uberblock. So the addresses are written as the pass
+/// goes and the checks are taken again from the bottom up once it is over.</para>
 ///
-/// <para>The space maps are not the obstacle they were first written down as.
-/// This writer sets <c>metaslab_array</c> to zero, so a pool it produces has
-/// none, and nothing but the pointers records where a block is.</para>
+/// <para>The space maps are not an obstacle here. This writer sets
+/// <c>metaslab_array</c> to zero, so a pool it produces has none, and nothing
+/// but the pointers records where a block is.</para>
 ///
-/// <para>What is left is the length of the chain. Reaching a file's data means
-/// the uberblock, the meta object set, a dnode array, the dataset's own object
-/// set, another dnode array, and then the file's indirect blocks — and a mover
-/// has to know the byte offset of every pointer along that path, which nothing
-/// here records today. It is the largest of the walks, not a different kind of
-/// problem.</para>
+/// <para>What made this the longest of the walks is the path itself: the
+/// uberblock, the meta object set, a dnode array, the dataset's own object set,
+/// another dnode array, and then the file's indirect blocks. Every pointer
+/// along it is written down once, which is what <see cref="ZfsLayout" /> is
+/// for.</para>
 /// </remarks>
 public sealed class ZfsFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
@@ -166,7 +164,95 @@ public sealed class ZfsFormatDescriptor :
   /// Image size is preserved from the original archive length so labels
   /// land at the expected start/end positions.
   /// </summary>
+  /// <summary>
+  /// Largest pool the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 512L * 1024 * 1024;
+
+  /// <summary>
+  /// Where the pool keeps its bytes: the four labels, the object sets, dnode
+  /// arrays and indirect blocks as structure, and each file's data under its
+  /// name.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+
+    ZfsLayout.Layout? layout;
+    try {
+      layout = ZfsLayout.Read(image);
+    } catch {
+      // A pool we cannot walk claims nothing; wiping it would zero live data.
+      yield break;
+    }
+
+    if (layout == null) yield break;
+
+    foreach (var (offset, length) in layout.Structure.Distinct().OrderBy(s => s.Offset))
+      yield return new DefragBlockInfo(offset, length, DefragBlockKind.MetadataReserved,
+        "ZFS pool structure");
+
+    foreach (var block in layout.DataBlocks.OrderBy(b => b.Offset))
+      yield return new DefragBlockInfo(block.Offset, block.Length, DefragBlockKind.Used, block.Owner);
+  }
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new ZfsReader(stream, leaveOpen: true);
+    return reader.Entries.Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the blocks into it, settling the checks after.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new ZfsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // A pointer's check covers the block it names, and that block holds the
+    // pointers below it, so nothing can be settled until everything has moved.
+    mover.SettleChecksums(archive);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public void Defragment(Stream archive, DefragOptions options) {
+    // Moving what is out of place beats writing the pool out again: a block
+    // pointer holds the address, and the checks above it are taken again once
+    // every block has landed.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // ZFS labels live at fixed start + end positions, so keep the original
     // footprint. Capture it before the rebuild rewrites the archive.
     var originalSize = archive.Length;

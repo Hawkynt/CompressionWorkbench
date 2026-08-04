@@ -80,12 +80,21 @@ public class Tux3Tests {
     Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Tux3.Tux3Reader(ms));
   }
 
-  [Test, Category("Sad")]
-  public void Defragment_UnsupportedMode_Throws() {
+  /// <summary>
+  /// Carving a hole used to be refused outright, because the rebuild always
+  /// packed from the front. The pass moves whole records now, so a container
+  /// with no records in it has nothing to refuse.
+  /// </summary>
+  [Test]
+  public void Defragment_CarveHole_OnAMinimalContainer_DoesNothing() {
     var d = new FileSystem.Tux3.Tux3FormatDescriptor();
-    using var ms = new MemoryStream(BuildMinimalImage());
-    Assert.Throws<NotSupportedException>(
-      () => d.Defragment(ms, new DefragOptions { Mode = DefragMode.CarveHole }));
+    var minimal = BuildMinimalImage();
+    using var ms = new MemoryStream(minimal.Length);
+    ms.Write(minimal, 0, minimal.Length);
+
+    ms.Position = 0;
+    Assert.DoesNotThrow(() => d.Defragment(ms, new DefragOptions { Mode = DefragMode.CarveHole }));
+    Assert.That(ms.ToArray(), Is.EqualTo(minimal), "a container with no records comes back unchanged");
   }
 
   [Test, Category("HappyPath")]

@@ -59,6 +59,36 @@ public sealed class BtrfsBlockMover : IFilesystemBlockMover {
   /// <c>sys_chunk_array</c> for the boot chunk map. Subsequent moves walk the
   /// rest of the chunk tree through a <see cref="SectorCache"/> on demand.
   /// </summary>
+  /// <summary>A sector, which is what an extent's address is aligned to.</summary>
+  public int BlockSize => this._sectorSize > 0 ? this._sectorSize : 4096;
+
+  /// <summary>
+  /// First byte a file's extent may occupy: past the superblock and the trees
+  /// the writer lays down in front of the data chunk.
+  /// </summary>
+  public long FirstDataByte => this._firstDataByte;
+
+  /// <summary>
+  /// Each call repoints the item naming the extent it is given and leaves the
+  /// leaf's other items alone, so a file in several extents is several calls.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
+  /// <summary>
+  /// An extent may be held outside the image while the rest of the layout
+  /// moves, which is what lets a full image be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
+  /// <summary>Where the data chunk begins, which is as low as an extent may go.</summary>
+  private long _firstDataByte = SbOffset + SbSize;
+
+  /// <summary>Every address that changed, and what it changed to.</summary>
+  private readonly Dictionary<long, long> _moved = [];
+
+  /// <summary>Bytes an extent's address is aligned to, as the superblock says.</summary>
+  private int _sectorSize = 4096;
+
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     Span<byte> sb = stackalloc byte[SbSize];
@@ -72,9 +102,16 @@ public sealed class BtrfsBlockMover : IFilesystemBlockMover {
     _chunkTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(sb[0x58..]);
     _nodeSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(sb[0x94..]);
     if (_nodeSize is 0 or > 65536) _nodeSize = 16384;
+    this._sectorSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(sb[0x90..]);
+    if (this._sectorSize is 0 or > 65536) this._sectorSize = 4096;
     var sysChunkArraySize = (int)BinaryPrimitives.ReadUInt32LittleEndian(sb[0xA0..]);
     _bootChunkMap.Clear();
     ParseSysChunkArraySpan(sb[0x32B..], sysChunkArraySize, _bootChunkMap);
+
+    // The chunks the boot map names are the volume's own; a file's extent
+    // starts past the last of them.
+    foreach (var (logical, _, length) in this._bootChunkMap)
+      this._firstDataByte = Math.Max(this._firstDataByte, logical + length);
   }
 
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
@@ -113,6 +150,7 @@ public sealed class BtrfsBlockMover : IFilesystemBlockMover {
   /// </remarks>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     if (_nodeSize <= 0) Init(image);
+    if (oldOffset != newOffset) this._moved[oldOffset] = newOffset;
 
     using var cache = new SectorCache(image);
 
@@ -311,6 +349,116 @@ public sealed class BtrfsBlockMover : IFilesystemBlockMover {
         }
       }
     }
+  }
+
+  /// <summary>
+  /// Brings the extent tree along with the extents it accounts for.
+  /// </summary>
+  /// <remarks>
+  /// Its items are keyed by the address of what they describe, so an extent
+  /// that moved leaves an item naming an address nothing occupies — and the
+  /// next allocation reads that as free and writes over live data. The keys are
+  /// rewritten here and checked to be in order afterwards, because a leaf whose
+  /// items are out of order is a leaf nothing can search.
+  /// </remarks>
+  public void SettleExtentTree(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (this._moved.Count == 0) return;
+    if (this._nodeSize <= 0) this.Init(image);
+
+    using var cache = new SectorCache(image);
+    var chunkMap = new List<(long, long, long)>(this._bootChunkMap);
+    var chunkTreePhys = LogicalToPhysical(chunkMap, this._chunkTreeLogical, cache.Length, this._nodeSize);
+    if (chunkTreePhys >= 0) WalkChunkTreeNodeStream(cache, chunkTreePhys, chunkMap);
+
+    var rootTreePhys = LogicalToPhysical(chunkMap, this._rootTreeLogical, cache.Length, this._nodeSize);
+    if (rootTreePhys < 0) return;
+
+    var extentTreeLogical = FindTreeRootStream(cache, rootTreePhys, chunkMap, ExtentTreeObjectId);
+    if (extentTreeLogical < 0) return;
+
+    var extentTreePhys = LogicalToPhysical(chunkMap, extentTreeLogical, cache.Length, this._nodeSize);
+    if (extentTreePhys < 0 || extentTreePhys + this._nodeSize > image.Length) return;
+
+    var leaf = new byte[this._nodeSize];
+    image.Position = extentTreePhys;
+    image.ReadExactly(leaf);
+    if (leaf[100] != 0) return;                       // only a single leaf is described
+
+    var count = BinaryPrimitives.ReadUInt32LittleEndian(leaf.AsSpan(96));
+    var changed = false;
+    for (var i = 0u; i < count && i < 4096; ++i) {
+      var itemOff = 101 + (int)i * 25;
+      if (itemOff + 25 > leaf.Length) break;
+      if (leaf[itemOff + 8] != ExtentItemType) continue;
+
+      var key = BinaryPrimitives.ReadInt64LittleEndian(leaf.AsSpan(itemOff));
+      if (!this._moved.TryGetValue(key, out var moved)) continue;
+
+      BinaryPrimitives.WriteInt64LittleEndian(leaf.AsSpan(itemOff), moved);
+      changed = true;
+    }
+
+    if (!changed) return;
+
+    long previous = long.MinValue;
+    for (var i = 0u; i < count && i < 4096; ++i) {
+      var itemOff = 101 + (int)i * 25;
+      if (itemOff + 25 > leaf.Length) break;
+
+      var key = BinaryPrimitives.ReadInt64LittleEndian(leaf.AsSpan(itemOff));
+      if (key < previous)
+        throw new NotSupportedException(
+          "Btrfs: the layout would leave the extent tree's items out of order, and a leaf that " +
+          "is not in order is one nothing can search.");
+      previous = key;
+    }
+
+    RecomputeBlockChecksum(leaf, 0, this._nodeSize);
+    image.Position = extentTreePhys;
+    image.Write(leaf, 0, this._nodeSize);
+    image.Flush();
+  }
+
+  /// <summary>The extent tree, which accounts for every allocated address.</summary>
+  private const long ExtentTreeObjectId = 2;
+
+  private const byte ExtentItemType = 168;
+
+  /// <summary>Finds the root of the tree with this object id, as the root tree names it.</summary>
+  private long FindTreeRootStream(SectorCache cache, long phys,
+      List<(long, long, long)> chunkMap, long objectId) {
+    if (phys < 0 || phys + this._nodeSize > cache.Length) return -1;
+
+    var node = ReadNode(cache, phys);
+    var count = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(96));
+    if (node[100] > 0) {
+      for (var i = 0u; i < count && i < 1000; ++i) {
+        var itemOff = 101 + (int)i * 33;
+        if (itemOff + 33 > node.Length) break;
+
+        var child = BinaryPrimitives.ReadInt64LittleEndian(node.AsSpan(itemOff + 17));
+        var result = FindTreeRootStream(cache,
+          LogicalToPhysical(chunkMap, child, cache.Length, this._nodeSize), chunkMap, objectId);
+        if (result >= 0) return result;
+      }
+
+      return -1;
+    }
+
+    for (var i = 0u; i < count && i < 1000; ++i) {
+      var itemOff = 101 + (int)i * 25;
+      if (itemOff + 25 > node.Length) break;
+      if (BinaryPrimitives.ReadInt64LittleEndian(node.AsSpan(itemOff)) != objectId) continue;
+      if (node[itemOff + 8] != RootItem) continue;
+
+      var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(itemOff + 17));
+      var dataPos = 101 + (int)dataOffset;
+      if (dataPos + 184 <= node.Length)
+        return BinaryPrimitives.ReadInt64LittleEndian(node.AsSpan(dataPos + 176));
+    }
+
+    return -1;
   }
 
   private long FindFsTreeRootStream(SectorCache cache, long phys,

@@ -38,8 +38,15 @@ LittleFS embedded-flash FS — metadata-pair walk + CTZ/inline file extraction.
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `LittleFsBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
@@ -58,6 +65,14 @@ This is a focused decoder for the subset emitted by `LittleFsWriter` — a singl
 From-scratch (write-once) builder for a minimal but specification-accurate littlefs v2 image. Produces a root metadata pair carrying the superblock and the root directory entries, one metadata pair per subdirectory (linked via hard-tail tags), inline structs for small files, and CTZ skip-lists for files that do not fit inline. The result round-trips through `LittleFsReader`.
 
 Layout strategy: blocks 0 and 1 form the root metadata pair (both blocks carry the same commit so either half validates). Subdirectory metadata pairs and file data blocks are allocated from a monotonically increasing block cursor. The image is sized to hold every allocated block exactly; there is no wear-levelling reserve because the image is immutable.
+
+### LittleFsLayout
+
+Finds, for every file, the blocks it is made of and the two places its position is written down.
+
+A file's blocks are a skip-list threaded backwards through the blocks themselves: block i opens with pointers to i-1, i-2, i-4 and so on, as many as the trailing zeros of i allow. So the pointers to a block live inside other blocks of the same file — nothing outside names it except the head.
+
+The head is the last block, and it is named by a tag inside a metadata pair, which is a log of commits with a checksum over each. Changing it means rewriting that commit's checksum as well.
 
 ## Parameters
 

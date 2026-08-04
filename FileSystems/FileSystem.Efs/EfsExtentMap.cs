@@ -31,11 +31,16 @@ internal static class EfsExtentMap {
     var sb = EfsSuperblock.TryParse(bytes);
     if (!sb.Valid) return result;
 
-    // Sector 0 = superblock; sector 1..firstcg-1 = inode table.
-    result.Add(new DefragBlockInfo(0, EfsWriter.BasicBlock, DefragBlockKind.MetadataReserved, "superblock"));
-    var inodeTableLen = (sb.FirstCg - EfsWriter.InodeTableOffset) * EfsWriter.BasicBlock;
+    // Block 0 is the SGI volume header and block 1 the superblock; the
+    // cylinder group starts at fs_firstcg with its inode table, which is
+    // fs_cgisize blocks long. Measuring that table as "everything before the
+    // first data block" gave nothing at all once the two coincided, and a wipe
+    // then took the inodes with it.
+    result.Add(new DefragBlockInfo(0, EfsWriter.InodeTableOffset * EfsWriter.BasicBlock,
+      DefragBlockKind.MetadataReserved, "volume header and superblock"));
+    var inodeTableLen = sb.CgIsize * EfsWriter.BasicBlock;
     if (inodeTableLen > 0)
-      result.Add(new DefragBlockInfo(EfsWriter.InodeTableOffset * EfsWriter.BasicBlock, inodeTableLen,
+      result.Add(new DefragBlockInfo((long)sb.FirstCg * EfsWriter.BasicBlock, inodeTableLen,
         DefragBlockKind.MetadataReserved, "inode_table"));
 
     // Walk every inode; each non-zero extent becomes Used (named by file path
@@ -46,7 +51,7 @@ internal static class EfsExtentMap {
       image.Position = 0;
       var reader = new EfsReader(image);
       // Root directory body extent: walk inode 2 directly so we don't lose it.
-      var rootBlock = sb.FirstCg; // first data block after the inode table
+      var rootBlock = sb.FirstCg + sb.CgIsize; // the first block after the inode table
       if (rootBlock > 0 && rootBlock * EfsWriter.BasicBlock < image.Length)
         result.Add(new DefragBlockInfo(rootBlock * EfsWriter.BasicBlock, EfsWriter.BasicBlock,
           DefragBlockKind.MetadataReserved, "root_dir"));

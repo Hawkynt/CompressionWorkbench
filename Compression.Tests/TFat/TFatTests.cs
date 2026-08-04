@@ -49,8 +49,9 @@ public class TFatTests {
     // For FAT12/16 BS_FilSysType lives at offset 54, 8 bytes.
     var tag = Encoding.ASCII.GetString(img, 54, 8);
     Assert.That(tag, Is.EqualTo("TFAT12  "));
-    // BS_Reserved1 marker at offset 37.
-    Assert.That(img[37], Is.EqualTo(0x01));
+    // And nothing in BS_Reserved1 at offset 37: that byte is where FAT records
+    // an unclean unmount, so a marker there makes the volume read as damaged.
+    Assert.That(img[37], Is.EqualTo(0x00));
     // BPB_NumFATs must be 2.
     Assert.That(img[16], Is.EqualTo(2));
   }

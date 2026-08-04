@@ -73,6 +73,14 @@ We use `0x01` for plain user files (16-byte short names) and `0x09` (USED|LINK) 
 
 Spec source: linux/fs/qnx4/{qnx4.h,inode.c,dir.c,namei.c}.
 
+### Qnx4Layout
+
+Where the fields of a QNX4 inode entry actually are, and how its block numbers are counted.
+
+These follow linux/qnx4_fs.h. The offsets used here before were not that struct: the mode was read out of the first timestamp and the status byte two bytes early, so a volume this wrote was self-consistent and read by nothing else. Three things follow from the real layout and each one is a reason the driver refused a volume.
+
+First, block 1 is not the root directory: it is the superblock, and the superblock is four inode entries — the root directory, the inode overflow file, and two boot slots. Second, an extent's block number counts from one, so the block it names is one lower on disk. Third, the root directory has to contain an entry called .bitmap, which the driver looks for before it will mount anything.
+
 ## Storage methods
 
 - `stored` — Stored

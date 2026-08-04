@@ -19,6 +19,21 @@ namespace FileSystem.Tux2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tux3</c> — Wikipedia article covering the phase-tree lineage</description></item>
 /// </list>
 /// </summary>
+/// <summary>
+/// Why there is nothing here to lay out again.
+/// </summary>
+/// <remarks>
+/// <para>The records run end to end from the header: a name length, the name, a
+/// data length, the data, then the next one. The reader walks that by adding
+/// each record's length to a cursor, so a gap anywhere makes everything after
+/// it unreadable — the only layout this format can express is packed from the
+/// front.</para>
+///
+/// <para>Which is the layout it is always already in. Removing a file writes
+/// the container out compacted rather than leaving a hole, so there is never
+/// space between records to close up. A pass over one of these would find
+/// nothing to move on every volume it was ever handed.</para>
+/// </remarks>
 public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── Synthetic, non-file entries the reader always surfaces ──────────────
@@ -97,9 +112,77 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// multi-gigabyte volume never has to fit in memory — the previous refusal
   /// was for want of wiring it up, not for want of a writer.
   /// </summary>
+  /// <summary>
+  /// Largest container the in-place pass is offered for. Its guard holds a copy
+  /// of the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new Tux2Reader(stream);
+    return reader.Entries
+      .Where(e => !SyntheticNames.Contains(e.Name))
+      .Select(reader.Extract)
+      .ToList();
+  }
+
+  /// <summary>Plans a record-level layout and moves the records into it.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Tux2BlockMover();
+
+    archive.Position = 0;
+    var extents = Tux2RecordMap.Enumerate(archive).ToList();
+    if (extents.Count == 0) return;
+
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = Tux2RecordMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the container out again, and
+    // on one of ours the answer is usually that nothing is: removing a file
+    // writes the records out packed, so there is no gap to close. What this is
+    // for is a container that arrived from somewhere else.
+    //
+    // The unit that moves is the whole record — a file's bytes sit behind the
+    // header naming them at an offset nothing records — and the walk only
+    // reaches a record still in order with nothing before it, which is what
+    // reading every payload back afterwards checks.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
     // Every consolidate mode lands on the same layout here: the writer emits a
     // fresh volume packed from the first data block, and has no way to place
     // files against the tail. Carving a hole is the one request it cannot meet.

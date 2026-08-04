@@ -90,12 +90,22 @@ public class Tux2Tests {
     Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Tux2.Tux2Reader(ms));
   }
 
-  [Test, Category("Sad")]
-  public void Defragment_UnsupportedMode_Throws() {
+  /// <summary>
+  /// Carving a hole used to be refused outright, because the rebuild always
+  /// packed from the front. The pass moves whole records now, so a container
+  /// with no records in it has nothing to refuse: there is nothing to move and
+  /// nothing to carve around.
+  /// </summary>
+  [Test]
+  public void Defragment_CarveHole_OnAnEmptyContainer_DoesNothing() {
     var d = new FileSystem.Tux2.Tux2FormatDescriptor();
-    using var ms = new MemoryStream(BuildSyntheticImage([]));
-    Assert.Throws<NotSupportedException>(
-      () => d.Defragment(ms, new DefragOptions { Mode = DefragMode.CarveHole }));
+    var empty = BuildSyntheticImage([]);
+    using var ms = new MemoryStream(empty.Length);
+    ms.Write(empty, 0, empty.Length);
+
+    ms.Position = 0;
+    Assert.DoesNotThrow(() => d.Defragment(ms, new DefragOptions { Mode = DefragMode.CarveHole }));
+    Assert.That(ms.ToArray(), Is.EqualTo(empty), "an empty container comes back byte for byte");
   }
 
   [Test, Category("HappyPath")]

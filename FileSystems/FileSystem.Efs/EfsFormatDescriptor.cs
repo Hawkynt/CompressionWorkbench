@@ -22,7 +22,7 @@ namespace FileSystem.Efs;
 /// <remarks>
 /// <para><b>Reference</b>: Linux kernel <c>fs/efs/efs_fs_sb.h</c>, IRIX
 /// <c>sys/fs/efs_fs.h</c>. Superblock at offset 0 (sector 0, 512-byte sectors).
-/// Magic <c>0x00072959</c> (big-endian u32) at byte offset 0x18 inside the
+/// Magic <c>0x00072959</c> (big-endian u32) at byte offset 0x1C inside the
 /// superblock (<c>fs_magic</c>).</para>
 /// <para><b>Hierarchy</b>: real — directories nest via the writer's directory
 /// inode chain (single-block directories; bodies use inode + nlen + name
@@ -44,8 +44,11 @@ public sealed class EfsFormatDescriptor :
   public IReadOnlyList<string> Extensions => [".efs", ".efsimg"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // fs_magic = 0x00072959 (BE u32) at byte offset 0x18 of the superblock at sector 0.
-    new([0x00, 0x07, 0x29, 0x59], Offset: 0x18, Confidence: 0.85),
+    // fs_magic sits at 0x1C of the superblock, and the superblock is at block
+    // 1 — block 0 is the SGI volume header. Both positions are listed because
+    // this project wrote the older, wrong one for a while.
+    new([0x00, 0x07, 0x29, 0x59], Offset: 0x21C, Confidence: 0.85),
+    new([0x00, 0x07, 0x29, 0x59], Offset: 0x18, Confidence: 0.60),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;

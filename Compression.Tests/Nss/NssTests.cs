@@ -123,20 +123,26 @@ public class NssTests {
     Assert.That(names, Does.Not.Contain("volume_header.bin"));
   }
 
+  /// <summary>
+  /// A pool this did not write is still refused, and for the reason it is
+  /// really refused for: Novell never published the object tree, so nothing
+  /// here can name a byte of one as belonging to a file. That the container we
+  /// write can be laid out does not change what a real pool is.
+  /// </summary>
   [Test, Category("ErrorHandling")]
-  public void Defragment_Throws_NotSupported() {
+  public void Defragment_OfAPoolWeDidNotWrite_Throws() {
     var d = new FileSystem.Nss.NssFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
     var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
-    Assert.That(ex!.Message, Does.Contain("read-only"));
+    Assert.That(ex!.Message, Does.Contain("no verifiable public spec"));
   }
 
   [Test, Category("ErrorHandling")]
-  public void DefragmentWithOptions_Throws_NotSupported() {
+  public void DefragmentWithOptions_OfAPoolWeDidNotWrite_Throws() {
     var d = new FileSystem.Nss.NssFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
     var ex = Assert.Throws<NotSupportedException>(() => d.Defragment(ms, new DefragOptions()));
-    Assert.That(ex!.Message, Does.Contain("read-only"));
+    Assert.That(ex!.Message, Does.Contain("no verifiable public spec"));
   }
 
   [Test, Category("HappyPath")]

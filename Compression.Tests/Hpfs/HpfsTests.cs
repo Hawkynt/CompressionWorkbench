@@ -37,16 +37,18 @@ public class HpfsTests {
     var rootFnode = (int)RootFnodeLba * LbaSize;
     Buffer.BlockCopy(HpfsReader.FnodeMagic, 0, img, rootFnode, HpfsReader.FnodeMagic.Length);
     // AllocSec header at 0xC0: height=0 (direct list). Leave 0.
-    // First direct-allocation entry at 0xC4: [4:logicalSec][4:length][4:physicalLba].
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(rootFnode + 0xC4 + 0), 0u);             // logicalSec
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(rootFnode + 0xC4 + 4), 4u);             // length (4 LBAs = 2 KiB)
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(rootFnode + 0xC4 + 8), RootDirLba);     // physicalLba
+    // The allocation runs start at 0x40, right after the b-plus header at 0x38:
+    // [4:logicalSec][4:length][4:physicalLba]. 0xC4 is inside the user-id field.
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(rootFnode + 0x40 + 0), 0u);             // logicalSec
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(rootFnode + 0x40 + 4), 4u);             // length (4 LBAs = 2 KiB)
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(rootFnode + 0x40 + 8), RootDirLba);     // physicalLba
 
     // --- Root directory block at LBA 32 ---
     var dirOff = (int)RootDirLba * LbaSize;
     Buffer.BlockCopy(HpfsReader.DirBlockMagic, 0, img, dirOff, HpfsReader.DirBlockMagic.Length);
 
-    // First dirent at offset 0x14.
+    // A directory block records where its entries stop; a walk that trusts it
+    // — as a driver does — sees nothing at all when it says zero.
     var direntOff = dirOff + 0x14;
     var nameBytes = Encoding.Latin1.GetBytes(fileName);
     var recLen = (ushort)(32 + nameBytes.Length);  // header 32 + name
@@ -54,7 +56,8 @@ public class HpfsTests {
     if ((recLen & 3) != 0) recLen = (ushort)((recLen + 3) & ~3);
 
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(direntOff + 0), recLen);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(direntOff + 2), 0);  // flags: regular file
+    img[direntOff + 2] = 0;   // structural flags: neither first nor last, no down-pointer
+    img[direntOff + 3] = 0;   // DOS attributes: a regular file
     BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(direntOff + 4), FileFnodeLba);
     BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(direntOff + 12), (uint)payload.Length);
     img[direntOff + 30] = (byte)nameBytes.Length;
@@ -62,17 +65,20 @@ public class HpfsTests {
 
     // End-of-block sentinel dirent immediately after.
     var endOff = direntOff + recLen;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(endOff + 0), 32);     // min length
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(endOff + 2), 0x0001); // "special" flag
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(endOff + 0), 32);
+    img[endOff + 2] = 0x08;   // "last" — the flag that ends the block
+    img[endOff + 30] = 1;
+    img[endOff + 31] = 0xFF;
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(dirOff + 4), (uint)(endOff + 32 - dirOff));
 
     // --- File fnode at LBA 40 ---
     var fileFnode = (int)FileFnodeLba * LbaSize;
     Buffer.BlockCopy(HpfsReader.FnodeMagic, 0, img, fileFnode, HpfsReader.FnodeMagic.Length);
     // AllocSec header height=0 (direct list).
     // First direct-allocation entry: points at file's data LBA.
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(fileFnode + 0xC4 + 0), 0u);
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(fileFnode + 0xC4 + 4), 1u);
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(fileFnode + 0xC4 + 8), FileDataLba);
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(fileFnode + 0x40 + 0), 0u);
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(fileFnode + 0x40 + 4), 1u);
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(fileFnode + 0x40 + 8), FileDataLba);
 
     // --- File data at LBA 48 ---
     var dataOff = (int)FileDataLba * LbaSize;

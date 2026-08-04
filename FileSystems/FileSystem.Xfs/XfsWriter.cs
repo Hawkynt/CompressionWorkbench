@@ -67,13 +67,13 @@ public sealed class XfsWriter {
   private const int BnobtBlock = 1;
   private const int CntbtBlock = 2;
   private const int InobtBlock = 3;
-  // xfs_repair (xfsprogs 6.6) calculates the expected first-inode agbno from
-  // geometry as `XFS_PREALLOC_BLOCKS(mp) + AGFL_PREALLOCATION`. For a 2048-block
-  // AG with 4 KiB blocks and 256-byte inodes, this comes out to agbno 72 (1152
-  // relative to AG0). Placing the root inode chunk elsewhere triggers "sb root
-  // inode value X inconsistent with calculated value 1152" and the subsequent
-  // "root inode chunk not found" fatal error in phase 2.
-  private const int InodeChunkBlock = 72;
+  // xfs_repair calculates the expected first-inode agbno from geometry, and
+  // that calculation counts whatever precedes the chunk in the group. With the
+  // log moved out to group 1 the expectation is agbno 8 — the first block past
+  // the group's four header blocks — where it used to be 72 with a log in
+  // front. Placing the chunk anywhere else earns "sb root inode value X valid
+  // but in unaligned location" in phase 1.
+  private const int InodeChunkBlock = 8;
   private const int InodeChunkEndBlock = InodeChunkBlock + InodeChunkBlocks; // 76
 
   // Inode numbering in AG 0: rootino = (agbno << InoPbLog) = 72 << 4 = 1152.
@@ -357,11 +357,18 @@ public sealed class XfsWriter {
       nextBlock += node.BlockCount;
     }
 
-    // Reserve 64 blocks (256 KiB) for an internal log.
-    const int LogBlocks = 64;
-    var logStartAgBno = nextBlock;
-    nextBlock += LogBlocks;
-    var logStartFsBno = (ulong)logStartAgBno;
+    // The internal log lives in allocation group 1, not group 0.
+    //
+    // A driver refuses anything under 845 blocks, so it is a round 1024 (4 MiB
+    // here). Putting that in group 0 would be the obvious move and is the wrong
+    // one: xfs_repair derives the expected first-inode block from where the log
+    // ends, so a log in front of the inode chunk drags the chunk along with it
+    // — "sb root inode value 1152 valid but in unaligned location". Group 1 is
+    // otherwise empty, so the log fits there and group 0 keeps the fixed
+    // geometry the checker expects.
+    const int LogBlocks = 1024;
+    const int LogAgBno = InodeChunkBlock;   // past group 1's own headers
+    var logStartAgBno = LogAgBno;
 
     // The prefix ends here: every byte before this point is metadata the writer
     // assembles in memory.
@@ -405,7 +412,8 @@ public sealed class XfsWriter {
     var freeLenAg0 = agBlocks - freeStartAg0;
     // Free-extent bookkeeping (AG 1+): no inode chunk, no files — the region
     // past the per-AG metadata header is entirely free.
-    var freeStartAgN = InodeChunkBlock;  // no inode chunk in AG 1+
+    // Group 1 holds the log, so its free space starts behind it.
+    var freeStartAgN = LogAgBno + LogBlocks;
     var freeLenAgN = (int)(lastAgBlocks - freeStartAgN);
 
     var freeInodeSlots = totalInodeSlots - usedInodeSlots;
@@ -414,14 +422,17 @@ public sealed class XfsWriter {
     // AG 0's header is the head of the prefix; AG 1's sits a whole AG away, so it
     // is assembled separately and parked at its offset when the volume is written.
     const int AgHeaderBlocks = InobtBlock + 1;
-    this._ag1Header = new byte[AgHeaderBlocks * BlockSize];
+    // Group 1's buffer reaches past its headers to cover the log, so the one
+    // copy parked at the group's offset carries both.
+    _ = AgHeaderBlocks;
+    this._ag1Header = new byte[(LogAgBno + LogBlocks) * BlockSize];
     for (var ag = 0; ag < AgCount; ag++) {
       var agImage = ag == 0 ? image : this._ag1Header;
       var agByteOffset = 0;
 
       WriteSuperblock(agImage.AsSpan(agByteOffset),
         totalBlocks: (ulong)totalBlocks,
-        logStart: logStartFsBno,
+        logStart: ((ulong)1 << agBlkLog) | (ulong)LogAgBno,
         logBlocks: LogBlocks,
         icount: (ulong)(ag == 0 ? totalInodeSlots : 0),
         ifree: (ulong)(ag == 0 ? freeInodeSlots : 0),
@@ -547,7 +558,7 @@ public sealed class XfsWriter {
     // We stamp sector 0 with a clean xlog_rec_header (cycle=1, XLOG_INIT_CYCLE)
     // and stamp the first 4 bytes of every subsequent 512-byte sector with the
     // cycle number. The kernel log-recovery code then reports l_curr_cycle=1.
-    FormatLog(image, logStartAgBno * BlockSize, LogBlocks * BlockSize, cycle: 1);
+    FormatLog(this._ag1Header, logStartAgBno * BlockSize, LogBlocks * BlockSize, cycle: 1);
 
     // ── Initialize all "free" slots with valid v3 inode headers ──
     // mkfs.xfs writes valid IN-magic inodes (mode=0, nlink=0) for every slot
@@ -1323,7 +1334,11 @@ public sealed class XfsWriter {
   private static void FormatLog(byte[] image, int logOffsetBytes, int logSizeBytes, uint cycle) {
     const uint XlogMagic = 0xFEEDBABE;
     const uint XlogUnmountType = 0x556E;          // "Un" — XLOG_UNMOUNT_TYPE
-    const uint XlogUnmountTransFlag = 0x10;       // XLOG_UNMOUNT_TRANS
+    // XLOG_UNMOUNT_TRANS is 0x20. It was 0x10 here, which is XLOG_END_TRANS —
+    // so the kernel looked for an unmount record, did not find the bit it
+    // tests for, concluded the log was not cleanly closed, and refused a
+    // read-only mount because it had nowhere to recover into.
+    const uint XlogUnmountTransFlag = 0x20;       // XLOG_UNMOUNT_TRANS
     const byte XfsLog = 0xAA;                     // XFS_LOG client ID
     const int XlogBigRecordBsize = 32 * 1024;
     var log = image.AsSpan(logOffsetBytes, logSizeBytes);
@@ -1336,9 +1351,13 @@ public sealed class XfsWriter {
     BinaryPrimitives.WriteUInt32BigEndian(log[4..], cycle);             // h_cycle
     BinaryPrimitives.WriteUInt32BigEndian(log[8..], 2);                 // h_version = 2 (LOGV2)
     BinaryPrimitives.WriteUInt32BigEndian(log[12..], 512);              // h_len = 1 BBSIZE
-    // h_tail_lsn points at the block AFTER the unmount record (= the next
-    // block that will be written), indicating "tail has caught up with head"
-    // which xfs_repair interprets as a cleanly unmounted log.
+    // h_tail_lsn points at the block AFTER the unmount record, which xfs_repair
+    // reads as a cleanly unmounted log.
+    //
+    // mkfs.xfs writes (cycle, 0) here — tail equal to the record's own LSN —
+    // and copying that was tried and reverted: xfs_repair then calls the log
+    // dirty and says to mount and replay it. Whatever makes the kernel accept
+    // this log as clean, it is not this field alone.
     var tailLsn = ((ulong)cycle << 32) | 2;
     BinaryPrimitives.WriteUInt64BigEndian(log[16..], lsn);              // h_lsn = (cycle, 0)
     BinaryPrimitives.WriteUInt64BigEndian(log[24..], tailLsn);          // h_tail_lsn = (cycle, 2)
@@ -1375,6 +1394,13 @@ public sealed class XfsWriter {
     var savedFirst4 = BinaryPrimitives.ReadUInt32BigEndian(unmountSector);
     BinaryPrimitives.WriteUInt32BigEndian(log[44..], savedFirst4);      // h_cycle_data[0]
     BinaryPrimitives.WriteUInt32BigEndian(unmountSector[0..], cycle);   // cycle stamp
+
+    // h_crc at 32 stays zero. The kernel checks it and a wrong value is worse
+    // than none — hashing the header and the data as one contiguous kilobyte
+    // earned "Torn write (CRC failure) detected at log block 0x0". xlog_cksum
+    // covers sizeof(struct xlog_rec_header) with the field zeroed, then the
+    // extended headers, then h_len bytes of data; getting that span right is
+    // what stands between this log and a mount.
 
     // Sectors 2..end remain zero (cycle 0) — kernel interprets as unwritten.
   }

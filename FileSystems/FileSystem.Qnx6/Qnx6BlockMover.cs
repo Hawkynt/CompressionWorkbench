@@ -48,9 +48,9 @@ public sealed class Qnx6BlockMover : IFilesystemBlockMover {
 
     var inodeTableBlock = BinaryPrimitives.ReadUInt32LittleEndian(
       superblock.AsSpan(SuperblockInodeRootPointer));
-    if (inodeTableBlock == 0)
-      throw new InvalidDataException("QNX6: the superblock does not name an inode table.");
-    this._inodeTableOffset = (long)inodeTableBlock * blockSize;
+    // A pointer in the superblock counts from the filesystem's own block zero,
+    // which is past the boot and superblock areas.
+    this._inodeTableOffset = Qnx6Geometry.ByteOffsetOf(inodeTableBlock, blockSize);
 
     var inodeCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(0x34));
     this._inodeCount = Math.Max(1, inodeCount);
@@ -104,8 +104,11 @@ public sealed class Qnx6BlockMover : IFilesystemBlockMover {
         $"QNX6: {newOffset} is not on a {this._blockSize}-byte block boundary, which is all an " +
         "inode's block pointer can name.");
 
-    var oldBlock = (uint)(oldOffset / this._blockSize);
-    var newBlock = (uint)(newOffset / this._blockSize);
+    // Inode pointers are filesystem blocks, so a byte offset has to be turned
+    // back into one before it is written down.
+    var before = Qnx6Geometry.BlocksBefore(this._blockSize);
+    var oldBlock = (uint)(oldOffset / this._blockSize - before);
+    var newBlock = (uint)(newOffset / this._blockSize - before);
     if (oldBlock == newBlock) return;
 
     Span<byte> pointer = stackalloc byte[4];

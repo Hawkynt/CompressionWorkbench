@@ -259,7 +259,11 @@ public sealed class FatWriter {
       BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(50), 6);               // BPB_BkBootSec: backup at sector 6
       // 52-63 reserved (already zero)
       disk[64] = 0x80;                                                             // BS_DrvNum
-      disk[65] = transactionFat ? (byte)0x01 : (byte)0x00;                        // BS_Reserved1: TFAT marker
+      // BS_Reserved1 stays zero. It is where FAT records that a volume was
+      // not cleanly unmounted, so a marker written here has every checker
+      // calling the volume dirty and possibly corrupt; the TFAT tag goes in
+      // BS_FilSysType instead.
+      disk[65] = 0x00;
       disk[66] = 0x29;                                                             // BS_BootSig: extended BPB present
       BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(67), 0x12345678u);     // BS_VolID
       labelBytes.CopyTo(disk.AsSpan(71, 11));                                      // BS_VolLab (11 bytes, sanitised)
@@ -267,7 +271,7 @@ public sealed class FatWriter {
     } else {
       // Short extended BPB (FAT12/16)
       disk[36] = 0x80;
-      disk[37] = transactionFat ? (byte)0x01 : (byte)0x00;  // BS_Reserved1: TFAT marker
+      disk[37] = 0x00;  // BS_Reserved1 — see the FAT32 branch above.
       disk[38] = 0x29;
       BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(39), 0x12345678u);
       labelBytes.CopyTo(disk.AsSpan(43, 11));                                      // BS_VolLab (11 bytes, sanitised)
@@ -510,7 +514,7 @@ public sealed class FatWriter {
       Encoding.ASCII.GetBytes("FAT32   ").CopyTo(boot, 82);
     } else {
       boot[36] = 0x80;
-      boot[37] = transactionFat ? (byte)0x01 : (byte)0x00;
+      boot[37] = 0x00;  // BS_Reserved1 — never the dirty bit's business.
       boot[38] = 0x29;
       BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(39), 0x12345678u);
       Encoding.ASCII.GetBytes(label).CopyTo(boot, 43);

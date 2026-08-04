@@ -65,16 +65,77 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Mode-aware XFS defragmentor via read-extract-rebuild dispatch through
   /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
   /// </summary>
+  /// <summary>
+  /// Largest volume the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new XfsReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans the new layout, moves the extents, and settles the free space.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new XfsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // Which blocks are free is known only once every run has landed.
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    mover.SettleFreeSpace(archive, postExtents
+      .Where(e => e.Kind != DefragBlockKind.Free)
+      .Select(e => (e.Offset, e.Length)));
+
+    archive.Position = 0;
+    postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public void Defragment(Stream archive, DefragOptions options) {
-    // Planner-driven defragmentation is not wired up here. XfsBlockMover
-    // rewrites one BMBT record of a single-extent, extents-format inode and
-    // nothing else: a file in more than one piece, or one whose extents have
-    // grown into a b-tree, throws. Even for the shapes it does take, an XFS
-    // volume records free space twice more — the bno and cnt b-trees of the
-    // allocation group and the counters in its header — and a move that leaves
-    // those behind is a volume xfs_repair calls corrupt. Restating them is a
-    // different piece of work from repointing a file, so every plan would end
-    // in the rebuild below anyway.
+    // Moving what is out of place beats writing the volume out again. A file's
+    // extent record names the block it starts at, and the free space each
+    // allocation group records — twice, once by position and once by length,
+    // with the totals in its header — is written again from the layout the
+    // pass finished with.
+    //
+    // A file in more than one piece, or one whose extents have grown into a
+    // b-tree, is more than the mover takes; the guard falls back to the
+    // rebuild for those rather than leaving a volume half-repointed.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 

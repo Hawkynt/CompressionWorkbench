@@ -143,6 +143,13 @@ public sealed class TFatReader : IDisposable {
   /// covers the "TFAT" 4-byte FilSysType prefix at one of the two possible
   /// extended-BPB offsets; this method handles both layouts).
   /// </summary>
+  /// <remarks>
+  /// The byte at 37 (65 on FAT32) is <c>BS_Reserved1</c>, where FAT records
+  /// that a volume was not cleanly unmounted. This project used to set it as a
+  /// second TFAT marker and no longer does — a volume marked that way is called
+  /// dirty and possibly corrupt by every FAT checker. It is still accepted here
+  /// as evidence, because images written before that was noticed carry it.
+  /// </remarks>
   public static bool IsTfat(ReadOnlySpan<byte> data, int? knownFatType = null) {
     if (data.Length < 512) return false;
     var fatCount = data[16];

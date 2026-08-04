@@ -37,14 +37,25 @@ ZX Spectrum SCL archive (TR-DOS compact form)
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `ZxSclBlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
 ### ZxSclFormatDescriptor
 
 Descriptor for ZX Spectrum SCL archives ("SINCLAIR" signature) — the header+catalogue TR-DOS file container convertible to .trd images. References:
+
+A file's data is found by adding up the lengths of every file before it — the directory records a length in sectors and nothing else, so position is implied by order. That is the whole constraint on moving one: the payloads have to stay packed against the directory and in the order it lists them, and the layout the reader can walk is that one and no other.
+
+Which is what a container we wrote already looks like, because removing a file shifts the payloads back over the gap and truncates. A pass over one of those finds nothing to move and says so, instead of writing the whole container out again to arrive at the same bytes.
 
 ### ZxSclReader
 

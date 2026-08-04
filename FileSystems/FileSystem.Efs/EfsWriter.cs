@@ -24,8 +24,14 @@ public sealed class EfsWriter {
   internal const int BasicBlock = 512;                  // EFS basic block size (always 512)
   internal const int InodeSize = 128;                   // efs_dinode_t on disk
   internal const int InodesPerBlock = BasicBlock / InodeSize; // 4
-  internal const int SuperblockOffset = 0;              // superblock is at sector 0
-  internal const int InodeTableOffset = 1;              // inodes start at sector 1
+  /// <summary>
+  /// The superblock is at block 1. Block 0 is the SGI volume header, which a
+  /// driver reads first and which — being all zeroes here — it correctly takes
+  /// as "no partition table, look at the next block".
+  /// </summary>
+  internal const int SuperblockBlock = 1;
+  internal const int SuperblockOffset = SuperblockBlock * BasicBlock;
+  internal const int InodeTableOffset = 2;              // the cylinder group starts here
   internal const int MaxInodes = 256;                   // hard upper bound, plenty for round-trip
 
   // efs_dinode mode bits (matching IRIX/sys/fs/efs_fs.h)
@@ -107,7 +113,9 @@ public sealed class EfsWriter {
     // Sector 0          : superblock
     // Sector 1          : inode table block 1 (4 inodes per 512 B)
     // Sector 1 + Iblocks: data blocks (one per directory body + one per file)
-    var inodeBlocks = (tree.Nodes.Count + InodesPerBlock - 1) / InodesPerBlock;
+    // Inode numbers start at 2 — 0 and 1 are reserved and still occupy their
+    // slots, because a driver finds inode n at block table + n/4.
+    var inodeBlocks = (tree.Nodes.Count + 2 + InodesPerBlock - 1) / InodesPerBlock;
     if (inodeBlocks == 0) inodeBlocks = 1;
 
     // Allocate data blocks: each directory gets 1 BB (capped payload); each
@@ -139,26 +147,28 @@ public sealed class EfsWriter {
     // ── Superblock @ 0 (efs_fs.h layout, big-endian) ─────────────────────────
     var sb = image.At(SuperblockOffset, BasicBlock);
     BinaryPrimitives.WriteInt32BigEndian(sb[0x00..], totalBlocks);     // s_size
-    BinaryPrimitives.WriteInt32BigEndian(sb[0x04..], dataStart);       // s_firstcg = first data BB
-    BinaryPrimitives.WriteInt32BigEndian(sb[0x08..], totalBlocks - dataStart); // s_cgfsize
+    // The cylinder group starts at the inode table, and a driver locates every
+    // inode from there. Pointing this at the first data block instead put the
+    // whole inode table out of reach.
+    BinaryPrimitives.WriteInt32BigEndian(sb[0x04..], InodeTableOffset);         // fs_firstcg
+    BinaryPrimitives.WriteInt32BigEndian(sb[0x08..], totalBlocks - InodeTableOffset); // fs_cgfsize
     BinaryPrimitives.WriteInt16BigEndian(sb[0x0C..], (short)inodeBlocks);      // s_cgisize
     BinaryPrimitives.WriteInt16BigEndian(sb[0x0E..], (short)32);       // s_sectors (placeholder)
     BinaryPrimitives.WriteInt16BigEndian(sb[0x10..], (short)2);        // s_heads (placeholder)
     BinaryPrimitives.WriteInt16BigEndian(sb[0x12..], (short)1);        // s_ncg (single cylinder group)
     BinaryPrimitives.WriteInt16BigEndian(sb[0x14..], (short)0);        // s_dirty = 0 (clean)
-    BinaryPrimitives.WriteUInt32BigEndian(sb[0x18..], EfsSuperblock.EfsMagic);
-    // s_fname @ 0x1C is 6 bytes, but our parser keeps Time at 0x1C — leave 0
-    // and write the label at the canonical fname offset.
+    BinaryPrimitives.WriteUInt32BigEndian(sb[0x18..], 0);              // fs_time
+    BinaryPrimitives.WriteUInt32BigEndian(sb[0x1C..], EfsSuperblock.EfsMagic);
     var labelBytes = Encoding.ASCII.GetBytes(_volumeLabel);
     Array.Resize(ref labelBytes, 6);
-    labelBytes.CopyTo(sb[0x1C..]);
+    labelBytes.CopyTo(sb[0x20..]);                                     // fs_fname
 
     // ── Inode table @ sector 1 ───────────────────────────────────────────────
     for (var i = 0; i < tree.Nodes.Count; i++) {
       var node = tree.Nodes[i];
-      var ino = i + 2;                            // 1 reserved, 2 = root
-      var blockOff = (ino - 2) / InodesPerBlock;  // which 512 B inode block
-      var slotOff = (ino - 2) % InodesPerBlock;
+      var ino = i + 2;                            // 0 and 1 reserved, 2 = root
+      var blockOff = ino / InodesPerBlock;        // which 512 B inode block
+      var slotOff = ino % InodesPerBlock;
       var ip = image.At(((long)InodeTableOffset + blockOff) * BasicBlock + slotOff * InodeSize, InodeSize);
 
       // efs_dinode: di_mode(2), di_nlink(2), di_uid(2), di_gid(2), di_size(4),
@@ -169,27 +179,53 @@ public sealed class EfsWriter {
       BinaryPrimitives.WriteUInt16BigEndian(ip[2..], (ushort)(node.IsDirectory ? 2 : 1));
       BinaryPrimitives.WriteUInt16BigEndian(ip[4..], 0);
       BinaryPrimitives.WriteUInt16BigEndian(ip[6..], 0);
-      var size = node.IsDirectory ? ComputeDirSize(node) : (int)Math.Min(node.Payload.Size, int.MaxValue);
+      // A directory's size counts whole directory blocks. EFS stores its
+      // entries in fixed 512-byte blocks and a driver refuses a size that is
+      // not a multiple of one — "directory size not a multiple of
+      // EFS_DIRBSIZE" — however well the entries inside are formed.
+      var size = node.IsDirectory
+        ? blocksPerNode[i] * BasicBlock
+        : (int)Math.Min(node.Payload.Size, int.MaxValue);
       BinaryPrimitives.WriteInt32BigEndian(ip[8..], size);
       var now = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
       BinaryPrimitives.WriteInt32BigEndian(ip[12..], now);
       BinaryPrimitives.WriteInt32BigEndian(ip[16..], now);
       BinaryPrimitives.WriteInt32BigEndian(ip[20..], now);
       BinaryPrimitives.WriteInt32BigEndian(ip[24..], 0);
-      BinaryPrimitives.WriteInt16BigEndian(ip[28..], (short)(blocksPerNode[i] > 0 ? 1 : 0));
       ip[30] = 1;
       ip[31] = 0;
-      // Extent 0: ex_magic(1)=0 ex_bn(3) ex_length(1) ex_offset(3)
-      if (blocksPerNode[i] > 0) {
-        var ex = ip[32..];
-        // bn is 24-bit big-endian
-        ex[0] = 0; // magic always 0
-        ex[1] = (byte)(firstBlockPerNode[i] >> 16);
-        ex[2] = (byte)(firstBlockPerNode[i] >> 8);
-        ex[3] = (byte)firstBlockPerNode[i];
-        ex[4] = (byte)blocksPerNode[i]; // length in BB (max 255)
-        // offset (3 bytes) within the inode logical file = 0
+
+      // An extent is ex_magic(1) ex_bn(3) ex_length(1) ex_offset(3), and the
+      // length is one byte — so a file of more than 255 blocks needs more than
+      // one extent. Writing a single extent truncated the count to its low
+      // byte, which gave a file of the right size whose bytes past the first
+      // 255 blocks were whatever happened to follow.
+      var extents = 0;
+      var remaining = blocksPerNode[i];
+      var block = firstBlockPerNode[i];
+      var fileOffset = 0;
+      while (remaining > 0 && extents < DirectExtents) {
+        var run = Math.Min(remaining, MaxExtentBlocks);
+        var ex = ip[(32 + extents * 8)..];
+        ex[0] = 0;                          // magic is always zero
+        ex[1] = (byte)(block >> 16);
+        ex[2] = (byte)(block >> 8);
+        ex[3] = (byte)block;
+        ex[4] = (byte)run;
+        ex[5] = (byte)(fileOffset >> 16);
+        ex[6] = (byte)(fileOffset >> 8);
+        ex[7] = (byte)fileOffset;           // where in the file, in blocks
+        block += run;
+        fileOffset += run;
+        remaining -= run;
+        ++extents;
       }
+
+      if (remaining > 0)
+        throw new InvalidOperationException(
+          $"EFS writer: '{node.Name}' needs more than the {DirectExtents} extents an inode holds.");
+
+      BinaryPrimitives.WriteInt16BigEndian(ip[28..], (short)extents);
     }
 
     // ── Directory bodies + file data ─────────────────────────────────────────
@@ -207,15 +243,13 @@ public sealed class EfsWriter {
         // Reader stub (TryParse) doesn't yet walk this, but our own EfsReader
         // (added in this commit) does.
         var blk = image.At(startByte, BasicBlock);
-        // magic = 0xBEEF (informal — EFS dirblks use a 16-bit hash slot mark
-        // in real IRIX; we use a fixed marker so the reader can verify shape).
-        BinaryPrimitives.WriteUInt16BigEndian(blk[0..], 0xBEEF);
-        blk[2] = (byte)(node.Children.Count + 2); // includes "." and ".."
-        var off = 3;
-        WriteDirEntry(blk, ref off, (ushort)(i + 2), ".");
-        WriteDirEntry(blk, ref off, (ushort)(node.ParentInode), "..");
+        var entries = new List<(uint Inode, string Name)> {
+          ((uint)(i + 2), "."),
+          ((uint)node.ParentInode, ".."),
+        };
         foreach (var (childName, childInode) in node.Children)
-          WriteDirEntry(blk, ref off, (ushort)childInode, childName);
+          entries.Add(((uint)childInode, childName));
+        WriteDirectoryBlock(blk, entries);
       } else {
         payloads.Add(startByte, node.Payload);
       }
@@ -224,17 +258,57 @@ public sealed class EfsWriter {
     return image;
   }
 
-  private static void WriteDirEntry(Span<byte> blk, ref int off, ushort inode, string name) {
-    var nameBytes = Encoding.UTF8.GetBytes(name);
-    if (nameBytes.Length > 255) Array.Resize(ref nameBytes, 255);
-    var slot = 3 + nameBytes.Length;
-    if (off + slot > blk.Length)
-      throw new InvalidOperationException("EFS writer: directory block overflow (single-block dirs only).");
-    BinaryPrimitives.WriteUInt16BigEndian(blk[off..], inode);
-    blk[off + 2] = (byte)nameBytes.Length;
-    nameBytes.CopyTo(blk[(off + 3)..]);
-    off += slot;
+  /// <summary>
+  /// Writes one EFS directory block.
+  /// </summary>
+  /// <remarks>
+  /// <para>The shape is not a packed list, which is what this wrote before and
+  /// what nothing else reads. A block opens with the magic, the offset of the
+  /// lowest byte in use and a slot count; then a byte per slot giving where
+  /// that entry is; and the entries themselves packed against the far end of
+  /// the block, growing downwards. Every offset is stored halved, so each one
+  /// has to land on an even byte.</para>
+  ///
+  /// <para>An entry is a four-byte inode, a name length and the name, padded to
+  /// an even length.</para>
+  /// </remarks>
+  private static void WriteDirectoryBlock(Span<byte> blk, List<(uint Inode, string Name)> entries) {
+    BinaryPrimitives.WriteUInt16BigEndian(blk, EfsDirBlockMagic);
+
+    var cursor = blk.Length;
+    var slotAt = DirBlockHeaderSize;
+    foreach (var (inode, name) in entries) {
+      var nameBytes = Encoding.ASCII.GetBytes(name);
+      if (nameBytes.Length > 255) Array.Resize(ref nameBytes, 255);
+
+      var size = (DirEntryOverhead + nameBytes.Length + 1) & ~1;
+      cursor -= size;
+      if (cursor < slotAt + 1)
+        throw new InvalidOperationException(
+          "EFS writer: directory block overflow (single-block directories only).");
+
+      BinaryPrimitives.WriteUInt32BigEndian(blk[cursor..], inode);
+      blk[cursor + 4] = (byte)nameBytes.Length;
+      nameBytes.CopyTo(blk[(cursor + 5)..]);
+
+      blk[slotAt++] = (byte)(cursor >> 1);
+    }
+
+    blk[2] = (byte)(cursor >> 1);          // firstused, halved
+    blk[3] = (byte)entries.Count;          // slots
   }
+
+  internal const ushort EfsDirBlockMagic = 0xBEEF;
+
+  /// <summary>Extents an inode holds before it needs an indirect one.</summary>
+  private const int DirectExtents = 12;
+
+  /// <summary>An extent's length field is a single byte.</summary>
+  private const int MaxExtentBlocks = 255;
+  private const int DirBlockHeaderSize = 4;
+
+  /// <summary>An entry's fixed part: the inode and the name length.</summary>
+  private const int DirEntryOverhead = 5;
 
   private static int ComputeDirSize(TreeNode node) {
     var size = 3 + 1 + 3 + 2; // "." + ".." overhead

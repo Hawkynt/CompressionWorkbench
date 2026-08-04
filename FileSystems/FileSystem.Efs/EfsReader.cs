@@ -60,17 +60,24 @@ public sealed class EfsReader {
     var off = (long)info.FirstBlock * EfsWriter.BasicBlock;
     if (off >= _image.Length) return;
     var blk = _image.Read(off, (int)Math.Min(EfsWriter.BasicBlock, _image.Length - off));
-    if (blk.Length < 3) return;
+    if (blk.Length < 4) return;
     var magic = BinaryPrimitives.ReadUInt16BigEndian(blk[..2]);
-    if (magic != 0xBEEF) return; // not our writer's directory shape
-    int slots = blk[2];
-    var cur = 3;
-    for (var i = 0; i < slots && cur + 3 <= blk.Length; i++) {
-      var childInode = BinaryPrimitives.ReadUInt16BigEndian(blk[cur..]);
-      int nlen = blk[cur + 2];
-      if (cur + 3 + nlen > blk.Length) break;
-      var name = Encoding.UTF8.GetString(blk.AsSpan(cur + 3, nlen));
-      cur += 3 + nlen;
+    if (magic != EfsWriter.EfsDirBlockMagic) return;
+
+    // A block holds a slot table — one byte per entry, giving that entry's
+    // offset halved — and the entries themselves packed against the far end.
+    int slots = blk[3];
+    for (var i = 0; i < slots; i++) {
+      var slotAt = 4 + i;
+      if (slotAt >= blk.Length) break;
+
+      var cur = blk[slotAt] << 1;
+      if (cur + 5 > blk.Length) break;
+
+      var childInode = (int)BinaryPrimitives.ReadUInt32BigEndian(blk.AsSpan(cur));
+      int nlen = blk[cur + 4];
+      if (cur + 5 + nlen > blk.Length) break;
+      var name = Encoding.ASCII.GetString(blk.AsSpan(cur + 5, nlen));
       if (name is "." or "..") continue;
       var childInfo = ReadInode(childInode);
       var full = prefix.Length == 0 ? name : $"{prefix}/{name}";
@@ -80,8 +87,10 @@ public sealed class EfsReader {
   }
 
   private InodeInfo ReadInode(int inode) {
-    var blockOff = (inode - 2) / EfsWriter.InodesPerBlock;
-    var slotOff = (inode - 2) % EfsWriter.InodesPerBlock;
+    // Inode n sits at block n/4 of the table: numbers 0 and 1 are reserved but
+    // still take their slots.
+    var blockOff = inode / EfsWriter.InodesPerBlock;
+    var slotOff = inode % EfsWriter.InodesPerBlock;
     var ip = _image.Read(((long)EfsWriter.InodeTableOffset + blockOff) * EfsWriter.BasicBlock + slotOff * EfsWriter.InodeSize, EfsWriter.InodeSize);
     var mode = BinaryPrimitives.ReadUInt16BigEndian(ip[..2]);
     var size = BinaryPrimitives.ReadInt32BigEndian(ip[8..]);

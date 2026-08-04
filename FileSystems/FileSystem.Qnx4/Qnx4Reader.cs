@@ -78,31 +78,45 @@ public sealed class Qnx4Reader : IDisposable {
     // We look for at least one "ACTIVE" status byte at offset 0x3D of a
     // 64-byte inode in the first 4 blocks to validate the image; this is
     // our weak magic (QNX4 has no fixed magic word).
-    var validInodes = 0;
-    for (var i = 0; i < 32; i++) {
-      var off = BlockSize + i * InodeSize;
-      if (off + InodeSize > this._data.Length) break;
-      var status = this._data.ReadByte(off + 0x3D);
-      if (IsLiveStatus(status)) validInodes++;
-    }
-    if (validInodes == 0)
-      throw new InvalidDataException("QNX4: no ACTIVE/USED inode found in root directory cluster.");
+    // Block 1 is the superblock: four inode entries, the first of which
+    // describes the root directory. It is not itself a directory, which is
+    // what this used to read it as.
+    var rootEntry = (long)Qnx4Layout.SuperBlock * BlockSize;
+    if (rootEntry + InodeSize > this._data.Length)
+      throw new InvalidDataException("QNX4: image too small for a superblock.");
 
-    this.ReadDirectoryCluster(1, blockCount: 4, path: "");
+    var rootName = ReadName(this._data.Read(rootEntry, Qnx4Layout.NameBytes));
+    if (rootName != "/")
+      throw new InvalidDataException("QNX4: the superblock does not name a root directory.");
+
+    var rootMode = this._data.ReadUInt16(rootEntry + Qnx4Layout.InMode);
+    if ((rootMode & SIfdir) != SIfdir)
+      throw new InvalidDataException("QNX4: the root entry is not a directory.");
+
+    var rootBlock = this._data.ReadUInt32(rootEntry + Qnx4Layout.InExtentBlock);
+    var rootCount = this._data.ReadUInt32(rootEntry + Qnx4Layout.InExtentSize);
+    if (rootBlock == 0 || rootCount == 0)
+      throw new InvalidDataException("QNX4: the root directory names no blocks.");
+
+    this.ReadDirectoryCluster(rootBlock, rootCount, path: "");
   }
 
+  /// <summary>
+  /// Walks a directory's blocks. The block number is the one an extent
+  /// records, which QNX4 counts from one.
+  /// </summary>
   private void ReadDirectoryCluster(uint startBlock, uint blockCount, string path) {
     var seen = new HashSet<uint>();
     if (!seen.Add(startBlock)) return;
     for (var b = 0u; b < blockCount; b++) {
-      var blockOff = (long)(startBlock + b) * BlockSize;
+      var blockOff = Qnx4Layout.ByteOffsetOf(startBlock + b);
       if (blockOff + BlockSize > this._data.Length) break;
       for (var i = 0; i < 8; i++) { // 8 inodes per 512-byte block
         var off = (int)blockOff + i * InodeSize;
         if (off + InodeSize > this._data.Length) break;
-        var status = this._data.ReadByte(off + 0x3D);
+        var status = this._data.ReadByte(off + Qnx4Layout.InStatus);
         if (!IsLiveStatus(status)) continue;
-        var name = ReadName(this._data.Read(off, 16));
+        var name = ReadName(this._data.Read(off, Qnx4Layout.NameBytes));
         // Skip the self-referencing root inode ("/") emitted by Qnx4Writer.
         if (string.Equals(name, "/", StringComparison.Ordinal)) continue;
         // Hide QNX4 system files from the user-visible listing — they are
@@ -112,10 +126,10 @@ public sealed class Qnx4Reader : IDisposable {
         // does not surface them in ls(1).
         if (name is ".bitmap" or ".inodes" or ".bootblock" or ".altboot") continue;
         if (string.IsNullOrEmpty(name) || name is "." or "..") continue;
-        var size = this._data.ReadUInt32(off + 0x10);
-        var xtntBlk = this._data.ReadUInt32(off + 0x14);
-        var xtntCnt = this._data.ReadUInt32(off + 0x18);
-        var mode = this._data.ReadUInt16(off + 0x20);
+        var size = this._data.ReadUInt32(off + Qnx4Layout.InSize);
+        var xtntBlk = this._data.ReadUInt32(off + Qnx4Layout.InExtentBlock);
+        var xtntCnt = this._data.ReadUInt32(off + Qnx4Layout.InExtentSize);
+        var mode = this._data.ReadUInt16(off + Qnx4Layout.InMode);
         var isDir = (mode & SIfdir) == SIfdir;
         var fullPath = string.IsNullOrEmpty(path) ? name : $"{path}/{name}";
         this._entries.Add(new Qnx4Entry {
@@ -151,7 +165,7 @@ public sealed class Qnx4Reader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
     ArgumentNullException.ThrowIfNull(destination);
     if (entry.IsDirectory) return;
-    var offset = (long)entry.FirstExtentBlock * BlockSize;
+    var offset = Qnx4Layout.ByteOffsetOf(entry.FirstExtentBlock);
     if (offset < 0 || offset >= this._data.Length) return;
     this._data.CopyTo(offset, destination, Math.Min(entry.Size, this._data.Length - offset));
   }
@@ -159,7 +173,7 @@ public sealed class Qnx4Reader : IDisposable {
   public byte[] Extract(Qnx4Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
-    var offset = (long)entry.FirstExtentBlock * BlockSize;
+    var offset = Qnx4Layout.ByteOffsetOf(entry.FirstExtentBlock);
     if (offset < 0 || offset >= this._data.Length) return [];
     var take = (int)Math.Min(entry.Size, this._data.Length - offset);
     return this._data.Read(offset, take);

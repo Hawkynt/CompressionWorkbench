@@ -183,7 +183,17 @@ public sealed class F2fsWriter {
   // the smallest case) PLUS the six reserved current segments, PLUS slack. With the metadata
   // area at SegMain=8 and one segment of pre-roll padding, segment_count_main = total - 9, so
   // we need total >= 9 (meta+pad) + 10 (4 worst-case small regions + 6 cursegs) + slack.
-  internal const int MinTotalSegments = SegMain + 12; // 20 → 40 MiB hard floor.
+  /// <summary>
+  /// The smallest volume this writes: 32 segments, 64 MiB.
+  /// </summary>
+  /// <remarks>
+  /// The floor used to be 20 segments — 40 MiB — which is under what F2FS
+  /// itself accepts: mkfs.f2fs refuses to format a device that size, and the
+  /// kernel refuses to mount one, silently, because it never gets far enough
+  /// to have anything to say. Volumes smaller than this are padded up rather
+  /// than written unmountable.
+  /// </remarks>
+  internal const int MinTotalSegments = 32;
 
   /// <summary>
   /// The smallest total segment count <see cref="Build(int)"/> accepts. Equals the metadata
@@ -847,7 +857,7 @@ public sealed class F2fsWriter {
 
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(0), F2fsMagic);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.AsSpan(4), 1);   // major_ver
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.AsSpan(6), 0);   // minor_ver
+    BinaryPrimitives.WriteUInt16LittleEndian(sb.AsSpan(6), 0);   // minor_ver — mkfs writes 16 here; matching it changes nothing
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(8), LogSectorSize);
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(12), LogSectorsPerBlock);
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(16), LogBlockSize);

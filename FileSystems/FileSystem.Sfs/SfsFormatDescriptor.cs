@@ -21,56 +21,31 @@ namespace FileSystem.Sfs;
 /// </list>
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>Scope</b>: <see cref="FormatCapabilities.CanList"/> +
-/// <see cref="FormatCapabilities.CanExtract"/> +
-/// <see cref="FormatCapabilities.CanTest"/> only. The descriptor deliberately
-/// does NOT implement <c>IArchiveModifiable</c> or <c>IArchiveCreatable</c>.
-/// </para>
-/// <para>
-/// <b>Why no R/W</b>: SFS is not a flat-directory filesystem. A real
-/// implementation requires:
-/// </para>
-/// <list type="bullet">
-///   <item><description><b>Object-container B+ tree</b> — keyed by object
-///   number, branch/leaf nodes with 24-byte headers, used to map every
-///   inode/file/dir to its on-disk extent list.</description></item>
-///   <item><description><b>Bitmap chain</b> — multi-block free-space map
-///   spanning the volume, with checksum each block.</description></item>
-///   <item><description><b>Directory hash table</b> — Amiga-style
-///   FNV-flavoured hash buckets per directory inode, distinct from the
-///   object-container tree.</description></item>
-///   <item><description><b>Free-extent tree</b> — separate B+ tree of
-///   coalesced free runs, updated transactionally on every alloc.</description></item>
-/// </list>
-/// <para>
-/// All four structures cross-reference each other and are checksummed; partial
-/// writes corrupt the volume. There is no Linux/Windows-side <c>fsck</c>-class
-/// validator (SFS is AmigaOS 4 / AROS only), so an empty-WORM writer would
-/// emit bytes nothing can prove correct. Per the project rule
-/// (<c>MEMORY.md</c>: "never advertise <c>CanCreate</c> without real spec
-/// compliance"), R-only is the honest state for this format.
-/// </para>
-/// <para>
-/// <b>Promote-to-R/W deferral</b>: a promotion attempt would have to first
-/// implement a WORM writer (currently absent — SFS has no <c>SfsWriter</c>
-/// companion to the <see cref="SfsRootBlock"/> reader) and then layer
-/// in-place B+ tree mutation on top. Both steps require the four
-/// cross-checksummed structures above, and the lack of any platform-side
-/// validator means the only honesty check would be self-round-trip, which
-/// (per the project's WSL-tool-gating rule for filesystems) is insufficient
-/// to prove on-disk correctness. The companion R/W promotion of
-/// <c>FileSystem.ApplePascal</c> ships in the same session — that format's
-/// 26-byte fixed entries and lack of free-space bookkeeping make in-place
-/// mutation tractable; SFS does not share either property.
-/// </para>
+/// <para>The walk to the files is implemented in <see cref="SfsVolume" /> and
+/// the volumes are written by <see cref="SfsWriter" />, both following the
+/// block structures in AROS's own SFS source. So the root-block surface above
+/// is no longer all there is: files are listed, extracted, written and laid out
+/// again.</para>
+///
+/// <para>There is no SFS driver or checker on Linux to hold a volume up
+/// against, so what stands in for one is the format's own arithmetic. Every
+/// block that carries a header records its own block number and is checksummed
+/// by its longwords summing to zero, and a volume that failed either would be
+/// rejected by any reader — including this one, which checks both before it
+/// believes a block is what it claims.</para>
+///
+/// <para>What is written is the simplest shape the structures allow: one object
+/// container for a flat root directory, one leaf of extents, one node
+/// container. Hash tables, soft links, sub-directories and multi-level trees
+/// are shapes the format has and this does not produce.</para>
 /// </remarks>
-public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
   public string Id => "Sfs";
   public string DisplayName => "Amiga SFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
+    | FormatCapabilities.CanCreate;
   public string DefaultExtension => ".sfs";
   public IReadOnlyList<string> Extensions => [".sfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -84,7 +59,7 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Amiga Smart Filesystem — root block surface only. R/W deferred: requires writer + object-container B+ tree + bitmap chain + directory hash table + free-extent tree.";
+    "Amiga Smart Filesystem volume — files, and a layout pass over them.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -108,8 +83,18 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     entries.Add(new ArchiveEntryInfo(0, "FULL.sfs", image.LongLength, image.LongLength, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+    var idx = 2;
     if (root.Valid)
-      entries.Add(new ArchiveEntryInfo(2, "root_block.bin", root.RawBytes.LongLength, root.RawBytes.LongLength, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(idx++, "root_block.bin", root.RawBytes.LongLength, root.RawBytes.LongLength, "stored", false, false, null));
+
+    // And the files themselves, when the walk to them lands.
+    using (var full = new MemoryStream(image, writable: false)) {
+      var volume = new SfsVolume(full);
+      if (volume.Valid)
+        foreach (var file in volume.Files)
+          entries.Add(new ArchiveEntryInfo(idx++, file.Name, file.Size, file.Size, "stored", false, false, null));
+    }
+
     return entries;
   }
 
@@ -135,7 +120,32 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(root), files);
     if (root.Valid)
       WriteIfMatch(outputDir, "root_block.bin", root.RawBytes, files);
+
+    using var full = new MemoryStream(image, writable: false);
+    var volume = new SfsVolume(full);
+    if (!volume.Valid) return;
+    foreach (var file in volume.Files)
+      WriteIfMatch(outputDir, file.Name, volume.Read(file), files);
   }
+
+  /// <summary>Writes a volume holding the given files.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var writer = new SfsWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      writer.AddFile(input.ArchiveName, input.InMemoryContent ?? File.ReadAllBytes(input.FullPath));
+    }
+
+    var image = writer.Build();
+    output.Write(image, 0, image.Length);
+    output.Flush();
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => SfsExtentMap.Enumerate(image);
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
@@ -159,22 +169,88 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  /// <summary>
-  /// Amiga SFS defragment is unsupported in this implementation. SFS is
-  /// read-only here — there is no writer (object-container B+ tree, bitmap
-  /// chain, directory hash table, and free-extent tree all cross-reference
-  /// each other and are checksummed; partial writes corrupt the volume).
-  /// The descriptor advertises the capability so capability surfaces stay
-  /// honest, but actual defragment requires writer infrastructure that is
-  /// out of scope (see class remarks for the multi-week justification).
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) =>
-    throw new NotSupportedException(
-      "Amiga SFS is read-only in this implementation; defragment would require a full SFS writer (B+ object tree, bitmap chain, directory hash table, free-extent tree).");
+  /// <summary>Moves the blocks that are out of place and rewrites the extent tree.</summary>
+  /// <remarks>
+  /// <para>An extent's key is the block it starts at, so a move renames it as
+  /// well as relocating it, and everything that referred to it by that name has
+  /// to follow. The volume's own structures — the root block and its copy, the
+  /// bitmap, the admin space, the node table, the extent tree and the root
+  /// directory — stay exactly where they are: each records its own block number
+  /// and is checksummed over its whole block.</para>
+  ///
+  /// <para>The tree is written once the pass is over. One run's old key is
+  /// routinely another's new one, and a tree rewritten halfway through would
+  /// name two extents the same thing.</para>
+  /// </remarks>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (!archive.CanSeek || archive.Length > PlannerImageCap)
+      throw new NotSupportedException(
+        "SFS defragmentation needs a seekable volume small enough to verify by reading it back.");
+
+    var planned = false;
+    // The pass is kept only if every file still reads back: a mover can refuse
+    // partway, and leaving the volume as it was is the honest answer when it does.
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: ReadPayloadsForGuard,
+      inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+      rebuild: () => planned = false);
+
+    if (!planned)
+      throw new NotSupportedException(
+        "SFS defragmentation could not lay this volume out in place, and there is no rebuild to " +
+        "fall back on: a file's blocks must stay clear of the structures the volume describes " +
+        "itself with.");
+  }
+
+  /// <summary>Largest volume held in memory twice for the guarded pass.</summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var volume = new SfsVolume(stream);
+    if (!volume.Valid)
+      throw new InvalidDataException($"SFS: {volume.Status}.");
+    return volume.Files.Select(volume.Read).ToList();
+  }
+
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    var mover = new SfsBlockMover();
+    archive.Position = 0;
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = SfsExtentMap.Enumerate(archive).ToList();
+    if (extents.Count == 0) return;
+
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+    mover.Settle(archive);
+
+    archive.Position = 0;
+    var postExtents = SfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
 
   // Bounded — SFS root block is at offset 0 with magic "SFS\0"; we only need the
   // first few KB for header surfacing.
-  private const int HeaderReadCap = 64 * 1024;
+  private const int HeaderReadCap = (int)PlannerImageCap;
 
   private static byte[] ReadAll(Stream stream) {
     using var ms = new MemoryStream();

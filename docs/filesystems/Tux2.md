@@ -37,14 +37,27 @@ TUX2 phase-tree research filesystem (Daniel Phillips, OLS 2002) — single-phase
 
 ### How it defragments
 
-By rebuilding: every file is read out and a fresh volume is written in the
-order the requested layout asks for. Correct, but it costs the whole payload.
+By moving what is out of place, through `Tux2BlockMover`.
+A run is copied and whatever records its position is rewritten, so the cost is
+the bytes that actually move rather than the whole volume.
+
+| Property | Value | Meaning |
+|---|---|---|
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
+| Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
+| Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
 ## How a volume is laid out
 
 ### Tux2FormatDescriptor
 
 Read+WORM descriptor for TUX2 — Daniel Phillips's 2002 phase-tree filesystem proposal (OLS 2002 paper, never-stabilised research format). Recognises a deterministic header pattern (magic "TUX2FS\0\0" at offset 0) so research images we generate round-trip through the reader. Writer emits a single-phase image only (no alpha/beta phases, no version chain) — real legacy prototype images would need a custom parser matching the specific snapshot of the in-progress code that produced them. References:
+
+Why there is nothing here to lay out again.
+
+The records run end to end from the header: a name length, the name, a data length, the data, then the next one. The reader walks that by adding each record's length to a cursor, so a gap anywhere makes everything after it unreadable — the only layout this format can express is packed from the front.
+
+Which is the layout it is always already in. Removing a file writes the container out compacted rather than leaving a hole, so there is never space between records to close up. A pass over one of these would find nothing to move on every volume it was ever handed.
 
 ### Tux2Reader
 

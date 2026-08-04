@@ -130,8 +130,10 @@ public class TFatSchemaTests {
     w.AddFile("TWO.TXT", Encoding.ASCII.GetBytes("second file, longer content here"));
     var image = w.BuildAutoSized(volumeLabel: "AUTO");
 
-    // BS_Reserved1 TFAT marker at offset 37 (FAT12/16 layout).
-    Assert.That(image[37], Is.EqualTo(0x01));
+    // BS_Reserved1 at offset 37 is FAT's unclean-unmount flag, not a place to
+    // mark a volume as TFAT — a marker there has every checker calling the
+    // volume dirty and possibly corrupt. The tag in BS_FilSysType says it.
+    Assert.That(image[37], Is.EqualTo(0x00));
 
     using var ms = new MemoryStream(image);
     using var reader = new TFatReader(ms);

@@ -171,7 +171,81 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// superblock. So this is a rebuild, and the extent map above is what tells
   /// the truth about where the bytes are.
   /// </remarks>
-  public void Defragment(Stream archive, DefragOptions options)
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Moving what is out of place beats writing the image out again, even
+    // though the field that names a file's data lives inside a deflated
+    // metadata block: the block is taken apart, changed and packed again, and
+    // it has to come back no longer than it was.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
+    this.DefragmentWithRebuild(archive, options);
+  }
+
+  /// <summary>
+  /// Largest image the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new SquashFsReader(stream, leaveOpen: true);
+    return reader.Entries
+      .Where(e => !e.IsDirectory && !e.IsSymlink)
+      .OrderBy(e => e.FullPath, StringComparer.Ordinal)
+      .Select(reader.Extract)
+      .ToList();
+  }
+
+  /// <summary>Plans the new layout, moves the data, then writes the inode table again.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new SquashFsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // The table is packed again once, because a block that has to grow can
+    // only be found out about after every field in it is final.
+    mover.SettleInodeTable(archive);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options)
     => DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new SquashFsReader(stream, leaveOpen: true);

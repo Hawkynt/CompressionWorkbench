@@ -37,14 +37,27 @@ internal sealed class HpfsWriter {
   internal const int DirBlockSize = LbaSize * DirBlockLbas;
 
   // Dirent flag bits.
-  private const ushort DirentFlagSpecial = 0x0001; // end-of-block sentinel / ".."
-  private const ushort DirentFlagBtreeDown = 0x0004; // record carries a 4-byte B-tree down-pointer at its tail
-  private const ushort DirentFlagDirectory = 0x0008;
+  // A dirent has two flag bytes, not one word. The first holds the structural
+  // bits — first, down, last — and the second the DOS attributes, where the
+  // directory bit lives. Writing "directory" as bit 3 of the word put it on
+  // "last", so every entry read as the end of the block and a directory
+  // listed as empty.
+  private const byte DirentFlagFirst = 0x01;
+  private const byte DirentFlagBtreeDown = 0x04;
+  private const byte DirentFlagLast = 0x08;
+  private const byte DirentAttrDirectory = 0x10;
 
   // Dirents begin at this offset into a 2 KiB dirent block.
   private const int DirentAreaOffset = 0x14;
   // Minimum dirent record length (the fixed header before the name).
   private const int DirentHeaderLen = 32;
+
+  /// <summary>
+  /// What one dirent occupies: the fixed part up to and including the name
+  /// length, the name, rounded to four, and a down-pointer when there is one.
+  /// </summary>
+  private static int DirentSize(int nameLength, bool hasDown)
+    => ((0x1F + nameLength + 3) & ~3) + (hasDown ? 4 : 0);
 
   // Fixed layout LBAs
   private const uint BootLba = 0;
@@ -316,7 +329,8 @@ internal sealed class HpfsWriter {
       foreach (var child in node.Children.Values)
         WriteNode(image, child, parentFnodeLba: node.FnodeLba);
     } else {
-      WriteFileFnode(image, node.FnodeLba, node.DataLba, node.DataLenLbas, parentFnodeLba);
+      WriteFileFnode(image, node.FnodeLba, node.DataLba, node.DataLenLbas, parentFnodeLba,
+        (uint)Math.Min(node.DataLength, uint.MaxValue));
     }
   }
 
@@ -393,19 +407,16 @@ internal sealed class HpfsWriter {
 
     FnodeMagic.CopyTo(image.AsSpan(off, 4));
 
-    // Parent-directory fnode LBA at offset 0x0C (used for ".." resolution).
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x0C, 4), parentFnodeLba);
+    var fnode = image.AsSpan(off, LbaSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(fnode[HpfsLayout.FnUp..], parentFnodeLba);
+    BinaryPrimitives.WriteUInt16LittleEndian(fnode[HpfsLayout.FnFlags..], HpfsLayout.FlagDirectory);
+    BinaryPrimitives.WriteUInt16LittleEndian(fnode[HpfsLayout.FnEaOffset..], 0xC4);
 
-    // Flag this fnode as a directory at offset 0x20 (bit 0). Real HPFS keeps a
-    // directory flag in the fnode; we mirror it so readers can corroborate the
-    // dirent's directory bit.
-    image[off + 0x20] = 0x01;
-
-    // AllocSec header at 0xC0: height=0 (direct list, already zeroed).
-    // First direct-allocation entry at 0xC4: points at the dirent block.
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0xC4 + 0, 4), 0);            // logical offset
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0xC4 + 4, 4), DirBlockLbas); // length in sectors
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0xC4 + 8, 4), dirBlockLba);  // physical LBA
+    HpfsLayout.WriteLeafHeader(fnode, usedRuns: 1);
+    var run = fnode[HpfsLayout.FnAlloc..];
+    BinaryPrimitives.WriteUInt32LittleEndian(run[HpfsLayout.RunFileSector..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(run[HpfsLayout.RunLength..], DirBlockLbas);
+    BinaryPrimitives.WriteUInt32LittleEndian(run[HpfsLayout.RunDiskSector..], dirBlockLba);
   }
 
   /// <summary>The record length a child's dirent occupies (header + 4-aligned name),
@@ -489,7 +500,7 @@ internal sealed class HpfsWriter {
 
     if (dir.LeafBlockLbas.Count == 0) {
       // Fits in one block: plain dirent list + end sentinel.
-      WriteLeafDirBlock(image, dir.DirBlockLba, children);
+      WriteLeafDirBlock(image, dir.DirBlockLba, children, dir.FnodeLba, isRoot: true);
       return;
     }
 
@@ -497,7 +508,7 @@ internal sealed class HpfsWriter {
 
     // Write each leaf block.
     for (var i = 0; i < leaves.Count; i++)
-      WriteLeafDirBlock(image, dir.LeafBlockLbas[i], leaves[i]);
+      WriteLeafDirBlock(image, dir.LeafBlockLbas[i], leaves[i], dir.FnodeLba);
 
     // Write the root block: separator[i] sits between leaf[i] and leaf[i+1] and
     // carries a down-pointer to leaf[i]; the end sentinel carries the down-pointer
@@ -511,11 +522,13 @@ internal sealed class HpfsWriter {
     }
 
     // End sentinel with the down-pointer to the last leaf.
-    WriteEndSentinel(image, cursor, downPointerLba: dir.LeafBlockLbas[^1]);
+    cursor = WriteEndSentinel(image, cursor, downPointerLba: dir.LeafBlockLbas[^1]);
+    FinishDnode(image, off, dir.DirBlockLba, cursor, dir.FnodeLba, isRoot: true);
   }
 
   /// <summary>Writes a plain leaf dirent block: sorted child dirents + end sentinel.</summary>
-  private static void WriteLeafDirBlock(byte[] image, uint blockLba, List<TreeNode> children) {
+  private static void WriteLeafDirBlock(
+      byte[] image, uint blockLba, List<TreeNode> children, uint ownerFnodeLba = 0, bool isRoot = false) {
     var off = (int)(blockLba * LbaSize);
     DirBlockMagic.CopyTo(image.AsSpan(off, 4));
 
@@ -523,7 +536,26 @@ internal sealed class HpfsWriter {
     foreach (var child in children)
       cursor = WriteDirent(image, cursor, child, downPointerLba: 0);
 
-    WriteEndSentinel(image, cursor, downPointerLba: 0);
+    cursor = WriteEndSentinel(image, cursor, downPointerLba: 0);
+    FinishDnode(image, off, blockLba, cursor, ownerFnodeLba, isRoot);
+  }
+
+  /// <summary>
+  /// Fills the directory block's own header: where its entries stop, which
+  /// block it is, and what it belongs to.
+  /// </summary>
+  /// <remarks>
+  /// The first of those is not decoration. A driver walks entries only up to
+  /// the recorded end, so a block that leaves it zero is a directory with
+  /// nothing in it — which is what every directory this wrote looked like from
+  /// outside, however many entries were actually sitting there.
+  /// </remarks>
+  private static void FinishDnode(
+      byte[] image, int off, uint blockLba, int endCursor, uint ownerFnodeLba, bool isRoot) {
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 4, 4), (uint)(endCursor - off));
+    image[off + 8] = (byte)(isRoot ? 0x01 : 0x00);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 12, 4), ownerFnodeLba);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 16, 4), blockLba);
   }
 
   /// <summary>Writes one child dirent at <paramref name="cursor"/> and returns the next
@@ -534,27 +566,25 @@ internal sealed class HpfsWriter {
     if (nameBytes.Length > 254) nameBytes = nameBytes[..254];
 
     var hasDown = downPointerLba != 0;
-    var recLen = DirentHeaderLen + nameBytes.Length + (hasDown ? 4 : 0);
-    if ((recLen & 3) != 0) recLen = (recLen + 3) & ~3;
+    var recLen = DirentSize(nameBytes.Length, hasDown);
 
     // Record layout:
-    //   0: u16 recLen
-    //   2: u16 flags (bit 2 = down-pointer present, bit 3 = directory)
-    //   4: u32 fnodeLba
-    //  12: u32 fileSize (0 for directories)
-    //  30: u8 nameLen
-    //  31: name bytes
-    //  recLen-4: u32 down-pointer LBA (when bit 2 set)
-    var flags = (ushort)((child.IsDirectory ? DirentFlagDirectory : 0)
-                         | (hasDown ? DirentFlagBtreeDown : 0));
-
+    //   0x00: u16 recLen
+    //   0x02: u8  structural flags — first, down, last
+    //   0x03: u8  DOS attributes — the directory bit is 0x10 here
+    //   0x04: u32 fnode
+    //   0x0C: u32 file size
+    //   0x1E: u8  name length
+    //   0x1F: name bytes
+    //   recLen-4: u32 down-pointer (when the down flag is set)
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor, 2), (ushort)recLen);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor + 2, 2), flags);
+    image[cursor + 2] = (byte)(hasDown ? DirentFlagBtreeDown : 0);
+    image[cursor + 3] = (byte)(child.IsDirectory ? DirentAttrDirectory : 0);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 4, 4), child.FnodeLba);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 12, 4),
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 0x0C, 4),
       child.IsDirectory ? 0u : (uint)Math.Min(child.DataLength, uint.MaxValue));
-    image[cursor + 30] = (byte)nameBytes.Length;
-    nameBytes.CopyTo(image.AsSpan(cursor + 31, nameBytes.Length));
+    image[cursor + 0x1E] = (byte)nameBytes.Length;
+    nameBytes.CopyTo(image.AsSpan(cursor + 0x1F, nameBytes.Length));
 
     if (hasDown)
       BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + recLen - 4, 4), downPointerLba);
@@ -564,29 +594,33 @@ internal sealed class HpfsWriter {
 
   /// <summary>Writes the end-of-block sentinel dirent, optionally carrying a
   /// B-tree down-pointer to the rightmost child block.</summary>
-  private static void WriteEndSentinel(byte[] image, int cursor, uint downPointerLba) {
+  private static int WriteEndSentinel(byte[] image, int cursor, uint downPointerLba) {
     var hasDown = downPointerLba != 0;
-    var recLen = DirentHeaderLen + (hasDown ? 4 : 0);
-    var flags = (ushort)(DirentFlagSpecial | (hasDown ? DirentFlagBtreeDown : 0));
+    var recLen = DirentSize(1, hasDown);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor, 2), (ushort)recLen);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor + 2, 2), flags);
+    image[cursor + 2] = (byte)(DirentFlagLast | (hasDown ? DirentFlagBtreeDown : 0));
+    image[cursor + 0x1E] = 1;
+    image[cursor + 0x1F] = 0xFF;
     if (hasDown)
       BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + recLen - 4, 4), downPointerLba);
+    return cursor + recLen;
   }
 
-  private static void WriteFileFnode(byte[] image, uint fnodeLba, uint dataLba, uint dataLenLbas, uint parentFnodeLba) {
+  private static void WriteFileFnode(byte[] image, uint fnodeLba, uint dataLba, uint dataLenLbas, uint parentFnodeLba, uint fileSizeBytes) {
     var off = (int)(fnodeLba * LbaSize);
 
     FnodeMagic.CopyTo(image.AsSpan(off, 4));
 
-    // Parent-directory fnode LBA at offset 0x0C.
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x0C, 4), parentFnodeLba);
+    var fnode = image.AsSpan(off, LbaSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(fnode[HpfsLayout.FnUp..], parentFnodeLba);
+    BinaryPrimitives.WriteUInt16LittleEndian(fnode[HpfsLayout.FnEaOffset..], 0xC4);
 
-    // AllocSec header at 0xC0: height=0 (direct list, already zeroed).
-    // First direct-allocation entry at 0xC4.
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0xC4 + 0, 4), 0);           // logical offset
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0xC4 + 4, 4), dataLenLbas); // length
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0xC4 + 8, 4), dataLba);     // physical LBA
+    HpfsLayout.WriteLeafHeader(fnode, usedRuns: dataLenLbas == 0 ? 0 : 1);
+    var run = fnode[HpfsLayout.FnAlloc..];
+    BinaryPrimitives.WriteUInt32LittleEndian(run[HpfsLayout.RunFileSector..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(run[HpfsLayout.RunLength..], dataLenLbas);
+    BinaryPrimitives.WriteUInt32LittleEndian(run[HpfsLayout.RunDiskSector..], dataLba);
+    BinaryPrimitives.WriteUInt32LittleEndian(fnode[HpfsLayout.FnFileSize..], fileSizeBytes);
   }
 
   private static void WriteBitmap(byte[] image, uint usedLbas) {

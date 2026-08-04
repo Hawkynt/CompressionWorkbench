@@ -176,18 +176,89 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// a cleaner run reclaims, so they do not survive it; the live file set does,
   /// byte for byte.
   /// </summary>
+  /// <summary>
+  /// Largest volume the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new Nilfs1Reader(stream);
+
+    // The reader injects a view of the whole image beside the real files.
+    // Comparing that across a pass compares the pass to itself: the image
+    // changed, so it always differs.
+    return reader.Entries
+      .Where(e => !SyntheticEntries.Contains(e.Name))
+      .Select(reader.Extract)
+      .ToList();
+  }
+
+  /// <summary>Plans a layout inside the base segment's area and moves the payloads.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new Nilfs1BlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    // Only what lies in the base segment's own area takes part; everything
+    // past the first appended segment stays where it is.
+    var within = extents
+      .Where(e => e.Offset >= mover.FirstDataByte && e.Offset + e.Length <= mover.PayloadEnd)
+      .ToList();
+    if (within.Count == 0) return;
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      within, mover.FirstDataByte, mover.PayloadEnd, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      mover.PayloadEnd, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    // Not laid out again by moving, and the reason is the log rather than any
-    // checksum. A payload's position is written down as an offset from the
-    // start of the segment that describes it, and the reader finds the next
-    // segment by carrying on from where the previous segment's payloads end. So
-    // a payload cannot leave the segment it belongs to: moving one past the
-    // next segment's header hides that header, and moving one before its own
-    // segment's payload start is a negative offset the format cannot express.
-    // Compacting across segments means writing the segments again, which is
-    // what the rebuild below does.
+    // Moving what is out of place beats writing the volume out again, inside
+    // the one area where it can be done: the base segment's own payloads. A
+    // payload's position is an offset from the start of the segment describing
+    // it, so a move is that one field — and it must stay between where those
+    // payloads start and where the first appended segment begins, because the
+    // reader finds that segment by carrying on from where they end.
+    //
+    // That is where the holes are. Removing a file writes a tombstone into a
+    // new segment and leaves the bytes it had unclaimed, which is exactly the
+    // space this closes up. Compacting across segments still means writing the
+    // segments again, which is the rebuild below.
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
     // Every consolidate mode lands on the same layout here: the writer emits a
     // fresh volume packed from the first data block, and has no way to place
     // files against the tail. Carving a hole is the one request it cannot meet.

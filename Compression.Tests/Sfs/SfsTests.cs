@@ -21,10 +21,12 @@ public class SfsTests {
     BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(0x0E, 2), 5);
     // datecreated
     BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0x10, 4), 1234567890u);
-    // totalblocks at +0x2C
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0x2C, 4), 1760);
-    // blocksize at +0x30 = 512
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0x30, 4), 512);
+    // The root block carries two reserved longwords after its flag byte, not
+    // one. Counting a single one put these two fields a word early — here and
+    // in the reader alike, so the fixture agreed with the parser and neither
+    // agreed with a volume.
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0x30, 4), 1760);   // totalblocks
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0x34, 4), 512);    // blocksize
     return image;
   }
 
@@ -90,22 +92,27 @@ public class SfsTests {
   }
 
   /// <summary>
-  /// Lock the SFS capability surface at R-only. SFS R/W requires the
-  /// object-container B+ tree, bitmap chain, directory hash table, and
-  /// free-extent tree (see <see cref="FileSystem.Sfs.SfsFormatDescriptor"/>
-  /// remarks). Per the project rule "never advertise CanCreate without real
-  /// spec compliance", this test fails any drive-by upgrade that adds
-  /// modify/create capabilities without the underlying B+ tree work.
+  /// SFS can be written now, and the writer is what made the layout pass
+  /// possible — but it still must not claim to modify a volume in place.
   /// </summary>
+  /// <remarks>
+  /// Adding or removing a file means allocating against the bitmap, threading
+  /// the object node table and splitting the extent tree, none of which this
+  /// implements. Creating a volume outright needs none of that: it writes every
+  /// structure once, from nothing, which is why that one is claimed and the
+  /// other is not.
+  /// </remarks>
   [Test, Category("HappyPath")]
-  public void Descriptor_IsHonestlyReadOnly() {
+  public void Descriptor_ClaimsCreateButNotModify() {
     var d = new FileSystem.Sfs.SfsFormatDescriptor();
     Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "SFS must not advertise IArchiveModifiable until the object-container B+ tree, bitmap chain, and directory hash table are implemented.");
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
-      "SFS must not advertise IArchiveCreatable — empty-WORM emission still requires real B+ tree node bytes that no Windows/WSL validator can prove correct.");
+      "SFS must not advertise IArchiveModifiable until the bitmap, the node table and the " +
+      "extent tree can all be updated in place.");
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
+      "SFS writes whole volumes, so it says so.");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
   }
 }

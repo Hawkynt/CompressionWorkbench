@@ -15,6 +15,18 @@ namespace FileSystem.ZxScl;
 ///   <item><description>SCL format notes in ZX Spectrum emulator documentation (World of Spectrum formats reference)</description></item>
 /// </list>
 /// </summary>
+/// <remarks>
+/// <para>A file's data is found by adding up the lengths of every file before
+/// it — the directory records a length in sectors and nothing else, so position
+/// is implied by order. That is the whole constraint on moving one: the
+/// payloads have to stay packed against the directory and in the order it lists
+/// them, and the layout the reader can walk is that one and no other.</para>
+///
+/// <para>Which is what a container we wrote already looks like, because
+/// removing a file shifts the payloads back over the gap and truncates. A pass
+/// over one of those finds nothing to move and says so, instead of writing the
+/// whole container out again to arrive at the same bytes.</para>
+/// </remarks>
 public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.
@@ -112,8 +124,87 @@ public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  /// <summary>
+  /// Moves the payloads that are out of place, and writes the container out
+  /// again only when that cannot express what was asked.
+  /// </summary>
+  /// <remarks>
+  /// <para>On a container we wrote, nothing is out of place: removing a file
+  /// shifts the payloads back over the gap and truncates. The pass then finds
+  /// no move to make and says so, which is a cheaper and truer answer than
+  /// rebuilding the whole thing to arrive at the same bytes. What it is for is
+  /// a container that arrived from somewhere else, with bytes behind the last
+  /// payload the directory does not account for.</para>
+  ///
+  /// <para>What it cannot do is put a payload anywhere but directly behind the
+  /// one before it. Position is implied by order here, so the layout the reader
+  /// can walk is the packed one and no other; a mode asking for something else
+  /// is refused by the mover, and the rebuild answers instead.</para>
+  /// </remarks>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+  }
+
+  /// <summary>Largest container held in memory twice for the guarded pass.</summary>
+  private const long PlannerImageCap = 64L * 1024 * 1024;
+
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    using var reader = new ZxSclReader(stream);
+    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+  }
+
+  /// <summary>Plans a payload-level layout, moves the payloads and settles the directory.</summary>
+  private static void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    var mover = new ZxSclBlockMover();
+    archive.Position = 0;
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = ZxSclRecordMap.Enumerate(archive).ToList();
+    if (extents.Count == 0) return;
+
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    // The directory is the only record of where a payload is, and one payload's
+    // old place is routinely another's new one, so its order is written once
+    // every move has landed.
+    mover.Settle(archive);
+
+    archive.Position = 0;
+    var postExtents = ZxSclRecordMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
 
   // ── IArchiveLayoutMap ────────────────────────────────────────────────
 

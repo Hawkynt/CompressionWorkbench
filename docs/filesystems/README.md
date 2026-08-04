@@ -36,7 +36,7 @@ cannot claim something the code does not do.
 | [exFAT](ExFat.md) | moving (`ExFatBlockMover`) | yes | yes |
 | [ext2/3/4](Ext.md) | moving (`ExtBlockMover`) | yes | yes |
 | [ext1](Ext1.md) | moving (`Ext1BlockMover`) | yes | yes |
-| [F2FS](F2fs.md) | rebuilding | yes | yes |
+| [F2FS](F2fs.md) | moving (`F2fsBlockMover`) | yes | yes |
 | [FAT Filesystem Image](Fat.md) | moving (`FatBlockMover`) | yes | yes |
 | [FAT+ Filesystem Image (large-file extension)](FatPlus.md) | rebuilding | yes | yes |
 | [FATX (Xbox)](Fatx.md) | moving (`FatxBlockMover`) | yes | yes |
@@ -56,7 +56,7 @@ cannot claim something the code does not do.
 | [JFS](Jfs.md) | moving (`JfsBlockMover`) | yes | yes |
 | [JFS1 (OS/2 original IBM JFS)](Jfs1.md) | moving (`Jfs1BlockMover`) | yes | yes |
 | [HP LIF (Logical Interchange Format)](Lif.md) | moving (`LifBlockMover`) | yes | yes |
-| [LittleFS](LittleFs.md) | rebuilding | yes | yes |
+| [LittleFS](LittleFs.md) | moving (`LittleFsBlockMover`) | yes | yes |
 | [MFS (Macintosh File System)](Mfs.md) | moving (`MfsBlockMover`) | yes | yes |
 | [MFS-1 (Acorn Master File System v1)](Mfs1.md) | moving (`Mfs1BlockMover`) | yes | yes |
 | [Minix FS](MinixFs.md) | moving (`MinixFsBlockMover`) | yes | yes |
@@ -64,9 +64,9 @@ cannot claim something the code does not do.
 | [Minix V2 FS](MinixV2.md) | moving (`MinixV2BlockMover`) | yes | yes |
 | [MSA (Magic Shadow Archiver)](Msa.md) | rebuilding | yes | yes |
 | [NIB (Commodore nibble dump)](Nib.md) | — | no | no |
-| [NILFS v1](Nilfs1.md) | rebuilding | yes | yes |
-| [NILFS2](Nilfs2.md) | rebuilding | yes | yes |
-| [NSS (Novell Storage Services)](Nss.md) | rebuilding | no | no |
+| [NILFS v1](Nilfs1.md) | moving (`Nilfs1BlockMover`) | yes | yes |
+| [NILFS2](Nilfs2.md) | moving (`Nilfs2BlockMover`) | yes | yes |
+| [NSS (Novell Storage Services)](Nss.md) | moving (`NssBlockMover`) | no | no |
 | [NTFS](Ntfs.md) | moving (`NtfsBlockMover`) | yes | yes |
 | [NWFS (Novell NetWare 386 Traditional Filesystem)](Nwfs.md) | — | no | no |
 | [NWFS386 (Novell NetWare 386 raw)](Nwfs386.md) | — | no | no |
@@ -83,25 +83,25 @@ cannot claim something the code does not do.
 | [ReiserFS](ReiserFs.md) | moving (`ReiserFsBlockMover`) | yes | yes |
 | [ROMFS](RomFs.md) | moving (`RomFsBlockMover`) | yes | yes |
 | [DEC RT-11 (RX01)](Rt11.md) | moving (`Rt11BlockMover`) | yes | yes |
-| [Amiga SFS](Sfs.md) | rebuilding | no | no |
+| [Amiga SFS](Sfs.md) | moving (`SfsBlockMover`) | no | no |
 | [SmartFS](SmartFs.md) | moving (`SmartFsBlockMover`) | no | no |
-| [SquashFS](SquashFs.md) | rebuilding | yes | yes |
+| [SquashFS](SquashFs.md) | moving (`SquashFsBlockMover`) | yes | yes |
 | [UNIX System V FS](SysV.md) | moving (`SysVBlockMover`) | yes | yes |
 | [Transactional FAT (TFAT)](TFat.md) | rebuilding | yes | yes |
 | [TFS (BBN Trans-FS)](Tfs.md) | — | no | no |
 | [TI-99/4A DSR](Ti99.md) | moving (`Ti99BlockMover`) | yes | yes |
 | [TR-DOS](TrDos.md) | moving (`TrDosBlockMover`) | yes | yes |
 | [TRSDOS / LDOS](Trsdos.md) | moving (`TrsdosBlockMover`) | yes | yes |
-| [TUX2](Tux2.md) | rebuilding | yes | yes |
-| [TUX3](Tux3.md) | rebuilding | yes | yes |
-| [UBIFS](Ubifs.md) | rebuilding | no | yes |
+| [TUX2](Tux2.md) | moving (`Tux2BlockMover`) | yes | yes |
+| [TUX3](Tux3.md) | moving (`Tux3BlockMover`) | yes | yes |
+| [UBIFS](Ubifs.md) | moving (`UbifsBlockMover`) | no | yes |
 | [UDF](Udf.md) | moving (`UdfBlockMover`) | yes | yes |
 | [UFS](Ufs.md) | moving (`UfsBlockMover`) | yes | yes |
 | [VDFS](Vdfs.md) | moving (`VdfsBlockMover`) | yes | yes |
-| [VxFS (Veritas)](VxFs.md) | rebuilding | no | no |
+| [VxFS (Veritas)](VxFs.md) | moving (`VxFsBlockMover`) | no | no |
 | [Xenix FS](Xenix.md) | moving (`XenixBlockMover`) | yes | yes |
 | [XFS](Xfs.md) | moving (`XfsBlockMover`) | yes | yes |
 | [YAFFS2](Yaffs2.md) | moving (`Yaffs2BlockMover`) | yes | yes |
-| [ZFS](Zfs.md) | rebuilding | no | yes |
-| [SCL (ZX Spectrum)](ZxScl.md) | rebuilding | yes | yes |
+| [ZFS](Zfs.md) | moving (`ZfsBlockMover`) | no | yes |
+| [SCL (ZX Spectrum)](ZxScl.md) | moving (`ZxSclBlockMover`) | yes | yes |
 

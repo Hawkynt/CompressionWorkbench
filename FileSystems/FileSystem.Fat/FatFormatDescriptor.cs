@@ -97,7 +97,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       DisplayName: "Transaction FAT (TFAT)",
       Kind: FormatOptionKind.Boolean,
       Default: "false",
-      Description: "Marks the image for transaction-based FAT updates (Windows Embedded/CE crash-safe style). Sets BS_Reserved1 = 0x01 in the boot sector."),
+      Description: "Marks the image for transaction-based FAT updates (Windows Embedded/CE crash-safe style). The marker is the TFAT tag in BS_FilSysType; BS_Reserved1 is left alone, because that is where FAT records an unclean unmount."),
     new FormatOptionDescriptor(
       Key: "FatPlus",
       DisplayName: "FAT+ timestamps",

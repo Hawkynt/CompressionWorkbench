@@ -39,7 +39,117 @@ namespace FileSystem.Ubifs;
 /// rewritten for a moved node to be found again is a structure this
 /// implementation cannot yet read, let alone write.
 /// </remarks>
-public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap {
+
+  /// <summary>
+  /// Largest image the in-place pass is offered for. Its guard holds a copy of
+  /// the image to compare payloads across the pass.
+  /// </summary>
+  private const long PlannerImageCap = 256L * 1024 * 1024;
+
+  // ── IFilesystemExtentMap ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Where the log keeps its nodes: the ones carrying a file's bytes under its
+  /// inode number, and the ones describing the volume as structure.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+
+    List<UbifsLayout.Node> nodes;
+    try {
+      nodes = UbifsLayout.Nodes(image);
+    } catch {
+      // An image we cannot walk claims nothing; wiping it would zero live data.
+      yield break;
+    }
+
+    if (nodes.Count == 0) yield break;
+
+    // Everything before the first node is the superblock and the master nodes,
+    // which are found where they are.
+    var first = nodes.Min(n => n.Offset);
+    if (first > 0)
+      yield return new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved, "UBIFS head");
+
+    foreach (var node in nodes.OrderBy(n => n.Offset))
+      yield return UbifsLayout.IsData(node.Type)
+        ? new DefragBlockInfo(node.Offset, node.Length, DefragBlockKind.Used,
+            $"inode {node.InodeNumber}")
+        : new DefragBlockInfo(node.Offset, node.Length, DefragBlockKind.MetadataReserved,
+            "UBIFS node");
+  }
+
+  // ── IArchiveDefragmentable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Lays the image out again by moving nodes. Nothing records where a node is:
+  /// the log is walked by looking for the magic at the head of each one, so a
+  /// move repoints nothing and only has to leave nothing behind.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
+      var planned = false;
+      // The in-place pass is kept only if every payload still reads back: it
+      // can refuse partway, and a rebuild is the honest answer when it does.
+      DefragContentGuard.RunOrRebuild(archive,
+        readContents: ReadPayloadsForGuard,
+        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
+        rebuild: () => planned = false);
+      if (planned) return;
+      archive.Position = 0;
+    }
+
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException(
+        $"UBIFS can only rebuild an image packed from the start; got {options.Mode}.");
+
+    RebuildVerb.RebuildInPlace(archive, this, this);
+  }
+
+  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+    stream.Position = 0;
+    var reader = new UbifsFileReader(stream);
+    return reader.Entries
+      .Where(e => !e.IsDirectory)
+      .OrderBy(e => e.Name, StringComparer.Ordinal)
+      .Select(reader.Extract)
+      .ToList();
+  }
+
+  /// <summary>Plans the new layout and moves the nodes into it.</summary>
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new UbifsBlockMover();
+    mover.Init(archive);
+
+    archive.Position = 0;
+    var extents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
+      metadataZone: options.MetadataZonePlacement);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        "complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
+      archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 

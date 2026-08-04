@@ -19,13 +19,19 @@ namespace FileSystem.Sfs;
 ///   0x14 bits          u8     — flag bits
 ///   0x15 reserved      u8 × 3
 ///   0x18 reserved2     u32 BE
-///   0x1C firstbyteh    u32 BE — first byte of partition (high)
-///   0x20 firstbyte     u32 BE — first byte (low / for old images)
-///   0x24 lastbyteh     u32 BE
-///   0x28 lastbyte      u32 BE
-///   0x2C totalblocks   u32 BE — total blocks in volume
-///   0x30 blocksize     u32 BE — block size in bytes (typically 512)
-///   0x34 ...           index/admin/bitmap pointers
+///   0x18 reserved1     u32 BE x 2
+///   0x20 firstbyteh    u32 BE — first byte of partition (high)
+///   0x24 firstbyte     u32 BE — first byte (low)
+///   0x28 lastbyteh     u32 BE
+///   0x2C lastbyte      u32 BE
+///   0x30 totalblocks   u32 BE — total blocks in volume
+///   0x34 blocksize     u32 BE — block size in bytes (typically 512)
+///   0x60 ...           bitmap / admin / root / extent / node pointers
+///
+/// The two reserved longwords at 0x18 used to be counted as one here, which
+/// read every field from the partition's first byte onwards a word early: the
+/// block count came out of the partition's last byte and the block size out of
+/// the block count. Nothing noticed while nothing read past the root block.
 /// </summary>
 internal sealed class SfsRootBlock {
   public static readonly byte[] SfsMagic = [0x53, 0x46, 0x53, 0x00]; // "SFS\0"
@@ -61,7 +67,7 @@ internal sealed class SfsRootBlock {
       raw = padded;
     }
 
-    var blockSize = ReadU32Be(image, offset + 0x30);
+    var blockSize = ReadU32Be(image, offset + SfsLayout.RbBlockSize);
     // Sanity-check block size — must be a sensible power-of-two between 256 and 32768.
     // Fall back to 512 (the SFS default) if the field is bogus.
     if (blockSize is < 256u or > 32768u || (blockSize & (blockSize - 1)) != 0)
@@ -74,7 +80,7 @@ internal sealed class SfsRootBlock {
       Version = ReadU16Be(image, offset + 0x0C),
       SequenceNumber = ReadU16Be(image, offset + 0x0E),
       DateCreated = ReadU32Be(image, offset + 0x10),
-      TotalBlocks = ReadU32Be(image, offset + 0x2C),
+      TotalBlocks = ReadU32Be(image, offset + SfsLayout.RbTotalBlocks),
       BlockSize = blockSize,
       RootBlockOffset = (uint)offset,
       RawBytes = raw,

@@ -354,7 +354,7 @@ public sealed class HpfsFormatDescriptor
         result.Add(new DefragBlockInfo(rootFnodeOff, lbaSize, DefragBlockKind.MetadataReserved, "Root Fnode"));
 
         // Root dir block
-        var rootDirOff = (long)ReadLba(rootFnodeOff + 0xC4 + 8) * lbaSize;
+        var rootDirOff = (long)ReadLba(rootFnodeOff + HpfsLayout.FnAlloc + HpfsLayout.RunDiskSector) * lbaSize;
         if (rootDirOff + HpfsReader.DirBlockSize <= length)
           result.Add(new DefragBlockInfo(rootDirOff, HpfsReader.DirBlockSize, DefragBlockKind.MetadataReserved, "Root DirBlock"));
       }

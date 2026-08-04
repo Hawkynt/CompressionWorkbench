@@ -110,16 +110,21 @@ public sealed class VxFsReader {
     IsBigEndian = be;
     VsMagic = Magic;
 
-    VsVersion = ReadI32(sb, 4, be);
-    VsMtime = ReadU32(sb, 8, be);
-    VsCtime = ReadU32(sb, 12, be);
-    VsBlockSize = ReadI32(sb, 24, be);
-    VsSize = ReadI32(sb, 28, be);
-    VsDsize = ReadI32(sb, 32, be);
-    VsOldNau = ReadI32(sb, 40, be);
-    VsImmedLen = ReadI32(sb, 52, be);
-    VsNdAddr = ReadI32(sb, 56, be);
-    VsFirstAu = ReadI32(sb, 60, be);
+    // The offsets below track struct vxfs_sb. Two unused words sit between
+    // vs_cutime and vs_old_logstart; leaving them out — as this did — reads
+    // every field after the creation times eight bytes early, which put
+    // vs_old_logstart's value in the block size. Nothing noticed while nothing
+    // read past the superblock.
+    VsVersion = ReadI32(sb, VxFsLayout.SbVersion, be);
+    VsMtime = ReadU32(sb, VxFsLayout.SbCtime, be);
+    VsCtime = ReadU32(sb, VxFsLayout.SbCutime, be);
+    VsBlockSize = ReadI32(sb, VxFsLayout.SbBsize, be);
+    VsSize = ReadI32(sb, VxFsLayout.SbSize, be);
+    VsDsize = ReadI32(sb, VxFsLayout.SbDsize, be);
+    VsOldNau = ReadI32(sb, 48, be);
+    VsImmedLen = ReadI32(sb, VxFsLayout.SbImmedlen, be);
+    VsNdAddr = ReadI32(sb, VxFsLayout.SbNdaddr, be);
+    VsFirstAu = ReadI32(sb, VxFsLayout.SbFirstau, be);
 
     var captureLen = (int)Math.Min(HeaderCaptureSize, image.Length - SuperblockOffset);
     var raw = new byte[HeaderCaptureSize];

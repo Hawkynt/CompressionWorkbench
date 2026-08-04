@@ -53,6 +53,28 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
   /// Streaming init — reads only the 512-byte superblock at offset 0. All
   /// subsequent metadata access goes through <see cref="SectorCache"/>.
   /// </summary>
+  /// <summary>A block, which is what an extent record counts in.</summary>
+  public int BlockSize => this._blockSizeForPlanner;
+
+  /// <summary>First byte a file's extent may occupy: past the volume's own head.</summary>
+  public long FirstDataByte => this._firstDataByte;
+
+  /// <summary>
+  /// Each call repoints the record naming the run it is given and leaves the
+  /// inode's other records alone.
+  /// </summary>
+  public bool RepointsRunsIndependently => true;
+
+  /// <summary>
+  /// A run may be held outside the volume while the rest of the layout moves,
+  /// which is what lets a full volume be rearranged at all.
+  /// </summary>
+  public bool SupportsHeldRuns => true;
+
+  private int _blockSizeForPlanner = 4096;
+
+  private long _firstDataByte;
+
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < 512)
@@ -78,6 +100,15 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
 
     if (_blockSize == 0) _blockSize = 4096;
     if (_inodeSize == 0) _inodeSize = 256;
+
+    // The log ends where a file may begin; everything before it is the
+    // volume's own, and a pass that starts lower writes over it.
+    this._blockSizeForPlanner = _blockSize;
+    var logStart = BinaryPrimitives.ReadUInt64BigEndian(sb[48..]);
+    var logBlocks = BinaryPrimitives.ReadUInt32BigEndian(sb[96..]);
+    var logAg = (long)(logStart >> (_agBlkLog == 0 ? 1 : _agBlkLog));
+    var logAgBlock = (long)(logStart & ((1UL << (_agBlkLog == 0 ? 1 : _agBlkLog)) - 1));
+    this._firstDataByte = (logAg * _agBlocks + logAgBlock + logBlocks) * (long)_blockSize;
     if (_agBlocks == 0) _agBlocks = (uint)(image.Length / _blockSize);
     if (_agBlkLog == 0) {
       var v = _agBlocks;
@@ -303,6 +334,123 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
   }
 
   // ── CRC helpers ──────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Writes each allocation group's free-space btrees from the layout the pass
+  /// finished with.
+  /// </summary>
+  /// <remarks>
+  /// A group records its free space twice — once ordered by where an extent
+  /// starts and once by how long it is — and the header carries the totals.
+  /// Moving files changes which blocks are free, so all three have to be said
+  /// again; leaving them is a volume xfs_repair calls corrupt even though every
+  /// file reads back.
+  /// </remarks>
+  public void SettleFreeSpace(Stream image, IEnumerable<(long Offset, long Length)> live) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(live);
+    if (this._nodeSizeUnused) { /* geometry is read below */ }
+
+    var superblock = new byte[SectorSize];
+    image.Position = 0;
+    image.ReadExactly(superblock);
+
+    var blockSize = (int)BinaryPrimitives.ReadUInt32BigEndian(superblock.AsSpan(4));
+    var agBlocks = BinaryPrimitives.ReadUInt32BigEndian(superblock.AsSpan(84));
+    var agCount = BinaryPrimitives.ReadUInt32BigEndian(superblock.AsSpan(88));
+    if (blockSize <= 0 || agBlocks == 0 || agCount == 0) return;
+
+    var taken = new HashSet<long>();
+    foreach (var (offset, length) in live) {
+      if (length <= 0) continue;
+      var first = offset / blockSize;
+      var last = (offset + length + blockSize - 1) / blockSize;
+      for (var block = first; block < last; ++block)
+        if (block >= 0) taken.Add(block);
+    }
+
+    ulong freeTotal = 0;
+    for (var ag = 0u; ag < agCount; ++ag) {
+      var agStart = (long)ag * agBlocks;
+      var agEnd = Math.Min(agStart + agBlocks, image.Length / blockSize);
+
+      // Whatever no structure and no file covers is free.
+      var free = new List<(uint Start, uint Length)>();
+      var block = agStart;
+      while (block < agEnd) {
+        if (taken.Contains(block)) { ++block; continue; }
+
+        var runStart = block;
+        while (block < agEnd && !taken.Contains(block)) ++block;
+        free.Add(((uint)(runStart - agStart), (uint)(block - runStart)));
+      }
+
+      foreach (var (_, length) in free) freeTotal += length;
+      WriteFreeBtree(image, agStart, blockSize, BnobtBlock, free.OrderBy(f => f.Start).ToList());
+      WriteFreeBtree(image, agStart, blockSize, CntbtBlock,
+        free.OrderBy(f => f.Length).ThenBy(f => f.Start).ToList());
+
+      var agf = new byte[SectorSize];
+      image.Position = (agStart + AgfBlock) * blockSize + AgfSectorOffset;
+      image.ReadExactly(agf);
+      BinaryPrimitives.WriteUInt32BigEndian(agf.AsSpan(52), (uint)free.Sum(f => f.Length));
+      BinaryPrimitives.WriteUInt32BigEndian(agf.AsSpan(56),
+        free.Count == 0 ? 0u : free.Max(f => f.Length));
+      BackfillCrc(agf, AgfCrcOffset);
+      image.Position = (agStart + AgfBlock) * blockSize + AgfSectorOffset;
+      image.Write(agf, 0, SectorSize);
+    }
+
+    // The superblock's count of free blocks is the sum over the groups.
+    BinaryPrimitives.WriteUInt64BigEndian(superblock.AsSpan(144), freeTotal);
+    BackfillCrc(superblock, SbCrcOffset);
+    image.Position = 0;
+    image.Write(superblock, 0, SectorSize);
+    image.Flush();
+  }
+
+  /// <summary>Writes one free-space btree leaf with the records it is given.</summary>
+  private static void WriteFreeBtree(Stream image, long agStart, int blockSize, int blockInAg,
+      IReadOnlyList<(uint Start, uint Length)> records) {
+    var at = (agStart + blockInAg) * blockSize;
+    if (at < 0 || at + blockSize > image.Length) return;
+
+    var block = new byte[blockSize];
+    image.Position = at;
+    image.ReadExactly(block);
+
+    BinaryPrimitives.WriteUInt16BigEndian(block.AsSpan(6), (ushort)Math.Min(records.Count, 505));
+    for (var i = 0; i < records.Count && i < 505; ++i) {
+      BinaryPrimitives.WriteUInt32BigEndian(block.AsSpan(BtreeRecOffset + i * 8), records[i].Start);
+      BinaryPrimitives.WriteUInt32BigEndian(block.AsSpan(BtreeRecOffset + i * 8 + 4), records[i].Length);
+    }
+
+    BackfillCrc(block, BtreeCrcOffset);
+    image.Position = at;
+    image.Write(block, 0, blockSize);
+  }
+
+  /// <summary>Blocks of an allocation group the format puts its own structures in.</summary>
+  private const int AgfBlock = 0;
+
+  private const int AgfSectorOffset = 512;
+
+  private const int BnobtBlock = 1;
+
+  private const int CntbtBlock = 2;
+
+  private const int SectorSize = 512;
+
+  private const int BtreeRecOffset = 56;
+
+  private const int BtreeCrcOffset = 52;
+
+  private const int AgfCrcOffset = 216;
+
+  private const int SbCrcOffset = 224;
+
+  /// <summary>Never true; the geometry this needs is read where it is used.</summary>
+  private bool _nodeSizeUnused => false;
 
   private static void BackfillCrc(Span<byte> block, int crcFieldOffset) {
     block[crcFieldOffset] = 0;

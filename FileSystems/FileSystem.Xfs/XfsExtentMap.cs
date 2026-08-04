@@ -26,6 +26,37 @@ public static class XfsExtentMap {
   private const uint XfsFeatIncompatFtype = 0x1;
 
   /// <summary>
+  /// Where each inode chunk of an allocation group sits, as its inode btree
+  /// records them.
+  /// </summary>
+  private static IEnumerable<(long Offset, long Length)> InodeChunks(SectorCache cache,
+      uint agNumber, long agBlocks, int blockSize, int inodeSize) {
+    // The inode btree root is the AG's fourth block, and its leaf records name
+    // a chunk of 64 inodes apiece.
+    const int InobtBlock = 3;
+    const int RecordOffset = 56;
+    const int InodesPerChunk = 64;
+
+    var rootOffset = ((long)agNumber * agBlocks + InobtBlock) * blockSize;
+    if (rootOffset < 0 || rootOffset + blockSize > cache.Length) yield break;
+
+    var root = cache.Read(rootOffset, blockSize);
+    if (BinaryPrimitives.ReadUInt32BigEndian(root) != 0x49414233u) yield break;   // "IAB3"
+    if (BinaryPrimitives.ReadUInt16BigEndian(root.AsSpan(4)) != 0) yield break;   // a leaf only
+
+    var records = BinaryPrimitives.ReadUInt16BigEndian(root.AsSpan(6));
+    var inodesPerBlock = blockSize / inodeSize;
+    if (inodesPerBlock <= 0) yield break;
+
+    for (var i = 0; i < records && i < 256; ++i) {
+      var startIno = BinaryPrimitives.ReadUInt32BigEndian(root.AsSpan(RecordOffset + i * 16));
+      var chunkBlock = startIno / (uint)inodesPerBlock;
+      var offset = ((long)agNumber * agBlocks + chunkBlock) * blockSize;
+      yield return (offset, (long)InodesPerChunk / inodesPerBlock * blockSize);
+    }
+  }
+
+  /// <summary>
   /// Single-pass walker. Parses sb0, computes the AG layout, walks the root
   /// directory's inode (extents-format) to enumerate child files, then yields
   /// each child's BMBT extents as Used runs.
@@ -72,6 +103,32 @@ public static class XfsExtentMap {
       if (agMetaLen > 0)
         yield return new DefragBlockInfo(agOff, agMetaLen, DefragBlockKind.MetadataReserved,
           FileName: $"XFS AG{a} metadata");
+    }
+
+    // The log is a region of its own, and the inode chunks sit past the AG's
+    // header blocks. Neither was described here, so both read as free space —
+    // a wipe would zero the log and every inode in the volume, and a layout
+    // would put a file on top of them.
+    var logStart = BinaryPrimitives.ReadUInt64BigEndian(sb.AsSpan(48));
+    var logBlocks = BinaryPrimitives.ReadUInt32BigEndian(sb.AsSpan(96));
+    if (logBlocks > 0) {
+      var logAg = (long)(logStart >> agBlkLog);
+      var logAgBlock = (long)(logStart & ((1UL << agBlkLog) - 1));
+      var logOffset = (logAg * agBlocks + logAgBlock) * blockSize;
+      var logLength = (long)logBlocks * blockSize;
+      if (logOffset >= 0 && logOffset + logLength <= image.Length)
+        yield return new DefragBlockInfo(logOffset, logLength,
+          DefragBlockKind.MetadataReserved, FileName: "XFS log");
+    }
+
+    // Every inode chunk the allocation btree records, which is where the
+    // inodes themselves live.
+    for (uint a = 0; a < agCount; a++) {
+      foreach (var (chunkOffset, chunkLength) in InodeChunks(cache, a, agBlocks, (int)blockSize, (int)inodeSize)) {
+        if (chunkOffset < 0 || chunkOffset + chunkLength > image.Length) continue;
+        yield return new DefragBlockInfo(chunkOffset, chunkLength,
+          DefragBlockKind.MetadataReserved, FileName: $"XFS AG{a} inode chunk");
+      }
     }
 
     // Walk root directory's inode (short-form or extents).
