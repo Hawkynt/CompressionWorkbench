@@ -146,10 +146,41 @@ internal static class ThirdPartyFsCheck {
       return Result.NotAvailable($"{strategy.Fsck} is not installed.");
 
     var (stdout, stderr, exit) = Run(tool, string.Format(strategy.FsckArgs, Quote(imagePath)));
-    var ok = strategy.FsckOkExitCodes.Contains(exit);
-    return new Result(true, ok, strategy.Fsck,
-      ok ? "" : $"exit {exit}: {Truncate(stdout + stderr)}");
+    var output = stdout + stderr;
+    if (!strategy.FsckOkExitCodes.Contains(exit))
+      return new Result(true, false, strategy.Fsck, $"exit {exit}: {Truncate(output)}");
+
+    // A checker can exit zero and still say the volume is wrong. Two of ours
+    // did for a long time — a FAT marker written into the unclean-unmount byte
+    // had fsck.fat announce possible corruption, and an unformatted JFS
+    // journal had fsck.jfs fail to replay it — and nothing noticed, because
+    // nothing read past the exit code.
+    var complaint = Complaints.FirstOrDefault(
+      c => output.Contains(c, StringComparison.OrdinalIgnoreCase));
+    return complaint == null
+      ? new Result(true, true, strategy.Fsck, "")
+      : new Result(true, false, strategy.Fsck,
+        $"exit {exit} but said \"{complaint}\": {Truncate(output)}");
   }
+
+  /// <summary>
+  /// Things a checker says about a volume that is wrong, even when it exits
+  /// zero. Each is a phrase about the image, not about the host or the run.
+  /// </summary>
+  private static readonly string[] Complaints = [
+    "Dirty bit is set",
+    "logredo failed",
+    "not properly unmounted",
+    "FILE SYSTEM WAS MODIFIED",
+    "UNEXPECTED INCONSISTENCY",
+  ];
+
+  // Two phrases that read like complaints and are not. reiserfsck ends a clean
+  // run with "No corruptions found", so the bare word "corrupt" failed every
+  // volume it was happy with; and fsck.f2fs prints "[FSCK] fixing SIT types"
+  // as a heading before the check runs, on a volume mkfs.f2fs made as readily
+  // as on one of ours. Both were checked against a reference image before
+  // being left out.
 
   // ── readers ───────────────────────────────────────────────────────────────
 

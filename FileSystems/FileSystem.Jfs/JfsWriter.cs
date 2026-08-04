@@ -28,6 +28,15 @@ public sealed class JfsWriter {
   // ── spec constants ────────────────────────────────────────────────────────
   internal const int SuperblockOffset = 0x8000;   // 64 × 512 = 32768
   public const int BlockSize = 4096;
+
+  // Aggregate flags. The log superblock records the same set, so they are
+  // named once rather than twice.
+  private const uint JfsLinux = 0x10000000u;
+  private const uint JfsGroupCommit = 0x00000100u;
+  private const uint JfsInlineLog = 0x00000800u;
+
+  /// <summary>Directories carry an index; mkfs.jfs sets this on every Linux volume.</summary>
+  private const uint JfsDirIndexFlag = 0x00200000u;
   internal const int SectorSize = 512;
   internal const int L2BSize = 12;                // log2(4096)
   internal const int L2PBSize = 9;                // log2(512)
@@ -430,6 +439,7 @@ public sealed class JfsWriter {
     this._payloads = new DeferredPayloads();
 
     WriteSuperblock(image, usableBlocks, FsckWspBlocks, InlineLogBlocks);
+    this.WriteLog(image, usableBlocks + FsckWspBlocks, InlineLogBlocks);
 
     // Track allocated blocks for the dmap pmap/wmap. All metadata + file data is
     // marked allocated; the rest of the usable region is free.
@@ -558,9 +568,7 @@ public sealed class JfsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(sb[28..], L2PBSize);
     BinaryPrimitives.WriteUInt16LittleEndian(sb[30..], 0);
     BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)Dmap_Bperdmap);              // s_agsize = 8192 (1<<L2BPERDMAP)
-    const uint JfsLinux = 0x10000000u;
-    const uint JfsGroupCommit = 0x00000100u;
-    const uint JfsInlineLog = 0x00000800u;
+
     // JFS_DIR_INDEX selects the modern (11-char head) ldtentry layout in which
     // the head slot is followed by a 4-byte dir_table cookie at +28. fsck.jfs
     // keys the head's inline name capacity off this flag: set ⇒ DTLHDRDATALEN
@@ -568,8 +576,7 @@ public sealed class JfsWriter {
     // 11-char-head + index@28 layout, so the flag must be set or fsck splits
     // long names at the wrong offset and rejects the directory ("DF2 corrupt
     // data"). mkfs.jfs sets this bit for every Linux JFS volume.
-    const uint JfsDirIndex = 0x00200000u;
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], JfsLinux | JfsDirIndex | JfsGroupCommit | JfsInlineLog);
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], JfsLinux | JfsDirIndexFlag | JfsGroupCommit | JfsInlineLog);
     BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], 0);                                // s_state = FM_CLEAN
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 0);                                // s_compress
     WritePxd(sb[48..], length: (uint)InodeExtentBlocks, address: (ulong)this._secondaryAitBlock);      // s_ait2
@@ -594,6 +601,78 @@ public sealed class JfsWriter {
     sb.Slice(152, 16).Clear();
     label.AsSpan(0, Math.Min(label.Length, 16)).CopyTo(sb[152..]);                        // s_label[16]
     this._logUuid.CopyTo(sb[168..]);                                                      // s_loguuid[16]
+  }
+
+
+  // ── inline log ──────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Formats the inline log, which the superblock reserves and this used to
+  /// leave as zeroes.
+  /// </summary>
+  /// <remarks>
+  /// <para>A zeroed log is not an empty log. <c>fsck.jfs</c> replays the
+  /// journal before it checks anything, and on a volume whose log has no
+  /// superblock in it that replay fails: "logredo failed (rc=-268). fsck
+  /// continuing." — a warning on every volume this ever wrote, on a filesystem
+  /// that was otherwise clean.</para>
+  ///
+  /// <para>The shape is the one the kernel's own <c>lmLogFormat</c> lays down.
+  /// Page 0 is reserved, page 1 is the log superblock, page 2 carries a single
+  /// sync-point record, and the pages after it are empty. Their sequence
+  /// numbers deliberately start below page 2's: the log is a circular file, and
+  /// giving the first page written the highest number is what makes the binary
+  /// search for the log's end land on it.</para>
+  /// </remarks>
+  private void WriteLog(SparseBlockImage image, int logAddressBlock, int logBlocks) {
+    const int LogPageSize = 4096;
+    const uint LogMagic = 0x87654321;
+    const uint LogVersion = 1;
+    const uint LogRedone = 1;          // the state of a log that shut down cleanly
+    const int LogPageHeaderSize = 8;
+    const int LogRecordSize = 36;      // sizeof(struct lrd)
+    const ushort LogSyncPoint = 0x4000;
+
+    // One page per block: this writes 4096-byte blocks, which is the log's
+    // page size too.
+    var pages = logBlocks;
+    if (pages < 4) return;
+
+    var super = image.At((long)(logAddressBlock + 1) * BlockSize, LogPageSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(super, LogMagic);
+    BinaryPrimitives.WriteUInt32LittleEndian(super[4..], LogVersion);
+    BinaryPrimitives.WriteUInt32LittleEndian(super[8..], 1);            // serial
+    BinaryPrimitives.WriteUInt32LittleEndian(super[12..], (uint)pages); // size, in pages
+    BinaryPrimitives.WriteUInt32LittleEndian(super[16..], BlockSize);   // bsize
+    BinaryPrimitives.WriteUInt32LittleEndian(super[20..], 12);          // log2 of bsize
+    BinaryPrimitives.WriteUInt32LittleEndian(super[24..], JfsLinux | JfsDirIndexFlag | JfsGroupCommit | JfsInlineLog);
+    BinaryPrimitives.WriteUInt32LittleEndian(super[28..], LogRedone);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      super[32..], (uint)(2 * LogPageSize + LogPageHeaderSize + LogRecordSize));
+    this._logUuid.CopyTo(super[36..]);
+    var label = Encoding.ASCII.GetBytes(this._volumeLabel);
+    label.AsSpan(0, Math.Min(label.Length, 16)).CopyTo(super[52..]);
+
+    // Page 2: the first page written, carrying one sync-point record.
+    var first = image.At((long)(logAddressBlock + 2) * BlockSize, LogPageSize);
+    WritePageMarks(first, (uint)(pages - 3), (ushort)(LogPageHeaderSize + LogRecordSize));
+    var record = first[LogPageHeaderSize..];
+    BinaryPrimitives.WriteUInt16LittleEndian(record[8..], LogSyncPoint);
+
+    // Pages 3 onwards: empty, and numbered from zero so page 2 stays highest.
+    for (var i = 0; i < pages - 3; ++i) {
+      var page = image.At((long)(logAddressBlock + 3 + i) * BlockSize, LogPageSize);
+      WritePageMarks(page, (uint)i, LogPageHeaderSize);
+    }
+
+    // A log page records its number and its end-of-records twice, once at each
+    // end, so a torn write is visible as the two disagreeing.
+    static void WritePageMarks(Span<byte> page, uint number, ushort endOfRecords) {
+      BinaryPrimitives.WriteUInt32LittleEndian(page, number);
+      BinaryPrimitives.WriteUInt16LittleEndian(page[6..], endOfRecords);
+      BinaryPrimitives.WriteUInt32LittleEndian(page[(LogPageSize - 8)..], number);
+      BinaryPrimitives.WriteUInt16LittleEndian(page[(LogPageSize - 2)..], endOfRecords);
+    }
   }
 
   // ── aggregate inode map: block AimBlock=dinomap, AimBlock+1=IAG #0 ──────
