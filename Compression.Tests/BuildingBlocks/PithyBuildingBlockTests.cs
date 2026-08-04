@@ -74,6 +74,67 @@ public class PithyBuildingBlockTests {
     Assert.That(round, Is.EqualTo(data).AsCollection);
   }
 
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void ShortNearMatch_ExercisesCopy1Tier() {
+    // A short match (4-11 bytes) close behind (offset < 2048) must use the
+    // compact copy-1 tag.
+    var rng = new Random(0x201);
+    var block = new byte[50];
+    rng.NextBytes(block);
+    var data = new byte[block.Length + 20 + 8];
+    block.CopyTo(data, 0);
+    rng.NextBytes(data.AsSpan(block.Length, 20));
+    Array.Copy(block, 0, data, block.Length + 20, 8);
+    var round = Bb.Decompress(Bb.Compress(data));
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void MidLengthMatch_ExercisesLengthEscape62() {
+    // A match of 63-318 bytes at an offset >= 2048 must use the copy-2 tag's
+    // 62 length-escape value (one extra byte holding length - 63).
+    var rng = new Random(0x202);
+    var block = new byte[3000];
+    rng.NextBytes(block);
+    var data = new byte[block.Length + 200];
+    block.CopyTo(data, 0);
+    Array.Copy(block, 0, data, block.Length, 200);
+    var round = Bb.Decompress(Bb.Compress(data));
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void LongMatch_ExercisesLengthEscape63() {
+    // A match of 319+ bytes at an offset >= 2048 must use the copy-2 tag's
+    // 63 length-escape value (two extra bytes holding the raw 16-bit length).
+    var rng = new Random(0x203);
+    var block = new byte[3000];
+    rng.NextBytes(block);
+    var data = new byte[block.Length + 400];
+    block.CopyTo(data, 0);
+    Array.Copy(block, 0, data, block.Length, 400);
+    var round = Bb.Decompress(Bb.Compress(data));
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void AlternatingPattern_RoundTrips() {
+    var data = new byte[2048];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)(i % 2 == 0 ? 0xA5 : 0x5A);
+    var round = Bb.Decompress(Bb.Compress(data));
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void AllByteValues_RoundTrips() {
+    var data = new byte[256];
+    for (var i = 0; i < 256; ++i)
+      data[i] = (byte)i;
+    var round = Bb.Decompress(Bb.Compress(data));
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
   [Test, Category("EdgeCase")]
   public void Registry_Metadata_IsStable() {
     Assert.Multiple(() => {

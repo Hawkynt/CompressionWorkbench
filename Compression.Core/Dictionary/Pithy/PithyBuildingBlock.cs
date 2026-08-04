@@ -11,30 +11,50 @@ namespace Compression.Core.Dictionary.Pithy;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Modeled on the publicly documented Pithy tag scheme (see references below): a
-/// varint-encoded uncompressed length is followed by a stream of one-byte tags
-/// whose low 2 bits select a type — <c>00</c> literal, <c>01</c>/<c>10</c>/<c>11</c>
-/// a copy with a 1/2/3-byte offset:
+/// This is a clean-room implementation of Pithy's actual tag/offset scheme,
+/// written from the reference project's own source comments and constant
+/// tables (<c>pithy_EmitLiteral</c>/<c>pithy_EmitCopyLessThan63</c>/
+/// <c>pithy_EmitCopyGreaterThan63</c>/<c>pithy_Decompress</c> in
+/// <c>pithy.c</c>) — not a port or paraphrase of that code. A varint-encoded
+/// uncompressed length is followed by a stream of one-byte tags whose low 2
+/// bits select a type — <c>00</c> literal, <c>01</c>/<c>10</c>/<c>11</c> a
+/// copy with a 1/2/3-byte offset:
 /// </para>
 /// <list type="bullet">
 ///   <item><description>Literal: the upper 6 bits hold <c>length - 1</c> (0–59
-///     direct; 60/61/62/63 mean "1/2/3/4 following bytes hold the length",
-///     matching Snappy's literal length encoding).</description></item>
-///   <item><description>Copy-1: an 11-bit offset (3 bits packed into the tag's
-///     upper bits, 8 more in one following byte) and a length of 4–11 (3 bits in
-///     the tag).</description></item>
-///   <item><description>Copy-2 / Copy-3: the upper 6 bits hold <c>length - 1</c>
-///     (1–64), followed by a 2- or 3-byte little-endian offset.</description></item>
+///     direct; 60/61/62/63 mean "1/2/3/4 following little-endian bytes hold
+///     <c>length - 1</c>", matching Snappy's literal length
+///     encoding).</description></item>
+///   <item><description>Copy-1 (offset &lt; 2048, length 4-11): the upper 6
+///     bits pack a 3-bit <c>length - 4</c> and 3 more bits that are the high
+///     bits of the offset; one following byte holds the offset's low 8
+///     bits.</description></item>
+///   <item><description>Copy-2 / Copy-3 (2-/3-byte little-endian offset
+///     follows the tag): the upper 6 bits are a length field. Values 0-61
+///     mean <c>length - 1</c> directly (so a 1-62 byte copy); value 62 means
+///     "one more byte follows holding <c>length - 63</c>" (63-318 bytes);
+///     value 63 means "two more bytes follow holding the raw 16-bit length"
+///     (up to 65535 bytes). Longer matches are split into several copy tags,
+///     as the reference encoder does.</description></item>
 /// </list>
 /// <para>
-/// This is a clean-room implementation written from the format description, not
-/// a port of Engelhart's reference `pithy.c`; only this building block's own
-/// round-trip is guaranteed.
+/// One reference quirk is deliberately not reproduced: <c>pithy_EmitCopy</c>'s
+/// chunk-size arithmetic can leave a match length of exactly 65536-65538
+/// truncated by the 16-bit length field it stores into (that count is never
+/// reached through the reference's own <c>kBlockSize</c>-bounded search, so it
+/// is latent rather than exercised). This implementation instead always
+/// leaves each chunk's remainder at 0 or &gt;= 4, so every emitted tag's
+/// length field is always in range.
+/// </para>
+/// <para>
+/// Only this building block's own round-trip is guaranteed; it is not claimed
+/// to be bit-compatible with <c>pithy_Compress</c>/<c>pithy_Decompress</c>
+/// output.
 /// </para>
 /// <para>References:</para>
 /// <list type="bullet">
 ///   <item><description>Pithy — https://github.com/johnezang/pithy</description></item>
-///   <item><description>Pithy header (tag layout comments) — https://github.com/johnezang/pithy/blob/master/pithy.h</description></item>
+///   <item><description>Pithy source (tag layout, <c>EmitCopy*</c>/<c>Decompress</c>) — https://github.com/johnezang/pithy/blob/master/pithy.c</description></item>
 /// </list>
 /// </remarks>
 public sealed class PithyBuildingBlock : IBuildingBlock {
@@ -43,7 +63,7 @@ public sealed class PithyBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "Pithy";
   /// <inheritdoc/>
-  public string Description => "Engelhart's Snappy-shaped LZ77 codec with a 3-byte-offset copy tier in place of Snappy's 4-byte tier";
+  public string Description => "Engelhart's real Pithy tag scheme: Snappy-shaped literals plus a 3-byte-offset copy tier with 62/63 length-escape values in place of Snappy's 4-byte tier";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
@@ -57,7 +77,10 @@ public sealed class PithyBuildingBlock : IBuildingBlock {
   private const int MaxCopy1Length = 11;
   private const int MaxCopy2Offset = 65535;     // 16-bit offset
   private const int MaxCopy3Offset = 16777215;  // 24-bit offset
-  private const int MaxCopy23Length = 64;
+  private const int Copy23LengthEscape1 = 62;   // Field value: one more byte holds (length - 63).
+  private const int Copy23LengthEscape2 = 63;   // Field value: two more bytes hold the raw 16-bit length.
+  private const int MaxCopy23Escape1Length = 63 + 255; // Largest length the one-extra-byte escape can hold.
+  private const int MaxCopy23Length = 65535;    // Largest length the two-extra-byte escape can hold.
 
   private const int HashBits = 16;
   private const int HashSize = 1 << HashBits;
@@ -135,17 +158,17 @@ public sealed class PithyBuildingBlock : IBuildingBlock {
         }
 
         case TagCopy2: {
-          var len = (tag >> 2) + 1;
           var offset = BinaryPrimitives.ReadUInt16LittleEndian(data[i..]);
           i += 2;
+          var len = ReadCopy23Length(data, ref i, tag >> 2);
           CopyMatch(dst, ref pos, offset, len, originalSize);
           break;
         }
 
         default: { // TagCopy3
-          var len = (tag >> 2) + 1;
           var offset = data[i] | (data[i + 1] << 8) | (data[i + 2] << 16);
           i += 3;
+          var len = ReadCopy23Length(data, ref i, tag >> 2);
           CopyMatch(dst, ref pos, offset, len, originalSize);
           break;
         }
@@ -220,31 +243,75 @@ public sealed class PithyBuildingBlock : IBuildingBlock {
     }
   }
 
+  // Matches the reference's pithy_EmitCopy dispatch: chunks of 63+ bytes go
+  // through the "greater than 63" tag shape (using the 62/63 length-escape
+  // values), and the final remainder under 63 bytes goes through the "less
+  // than 63" shape, which additionally prefers the compact copy-1 tag when
+  // it is short enough and close enough. Unlike the reference, the chunk
+  // size is always chosen so the remainder is 0 or >= 4, never 1-3 (see the
+  // class remarks for why).
   private static void EmitCopy(Stream output, int offset, int length) {
-    while (length > 0) {
-      // Copy-1 needs length >= 4 (its 3-bit field encodes length - 4); Math.Min
-      // against MaxCopy1Length (11) with that guard means chunk is always in [4,11].
-      if (offset <= MaxCopy1Offset && length >= 4) {
-        var chunk = Math.Min(length, MaxCopy1Length);
-        output.WriteByte((byte)(TagCopy1 | ((chunk - 4) << 2) | ((offset >> 8) << 5)));
-        output.WriteByte((byte)offset);
-        length -= chunk;
-        continue;
-      }
+    while (length >= 63) {
+      int chunk;
+      if (length <= MaxCopy23Length)
+        chunk = length;
+      else if (length - MaxCopy23Length < MinMatch)
+        chunk = length - MinMatch;
+      else
+        chunk = MaxCopy23Length;
 
-      if (offset <= MaxCopy2Offset) {
-        var chunk = Math.Min(length, MaxCopy23Length);
-        output.WriteByte((byte)(TagCopy2 | ((chunk - 1) << 2)));
-        output.WriteByte((byte)offset);
-        output.WriteByte((byte)(offset >> 8));
-        length -= chunk;
-      } else {
-        var chunk = Math.Min(length, MaxCopy23Length);
-        output.WriteByte((byte)(TagCopy3 | ((chunk - 1) << 2)));
-        output.WriteByte((byte)offset);
-        output.WriteByte((byte)(offset >> 8));
-        output.WriteByte((byte)(offset >> 16));
-        length -= chunk;
+      EmitCopyGreaterThan63(output, offset, chunk);
+      length -= chunk;
+    }
+
+    if (length > 0)
+      EmitCopyLessThan63(output, offset, length);
+  }
+
+  private static void EmitCopyLessThan63(Stream output, int offset, int length) {
+    if (length < MaxCopy1Length + 1 && offset <= MaxCopy1Offset) {
+      output.WriteByte((byte)(TagCopy1 | ((length - 4) << 2) | ((offset >> 8) << 5)));
+      output.WriteByte((byte)offset);
+      return;
+    }
+
+    var type = offset <= MaxCopy2Offset ? TagCopy2 : TagCopy3;
+    output.WriteByte((byte)(type | ((length - 1) << 2)));
+    WriteCopyOffset(output, offset, type);
+  }
+
+  private static void EmitCopyGreaterThan63(Stream output, int offset, int length) {
+    var type = offset <= MaxCopy2Offset ? TagCopy2 : TagCopy3;
+
+    if (length <= MaxCopy23Escape1Length) {
+      output.WriteByte((byte)(type | (Copy23LengthEscape1 << 2)));
+      WriteCopyOffset(output, offset, type);
+      output.WriteByte((byte)(length - 63));
+    } else {
+      output.WriteByte((byte)(type | (Copy23LengthEscape2 << 2)));
+      WriteCopyOffset(output, offset, type);
+      output.WriteByte((byte)length);
+      output.WriteByte((byte)(length >> 8));
+    }
+  }
+
+  private static void WriteCopyOffset(Stream output, int offset, byte type) {
+    output.WriteByte((byte)offset);
+    output.WriteByte((byte)(offset >> 8));
+    if (type == TagCopy3)
+      output.WriteByte((byte)(offset >> 16));
+  }
+
+  private static int ReadCopy23Length(ReadOnlySpan<byte> data, ref int i, int field) {
+    switch (field) {
+      case < Copy23LengthEscape1:
+        return field + 1;
+      case Copy23LengthEscape1:
+        return data[i++] + 63;
+      default: {
+        var v = BinaryPrimitives.ReadUInt16LittleEndian(data[i..]);
+        i += 2;
+        return v;
       }
     }
   }
@@ -253,7 +320,7 @@ public sealed class PithyBuildingBlock : IBuildingBlock {
     var h = Hash4(src, pos);
     var candidate = hashHead[h];
     var minPos = Math.Max(0, pos - MaxCopy3Offset);
-    var maxLen = Math.Min(src.Length - pos, MaxCopy23Length * 64); // generous cap, chunked at emit time
+    var maxLen = src.Length - pos; // EmitCopy chunks arbitrarily long matches itself.
     var bestLen = 0;
     var bestOff = 0;
     var steps = MaxChainSteps;
