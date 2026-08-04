@@ -1022,9 +1022,15 @@ public static class BtrfsInPlaceAdder {
     _ = numBytes;
   }
 
+  /// <remarks>
+  /// Object ids are unsigned on disk, and the data relocation tree's is -9 read
+  /// as a signed long. Sorting signed puts it first, where btrfs expects it
+  /// last — and a binary search over a leaf ordered that way stops finding the
+  /// roots that follow it, which reads as "could not find extent tree".
+  /// </remarks>
   private static void SortItems(List<Item> items) {
     items.Sort((a, b) => {
-      var c = a.ObjectId.CompareTo(b.ObjectId);
+      var c = ((ulong)a.ObjectId).CompareTo((ulong)b.ObjectId);
       if (c != 0) return c;
       c = a.Type.CompareTo(b.Type);
       if (c != 0) return c;

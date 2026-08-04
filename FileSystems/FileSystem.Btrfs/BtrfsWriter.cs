@@ -71,6 +71,7 @@ public sealed class BtrfsWriter {
   private int _fsTreeBlockCount = 1;            // FS-tree blocks (root + leaves)
   private long _extentTreeOff;
   private long _csumTreeOff;
+  private long _dataRelocTreeOff;
   private long _metadataChunkLength;
   private long _dataChunkStart;
   private long _dataChunkLength;
@@ -138,6 +139,14 @@ public sealed class BtrfsWriter {
   private const long DevTreeObjectId = 4;
   private const long FsTreeObjectId = 5;
   private const long CsumTreeObjectId = 7;
+
+  /// <summary>
+  /// The data relocation tree. A driver loads this one on mount and refuses
+  /// the volume without it — "failed to read root (objectid=...551607): -2" —
+  /// while btrfs check never asks for it, which is why an image could pass the
+  /// checker and still not mount.
+  /// </summary>
+  private const long DataRelocTreeObjectId = -9;
   private const long DevItemsObjectId = 1;
   private const long FirstChunkTreeObjectId = 256;
   private const long FirstFreeObjectId = 256;
@@ -245,6 +254,7 @@ public sealed class BtrfsWriter {
     WriteFsTree(image, fsLeaves);
     WriteExtentTree(image);
     WriteEmptyTree(image, (int)this._csumTreeOff, CsumTreeObjectId);
+    WriteDataRelocTree(image);
     WriteDataExtents(image);
 
     // Every metadata block starts with a 32-byte csum field whose first
@@ -257,6 +267,7 @@ public sealed class BtrfsWriter {
       WriteBlockChecksum(image, (int)off, NodeSize);
     WriteBlockChecksum(image, (int)this._extentTreeOff, NodeSize);
     WriteBlockChecksum(image, (int)this._csumTreeOff, NodeSize);
+    WriteBlockChecksum(image, (int)this._dataRelocTreeOff, NodeSize);
 
     output.Write(image);
     if (output.CanSeek && this._totalSize > image.Length)
@@ -326,6 +337,7 @@ public sealed class BtrfsWriter {
     WriteFsTree(image, fsLeaves);
     WriteExtentTree(image);
     WriteEmptyTree(image, (int)this._csumTreeOff, CsumTreeObjectId);
+    WriteDataRelocTree(image);
 
     this._streamingSink = sink;
     try {
@@ -342,6 +354,7 @@ public sealed class BtrfsWriter {
       WriteBlockChecksum(image, (int)off, NodeSize);
     WriteBlockChecksum(image, (int)this._extentTreeOff, NodeSize);
     WriteBlockChecksum(image, (int)this._csumTreeOff, NodeSize);
+    WriteBlockChecksum(image, (int)this._dataRelocTreeOff, NodeSize);
 
     output.Position = 0;
     output.Write(image);
@@ -381,11 +394,12 @@ public sealed class BtrfsWriter {
     var afterFsTree = FsTreeOff + (long)fsTreeBlockCount * NodeSize;
     this._extentTreeOff = afterFsTree;
     this._csumTreeOff = afterFsTree + NodeSize;
+    this._dataRelocTreeOff = this._csumTreeOff + NodeSize;
 
     // Metadata chunk spans dev/root trees through the csum tree. Round its
     // length up to a whole BTRFS_STRIPE_LEN (64 KiB) so the chunk mapping
     // stays stripe-aligned like the original fixed layout.
-    var metadataEnd = this._csumTreeOff + NodeSize;
+    var metadataEnd = this._dataRelocTreeOff + NodeSize;
     var metadataRawLength = metadataEnd - MetadataChunkStart;
     this._metadataChunkLength = RoundUpToStripe(metadataRawLength);
 
@@ -418,12 +432,45 @@ public sealed class BtrfsWriter {
 
   // Number of metadata tree blocks the extent tree must account for:
   // chunk + dev + root + extent + csum (5 fixed) + every FS-tree block.
-  private int MetadataBlockCount => 5 + this._fsTreeBlockCount;
+  /// <summary>
+  /// Tree blocks the volume holds: chunk, dev, root, extent, csum and the data
+  /// relocation tree, plus however many the fs tree needs. The superblock's
+  /// used-byte total is counted from this, so a tree left out of it shows up as
+  /// "super bytes used ... mismatches actual used".
+  /// </summary>
+  private int MetadataBlockCount => 6 + this._fsTreeBlockCount;
 
   // Builds an empty leaf block (no items). Used for CSUM_TREE where the
   // only requirement is a valid node header — no CSUM_ITEM entries needed
   // since we have no data blocks that require csum coverage in this
   // minimal image.
+  /// <summary>
+  /// Writes the data relocation tree, which holds one inode and must not be
+  /// empty.
+  /// </summary>
+  /// <remarks>
+  /// A driver checks this specifically — "invalid root, root ... must never be
+  /// empty" — before it will finish mounting. What it wants is the tree's own
+  /// root directory inode, the same first-free object id every fs tree starts
+  /// from.
+  /// </remarks>
+  private void WriteDataRelocTree(byte[] image) {
+    // The same pair every fs tree's root carries: the inode and the ".."
+    // reference back to itself.
+    var dotDot = ".."u8.ToArray();
+    var selfRef = new byte[10 + dotDot.Length];
+    BinaryPrimitives.WriteInt64LittleEndian(selfRef.AsSpan(0), 0);
+    BinaryPrimitives.WriteUInt16LittleEndian(selfRef.AsSpan(8), (ushort)dotDot.Length);
+    dotDot.CopyTo(selfRef, 10);
+
+    var items = new List<(long, byte, long, byte[])> {
+      (FirstFreeObjectId, InodeItem, 0L,
+        BuildInodeItem(mode: 0x41ED /* S_IFDIR | 0755 */, size: 0, bytes: 0, nlink: 1)),
+      (FirstFreeObjectId, InodeRef, FirstFreeObjectId, selfRef),
+    };
+    WriteLeafNode(image, (int)this._dataRelocTreeOff, DataRelocTreeObjectId, items);
+  }
+
   private static void WriteEmptyTree(byte[] image, int nodeOff, long ownerObjectId) {
     WriteLeafNode(image, nodeOff, ownerObjectId,
       new List<(long, byte, long, byte[])>());
@@ -456,6 +503,7 @@ public sealed class BtrfsWriter {
         level: i == 0 ? fsRootLevel : (byte)0);
     AddTreeBlockExtent(items, this._extentTreeOff, ExtentTreeObjectId, level: 0);
     AddTreeBlockExtent(items, this._csumTreeOff,  CsumTreeObjectId,    level: 0);
+    AddTreeBlockExtent(items, this._dataRelocTreeOff, DataRelocTreeObjectId, level: 0);
 
     // Data extent items — one EXTENT_ITEM (flags=DATA) with an inline
     // EXTENT_DATA_REF per regular file extent. btrfs check cross-references
@@ -540,7 +588,10 @@ public sealed class BtrfsWriter {
   private long CountMetadataUseInRange(long chunkStart, long chunkLength) {
     var chunkEnd = chunkStart + chunkLength;
     long used = 0;
-    var nodes = new List<long> { ChunkTreeOff, DevTreeOff, RootTreeOff, this._extentTreeOff, this._csumTreeOff };
+    var nodes = new List<long> {
+      ChunkTreeOff, DevTreeOff, RootTreeOff, this._extentTreeOff, this._csumTreeOff,
+      this._dataRelocTreeOff,
+    };
     nodes.AddRange(this._fsTreeBlockOffsets);
     foreach (var n in nodes)
       if (n >= chunkStart && n < chunkEnd)
@@ -797,6 +848,8 @@ public sealed class BtrfsWriter {
       (DevTreeObjectId,    RootItem, 0, BuildRootItem(DevTreeOff,          rootDirId: 0, level: 0)),
       (FsTreeObjectId,     RootItem, 0, BuildRootItem(FsTreeOff,           rootDirId: FirstFreeObjectId, level: fsRootLevel)),
       (CsumTreeObjectId,   RootItem, 0, BuildRootItem(this._csumTreeOff,   rootDirId: 0, level: 0)),
+      (DataRelocTreeObjectId, RootItem, 0,
+        BuildRootItem(this._dataRelocTreeOff, rootDirId: FirstFreeObjectId, level: 0)),
     };
     SortLeafItems(items);
     WriteLeafNode(image, RootTreeOff, RootTreeObjectId, items);
@@ -1228,9 +1281,14 @@ public sealed class BtrfsWriter {
     }
   }
 
+  /// <remarks>
+  /// Object ids are unsigned on disk, and some of them — the data relocation
+  /// tree is -9 — are negative when read as a signed long. Comparing them
+  /// signed puts those first, where btrfs expects them last.
+  /// </remarks>
   private static void SortLeafItems(List<(long objId, byte type, long offset, byte[] data)> items) {
     items.Sort((a, b) => {
-      var c = a.objId.CompareTo(b.objId);
+      var c = ((ulong)a.objId).CompareTo((ulong)b.objId);
       if (c != 0) return c;
       c = a.type.CompareTo(b.type);
       if (c != 0) return c;
