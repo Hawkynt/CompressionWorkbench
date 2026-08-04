@@ -1334,7 +1334,11 @@ public sealed class XfsWriter {
   private static void FormatLog(byte[] image, int logOffsetBytes, int logSizeBytes, uint cycle) {
     const uint XlogMagic = 0xFEEDBABE;
     const uint XlogUnmountType = 0x556E;          // "Un" — XLOG_UNMOUNT_TYPE
-    const uint XlogUnmountTransFlag = 0x10;       // XLOG_UNMOUNT_TRANS
+    // XLOG_UNMOUNT_TRANS is 0x20. It was 0x10 here, which is XLOG_END_TRANS —
+    // so the kernel looked for an unmount record, did not find the bit it
+    // tests for, concluded the log was not cleanly closed, and refused a
+    // read-only mount because it had nowhere to recover into.
+    const uint XlogUnmountTransFlag = 0x20;       // XLOG_UNMOUNT_TRANS
     const byte XfsLog = 0xAA;                     // XFS_LOG client ID
     const int XlogBigRecordBsize = 32 * 1024;
     var log = image.AsSpan(logOffsetBytes, logSizeBytes);
