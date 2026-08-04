@@ -33,12 +33,22 @@ namespace FileSystem.BcacheFs;
 /// </list>
 /// <para>
 /// Scope: this writer satisfies <c>bcachefs show-super</c> on the resulting
-/// image. <c>bcachefs fsck</c> will still reject with
-/// <c>insufficient_devices</c> — the alloc btree is absent, as are the 8
-/// other on-disk btree roots, journal entries, compat-feature bits, and
-/// the <c>clean</c>/<c>journal_v2</c>/<c>counters</c>/<c>members_v2</c> SB
-/// sections. Reaching fsck-clean is multi-week kernel-spec work tracked in
-/// <c>Hawkynt.FileFormats.FileSystems/README.md</c>.
+/// image. It does not produce a volume a kernel will mount, and does not pretend
+/// to: the journal is absent, and with it every btree root, so a mount stops at
+/// <c>insufficient_journal_devices</c> during replay. Also missing are the btrees
+/// themselves and the <c>clean</c>/<c>journal_v2</c>/<c>counters</c>/
+/// <c>members_v2</c> SB sections. Reaching a mountable volume is multi-week
+/// kernel-spec work tracked in <c>Hawkynt.FileFormats.FileSystems/README.md</c>.
+/// </para>
+///
+/// <para>
+/// What the superblock does now say is that the volume is initialised. That is
+/// not cosmetic: a kernel reads a volume that does not claim it as a device it
+/// has been told to make a filesystem on, and makes one — over the top of
+/// everything written here, before reporting any error. Claiming it, together
+/// with the features every volume carries and the version floor an initialised
+/// volume is held to, sends the mount down the recovery path instead, where the
+/// volume is refused for what it is missing and left exactly as it was found.
 /// </para>
 /// </remarks>
 public sealed class BcacheFsWriter {
@@ -110,8 +120,21 @@ public sealed class BcacheFsWriter {
   /// </summary>
   internal const ushort SbVersion = (1 << 10) | 3;
 
-  /// <summary>bcachefs_metadata_version_min — every kernel ≥ 6.7 accepts this minimum.</summary>
-  internal const ushort SbVersionMin = 9;
+  /// <summary>
+  /// bcachefs_metadata_version_min. A volume that claims to be initialised is held to
+  /// this floor — BCH_VERSION(0, 14), the version that put the written-sector count in
+  /// btree pointers — and refused outright below it.
+  /// </summary>
+  internal const ushort SbVersionMin = 14;
+
+  /// <summary>
+  /// The features every bcachefs volume carries, whatever else it does or does not do:
+  /// new extent overwrite, extents above btree updates, journalled btree updates,
+  /// alloc v2 and extents across btree nodes. A volume that names none of them is one
+  /// the kernel says it no longer supports.
+  /// </summary>
+  internal const ulong SbFeaturesAlways =
+    (1UL << 9) | (1UL << 12) | (1UL << 13) | (1UL << 17) | (1UL << 18);
 
   /// <summary>
   /// Default image size = 128 MiB. Lower bound is enforced by:
@@ -413,7 +436,8 @@ public sealed class BcacheFsWriter {
     // mkfs.bcachefs would write for an all-defaults filesystem.
     WriteSbOptions(span.Slice(144, 56));
     // 200..208 write_time (u64) — left zero
-    // 208..224 features[2] (u64×2) — left zero (no incompat features)
+    // 208..224 features[2] (u64×2)
+    BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(208, 8), SbFeaturesAlways);
     // 224..240 compat[2] (u64×2) — left zero
     // 240..752 layout (bch_sb_layout) — written below
 
@@ -530,6 +554,13 @@ public sealed class BcacheFsWriter {
     // (all start at 0)
 
     // ── flags[0] ────────────────────────────────────────────────────
+    // BCH_SB_INITIALIZED @ bit 0. This one is not an option, and leaving it clear
+    // is not a neutral omission: a kernel reads a volume that does not claim to be
+    // initialised as a device it has been asked to make a filesystem on, and makes
+    // one — over the top of everything written here. Claiming it sends the mount
+    // down the recovery path instead, where the volume is refused for what it is
+    // actually missing rather than silently replaced.
+    SetBits(ref flags[0], 0, 1, 1);
     // BCH_SB_BTREE_NODE_SIZE @ bits 12..28 (16 bits): on-disk unit = sectors,
     //   default 256 KiB / 512 B = 512 sectors.
     SetBits(ref flags[0], 12, 28, 512);

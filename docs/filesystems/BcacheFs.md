@@ -65,7 +65,9 @@ Writes a WORM-minimal BcacheFS image: a spec-compliant primary superblock at byt
 
 Spec source: fs/bcachefs/bcachefs_format.h (kernel) and libbcachefs/sb-members_format.h (bcachefs-tools). Field offsets follow the actual struct layout, NOT the looser interpretation an earlier revision of the read-only descriptor was using:
 
-Scope: this writer satisfies bcachefs show-super on the resulting image. bcachefs fsck will still reject with insufficient_devices — the alloc btree is absent, as are the 8 other on-disk btree roots, journal entries, compat-feature bits, and the clean/journal_v2/counters/members_v2 SB sections. Reaching fsck-clean is multi-week kernel-spec work tracked in Hawkynt.FileFormats.FileSystems/README.md.
+Scope: this writer satisfies bcachefs show-super on the resulting image. It does not produce a volume a kernel will mount, and does not pretend to: the journal is absent, and with it every btree root, so a mount stops at insufficient_journal_devices during replay. Also missing are the btrees themselves and the clean/journal_v2/counters/ members_v2 SB sections. Reaching a mountable volume is multi-week kernel-spec work tracked in Hawkynt.FileFormats.FileSystems/README.md.
+
+What the superblock does now say is that the volume is initialised. That is not cosmetic: a kernel reads a volume that does not claim it as a device it has been told to make a filesystem on, and makes one — over the top of everything written here, before reporting any error. Claiming it, together with the features every volume carries and the version floor an initialised volume is held to, sends the mount down the recovery path instead, where the volume is refused for what it is missing and left exactly as it was found.
 
 ## Parameters
 
