@@ -729,12 +729,17 @@ public sealed class NtfsWriter {
       residentData: [],
       nonResidentRuns: null,
       dataSize: 0,
-      sizeHintInFileName: 0);
+      sizeHintInFileName: 0,
+      // The boot sector reports one sector fewer than the image holds — the last one
+      // is the backup — so that is the extent $Bad has to describe, not the image's.
+      sparseNamedStream: new SparseNamedStream("$Bad",
+        ((totalSectors - 1) * BytesPerSector) / this._clusterSize));
 
-    // Record 9: $Secure — carries the security-descriptor stream. A single
-    // empty resident $DATA is acceptable for a fresh volume; real drivers
-    // fall back to per-file security attributes. No $SDH/$SII indexes for
-    // our minimal image.
+    // Record 9: $Secure — carries the security-descriptor stream, which on a fresh
+    // volume holds nothing; per-file security attributes cover what it would.
+    // Its two indexes are not optional, though: a driver reads $SDH and $SII before
+    // it will use the record at all, and calls it corrupt when either is missing.
+    // $SDH sorts descriptors by hash, $SII by identifier, and both start empty.
     WriteMftRecord(
       disk, mftOffset, 9, sequence: 9,
       fileName: "$Secure",
@@ -743,7 +748,11 @@ public sealed class NtfsWriter {
       residentData: [],
       nonResidentRuns: null,
       dataSize: 0,
-      sizeHintInFileName: 0);
+      sizeHintInFileName: 0,
+      namedIndexRoots: [
+        ("$SDH", this.BuildEmptyIndexRoot(keyType: 0, collationRule: 0x12)),
+        ("$SII", this.BuildEmptyIndexRoot(keyType: 0, collationRule: 0x10)),
+      ]);
 
     // Record 10: $UpCase — 65 536-entry Unicode uppercase mapping. Written
     // to its own cluster run so the 128 KiB payload doesn't bloat the MFT.
@@ -1193,10 +1202,8 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), (uint)this._mftRecordSize);
     // MFT record number.
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(44), recordNum);
-    // End-of-attributes marker at attrs offset.
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(attrStart), 0xFFFFFFFF);
-    // Used size = attrs offset + 8 (end marker + alignment pad).
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)(attrStart + 8));
+    // End-of-attributes marker at attrs offset, and the used size that covers it.
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)WriteEndOfAttributes(record, attrStart));
 
     this.ApplyUsaFixup(record);
     record.CopyTo(disk, recordOffset);
@@ -1210,6 +1217,11 @@ public sealed class NtfsWriter {
   // after $DATA. Logical/physical sizes are derived from the cluster runs.
   private readonly record struct NonResidentAttr(uint Type, List<(int Cluster, int Count)> Runs, long DataSize);
 
+  // A named $DATA stream that spans the volume and occupies none of it: one
+  // sparse run and no backing clusters. This is the shape $BadClus's "$Bad"
+  // takes on a volume with nothing bad on it.
+  private readonly record struct SparseNamedStream(string Name, long Clusters);
+
   private void WriteMftRecord(byte[] disk, int mftBaseOffset, uint recordNum, ushort sequence,
     string fileName, uint parentRecord, bool isDirectory,
     byte[]? residentData, List<(int Cluster, int Count)>? nonResidentRuns, long dataSize,
@@ -1221,7 +1233,9 @@ public sealed class NtfsWriter {
     long indexAllocationSize = 0,
     byte[]? indexBitmap = null,
     List<(int Cluster, int Count, bool Sparse)>? compressedRuns = null,
-    long compressedAllocatedClusters = 0) {
+    long compressedAllocatedClusters = 0,
+    SparseNamedStream? sparseNamedStream = null,
+    (string Name, byte[] Data)[]? namedIndexRoots = null) {
 
     var recordOffset = mftBaseOffset + (int)recordNum * this._mftRecordSize;
     if (recordOffset + this._mftRecordSize > disk.Length) return;
@@ -1268,11 +1282,23 @@ public sealed class NtfsWriter {
       } else if (nonResidentRuns != null) {
         pos = WriteNonResidentDataAttr(record, pos, nonResidentRuns, dataSize);
       }
+
+      // A named $DATA follows the unnamed one: same type, and the unnamed stream
+      // sorts first, which is the order a record's attributes have to be in.
+      if (sparseNamedStream is { } stream)
+        pos = this.WriteSparseNamedDataAttr(record, pos, stream.Name, stream.Clusters);
     }
 
     // 0x90 $INDEX_ROOT for directories.
     if (isDirectory && indexRootData != null)
       pos = WriteIndexRootAttr(record, pos, indexRootData);
+
+    // 0x90 $INDEX_ROOT under a name of its own, for records that index something
+    // other than file names — $Secure's $SDH and $SII.
+    if (namedIndexRoots != null) {
+      foreach (var (name, data) in namedIndexRoots)
+        pos = WriteNamedResidentAttr(record, pos, 0x90, name, data);
+    }
 
     // 0xA0 $INDEX_ALLOCATION + 0xB0 $BITMAP (named "$I30") for large directories
     // whose index spilled out of the resident root.
@@ -1288,14 +1314,31 @@ public sealed class NtfsWriter {
         pos = WriteNonResidentAttr(record, pos, na.Type, na.Runs, na.DataSize);
     }
 
-    // End-of-attributes marker.
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0xFFFFFFFF);
-    pos += 4;
-    // Used-size counter includes the end marker.
+    // End-of-attributes marker. It is eight bytes, not four: a driver reads the type
+    // and the length together before it looks at either, so a record whose used size
+    // stops after the type alone is one it cannot walk to the end of.
+    pos = WriteEndOfAttributes(record, pos);
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)pos);
 
     ApplyUsaFixup(record);
     record.CopyTo(disk, recordOffset);
+  }
+
+  /// <summary>
+  /// Closes a record's attribute list and returns the used size that follows it.
+  /// </summary>
+  /// <remarks>
+  /// The terminator occupies a whole eight-byte attribute header slot: the type
+  /// <c>0xFFFFFFFF</c> and a length of zero. A driver checks that both fit inside the
+  /// record's used size before it reads the type, so counting only the four bytes of
+  /// the type leaves the walk one field short and the record unreadable — which is what
+  /// <c>mi_enum_attr</c> reports when it names an inode and nothing else.
+  /// </remarks>
+  internal static int WriteEndOfAttributes(byte[] record, int pos) {
+    ArgumentNullException.ThrowIfNull(record);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0xFFFFFFFF);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 4), 0);
+    return pos + 8;
   }
 
   // Writes the update-sequence-array fixup: each 512-byte sector's last two
@@ -1342,6 +1385,25 @@ public sealed class NtfsWriter {
     return pos + attrLen;
   }
 
+  /// <summary>
+  /// The sequence number a record carries, which every reference to it must repeat.
+  /// </summary>
+  /// <remarks>
+  /// <para>A reference to an MFT record is the record number and the sequence number
+  /// together; the second is what tells a live reference from one left over after the
+  /// record was reused. A driver checks both — a directory entry whose parent
+  /// reference has the right number and the wrong sequence is a stale entry, and it is
+  /// passed over in silence, which is how a volume comes to mount with an empty root.
+  /// </para>
+  ///
+  /// <para>Records 2 to 11 are the reason this is not simply one: those are looked up
+  /// by a reference whose sequence equals the record number. $MFT and its mirror are
+  /// the exception, at one, and so is everything from the reserved records onward.
+  /// </para>
+  /// </remarks>
+  internal static ushort SequenceOf(uint recordNumber)
+    => recordNumber is >= 2 and <= 11 ? (ushort)recordNumber : (ushort)1;
+
   private int WriteFileNameAttr(byte[] record, int pos, string fileName, uint parentRecord,
     long allocatedAndRealSize, bool isDirectory) {
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
@@ -1361,7 +1423,8 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 20), 24);
 
     var v = pos + 24;
-    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v), (long)parentRecord | (1L << 48));
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v),
+      (long)parentRecord | ((long)SequenceOf(parentRecord) << 48));
 
     var now = DateTime.UtcNow.ToFileTimeUtc();
     for (var t = 0; t < 4; t++)
@@ -1506,6 +1569,49 @@ public sealed class NtfsWriter {
   // Writes a named non-resident attribute (e.g. $INDEX_ALLOCATION named "$I30").
   // The attribute name (UTF-16) sits right after the 64-byte non-resident header;
   // the data runs follow it.
+  /// <summary>
+  /// Writes a named $DATA stream that covers <paramref name="clusters" /> clusters and
+  /// occupies none of them.
+  /// </summary>
+  /// <remarks>
+  /// <para>A sparse attribute carries a longer header than an ordinary one — the total
+  /// allocated size follows the initialised size, at offset 0x40 — and the run list has
+  /// to start past it. The single run names a length and no position, which is how a
+  /// hole is written.</para>
+  ///
+  /// <para>$BadClus needs this. A driver skips the record's resident unnamed $DATA
+  /// outright and looks for the named stream instead; with nothing else there the
+  /// record describes no file at all, and the mount stops on it — reporting only that
+  /// it failed to load $BadClus.</para>
+  /// </remarks>
+  private int WriteSparseNamedDataAttr(byte[] record, int pos, string name, long clusters) {
+    const int sparseHeaderLength = 0x48; // total_size at 0x40 makes the header eight bytes longer
+    var nameBytes = Encoding.Unicode.GetBytes(name);
+    var nameOffset = sparseHeaderLength;
+    var dataRunsOffset = (nameOffset + nameBytes.Length + 7) & ~7;
+    var dataRuns = EncodeSparseDataRuns([(0, (int)clusters, true)]);
+    var attrLen = (dataRunsOffset + dataRuns.Length + 7) & ~7;
+    var allocated = clusters * this._clusterSize;
+
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0x80);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 4), (uint)attrLen);
+    record[pos + 8] = 1;                                                        // non-resident
+    record[pos + 9] = (byte)(nameBytes.Length / 2);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 10), (ushort)nameOffset);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 12), 0x8000);   // ATTR_FLAG_SPARSED
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 16), 0);         // starting VCN
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 24), clusters - 1); // last VCN
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 32), (ushort)dataRunsOffset);
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 40), allocated); // allocated size
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 48), allocated); // real size
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 56), 0);         // initialised size
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 64), 0);         // total allocated: nothing
+
+    nameBytes.CopyTo(record, pos + nameOffset);
+    dataRuns.CopyTo(record, pos + dataRunsOffset);
+    return pos + attrLen;
+  }
+
   private int WriteNamedNonResidentAttr(byte[] record, int pos, uint type, string name,
     List<(int Cluster, int Count)> runs, long dataSize) {
     var nameBytes = Encoding.Unicode.GetBytes(name);
@@ -1783,12 +1889,21 @@ public sealed class NtfsWriter {
     var clustersPerBlock = Math.Max(1, indexBlockSize / this._clusterSize);
     for (var i = 0; i < leaves.Count; i++) {
       var vcn = (long)i * clustersPerBlock;
+
+      // The separator moves up rather than being copied. A key that stays in its
+      // leaf and appears in the root as well is two entries for one file, and the
+      // one in the root names no record — a reader lists the name twice, or once
+      // and pointing at nothing. The last leaf needs no separator: the root's end
+      // marker reaches it.
+      (uint Record, string Name)? separator = null;
+      if (i < leaves.Count - 1 && leaves[i].Count > 0) {
+        separator = leaves[i][^1];
+        leaves[i].RemoveAt(leaves[i].Count - 1);
+      }
+
       var block = this.BuildIndexBlock(leaves[i], dir.RecordNumber, vcn, leafEntriesStart, subHeaderOffset, indexBlockSize);
       alloc.Write(block);
-      // Pure routing pointer: separator name only (the largest key in this
-      // leaf), MFT ref 0 so the real entry is counted once — in the leaf.
-      var sepName = leaves[i].Count > 0 ? leaves[i][^1].Name : string.Empty;
-      pointers.Add((0u, sepName, vcn));
+      pointers.Add((separator?.Record ?? 0u, separator?.Name ?? string.Empty, vcn));
     }
 
     dir.IndexSpilled = true;
@@ -1912,12 +2027,14 @@ public sealed class NtfsWriter {
     entryLen += 8; // 8-byte child VCN at the tail
 
     var pointer = new byte[entryLen];
-    BinaryPrimitives.WriteInt64LittleEndian(pointer.AsSpan(0), (long)mftRecordNum | (1L << 48));
+    BinaryPrimitives.WriteInt64LittleEndian(pointer.AsSpan(0),
+      (long)mftRecordNum | ((long)SequenceOf(mftRecordNum) << 48));
     BinaryPrimitives.WriteUInt16LittleEndian(pointer.AsSpan(8), (ushort)entryLen);
     BinaryPrimitives.WriteUInt16LittleEndian(pointer.AsSpan(10), (ushort)contentLen);
     BinaryPrimitives.WriteUInt16LittleEndian(pointer.AsSpan(12), 0x01); // has subnode
 
-    BinaryPrimitives.WriteInt64LittleEndian(pointer.AsSpan(16), (long)parentRecord | (1L << 48));
+    BinaryPrimitives.WriteInt64LittleEndian(pointer.AsSpan(16),
+      (long)parentRecord | ((long)SequenceOf(parentRecord) << 48));
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
     pointer[16 + 64] = (byte)nameChars;
     pointer[16 + 65] = this._fileNameNamespace;
@@ -1956,15 +2073,23 @@ public sealed class NtfsWriter {
       dir.IndexAllocationBytes.CopyTo(disk, (int)offset);
   }
 
-  private static byte[] BuildEmptyIndexRoot() {
+  private byte[] BuildEmptyIndexRoot() => this.BuildEmptyIndexRoot(0x30, 1);
+
+  /// <summary>
+  /// An index containing nothing but its end marker, keyed and collated as asked.
+  /// </summary>
+  /// <param name="keyType">Attribute type of the key, or zero where the key is not one.</param>
+  /// <param name="collationRule">How the keys sort: 1 file name, 0x10 unsigned, 0x12 security hash.</param>
+  private byte[] BuildEmptyIndexRoot(uint keyType, uint collationRule) {
     // Index root with only the end-marker entry.
     using var ms = new MemoryStream();
 
+    var blockSize = Math.Max(IndexBlockSize, this._clusterSize);
     var header = new byte[16];
-    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0), 0x30);
-    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), 1);
-    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), 4096);
-    header[12] = 1;
+    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0), keyType);
+    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), collationRule);
+    BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (uint)blockSize);
+    header[12] = (byte)Math.Max(1, blockSize / this._clusterSize);
     ms.Write(header);
 
     var last = new byte[16];
@@ -1990,13 +2115,15 @@ public sealed class NtfsWriter {
     entryLen = (entryLen + 7) & ~7;
 
     var entry = new byte[entryLen];
-    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(0), (long)mftRecordNum | (1L << 48));
+    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(0),
+      (long)mftRecordNum | ((long)SequenceOf(mftRecordNum) << 48));
     BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(8), (ushort)entryLen);
     BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(10), (ushort)contentLen);
 
     // Embedded $FILE_NAME parent reference points at the directory that owns
     // this index, so the entry is self-consistent with the child's own record.
-    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(16), (long)parentRecord | (1L << 48));
+    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(16),
+      (long)parentRecord | ((long)SequenceOf(parentRecord) << 48));
     entry[16 + 64] = (byte)nameChars;
     entry[16 + 65] = this._fileNameNamespace;
     nameBytes.CopyTo(entry, 16 + 66);
