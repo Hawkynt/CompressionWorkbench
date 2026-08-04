@@ -181,7 +181,11 @@ public class BcacheFsTests {
     // We pick a version recognised by the widely-deployed bcachefs-tools 1.3.x
     // line — newer kernels accept it, older tools accept it.
     Assert.That(version, Is.EqualTo((1 << 10) | 3), "version should be BCH_VERSION(1, 3)");
-    Assert.That(versionMin, Is.EqualTo(9), "version_min should be bcachefs_metadata_version_min = 9");
+    // A volume that says it is initialised — and this one does, so that a mount
+    // refuses it rather than formatting over it — is held to the version that put
+    // the written-sector count in btree pointers, and turned away below it.
+    Assert.That(versionMin, Is.EqualTo(14),
+      "version_min should be BCH_VERSION(0, 14), the floor an initialised volume is held to");
     Assert.That(versionMin, Is.LessThanOrEqualTo(version), "version_min must be ≤ version");
   }
 
