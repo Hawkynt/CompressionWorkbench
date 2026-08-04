@@ -9,18 +9,22 @@ public class EfsDetectionTests {
 
   private static byte[] BuildMinimal() {
     var image = new byte[4096];
-    // s_magic = 0x00072959 (BE u32) at byte offset 0x18 of the SB at sector 0.
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0x18, 4), 0x00072959u);
-    // s_size = 200000 BB
-    BinaryPrimitives.WriteInt32BigEndian(image.AsSpan(0x00, 4), 200000);
+    // fs_magic sits at 0x1C of the superblock, and the superblock is at block
+    // 1 — block 0 is the SGI volume header a driver reads first.
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0x200 + 0x1C, 4), 0x00072959u);
+    // fs_size = 200000 blocks, in the superblock rather than in the volume
+    // header that precedes it.
+    BinaryPrimitives.WriteInt32BigEndian(image.AsSpan(0x200 + 0x00, 4), 200000);
     return image;
   }
 
   [Test, Category("HappyPath")]
   public void Detector_IdentifiesEfs_ByMagic() {
     var image = BuildMinimal();
-    var fmt = FormatDetector.DetectByMagic(image.AsSpan(0, 512));
+    // The magic is past the first block, so the detector has to be given more
+    // than one: the superblock does not start until block 1.
+    var fmt = FormatDetector.DetectByMagic(image.AsSpan(0, 1024));
     Assert.That(fmt.ToString(), Is.EqualTo("Efs").IgnoreCase,
-      $"FormatDetector must recognise EFS via 0x00072959 at offset 0x18. Got: {fmt}");
+      $"FormatDetector must recognise EFS via 0x00072959 at offset 0x21C. Got: {fmt}");
   }
 }

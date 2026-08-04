@@ -16,8 +16,15 @@ namespace FileSystem.Efs;
 ///   0x12  s_ncg       i16 BE — number of cylinder groups
 ///   0x14  s_dirty     i16 BE — fs needs check?
 ///   0x16  s_pad0      i16 BE
-///   0x18  s_magic     u32 BE — 0x00072959
-///   0x1C  s_fname     char[6] — volume name
+///   0x14  fs_dirty    u16 BE (two bytes of padding follow)
+///   0x18  fs_time     u32 BE
+///   0x1C  fs_magic    u32 BE — 0x00072959
+///   0x20  fs_fname    char[6] — volume name
+///   0x26  fs_fpack    char[6] — pack name
+///
+/// The magic used to be read at 0x18 and the name at 0x1C, which is where the
+/// last-update time and the magic actually sit — a superblock this project
+/// wrote was readable only by itself.
 ///   ...
 /// </summary>
 internal sealed class EfsSuperblock {
@@ -38,7 +45,14 @@ internal sealed class EfsSuperblock {
 
   public static EfsSuperblock TryParse(ReadOnlySpan<byte> image) {
     if (image.Length < 0x80) return new EfsSuperblock();
-    var magic = ReadU32Be(image, 0x18);
+    // The superblock is at block 1; block 0 is the SGI volume header. Images
+    // this project wrote before that was noticed put it at block 0, so that is
+    // still accepted rather than refused.
+    var at = 512;
+    if (ReadU32Be(image, at + 0x1C) != EfsMagic) at = 0;
+    if (at != 0) image = image[at..];
+
+    var magic = ReadU32Be(image, 0x1C);
     if (magic != EfsMagic) return new EfsSuperblock();
 
     var raw = image.Slice(0, Math.Min(512, image.Length)).ToArray();
@@ -59,7 +73,7 @@ internal sealed class EfsSuperblock {
       NumCg = ReadI16Be(image, 0x12),
       Dirty = ReadI16Be(image, 0x14),
       Magic = magic,
-      Time = ReadU32Be(image, 0x1C),
+      Time = ReadU32Be(image, 0x18),
       RawBytes = raw,
     };
   }

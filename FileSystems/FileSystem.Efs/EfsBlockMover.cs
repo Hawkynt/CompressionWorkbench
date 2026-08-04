@@ -66,8 +66,9 @@ public sealed class EfsBlockMover : IFilesystemBlockMover {
       throw new InvalidOperationException($"EFS: no inode for '{fileName}'.");
 
     var inodesPerBlock = EfsWriter.BasicBlock / EfsWriter.InodeSize;
-    var blockOffset = (inode - 2) / inodesPerBlock;
-    var slotOffset = (inode - 2) % inodesPerBlock;
+    // Inode n sits at block n/4 of the table; 0 and 1 are reserved slots.
+    var blockOffset = inode / inodesPerBlock;
+    var slotOffset = inode % inodesPerBlock;
     var at = ((long)EfsWriter.InodeTableOffset + blockOffset) * EfsWriter.BasicBlock
            + (long)slotOffset * EfsWriter.InodeSize;
 

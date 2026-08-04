@@ -18,7 +18,8 @@ SGI EFS (pre-XFS IRIX filesystem) — WORM writer + hierarchical reader.
 
 | Bytes | At offset | Confidence |
 |---|---|---|
-| `00 07 29 59` | 24 | 0.85 |
+| `00 07 29 59` | 540 | 0.85 |
+| `00 07 29 59` | 24 | 0.60 |
 
 ## Verbs
 
@@ -53,7 +54,7 @@ the bytes that actually move rather than the whole volume.
 
 SGI EFS (Extent File System) format descriptor — the pre-XFS native filesystem used on IRIX before 5.3 (1994). Surfaces a real WORM writer that emits a spec-keyed superblock + single-cylinder-group inode table + per-file single-extent layout, plus defrag/purge/conversion/optimizer wiring. References:
 
-Reference: Linux kernel fs/efs/efs_fs_sb.h, IRIX sys/fs/efs_fs.h. Superblock at offset 0 (sector 0, 512-byte sectors). Magic 0x00072959 (big-endian u32) at byte offset 0x18 inside the superblock (fs_magic).
+Reference: Linux kernel fs/efs/efs_fs_sb.h, IRIX sys/fs/efs_fs.h. Superblock at offset 0 (sector 0, 512-byte sectors). Magic 0x00072959 (big-endian u32) at byte offset 0x1C inside the superblock (fs_magic).
 
 Hierarchy: real — directories nest via the writer's directory inode chain (single-block directories; bodies use inode + nlen + name dirents). Reader recurses from inode 2 (root) and surfaces each entry at its full path.
 

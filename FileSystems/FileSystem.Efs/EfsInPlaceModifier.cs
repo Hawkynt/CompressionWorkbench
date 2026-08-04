@@ -30,14 +30,22 @@ public static class EfsInPlaceModifier {
   private const int BasicBlock = 512;
   private const int InodeSize = 128;
   private const int InodesPerBlock = BasicBlock / InodeSize; // 4
-  private const int InodeTableStart = 1;
+  /// <summary>
+  /// The cylinder group starts at block 2: block 0 is the SGI volume header
+  /// and block 1 the superblock.
+  /// </summary>
+  private const int InodeTableStart = 2;
   private const ushort DirBlockMagic = 0xBEEF;
   private const ushort ModeDir = 0x4000 | 0x1ED;
   private const ushort ModeFile = 0x8000 | 0x1A4;
   private const int RootInode = 2;
+
+  /// <summary>Extents an inode holds before it needs an indirect one.</summary>
+  private const int DirectExtents = 12;
+
   private const int MaxExtentBlocks = 255; // ex_length is a single byte
 
-  private sealed record class Geometry(int FirstCg, int TotalBlocks);
+  private sealed record class Geometry(int FirstCg, int TotalBlocks, int InodeBlocks);
 
   /// <summary>Adds a regular file to the root directory in-place.</summary>
   /// <exception cref="IOException">Nested path, no free inode slot, no free
@@ -124,22 +132,26 @@ public static class EfsInPlaceModifier {
   // ── Geometry ────────────────────────────────────────────────────────────
 
   private static Geometry ReadGeometry(Stream image) {
-    var sb = new byte[32];
-    image.Position = 0;
+    // The superblock is at block 1, and its magic at 0x1C — block 0 is the
+    // SGI volume header.
+    var sb = new byte[64];
+    image.Position = (long)EfsWriter.SuperblockBlock * BasicBlock;
     image.ReadExactly(sb);
-    var magic = BinaryPrimitives.ReadUInt32BigEndian(sb.AsSpan(0x18));
+    var magic = BinaryPrimitives.ReadUInt32BigEndian(sb.AsSpan(0x1C));
     if (magic != EfsSuperblock.EfsMagic)
       throw new InvalidDataException("EFS: superblock magic mismatch.");
     var totalBlocks = BinaryPrimitives.ReadInt32BigEndian(sb.AsSpan(0x00));
     var firstCg = BinaryPrimitives.ReadInt32BigEndian(sb.AsSpan(0x04));
-    return new Geometry(firstCg, totalBlocks);
+    var inodeBlocks = BinaryPrimitives.ReadInt16BigEndian(sb.AsSpan(0x0C));
+    return new Geometry(firstCg, totalBlocks, inodeBlocks);
   }
 
   // ── Inode helpers ─────────────────────────────────────────────────────────
 
   private static long InodeOffset(int inode) {
-    var blockOff = (inode - 2) / InodesPerBlock;
-    var slotOff = (inode - 2) % InodesPerBlock;
+    // Inode n sits at block n/4 of the table; 0 and 1 are reserved slots.
+    var blockOff = inode / InodesPerBlock;
+    var slotOff = inode % InodesPerBlock;
     return (long)(InodeTableStart + blockOff) * BasicBlock + (long)slotOff * InodeSize;
   }
 
@@ -159,13 +171,14 @@ public static class EfsInPlaceModifier {
     return ((mode & 0xF000) == 0x4000, size, firstBlock, blocks);
   }
 
-  // A dinode slot is free when its di_mode (offset 0) is zero. The inode array
-  // spans sector 1 .. (firstCg - 1).
+  // A dinode slot is free when its di_mode (offset 0) is zero. The table runs
+  // from the head of the cylinder group for as many blocks as the superblock
+  // records, and inode n lives at block n/4 of it — so the last usable number
+  // is the capacity itself, not the capacity plus two.
   private static int FindFreeInode(Stream image, Geometry geom) {
-    var inodeBlocks = Math.Max(1, geom.FirstCg - InodeTableStart);
+    var inodeBlocks = Math.Max(1, (int)geom.InodeBlocks);
     var capacity = inodeBlocks * InodesPerBlock;
-    for (var idx = 0; idx < capacity; idx++) {
-      var inode = idx + 2;
+    for (var inode = 2; inode < capacity; inode++) {
       image.Position = InodeOffset(inode);
       var mode = new byte[2];
       image.ReadExactly(mode);
@@ -183,15 +196,39 @@ public static class EfsInPlaceModifier {
     BinaryPrimitives.WriteInt32BigEndian(ip.AsSpan(12), now);
     BinaryPrimitives.WriteInt32BigEndian(ip.AsSpan(16), now);
     BinaryPrimitives.WriteInt32BigEndian(ip.AsSpan(20), now);
-    BinaryPrimitives.WriteInt16BigEndian(ip.AsSpan(28), (short)(blocks > 0 ? 1 : 0)); // di_numextents
     ip[30] = 1; // di_version
-    if (blocks > 0) {
-      ip[32] = 0; // ex_magic
-      ip[33] = (byte)(firstBlock >> 16);
-      ip[34] = (byte)(firstBlock >> 8);
-      ip[35] = (byte)firstBlock;
-      ip[36] = (byte)blocks; // ex_length
+
+    // An extent's length is one byte, so a run longer than 255 blocks has to
+    // be split across several. Twelve fit in an inode. Writing one extent and
+    // truncating its length gave a file of the right size holding the wrong
+    // bytes past the first 255 blocks.
+
+    var extents = 0;
+    var remaining = blocks;
+    var block = firstBlock;
+    var fileOffset = 0;
+    while (remaining > 0 && extents < DirectExtents) {
+      var run = Math.Min(remaining, MaxExtentBlocks);
+      var at = 32 + extents * 8;
+      ip[at] = 0;                                  // ex_magic
+      ip[at + 1] = (byte)(block >> 16);
+      ip[at + 2] = (byte)(block >> 8);
+      ip[at + 3] = (byte)block;
+      ip[at + 4] = (byte)run;                      // ex_length
+      ip[at + 5] = (byte)(fileOffset >> 16);
+      ip[at + 6] = (byte)(fileOffset >> 8);
+      ip[at + 7] = (byte)fileOffset;               // ex_offset, in blocks
+      block += run;
+      fileOffset += run;
+      remaining -= run;
+      ++extents;
     }
+
+    if (remaining > 0)
+      throw new NotSupportedException(
+        $"EFS: a file of {blocks} blocks needs more than the {DirectExtents} extents an inode holds.");
+
+    BinaryPrimitives.WriteInt16BigEndian(ip.AsSpan(28), (short)extents); // di_numextents
     image.Position = InodeOffset(inode);
     image.Write(ip, 0, InodeSize);
   }
@@ -210,14 +247,17 @@ public static class EfsInPlaceModifier {
     if (image.Length < newLength) image.SetLength(newLength);
     geom = geom with { TotalBlocks = newTotal };
 
-    // Update superblock s_size and s_cgfsize (both grow by the appended blocks).
+    // Update fs_size and fs_cgfsize — in the superblock, which is at block 1.
+    // Writing them at offset 0 put them in the volume header and left the
+    // superblock saying the volume was smaller than it is.
+    var superblockAt = (long)EfsWriter.SuperblockBlock * BasicBlock;
     var hdr = new byte[12];
-    image.Position = 0;
+    image.Position = superblockAt;
     image.ReadExactly(hdr);
-    BinaryPrimitives.WriteInt32BigEndian(hdr.AsSpan(0), newTotal);                 // s_size
+    BinaryPrimitives.WriteInt32BigEndian(hdr.AsSpan(0), newTotal);                 // fs_size
     var cgFreeSize = newTotal - geom.FirstCg;
-    BinaryPrimitives.WriteInt32BigEndian(hdr.AsSpan(8), cgFreeSize);               // s_cgfsize
-    image.Position = 0;
+    BinaryPrimitives.WriteInt32BigEndian(hdr.AsSpan(8), cgFreeSize);               // fs_cgfsize
+    image.Position = superblockAt;
     image.Write(hdr, 0, 12);
     return firstBlock;
   }
@@ -232,6 +272,56 @@ public static class EfsInPlaceModifier {
   private static void WipeBlocks(Stream image, int firstBlock, int blocks) {
     image.Position = (long)firstBlock * BasicBlock;
     image.Write(new byte[(long)blocks * BasicBlock], 0, blocks * BasicBlock);
+  }
+
+
+  // ── Directory block helpers ─────────────────────────────────────────────
+  //
+  // A block holds a slot table — one byte per entry giving its offset halved —
+  // and the entries themselves packed against the far end. This used to be
+  // read and written as a flat list, which nothing but this project could
+  // follow.
+
+  private static List<(uint Inode, string Name)> ReadEntries(byte[] blk) {
+    var entries = new List<(uint, string)>();
+    int slots = blk[3];
+    for (var i = 0; i < slots; i++) {
+      var slotAt = 4 + i;
+      if (slotAt >= blk.Length) break;
+      var at = blk[slotAt] << 1;
+      if (at + 5 > blk.Length) break;
+      int nlen = blk[at + 4];
+      if (at + 5 + nlen > blk.Length) break;
+      entries.Add((BinaryPrimitives.ReadUInt32BigEndian(blk.AsSpan(at)),
+        Encoding.ASCII.GetString(blk, at + 5, nlen)));
+    }
+
+    return entries;
+  }
+
+  private static byte[]? BuildBlock(List<(uint Inode, string Name)> entries) {
+    var blk = new byte[BasicBlock];
+    BinaryPrimitives.WriteUInt16BigEndian(blk, DirBlockMagic);
+
+    var cursor = blk.Length;
+    var slotAt = 4;
+    foreach (var (inode, name) in entries) {
+      var nb = Encoding.ASCII.GetBytes(name);
+      if (nb.Length > 255) return null;
+
+      var size = (5 + nb.Length + 1) & ~1;
+      cursor -= size;
+      if (cursor < slotAt + 1) return null;
+
+      BinaryPrimitives.WriteUInt32BigEndian(blk.AsSpan(cursor), inode);
+      blk[cursor + 4] = (byte)nb.Length;
+      nb.CopyTo(blk, cursor + 5);
+      blk[slotAt++] = (byte)(cursor >> 1);
+    }
+
+    blk[2] = (byte)(cursor >> 1);
+    blk[3] = (byte)entries.Count;
+    return blk;
   }
 
   // ── Root directory helpers ──────────────────────────────────────────────────
@@ -250,29 +340,17 @@ public static class EfsInPlaceModifier {
 
   private static bool InsertRootDirEntry(Stream image, ushort inode, string name) {
     var blk = ReadRootDirBlock(image, out var dirBlock);
-    int slots = blk[2];
-    var nb = Encoding.UTF8.GetBytes(name);
-    if (nb.Length > 255) return false;
+    var entries = ReadEntries(blk);
+    entries.Add((inode, name));
 
-    var cur = 3;
-    for (var i = 0; i < slots && cur + 3 <= blk.Length; i++) {
-      int nlen = blk[cur + 2];
-      if (cur + 3 + nlen > blk.Length) return false;
-      cur += 3 + nlen;
-    }
-    var slotLen = 3 + nb.Length;
-    if (cur + slotLen > blk.Length) return false; // single-block dir full
-
-    BinaryPrimitives.WriteUInt16BigEndian(blk.AsSpan(cur), inode);
-    blk[cur + 2] = (byte)nb.Length;
-    nb.CopyTo(blk, cur + 3);
-    blk[2] = (byte)(slots + 1);
+    var rebuilt = BuildBlock(entries);
+    if (rebuilt == null) return false; // single-block directory full
 
     image.Position = (long)dirBlock * BasicBlock;
-    image.Write(blk, 0, blk.Length);
+    image.Write(rebuilt, 0, rebuilt.Length);
 
-    // Grow the root directory inode's di_size to cover the new dirent.
-    var newDirSize = cur + slotLen;
+    // A directory's size is whole blocks; a driver refuses anything else.
+    var newDirSize = BasicBlock;
     image.Position = InodeOffset(RootInode) + 8;
     var sz = new byte[4];
     BinaryPrimitives.WriteInt32BigEndian(sz, newDirSize);
@@ -283,19 +361,12 @@ public static class EfsInPlaceModifier {
   private static bool FindRootDirEntry(Stream image, string name, out uint inode) {
     inode = 0;
     var blk = ReadRootDirBlock(image, out _);
-    int slots = blk[2];
-    var cur = 3;
-    for (var i = 0; i < slots && cur + 3 <= blk.Length; i++) {
-      var childInode = BinaryPrimitives.ReadUInt16BigEndian(blk.AsSpan(cur));
-      int nlen = blk[cur + 2];
-      if (cur + 3 + nlen > blk.Length) break;
-      var entryName = Encoding.UTF8.GetString(blk, cur + 3, nlen);
+    foreach (var (childInode, entryName) in ReadEntries(blk))
       if (entryName is not ("." or "..") && entryName.Equals(name, StringComparison.OrdinalIgnoreCase)) {
         inode = childInode;
         return true;
       }
-      cur += 3 + nlen;
-    }
+
     return false;
   }
 
@@ -303,39 +374,30 @@ public static class EfsInPlaceModifier {
   private static bool RemoveRootDirEntry(Stream image, string name, out uint inode) {
     inode = 0;
     var blk = ReadRootDirBlock(image, out var dirBlock);
-    int slots = blk[2];
-
-    var rebuilt = new byte[BasicBlock];
-    BinaryPrimitives.WriteUInt16BigEndian(rebuilt.AsSpan(0), DirBlockMagic);
-    var outOff = 3;
-    var kept = 0;
+    var kept = new List<(uint Inode, string Name)>();
     var found = false;
-    var cur = 3;
-    for (var i = 0; i < slots && cur + 3 <= blk.Length; i++) {
-      var childInode = BinaryPrimitives.ReadUInt16BigEndian(blk.AsSpan(cur));
-      int nlen = blk[cur + 2];
-      if (cur + 3 + nlen > blk.Length) break;
-      var entryName = Encoding.UTF8.GetString(blk, cur + 3, nlen);
-      var slotLen = 3 + nlen;
-      if (!found && entryName is not ("." or "..") && entryName.Equals(name, StringComparison.OrdinalIgnoreCase)) {
-        inode = childInode;
+    foreach (var entry in ReadEntries(blk)) {
+      if (!found && entry.Name is not ("." or "..")
+          && entry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) {
+        inode = entry.Inode;
         found = true;
-      } else {
-        Array.Copy(blk, cur, rebuilt, outOff, slotLen);
-        outOff += slotLen;
-        kept++;
+        continue;
       }
-      cur += slotLen;
+
+      kept.Add(entry);
     }
+
     if (!found) return false;
 
-    rebuilt[2] = (byte)kept;
+    var rebuilt = BuildBlock(kept);
+    if (rebuilt == null) return false;
+
     image.Position = (long)dirBlock * BasicBlock;
     image.Write(rebuilt, 0, rebuilt.Length);
 
     image.Position = InodeOffset(RootInode) + 8;
     var sz = new byte[4];
-    BinaryPrimitives.WriteInt32BigEndian(sz, outOff);
+    BinaryPrimitives.WriteInt32BigEndian(sz, BasicBlock);
     image.Write(sz, 0, 4);
     return true;
   }
