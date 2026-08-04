@@ -375,7 +375,11 @@ public static class NtfsInPlaceShrinker {
     // allocated (mkfs.ntfs convention). ntfsresize derives the volume cluster count
     // from the bitmap's real size in bytes (ceil(clusters/8)*8 bits), so a free
     // padding bit there is flagged as a missing/under-allocated cluster.
-    var validBits = ((imageClusters + 7) / 8) * 8;
+    // A driver reads the bitmap in 64-bit words and expects the attribute to be at
+    // least that many bytes long, so the tail is padded to a whole word — and the
+    // bits in it must read as allocated, or a cluster that is not there is offered
+    // as free space.
+    var validBits = ((imageClusters + 63) / 64) * 64;
     for (var c = imageClusters; c < validBits; c++) {
       var bOff = bmByteOffset + (int)(c / 8);
       if (bOff < 0 || bOff >= image.Length) break;
@@ -390,7 +394,7 @@ public static class NtfsInPlaceShrinker {
     ApplyFixup(rec6);
     var (attrPos, _) = FindAttr(rec6, 0x80, unnamedOnly: true);
     if (attrPos < 0 || rec6[attrPos + 8] == 0) return;
-    var newValid = (imageClusters + 7) / 8;
+    var newValid = ((imageClusters + 63) / 64) * 8;
     var allocated = BinaryPrimitives.ReadInt64LittleEndian(rec6.AsSpan(attrPos + 40));
     if (newValid > allocated) newValid = allocated;
     BinaryPrimitives.WriteInt64LittleEndian(rec6.AsSpan(attrPos + 48), newValid); // real size

@@ -478,7 +478,9 @@ public sealed class NtfsWriter {
     var upCaseClusters = (UpCaseBytes + this._clusterSize - 1) / this._clusterSize;
     nextCluster += upCaseClusters;
 
-    var bitmapBytes = (totalClusters + 7) / 8;
+    // Rounded to a whole 64-bit word: a driver reads the cluster bitmap in words and
+    // measures the attribute against that, so a byte-exact size is short.
+    var bitmapBytes = (totalClusters + 63) / 64 * 8;
     var bitmapCluster = nextCluster;
     var bitmapClusters = (int)((bitmapBytes + this._clusterSize - 1) / this._clusterSize);
     nextCluster += bitmapClusters;
@@ -492,6 +494,19 @@ public sealed class NtfsWriter {
     var mftBitmapClusters = (mftBitmapBitsBytes + this._clusterSize - 1) / this._clusterSize;
     if (mftBitmapClusters < 1) mftBitmapClusters = 1;
     nextCluster += mftBitmapClusters;
+
+    // $AttrDef, when it does not fit inside its record, gets its clusters here with
+    // the other system files rather than after the user data. Allocating it last put
+    // it past the end of the region this materialises, where writing its table is a
+    // silent no-op: the record then named a cluster of zeroes, and a driver that
+    // reads the attribute definitions before anything else called the volume corrupt.
+    var attrDefTable = BuildAttrDefTable();
+    var attrDefIsResident = attrDefTable.Length <= ResidentThreshold;
+    var attrDefCluster = nextCluster;
+    var attrDefClusters = attrDefIsResident
+      ? 0
+      : (attrDefTable.Length + this._clusterSize - 1) / this._clusterSize;
+    nextCluster += attrDefClusters;
 
     // Skip over the $MFTMirr region if we've grown into it.
     if (nextCluster > mftMirrCluster && nextCluster <= mftMirrCluster + mftMirrClusters) {
@@ -645,9 +660,10 @@ public sealed class NtfsWriter {
         new ResidentAttr(0x70, this.BuildVolumeInformationAttr()),
       ]);
 
-    // Record 4: $AttrDef — small, stays resident.
-    var attrDef = BuildAttrDefTable();
-    if (attrDef.Length <= ResidentThreshold) {
+    // Record 4: $AttrDef — resident when it fits, otherwise in the clusters reserved
+    // for it above.
+    var attrDef = attrDefTable;
+    if (attrDefIsResident) {
       WriteMftRecord(
         disk, mftOffset, 4, sequence: 4,
         fileName: "$AttrDef",
@@ -658,12 +674,6 @@ public sealed class NtfsWriter {
         dataSize: attrDef.Length,
         sizeHintInFileName: attrDef.Length);
     } else {
-      // Allocate clusters at the end for $AttrDef if it grows beyond resident.
-      // In practice the 22-entry table is ~3 KiB so this branch rarely hits,
-      // but keep it for safety.
-      var attrDefClusters = (attrDef.Length + this._clusterSize - 1) / this._clusterSize;
-      var attrDefCluster = nextCluster;
-      nextCluster += attrDefClusters;
       WriteBytesToClusters(disk, attrDefCluster, attrDef);
       WriteMftRecord(
         disk, mftOffset, 4, sequence: 4,
@@ -691,6 +701,7 @@ public sealed class NtfsWriter {
       upCaseCluster, upCaseClusters,
       bitmapCluster, bitmapClusters,
       mftBitmapCluster, mftBitmapClusters,
+      attrDefCluster, attrDefClusters,
       fileNodes,
       treeNodes.Where(n => n.IsDirectory).Prepend(rootNode).ToList());
     WriteBytesToClusters(disk, bitmapCluster, bitmap);
@@ -2218,9 +2229,10 @@ public sealed class NtfsWriter {
     int upCaseStart, int upCaseCount,
     int bitmapStart, int bitmapCount,
     int mftBitmapStart, int mftBitmapCount,
+    int attrDefStart, int attrDefCount,
     List<TreeNode> fileNodes,
     List<TreeNode> directoryNodes) {
-    var bytes = (int)((totalClusters + 7) / 8);
+    var bytes = (int)((totalClusters + 63) / 64 * 8);
     var bitmap = new byte[bytes];
 
     // Boot sector + first two clusters.
@@ -2231,6 +2243,10 @@ public sealed class NtfsWriter {
     SetRange(bitmap, upCaseStart, upCaseCount);
     SetRange(bitmap, bitmapStart, bitmapCount);
     SetRange(bitmap, mftBitmapStart, mftBitmapCount);
+    // $AttrDef's clusters, when it has any. Leaving them clear says the volume is
+    // free to put a file there, and something eventually does — over the table a
+    // driver reads before it reads anything else.
+    SetRange(bitmap, attrDefStart, attrDefCount);
 
     foreach (var f in fileNodes) {
       if (f.Resident) continue;

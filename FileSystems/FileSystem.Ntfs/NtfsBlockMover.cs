@@ -29,6 +29,7 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   private int _bytesPerSector;
   private int _sectorsPerCluster;
   private int _clusterSize;
+  private long _volumeEndByte;
   private long _mftCluster;
   private int _mftRecordSize;
   private long _mftOffset;
@@ -105,6 +106,9 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
       : clustersPerRecord * _clusterSize;
 
     _mftOffset = _mftCluster * _clusterSize;
+
+    var totalSectors = BinaryPrimitives.ReadInt64LittleEndian(boot[40..]);
+    _volumeEndByte = totalSectors * _bytesPerSector / _clusterSize * _clusterSize;
   }
 
   /// <summary>
@@ -119,6 +123,18 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
 
   /// <summary>Bytes per cluster.</summary>
   public int ClusterSize => _clusterSize;
+
+  /// <summary>
+  /// The last byte a file may occupy: the end of the volume, not the end of the file
+  /// holding it.
+  /// </summary>
+  /// <remarks>
+  /// A boot sector reports one sector fewer than the device has, and the sector it
+  /// leaves out holds the backup copy of itself. Laying files out to the end of the
+  /// image therefore puts the last one partly outside the volume it belongs to and
+  /// over the backup — the file is listed at its right length and cannot be read.
+  /// </remarks>
+  public long VolumeEndByte => _volumeEndByte;
 
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
