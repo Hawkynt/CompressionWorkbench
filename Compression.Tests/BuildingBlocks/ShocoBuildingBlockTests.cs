@@ -52,6 +52,67 @@ public class ShocoBuildingBlockTests {
     Assert.That(round, Is.EqualTo(data).AsCollection);
   }
 
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void AlternatingPattern_RoundTrips() {
+    var data = new byte[2048];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)(i % 2 == 0 ? 0xA5 : 0x5A);
+    var round = Bb.Decompress(Bb.Compress(data));
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void AllByteValues_RoundTrips() {
+    var data = new byte[256];
+    for (var i = 0; i < 256; ++i)
+      data[i] = (byte)i;
+    var round = Bb.Decompress(Bb.Compress(data));
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void RepeatedCommonWords_ExercisesAllPackTiers() {
+    // Text drawn from the same vocabulary the model was trained on. The mix of
+    // long, highly predictable runs ("the day and the night") and shorter,
+    // less predictable joins between them exercises all three pack tiers.
+    const string text = "the day and the night and the day and the night";
+    var data = Encoding.ASCII.GetBytes(text);
+    var compressed = Bb.Compress(data);
+    var round = Bb.Decompress(compressed);
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+
+    var sawPack0 = false;
+    var sawPack1 = false;
+    var sawPack2 = false;
+    var payload = compressed.AsSpan(4);
+    var i = 0;
+    while (i < payload.Length) {
+      var b = payload[i];
+      if (b == 0x00) {
+        i += 2;
+      } else if (b < 0x80) {
+        i += 1;
+      } else if ((b & 0xC0) == 0x80) {
+        sawPack0 = true;
+        i += 1;
+      } else if ((b & 0xE0) == 0xC0) {
+        sawPack1 = true;
+        i += 2;
+      } else if ((b & 0xF0) == 0xE0) {
+        sawPack2 = true;
+        i += 4;
+      } else {
+        Assert.Fail($"Unrecognized pack header 0x{b:X2} at offset {i}.");
+      }
+    }
+
+    Assert.Multiple(() => {
+      Assert.That(sawPack0, Is.True, "expected the 1-byte/2-character pack tier to appear");
+      Assert.That(sawPack1, Is.True, "expected the 2-byte/4-character pack tier to appear");
+      Assert.That(sawPack2, Is.True, "expected the 4-byte/8-character pack tier to appear");
+    });
+  }
+
   [Test, Category("EdgeCase")]
   public void PlainAsciiText_DoesNotGrowMuch() {
     var data = Encoding.ASCII.GetBytes("the quick brown fox and the lazy dog");
