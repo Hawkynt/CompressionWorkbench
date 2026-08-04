@@ -94,12 +94,13 @@ public sealed class HpfsReader : IDisposable {
     var hasFnodeMagic = FnodeMagic.AsSpan()
       .SequenceEqual(_data.Read(fnodeOff, FnodeMagic.Length).AsSpan());
 
-    // Direct allocation list: offset 0xC4 (196) in the fnode. 8 entries * 12 bytes each.
+    // The allocation runs start at 0x40, right after the b-plus header at 0x38
+    // — not at 0xC4, which is inside the user-id field.
     // Each entry: [4:logical-sector-offset][4:length-in-sectors][4:physical-LBA].
     // For the root fnode the first entry's physical LBA points at the dirent block.
     uint rootDirLba;
     if (hasFnodeMagic) {
-      rootDirLba = _data.ReadUInt32(fnodeOff + 0xC4 + 8);
+      rootDirLba = _data.ReadUInt32(fnodeOff + HpfsLayout.FnAlloc + HpfsLayout.RunDiskSector);
     } else {
       // Fallback: scan the first 512 bytes for a plausible dirent-block magic pointer.
       rootDirLba = ScanForDirBlockLba(fnodeOff);
@@ -116,9 +117,9 @@ public sealed class HpfsReader : IDisposable {
     if (fnodeOff < 0 || fnodeOff + LbaSize > _data.Length) return;
 
     // The directory's dirent block is the physical LBA of the fnode's first
-    // direct-allocation entry (offset 0xC4 + 8). Direct-allocation only.
+    // first allocation run. Direct-allocation only.
     if (IsBtreeFnode(dirFnodeLba)) return; // dirent-block B-tree spill not supported
-    var dirBlockLba = _data.ReadUInt32(fnodeOff + 0xC4 + 8);
+    var dirBlockLba = _data.ReadUInt32(fnodeOff + HpfsLayout.FnAlloc + HpfsLayout.RunDiskSector);
     if (dirBlockLba == 0) return;
     ParseDirectoryBlock(dirBlockLba, pathPrefix, depth);
   }
@@ -174,16 +175,19 @@ public sealed class HpfsReader : IDisposable {
 
     while (cursor < blockEnd && safety++ < 1024) {
       var recLen = _data.ReadUInt16(cursor);
-      if (recLen < 32 || cursor + recLen > blockEnd) break;
+      if (recLen < 0x20 || cursor + recLen > blockEnd) break;
 
-      var flags = _data.ReadUInt16(cursor + 2);
-
-      // Bit 0 (0x0001): "special" entry — either ".." or end-of-block sentinel.
-      // Bit 2 (0x0004): B-tree down-pointer present (4-byte LBA at record tail).
-      // Bit 3 (0x0008): directory.
-      var isSpecial = (flags & 0x0001) != 0;
-      var hasDownPointer = (flags & 0x0004) != 0;
-      var isDirectory = (flags & 0x0008) != 0;
+      // A dirent carries two flag bytes: the structural one at 0x02 and the
+      // DOS attributes at 0x03. The directory bit is an attribute, not a
+      // structural flag — reading it as bit 3 of a word read "last" instead,
+      // which is the end-of-block marker.
+      var structural = _data.ReadByte(cursor + 2);
+      var attributes = _data.ReadByte(cursor + 3);
+      var isFirst = (structural & 0x01) != 0;
+      var hasDownPointer = (structural & 0x04) != 0;
+      var isLast = (structural & 0x08) != 0;
+      var isSpecial = isFirst || isLast;
+      var isDirectory = (attributes & 0x10) != 0;
 
       // In-order traversal: read this dirent's left subtree before the dirent.
       if (hasDownPointer && cursor + recLen <= blockEnd) {
@@ -194,15 +198,14 @@ public sealed class HpfsReader : IDisposable {
 
       // The end-of-block sentinel terminates the dirent list (its down-pointer,
       // the rightmost child, was already followed above).
-      if (isSpecial && _data.ReadByte(cursor + 30) == 0)
-        break;
+      if (isLast) break;
 
       var fnodeLba = _data.ReadUInt32(cursor + 4);
-      var fileSize = _data.ReadUInt32(cursor + 12);
-      var nameLen = _data.ReadByte(cursor + 30);
+      var fileSize = _data.ReadUInt32(cursor + 0x0C);
+      var nameLen = _data.ReadByte(cursor + 0x1E);
 
-      if (!isSpecial && nameLen > 0 && cursor + 31 + nameLen <= blockEnd) {
-        var name = Encoding.Latin1.GetString(_data.Read(cursor + 31, nameLen));
+      if (!isSpecial && nameLen > 0 && cursor + 0x1F + nameLen <= blockEnd) {
+        var name = Encoding.Latin1.GetString(_data.Read(cursor + 0x1F, nameLen));
 
         // Skip the "." / ".." self/parent links rather than recursing into them.
         if (name is not ("." or "..")) {
@@ -232,17 +235,18 @@ public sealed class HpfsReader : IDisposable {
 
   private bool IsBtreeFnode(uint fnodeLba) {
     var off = LbaOffset(fnodeLba);
-    if (off + 0xC4 + 12 > _data.Length) return false;
-    // AllocSec header at offset 0xC0 (192) in the fnode. Offset 0xC0+7 = height.
+    if (off + HpfsLayout.FnAlloc + HpfsLayout.RunBytes > _data.Length) return false;
+    // The b-plus header at 0x38: its flag byte says whether the slots after it
+    // are runs or pointers to subtrees.
     // Height 0 means direct allocation list follows; >0 means B-tree.
-    var height = _data.ReadByte(off + 0xC0 + 7);
+    var height = _data.ReadByte(off + HpfsLayout.FnBtree + HpfsLayout.BtFlags);
     return height != 0;
   }
 
   private uint GetFirstDataLbaFromFnode(uint fnodeLba) {
     var off = LbaOffset(fnodeLba);
-    if (off + 0xC4 + 12 > _data.Length) return 0;
-    return _data.ReadUInt32(off + 0xC4 + 8);
+    if (off + HpfsLayout.FnAlloc + HpfsLayout.RunBytes > _data.Length) return 0;
+    return _data.ReadUInt32(off + HpfsLayout.FnAlloc + HpfsLayout.RunDiskSector);
   }
 
   /// <summary>

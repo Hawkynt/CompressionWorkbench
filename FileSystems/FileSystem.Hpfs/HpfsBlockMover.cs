@@ -23,7 +23,7 @@ public sealed class HpfsBlockMover : IFilesystemBlockMover {
   private const int LbaSize = HpfsReader.LbaSize;
 
   /// <summary>Offset of the direct allocation list inside an fnode.</summary>
-  private const int FnodeAllocEntryOffset = 0xC4;
+  private const int FnodeAllocEntryOffset = HpfsLayout.FnAlloc;
 
   /// <summary>LBA the writer puts the allocation bitmap at when the superblock names none.</summary>
   private const uint DefaultBitmapLba = 24;

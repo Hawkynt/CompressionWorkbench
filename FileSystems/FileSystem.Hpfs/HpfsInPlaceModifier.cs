@@ -44,11 +44,15 @@ internal static class HpfsInPlaceModifier {
   private const int DirBlockSize = LbaSize * DirBlockLbas;
   private const int DirentAreaOffset = 0x14;
   private const int DirentHeaderLen = 32;
-  private const int FnodeAllocEntryOffset = 0xC4;
+  private const int FnodeAllocEntryOffset = HpfsLayout.FnAlloc;
 
-  private const ushort DirentFlagSpecial = 0x0001;
-  private const ushort DirentFlagBtreeDown = 0x0004;
-  private const ushort DirentFlagDirectory = 0x0008;
+  // A dirent's structural flags and its DOS attributes are separate bytes;
+  // the directory bit is an attribute, and reading it out of the flag word
+  // read "last" — the end-of-block marker — instead.
+  private const byte DirentFlagFirst = 0x01;
+  private const byte DirentFlagBtreeDown = 0x04;
+  private const byte DirentFlagLast = 0x08;
+  private const byte DirentAttrDirectory = 0x10;
 
   private const uint SuperblockLba = 16;
   private const uint BitmapLba = 24;
@@ -211,9 +215,10 @@ internal static class HpfsInPlaceModifier {
     while (cursor < blockEnd && safety++ < 4096) {
       var recLen = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buf.AsSpan(cursor, 2));
       if (recLen < DirentHeaderLen || cursor + recLen > blockEnd) break;
-      var flags = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buf.AsSpan(cursor + 2, 2));
-      var isSpecial = (flags & DirentFlagSpecial) != 0;
-      if (isSpecial && ctx.Buf[cursor + 30] == 0) break; // end sentinel
+      var flags = ctx.Buf[cursor + 2];
+      var attributes = ctx.Buf[cursor + 3];
+      if ((flags & DirentFlagLast) != 0) break; // end sentinel
+      var isSpecial = (flags & DirentFlagFirst) != 0;
 
       if ((flags & DirentFlagBtreeDown) != 0)
         throw new InvalidOperationException(
@@ -230,7 +235,7 @@ internal static class HpfsInPlaceModifier {
             DirentOffset = cursor,
             RecLen = recLen,
             FnodeLba = fnodeLba,
-            IsDirectory = (flags & DirentFlagDirectory) != 0,
+            IsDirectory = (attributes & DirentAttrDirectory) != 0,
           };
         }
       }
@@ -317,9 +322,10 @@ internal static class HpfsInPlaceModifier {
       var recLen = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buf.AsSpan(cursor, 2));
       if (recLen < DirentHeaderLen || cursor + recLen > blockEnd)
         throw new InvalidDataException("HPFS: malformed dirent in root DIRBLK.");
-      var flags = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buf.AsSpan(cursor + 2, 2));
-      var isSpecial = (flags & DirentFlagSpecial) != 0;
-      if (isSpecial && ctx.Buf[cursor + 30] == 0) { sentinelOff = cursor; break; }
+      var flags = ctx.Buf[cursor + 2];
+      var attributes = ctx.Buf[cursor + 3];
+      if ((flags & DirentFlagLast) != 0) { sentinelOff = cursor; break; }
+      var isSpecial = (flags & DirentFlagFirst) != 0;
 
       if ((flags & DirentFlagBtreeDown) != 0)
         throw new InvalidOperationException(
@@ -354,6 +360,29 @@ internal static class HpfsInPlaceModifier {
     // Zero the freshly-vacated slot before writing into it.
     ctx.Buf.AsSpan(insertAt, newRecLen).Clear();
     WriteDirent(ctx.Buf, insertAt, nameBytes, fnodeLba, fileSize, isDirectory: false);
+    RefreshFirstFree(ctx.Buf, dirOff, blockEnd);
+  }
+
+  /// <summary>
+  /// Rewrites the directory block's record of where its entries stop.
+  /// </summary>
+  /// <remarks>
+  /// A driver walks entries only that far, so a block whose count is stale
+  /// after an insertion or a removal hands back the wrong list — or, when it
+  /// is zero, no list at all.
+  /// </remarks>
+  private static void RefreshFirstFree(byte[] buf, int dnodeOff, int blockEnd) {
+    var cursor = dnodeOff + DirentAreaOffset;
+    var safety = 0;
+    while (cursor < blockEnd && safety++ < 4096) {
+      var recLen = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(cursor, 2));
+      if (recLen < DirentHeaderLen || cursor + recLen > blockEnd) break;
+      var last = (buf[cursor + 2] & DirentFlagLast) != 0;
+      cursor += recLen;
+      if (last) break;
+    }
+
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(dnodeOff + 4, 4), (uint)(cursor - dnodeOff));
   }
 
   private static void RemoveOne(Ctx ctx, string name) {
@@ -396,11 +425,10 @@ internal static class HpfsInPlaceModifier {
     while (scan < blockEnd && safety++ < 4096) {
       var recLen = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buf.AsSpan(scan, 2));
       if (recLen < DirentHeaderLen || scan + recLen > blockEnd) break;
-      var flags = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buf.AsSpan(scan + 2, 2));
-      var isSpecial = (flags & DirentFlagSpecial) != 0;
+      var last = (ctx.Buf[scan + 2] & DirentFlagLast) != 0;
       sentinelEnd = scan + recLen;
       scan += recLen;
-      if (isSpecial && ctx.Buf[scan - recLen + 30] == 0) break;
+      if (last) break;
     }
 
     var shiftSrc = ex.DirentOffset + ex.RecLen;
@@ -412,23 +440,27 @@ internal static class HpfsInPlaceModifier {
     var vacatedLen = (sentinelEnd - vacated);
     if (vacatedLen > 0)
       ctx.Buf.AsSpan(vacated, vacatedLen).Clear();
+
+    RefreshFirstFree(ctx.Buf, (int)ctx.RootDirBlockLba * LbaSize,
+      (int)ctx.RootDirBlockLba * LbaSize + DirBlockSize);
   }
 
   // ── Dirent encoding helpers ─────────────────────────────────────────────
 
-  private static int AlignedRecordLen(int nameLen, bool withDownPointer) {
-    var len = DirentHeaderLen + nameLen + (withDownPointer ? 4 : 0);
-    if ((len & 3) != 0) len = (len + 3) & ~3;
-    return len;
-  }
+  /// <summary>
+  /// What one dirent occupies: the fixed part up to the name length, the name,
+  /// rounded to four, and a down-pointer when there is one.
+  /// </summary>
+  private static int AlignedRecordLen(int nameLen, bool withDownPointer)
+    => ((0x1F + nameLen + 3) & ~3) + (withDownPointer ? 4 : 0);
 
   private static void WriteDirent(byte[] buf, int cursor, byte[] nameBytes, uint fnodeLba, uint fileSize, bool isDirectory) {
     var recLen = AlignedRecordLen(nameBytes.Length, withDownPointer: false);
-    var flags = (ushort)(isDirectory ? DirentFlagDirectory : 0);
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(cursor, 2), (ushort)recLen);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(cursor + 2, 2), flags);
+    buf[cursor + 2] = 0;
+    buf[cursor + 3] = (byte)(isDirectory ? DirentAttrDirectory : 0);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(cursor + 4, 4), fnodeLba);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(cursor + 12, 4), isDirectory ? 0u : fileSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(cursor + 0x0C, 4), isDirectory ? 0u : fileSize);
     buf[cursor + 30] = (byte)nameBytes.Length;
     nameBytes.CopyTo(buf.AsSpan(cursor + 31, nameBytes.Length));
   }
@@ -442,8 +474,13 @@ internal static class HpfsInPlaceModifier {
     // Zero the whole FNODE sector first so leftover bytes don't leak.
     ctx.Buf.AsSpan(off, LbaSize).Clear();
     FnodeMagic.CopyTo(ctx.Buf.AsSpan(off, 4));
-    BinaryPrimitives.WriteUInt32LittleEndian(ctx.Buf.AsSpan(off + 0x0C, 4), parentFnodeLba);
-    // AllocSec header at 0xC0 (height = 0 → direct list); already zeroed.
+    BinaryPrimitives.WriteUInt32LittleEndian(ctx.Buf.AsSpan(off + HpfsLayout.FnUp, 4), parentFnodeLba);
+    BinaryPrimitives.WriteUInt16LittleEndian(ctx.Buf.AsSpan(off + HpfsLayout.FnEaOffset, 2), 0xC4);
+
+    // The b-plus header at 0x38 has to say how many of the eight run slots
+    // are in use; a driver adds the used and free counts and refuses the
+    // fnode unless they come to eight.
+    HpfsLayout.WriteLeafHeader(ctx.Buf.AsSpan(off, LbaSize), usedRuns: dataLenLbas == 0 ? 0 : 1);
     BinaryPrimitives.WriteUInt32LittleEndian(ctx.Buf.AsSpan(off + FnodeAllocEntryOffset + 0, 4), 0u);
     BinaryPrimitives.WriteUInt32LittleEndian(ctx.Buf.AsSpan(off + FnodeAllocEntryOffset + 4, 4), dataLenLbas);
     BinaryPrimitives.WriteUInt32LittleEndian(ctx.Buf.AsSpan(off + FnodeAllocEntryOffset + 8, 4), dataLba);
