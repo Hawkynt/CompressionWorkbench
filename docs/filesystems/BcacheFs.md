@@ -69,7 +69,7 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 
 bcachefs keeps no directory blocks and no inode table. A file's name is a key in the dirents tree, its metadata a key in the inodes tree, and its bytes are named by keys in the extents tree; a volume is those trees plus a superblock that says where their roots are. Because the volume is written whole and never mounted for writing in between, the roots go in the superblock's clean section, and no journal entries are needed to find them.
 
-What is not written is the allocation information — the alloc, freespace, backpointer and accounting trees a running filesystem keeps so it can decide where to put the next write. A volume that will only ever be read does not need them, and the format has a feature bit that says so; bcachefs's own tooling strips exactly these trees for exactly this case. The consequence is visible and worth stating: such a volume is mounted read-only, with -o norecovery, and a read-write mount rebuilds what is missing before it will start.
+What is not written is the allocation information — the alloc, freespace, backpointer and accounting trees a running filesystem keeps so it can decide where to put the next write. A volume that will only ever be read does not need them, and the format says so twice: with the feature bit for a volume without them, and with the one that says the volume is an image file that was never sized to a device. A kernel reading those mounts it read-only rather than stopping to build what is absent, and its checker passes. Going read-write is what such a volume cannot do; that is the whole of the difference.
 
 ## Parameters
 

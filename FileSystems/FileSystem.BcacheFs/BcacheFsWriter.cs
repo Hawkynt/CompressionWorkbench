@@ -21,11 +21,11 @@ namespace FileSystem.BcacheFs;
 /// <para>What is not written is the allocation information — the alloc, freespace,
 /// backpointer and accounting trees a running filesystem keeps so it can decide
 /// where to put the next write. A volume that will only ever be read does not need
-/// them, and the format has a feature bit that says so; bcachefs's own tooling
-/// strips exactly these trees for exactly this case. The consequence is visible
-/// and worth stating: such a volume is mounted read-only, with
-/// <c>-o norecovery</c>, and a read-write mount rebuilds what is missing before it
-/// will start.</para>
+/// them, and the format says so twice: with the feature bit for a volume without
+/// them, and with the one that says the volume is an image file that was never
+/// sized to a device. A kernel reading those mounts it read-only rather than
+/// stopping to build what is absent, and its checker passes. Going read-write is
+/// what such a volume cannot do; that is the whole of the difference.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
 
@@ -292,8 +292,10 @@ public sealed class BcacheFsWriter {
     var dirents = nodes[2];
 
     // The root directory, then every directory under it, then every file.
+    // The root is the subvolume's root inode, and says so.
     inodes.Add(InodeKey(RootInode, 0, 0, isDirectory: true, size: 0, sectors: 0,
-      links: directories.Values.Count(d => d.Parent == RootInode)));
+      links: directories.Values.Count(d => d.Parent == RootInode),
+      subvolume: RootSubvolume));
 
     foreach (var directory in directories.Values) {
       var offset = DirentHash(HashSeed(directory.Parent), directory.Name);
@@ -335,47 +337,64 @@ public sealed class BcacheFsWriter {
   /// <summary>The hash seed a directory's entries are placed by.</summary>
   private static ulong HashSeed(ulong inode) => inode * 0x9E3779B97F4A7C15UL | 1UL;
 
+  /// <summary>
+  /// Builds one inode record.
+  /// </summary>
+  /// <remarks>
+  /// <para>The fixed part carries the hash seed, the flags, the size and the sector
+  /// count; everything else is a list of variable-length fields in a fixed order,
+  /// each one a varint, and a field the inode has nothing to say about is a single
+  /// zero byte. The list stops at the last field that has something in it, and the
+  /// flags record how many that was — write more and a reader looks past the end of
+  /// the record, write fewer and it reads the wrong field.</para>
+  ///
+  /// <para>The two time fields are wider than a varint carries, so each is a varint
+  /// and a zero byte for the half above it.</para>
+  /// </remarks>
   private static Key InodeKey(ulong inode, ulong parent, ulong parentOffset,
-      bool isDirectory, ulong size, ulong sectors, int links) {
-    // The fixed part: journal sequence, hash seed, flags, sectors, size, version.
-    var fields = new byte[256];
+      bool isDirectory, ulong size, ulong sectors, int links, uint subvolume = 0) {
+    // In the order the format lists them; a trailing run of zeroes is not written.
+    (ulong Value, bool Wide)[] fields = [
+      (0, true),                  // bi_atime
+      (0, true),                  // bi_ctime
+      (0, true),                  // bi_mtime
+      (0, true),                  // bi_otime
+      (0, false),                 // bi_uid
+      (0, false),                 // bi_gid
+      // The stored count is the link count less what the kind of inode always has:
+      // one for a file, two for a directory. Storing the count itself gives every
+      // file a link it does not have.
+      ((ulong)links, false),      // bi_nlink, biased
+      (0, false),                 // bi_generation
+      (0, false),                 // bi_dev
+      (0, false),                 // bi_data_checksum
+      (0, false),                 // bi_compression
+      (0, false),                 // bi_project
+      (0, false),                 // bi_background_compression
+      (0, false),                 // bi_data_replicas
+      (0, false),                 // bi_promote_target
+      (0, false),                 // bi_foreground_target
+      (0, false),                 // bi_background_target
+      (0, false),                 // bi_erasure_code
+      (0, false),                 // bi_fields_set
+      (parent, false),            // bi_dir
+      // Where in that directory the entry naming this inode sits — the same hash
+      // the entry is keyed by. A zero here is a back pointer to nowhere, and a
+      // mount says so of every file on the volume.
+      (parentOffset, false),      // bi_dir_offset
+      // Which subvolume this inode is the root of, for the one inode that is.
+      (subvolume, false),         // bi_subvol
+    ];
+
+    var present = fields.Length;
+    while (present > 0 && fields[present - 1].Value == 0) --present;
+
+    var buffer = new byte[256];
     var cursor = 0;
-
-    // The field list is positional — every field up to the last non-zero one is
-    // present, a zero field being a single zero byte.
-    void Field(ulong value, bool wide = false) {
-      cursor += WriteVarint(fields.AsSpan(cursor), value);
-      if (wide) fields[cursor++] = 0;   // the high half of a 96-bit time
+    for (var i = 0; i < present; ++i) {
+      cursor += WriteVarint(buffer.AsSpan(cursor), fields[i].Value);
+      if (fields[i].Wide) buffer[cursor++] = 0;
     }
-
-    Field(0, wide: true);                       // bi_atime
-    Field(0, wide: true);                       // bi_ctime
-    Field(0, wide: true);                       // bi_mtime
-    Field(0, wide: true);                       // bi_otime
-    Field(0);                                   // bi_uid
-    Field(0);                                   // bi_gid
-    // The stored count is the link count less what the kind of inode always has:
-    // one for a file, two for a directory. Storing the count itself gives every
-    // file a link it does not have.
-    Field((ulong)links);                        // bi_nlink, biased
-    Field(0);                                   // bi_generation
-    Field(0);                                   // bi_dev
-    Field(0);                                   // bi_data_checksum
-    Field(0);                                   // bi_compression
-    Field(0);                                   // bi_project
-    Field(0);                                   // bi_background_compression
-    Field(0);                                   // bi_data_replicas
-    Field(0);                                   // bi_promote_target
-    Field(0);                                   // bi_foreground_target
-    Field(0);                                   // bi_background_target
-    Field(0);                                   // bi_erasure_code
-    Field(0);                                   // bi_fields_set
-    Field(parent);                              // bi_dir
-    // Where in that directory the entry naming this inode sits — the same hash the
-    // entry is keyed by. A zero here is a back pointer to nowhere, and the kernel
-    // says so of every file on the volume.
-    Field(parentOffset);                        // bi_dir_offset
-    const int fieldsPresent = 21;
 
     var value = new byte[48 + cursor];
     BinaryPrimitives.WriteUInt64LittleEndian(value, 0);                       // bi_journal_seq
@@ -384,14 +403,14 @@ public sealed class BcacheFsWriter {
     // The flags word carries the string-hash choice, how many fields follow, where
     // they start, and the mode.
     var flags = ((ulong)InodeStrHashSiphash << 20)
-      | ((ulong)fieldsPresent << 24)
+      | ((ulong)present << 24)
       | (6UL << 31)                                                          // fields start, in words
       | (mode << 36);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(16), flags);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(24), sectors);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(32), size);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(40), 0);            // bi_version
-    fields.AsSpan(0, cursor).CopyTo(value.AsSpan(48));
+    buffer.AsSpan(0, cursor).CopyTo(value.AsSpan(48));
 
     return new Key(KeyInodeV3, new Bpos(0, inode, SnapshotIdMax), 0, value);
   }
@@ -451,7 +470,11 @@ public sealed class BcacheFsWriter {
 
   private static Key SnapshotKey() {
     var value = new byte[40];
-    BinaryPrimitives.WriteUInt32LittleEndian(value, 0);                        // flags
+    // The flag that says a subvolume points at this snapshot. Naming the subvolume
+    // in the field below without setting it says the two disagree, and a mount
+    // stops to reconcile them.
+    const uint pointedAtBySubvolume = 1u << 1;
+    BinaryPrimitives.WriteUInt32LittleEndian(value, pointedAtBySubvolume);
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(4), 0);              // parent
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), 0);              // children[0]
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(12), 0);             // children[1]
@@ -510,7 +533,7 @@ public sealed class BcacheFsWriter {
       FeatureNewSiphash | FeatureNewExtentOverwrite | FeatureBtreePtrV2
       | FeatureExtentsAboveBtreeUpdates | FeatureBtreeUpdatesJournalled | FeatureNewVarint
       | FeatureJournalNoFlush | FeatureAllocV2 | FeatureExtentsAcrossBtreeNodes
-      | FeatureIncompatVersionField | FeatureNoAllocInfo);
+      | FeatureIncompatVersionField | FeatureNoAllocInfo | FeatureSmallImage);
     BinaryPrimitives.WriteUInt64LittleEndian(span[224..],
       CompatAllocInfo | CompatAllocMetadata | CompatExtentsAboveBtreeUpdatesDone
       | CompatBformatOverflowDone | CompatNoStalePtrs);

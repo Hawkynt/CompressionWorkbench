@@ -84,6 +84,17 @@ internal static class BcacheFsFormat {
   internal const ulong FeatureIncompatVersionField = 1UL << 19;
   internal const ulong FeatureNoAllocInfo = 1UL << 21;
 
+  /// <summary>
+  /// Says the volume is an image file that was never sized to a device.
+  /// </summary>
+  /// <remarks>
+  /// It is exactly what a volume written whole is, and saying so is what lets a
+  /// mount skip building the free-space information it would otherwise stop to
+  /// build — which, on a read-only mount, it cannot. A kernel that reads this bit
+  /// mounts the volume read-only and says why.
+  /// </remarks>
+  internal const ulong FeatureSmallImage = 1UL << 22;
+
   /// <summary>Compat bits a volume written whole can claim.</summary>
   internal const ulong CompatAllocInfo = 1UL << 0;
   internal const ulong CompatAllocMetadata = 1UL << 1;
