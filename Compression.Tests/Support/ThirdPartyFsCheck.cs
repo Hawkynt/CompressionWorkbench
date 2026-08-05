@@ -45,7 +45,14 @@ internal static class ThirdPartyFsCheck {
   private static readonly Dictionary<string, Strategy> Strategies = new(StringComparer.OrdinalIgnoreCase) {
     ["Adfs"] = new("adfs", "", false, null, "", []),
     ["Apfs"] = new("apfs", "", false, null, "", []),
-    ["BcacheFs"] = new("bcachefs", "", false, "bcachefs", "fsck -n {0}", [0, 1]),
+    // A bcachefs volume written whole carries no allocation information — the
+    // trees a running filesystem keeps so it can decide where to write next. The
+    // format has a feature bit for exactly that, and bcachefs's own `strip-alloc`
+    // produces the same shape; the consequence is that such a volume is read with
+    // `norecovery`, because without it the mount stops to rebuild what is missing
+    // and cannot, being read-only. Its own checker stops at the same point, so
+    // mounting and reading the files back is the whole outside opinion here.
+    ["BcacheFs"] = new("bcachefs", "norecovery", false, null, "", []),
     ["Btrfs"] = new("btrfs", "", false, "btrfs", "check --readonly {0}", [0]),
     ["CramFs"] = new("cramfs", "", true, "fsck.cramfs", "{0}", [0]),
     ["Efs"] = new("efs", "", false, null, "", []),

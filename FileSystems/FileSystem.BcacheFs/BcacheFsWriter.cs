@@ -1,616 +1,658 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using Compression.Core.DiskImage;
 using System.Text;
+using Compression.Core.DiskImage;
+using static FileSystem.BcacheFs.BcacheFsFormat;
 
 namespace FileSystem.BcacheFs;
 
 /// <summary>
-/// Writes a WORM-minimal BcacheFS image: a spec-compliant primary superblock
-/// at byte offset 4096 (sector 8), the canonical four-copy <c>bch_sb_layout</c>
-/// describing the backup superblock locations, and three SB sections:
-/// <c>BCH_SB_FIELD_members_v1</c> (single device), <c>BCH_SB_FIELD_replicas_v0</c>
-/// (btree+journal on dev[0]), and a header-only <c>BCH_SB_FIELD_errors</c>.
-/// The image is sized so every backup-superblock slot named in the layout
-/// actually fits inside the file (<see cref="MinImageSize"/> = 128 MiB by
-/// default — required because <c>BCH_MIN_NR_NBUCKETS</c> = 512 paired with
-/// our 256 KiB bucket size needs at least 128 MiB).
+/// Writes a bcachefs volume: a superblock, the b-trees that describe the files,
+/// and the files themselves.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Spec source: <c>fs/bcachefs/bcachefs_format.h</c> (kernel) and
-/// <c>libbcachefs/sb-members_format.h</c> (bcachefs-tools). Field offsets
-/// follow the actual struct layout, NOT the looser interpretation an earlier
-/// revision of the read-only descriptor was using:
-/// </para>
-/// <list type="bullet">
-///   <item><c>csum</c> is 16 bytes (u64 lo + u64 hi), not 8.</item>
-///   <item><c>version</c> / <c>version_min</c> are <c>__le16</c>, not u64,
-///         encoded as <c>(major &lt;&lt; 10) | minor</c>.</item>
-///   <item><c>nr_devices</c> is a single byte at offset 123, not a u32.</item>
-///   <item>The layout struct lives inline at offset 240 of the superblock,
-///         and a duplicate copy lives at sector 7 (file offset 3584).</item>
-/// </list>
-/// <para>
-/// Scope: this writer satisfies <c>bcachefs show-super</c> on the resulting
-/// image. It does not produce a volume a kernel will mount, and does not pretend
-/// to: the journal is absent, and with it every btree root, so a mount stops at
-/// <c>insufficient_journal_devices</c> during replay. Also missing are the btrees
-/// themselves and the <c>clean</c>/<c>journal_v2</c>/<c>counters</c>/
-/// <c>members_v2</c> SB sections. Reaching a mountable volume is multi-week
-/// kernel-spec work tracked in <c>Hawkynt.FileFormats.FileSystems/README.md</c>.
-/// </para>
+/// <para>bcachefs keeps no directory blocks and no inode table. A file's name is a
+/// key in the dirents tree, its metadata a key in the inodes tree, and its bytes
+/// are named by keys in the extents tree; a volume is those trees plus a
+/// superblock that says where their roots are. Because the volume is written whole
+/// and never mounted for writing in between, the roots go in the superblock's
+/// clean section, and no journal entries are needed to find them.</para>
 ///
-/// <para>
-/// What the superblock does now say is that the volume is initialised. That is
-/// not cosmetic: a kernel reads a volume that does not claim it as a device it
-/// has been told to make a filesystem on, and makes one — over the top of
-/// everything written here, before reporting any error. Claiming it, together
-/// with the features every volume carries and the version floor an initialised
-/// volume is held to, sends the mount down the recovery path instead, where the
-/// volume is refused for what it is missing and left exactly as it was found.
-/// </para>
+/// <para>What is not written is the allocation information — the alloc, freespace,
+/// backpointer and accounting trees a running filesystem keeps so it can decide
+/// where to put the next write. A volume that will only ever be read does not need
+/// them, and the format has a feature bit that says so; bcachefs's own tooling
+/// strips exactly these trees for exactly this case. The consequence is visible
+/// and worth stating: such a volume is mounted read-only, with
+/// <c>-o norecovery</c>, and a read-write mount rebuilds what is missing before it
+/// will start.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
-  // ── Spec constants ────────────────────────────────────────────────
 
-  /// <summary>BCHFS_MAGIC — c68573f6-66ce-90a9-d96a-60cf-803d-f7ef in storage byte order.</summary>
-  public static readonly byte[] BcachefsMagic = [
-    0xC6, 0x85, 0x73, 0xF6,
-    0x66, 0xCE,
-    0x90, 0xA9,
-    0xD9, 0x6A,
-    0x60, 0xCF, 0x80, 0x3D, 0xF7, 0xEF,
-  ];
-
-  /// <summary>Sector at which <c>bch_sb_layout</c> is written (per kernel).</summary>
-  internal const int BchSbLayoutSector = 7;
-
-  /// <summary>Sector at which the primary <c>bch_sb</c> is written (= 4096 bytes).</summary>
-  internal const int BchSbSector = 8;
-
-  /// <summary>Size of bch_sb_layout struct on disk = 16 (magic) + 8 (header) + 488 (61 × u64 sb_offset[]).</summary>
-  internal const int LayoutStructSize = 16 + 8 + 61 * 8;
-
-  /// <summary>Offset of <c>layout</c> field within <c>struct bch_sb</c>.</summary>
-  internal const int LayoutOffsetInSb = 240;
-
-  /// <summary>Total byte size of the fixed bch_sb area (everything before <c>start[0]</c>).</summary>
-  internal const int FixedSbBytes = LayoutOffsetInSb + LayoutStructSize; // 240 + 512 = 752
-
-  /// <summary>BCH_SB_FIELD_members_v1 type tag (per BCH_SB_FIELDS x-list at index 1).</summary>
-  /// <remarks>
-  /// Older bcachefs-tools (≤ 1.3.x) only check for members_v1 in
-  /// <c>bch2_sb_validate</c>. Newer kernels fall back from v2 → v1 when v2
-  /// is absent. We therefore emit the v1 form, which every parser accepts.
-  /// </remarks>
-  internal const uint MembersV1FieldType = 1;
-
-  /// <summary>BCH_SB_FIELD_replicas_v0 type tag (per BCH_SB_FIELDS x-list at index 3).</summary>
-  /// <remarks>
-  /// Declares which devices hold each data type's replicas. For an empty
-  /// single-device image, mkfs.bcachefs writes two entries: btree on dev[0]
-  /// and journal on dev[0] (each a 3-byte struct: u8 data_type + u8 nr_devs
-  /// + u8[] devs).
-  /// </remarks>
-  internal const uint ReplicasV0FieldType = 3;
-
-  /// <summary>BCH_SB_FIELD_errors type tag (per BCH_SB_FIELDS x-list at index 12).</summary>
-  /// <remarks>
-  /// Empty bitmap of recently-seen filesystem errors. mkfs.bcachefs emits a
-  /// header-only section (u64s=1, no data) on a fresh filesystem.
-  /// </remarks>
-  internal const uint ErrorsFieldType = 12;
+  /// <summary>BCHFS_MAGIC, in storage byte order.</summary>
+  public static readonly byte[] BcachefsMagic = Magic;
 
   /// <summary>
-  /// Per-entry member byte count for the v1 layout (matches the older
-  /// <c>struct bch_member</c> the bcachefs-tools 1.3.x parser compiles with):
-  /// uuid(16) + nbuckets(8) + first_bucket(2) + bucket_size(2) + pad(4) +
-  /// last_mount(8) + flags(8) + iops[4](16) + errors[3](24) +
-  /// errors_at_reset[3](24) + errors_reset_time(8) = 120 bytes.
-  /// </summary>
-  internal const int MemberBytesPerEntry = 120;
-
-  /// <summary>
-  /// BCH_VERSION(1, 3) — "rebalance_work", the latest version recognised by
-  /// the widely-deployed bcachefs-tools 1.3.x line. Newer kernels accept
-  /// older versions transparently; older tools reject newer versions with
-  /// "Unsupported superblock version" so we err on the side of broad
-  /// compatibility.
-  /// </summary>
-  internal const ushort SbVersion = (1 << 10) | 3;
-
-  /// <summary>
-  /// bcachefs_metadata_version_min. A volume that claims to be initialised is held to
-  /// this floor — BCH_VERSION(0, 14), the version that put the written-sector count in
-  /// btree pointers — and refused outright below it.
-  /// </summary>
-  internal const ushort SbVersionMin = 14;
-
-  /// <summary>
-  /// The features every bcachefs volume carries, whatever else it does or does not do:
-  /// new extent overwrite, extents above btree updates, journalled btree updates,
-  /// alloc v2 and extents across btree nodes. A volume that names none of them is one
-  /// the kernel says it no longer supports.
-  /// </summary>
-  internal const ulong SbFeaturesAlways =
-    (1UL << 9) | (1UL << 12) | (1UL << 13) | (1UL << 17) | (1UL << 18);
-
-  /// <summary>
-  /// Default image size = 128 MiB. Lower bound is enforced by:
-  /// (1) the layout's four backup-SB slots needing ~32 KiB at the file end,
-  /// and (2) <c>BCH_MIN_NR_NBUCKETS</c> = 512 paired with our 256-KiB
-  /// bucket size (= 512 × 256 KiB = 128 MiB minimum). Smaller images would
-  /// be rejected by <c>bcachefs show-super</c> with "Not enough buckets".
+  /// Smallest volume this writes. A bcachefs device needs at least 512 buckets, and
+  /// the two superblock slots at the front already claim thirty-three of them.
   /// </summary>
   public const long MinImageSize = 128L * 1024 * 1024;
 
-  /// <summary>BCH_SB_LAYOUT_SIZE_BITS = 16 → max sb size = 2^16 sectors = 32 MiB; we cap at 4 KiB = 3.</summary>
-  internal const byte SbMaxSizeBits = 3; // 2^3 = 8 sectors = 4 KiB; comfortable for our 4-KiB-or-less SB
+  /// <summary>First bucket the journal takes, past the two front superblock slots.</summary>
+  private const int JournalFirstBucket = 33;
 
-  /// <summary>Number of backup superblock slots advertised in the layout.</summary>
-  internal const byte NrSuperblocks = 4;
+  private const int JournalBuckets = 16;
 
-  // ── State ─────────────────────────────────────────────────────────
+  private const int FirstMetadataBucket = JournalFirstBucket + JournalBuckets;
+
+  /// <summary>Largest extent one key describes: the size field is seven bits of sectors.</summary>
+  private const int MaxExtentSectors = 128;
 
   private readonly List<(string Name, FilePayload Payload)> _files = [];
-
-  // ── Payload area (CWB-BCH-WB) ───────────────────────────────────────────
-  //
-  // This writer emits the superblock set and its layout, not a b-tree: bcachefs
-  // stores everything — inodes, dirents, extents — in b-trees whose keys are
-  // varint-packed bkeys, and reproducing those is not attempted here. Files
-  // therefore live in a workbench-owned area between the front superblock slots
-  // and the end-of-device backups, announced by a marker in the reserved sectors
-  // ahead of the layout and described by a chained directory.
-  //
-  // What this layout is NOT is a bcachefs b-tree, so the payload is invisible to
-  // the kernel driver — the same honest scope the workbench's OpenVMS, AmigaPFS
-  // and Reiser4 writers declare.
-
-  /// <summary>Marker written at <see cref="PayloadMarkerOffset" />.</summary>
-  internal static readonly byte[] PayloadMarker = "CWB-BCH-WB"u8.ToArray();
-
-  /// <summary>
-  /// Byte offset of the marker: sector 6, inside the reserved sectors the kernel
-  /// skips on its way to the layout at sector 7.
-  /// </summary>
-  internal const long PayloadMarkerOffset = 6 * 512;
-
-  /// <summary>Offset of the first directory block number (d64), after the marker.</summary>
-  internal const long PayloadDirOffset = PayloadMarkerOffset + 16;
-
-  /// <summary>Payload block size.</summary>
-  internal const int PayloadBlockSize = 4096;
-
-  /// <summary>First payload block: past the layout sector and the two front superblock slots.</summary>
-  internal const long FirstPayloadBlock = 3;
-
-  /// <summary>Magic at the head of every payload directory block.</summary>
-  internal static readonly byte[] DirMagic = "CWBBCHDR"u8.ToArray();
-
-  /// <summary>Directory block head: magic, next-block link, entry count.</summary>
-  internal const int DirHeadSize = 8 + 8 + 4;
-
-  /// <summary>One directory entry: a 224-byte name, then the first data block and the byte length.</summary>
-  internal const int DirNameLength = 224;
-  internal const int DirEntrySize = DirNameLength + 8 + 8;
-  internal const int DirEntriesPerBlock = (PayloadBlockSize - DirHeadSize) / DirEntrySize;
-
-  /// <summary>
-  /// Smallest image that holds <paramref name="fileSizes" />: the front superblock
-  /// slots, the directory chain, every file's data blocks, and the end-of-device
-  /// backup superblock area. Rounded up to a megabyte.
-  /// </summary>
-  public static long EstimateSize(IEnumerable<long> fileSizes) {
-    ArgumentNullException.ThrowIfNull(fileSizes);
-    var sizes = fileSizes as IReadOnlyCollection<long> ?? [.. fileSizes];
-    var blocks = FirstPayloadBlock;
-    blocks += (sizes.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock);
-    foreach (var size in sizes)
-      blocks += (size + PayloadBlockSize - 1) / PayloadBlockSize;
-
-    // The end-of-device backups sit 256 KB and 128 KB from the end, so leave a
-    // megabyte of tail clear of the payload.
-    var bytes = blocks * PayloadBlockSize + (1L << 20);
-    return Math.Max(MinImageSize, (bytes + (1L << 20) - 1) & ~((1L << 20) - 1));
-  }
   private string _label = "cwb-bcachefs";
   private long _imageSize = MinImageSize;
   private Guid _internalUuid = Guid.NewGuid();
   private Guid _userUuid = Guid.NewGuid();
+  private ulong _seed = 0x9E3779B97F4A7C15UL;
 
-  /// <summary>Sets the volume label (max 31 ASCII bytes — truncated and NUL-padded into label[32]).</summary>
+  /// <summary>Sets the volume label; it is truncated into the superblock's 32-byte field.</summary>
   public void SetLabel(string label) {
     ArgumentNullException.ThrowIfNull(label);
     this._label = label;
   }
 
-  /// <summary>Overrides the auto-generated internal UUID. Must be non-zero or the kernel rejects the image.</summary>
+  /// <summary>Overrides the internal UUID, which is also what the metadata magic is derived from.</summary>
   public void SetInternalUuid(Guid uuid) => this._internalUuid = uuid;
 
-  /// <summary>Overrides the auto-generated user-facing UUID. Must be non-zero or the kernel rejects the image.</summary>
+  /// <summary>Overrides the user-facing UUID.</summary>
   public void SetUserUuid(Guid uuid) => this._userUuid = uuid;
 
-  /// <summary>Sets the total image size in bytes. Must be ≥ <see cref="MinImageSize"/> so all backup SBs fit.</summary>
+  /// <summary>Sets the total volume size in bytes.</summary>
   public void SetImageSize(long bytes) {
     if (bytes < MinImageSize)
       throw new ArgumentOutOfRangeException(nameof(bytes),
-        $"Image must be at least {MinImageSize} bytes ({MinImageSize / (1024 * 1024)} MiB) so all four backup superblocks fit.");
+        $"A bcachefs volume must be at least {MinImageSize} bytes.");
     this._imageSize = bytes;
   }
 
-  /// <summary>Records a file to store in the CWB-BCH-WB payload area.</summary>
+  /// <summary>Adds a file, held in memory.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((name, FilePayload.FromBytes(data)));
   }
 
-  /// <summary>Records a file whose bytes are pulled from <paramref name="openStream" /> as the image is written.</summary>
+  /// <summary>Adds a file whose bytes are read as the volume is written.</summary>
   public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     this._files.Add((name, FilePayload.FromStream(size, openStream)));
   }
 
-  /// <summary>Emits the spec-compliant image to <paramref name="output"/>.</summary>
+  /// <summary>
+  /// The smallest volume that holds <paramref name="fileSizes" />: the superblock
+  /// slots, the journal, one bucket per b-tree, the file data, and the slot at the
+  /// tail.
+  /// </summary>
+  public static long EstimateSize(IEnumerable<long> fileSizes) {
+    ArgumentNullException.ThrowIfNull(fileSizes);
+    var sizes = fileSizes as IReadOnlyCollection<long> ?? [.. fileSizes];
+
+    var buckets = (long)FirstMetadataBucket + BtreeCount;
+    foreach (var size in sizes)
+      buckets += (size + BucketBytes - 1) / BucketBytes;
+
+    // The tail superblock slot, plus a bucket of slack so the slot never lands on
+    // the last file.
+    var bytes = (buckets + 1) * BucketBytes + (long)SbSlotSectors * SectorSize;
+    return Math.Max(MinImageSize, (bytes + (1L << 20) - 1) & ~((1L << 20) - 1));
+  }
+
+  /// <summary>The trees a volume written here carries.</summary>
+  private static readonly int[] Btrees = [
+    BtreeExtents, BtreeInodes, BtreeDirents,
+    BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees, BtreeLoggedOps,
+  ];
+
+  private const int BtreeCount = 7;
+
+  /// <summary>Writes the volume.</summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("Writing a bcachefs volume needs a seekable, writable stream.", nameof(output));
 
-    // The superblock set and the payload directory form a prefix; the file bodies
-    // follow it and are copied into place, so a multi-gigabyte image is never
-    // held in memory.
-    var dirBlockCount = (this._files.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock);
-    var prefixBlocks = FirstPayloadBlock + dirBlockCount;
-    var image = new byte[prefixBlocks * PayloadBlockSize];
+    var plan = this.BuildPlan();
+    output.SetLength(0);
+    output.SetLength(this._imageSize);
 
-    // Build the canonical 4-slot layout. Slot 0 holds the primary SB; slots
-    // 1..3 are the backup SBs that fsck looks for after a corrupted primary.
-    // Each slot reserves (1 << SbMaxSizeBits) sectors so the kernel's
-    // overlap check passes.
-    var sbSlotSectors = 1 << SbMaxSizeBits; // 8 sectors = 4 KiB
-    var totalSectors = this._imageSize / 512;
-    long[] sbOffsetsSectors = [
-      BchSbSector,                         // 8        — primary @ byte 4096
-      BchSbSector + sbSlotSectors,         // 16       — backup 1 @ byte 8192
-      totalSectors - 2 * sbSlotSectors - 512, // end-256k area  — backup 2
-      totalSectors - sbSlotSectors - 256,     // end-128k area  — backup 3
-    ];
+    // The data goes down first, because an extent records a checksum of the bytes
+    // it covers and those are not known until they have been read.
+    WriteFileData(output, plan);
 
-    // Build the 752-byte primary SB once, then stamp the same bytes at every
-    // sb_offset[] in the layout. The kernel cross-validates them when
-    // recovering from primary-SB corruption.
-    var sb = this.BuildSuperblock(sbOffsetsSectors[0]);
-
-    // Stamp the layout struct at sector 7 (the kernel reads this *first*
-    // to discover where the SBs live).
-    var layoutBlock = new byte[LayoutStructSize];
-    WriteLayout(layoutBlock, sbOffsetsSectors);
-    Array.Copy(layoutBlock, 0, image, BchSbLayoutSector * 512, LayoutStructSize);
-
-    // Stamp the SB at every advertised slot. Each copy carries its own
-    // self-describing offset field so bch2_sb_validate() can cross-check.
-    // The end-of-device backups are written past the prefix, so they go with the
-    // payload rather than into the prefix buffer.
-    var tailSuperblocks = new List<(long ByteOffset, byte[] Bytes)>();
-    foreach (var sectorOff in sbOffsetsSectors) {
-      var byteOff = sectorOff * 512;
-      if (byteOff + sb.Length > this._imageSize)
-        throw new InvalidOperationException(
-          $"Image too small for backup superblock at sector {sectorOff} (byte {byteOff}, image {this._imageSize}).");
-
-      // Re-stamp the offset field (bytes 104..112) with this slot's sector
-      // address — the kernel rejects an SB whose sb->offset disagrees with
-      // the sector it was read from.
-      var slotCopy = (byte[])sb.Clone();
-      BinaryPrimitives.WriteUInt64LittleEndian(slotCopy.AsSpan(104, 8), (ulong)sectorOff);
-      if (byteOff + slotCopy.Length <= image.LongLength)
-        Array.Copy(slotCopy, 0, image, byteOff, slotCopy.Length);
-      else
-        tailSuperblocks.Add((byteOff, slotCopy));
+    var roots = new List<(int Btree, Key Pointer)>(Btrees.Length);
+    var node = new byte[BucketBytes];
+    for (var i = 0; i < Btrees.Length; ++i) {
+      var builder = plan.Nodes[i];
+      Array.Clear(node);
+      var sectors = builder.Write(node);
+      var sector = (long)(FirstMetadataBucket + i) * BucketSectors;
+      output.Position = sector * SectorSize;
+      output.Write(node, 0, sectors * SectorSize);
+      roots.Add((Btrees[i], builder.Pointer(sector, sectors)));
     }
 
-    // ── Payload: the directory chain, then each file's data blocks ────────
-    // The last megabyte is left clear so the end-of-device backup superblocks
-    // never land on top of a file.
-    var payloadLimit = (this._imageSize - (1L << 20)) / PayloadBlockSize;
-    var cursor = FirstPayloadBlock + dirBlockCount;
-    var payloads = new DeferredPayloads();
-    var entries = new List<(string Name, long Block, long Size)>(this._files.Count);
-    foreach (var (name, payload) in this._files) {
-      var need = (payload.Size + PayloadBlockSize - 1) / PayloadBlockSize;
-      if (cursor + need > payloadLimit)
-        throw new IOException(
-          $"BcacheFS: a {this._imageSize:N0}-byte image has no room left for '{name}'.");
-      var first = need > 0 ? cursor : 0;
-      if (need > 0) {
-        payloads.Add(cursor * PayloadBlockSize, payload);
-        cursor += need;
-      }
-      entries.Add((name, first, payload.Size));
+    // ── The superblock, and its copies ────────────────────────────────────
+    var superblock = this.BuildSuperblock(plan, roots);
+    foreach (var slot in plan.SuperblockSectors) {
+      BinaryPrimitives.WriteUInt64LittleEndian(superblock.AsSpan(104), (ulong)slot);
+      StampSuperblockChecksum(superblock);
+      output.Position = slot * SectorSize;
+      output.Write(superblock, 0, superblock.Length);
     }
 
-    // ── Directory chain ──────────────────────────────────────────────────
-    for (var i = 0; i < dirBlockCount; ++i) {
-      var o = (int)((FirstPayloadBlock + i) * PayloadBlockSize);
-      DirMagic.CopyTo(image.AsSpan(o, DirMagic.Length));
-      var next = i + 1 < dirBlockCount ? FirstPayloadBlock + i + 1 : 0;
-      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(o + 8, 8), next);
-      var take = Math.Min(DirEntriesPerBlock, entries.Count - i * DirEntriesPerBlock);
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(o + 16, 4), (uint)take);
-      for (var j = 0; j < take; ++j) {
-        var (name, first, size) = entries[i * DirEntriesPerBlock + j];
-        var e = o + DirHeadSize + j * DirEntrySize;
-        var nameBytes = Encoding.UTF8.GetBytes(name);
-        nameBytes.AsSpan(0, Math.Min(nameBytes.Length, DirNameLength - 1)).CopyTo(image.AsSpan(e, DirNameLength - 1));
-        BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(e + DirNameLength, 8), first);
-        BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(e + DirNameLength + 8, 8), size);
-      }
-    }
-
-    if (dirBlockCount > 0) {
-      PayloadMarker.CopyTo(image.AsSpan((int)PayloadMarkerOffset, PayloadMarker.Length));
-      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan((int)PayloadDirOffset, 8), FirstPayloadBlock);
-    }
-
-    // ── Emit ─────────────────────────────────────────────────────────────
-    var basePosition = output.CanSeek ? output.Position : 0;
-    output.Write(image);
-    output.Flush();
-    if (!output.CanSeek) {
-      var zero = new byte[PayloadBlockSize];
-      for (var b = prefixBlocks * PayloadBlockSize; b < this._imageSize; b += PayloadBlockSize)
-        output.Write(zero, 0, (int)Math.Min(PayloadBlockSize, this._imageSize - b));
-      return;
-    }
-
-    output.SetLength(basePosition + this._imageSize);
-    foreach (var (byteOff, bytes) in tailSuperblocks) {
-      output.Position = basePosition + byteOff;
-      output.Write(bytes);
-    }
-    payloads.FlushTo(output, basePosition);
-    output.Position = basePosition + this._imageSize;
+    // The layout is repeated on its own, ahead of the first superblock.
+    output.Position = LayoutSector * SectorSize;
+    output.Write(superblock, SbLayoutOffset, SbLayoutBytes);
     output.Flush();
   }
 
-  // ── Superblock ────────────────────────────────────────────────────
+  // ── Planning ────────────────────────────────────────────────────────────
+
+  private sealed class PlannedFile {
+    internal required string Name { get; init; }
+    internal required ulong Inode { get; init; }
+    internal required ulong Parent { get; init; }
+    internal required long Length { get; init; }
+    internal required FilePayload Payload { get; init; }
+    internal long FirstSector { get; set; }
+  }
+
+  private sealed class PlannedDirectory {
+    internal required string Name { get; init; }
+    internal required ulong Inode { get; init; }
+    internal required ulong Parent { get; init; }
+  }
+
+  private sealed class Plan {
+    internal required BcacheFsNodeBuilder[] Nodes { get; init; }
+    internal required List<PlannedFile> Files { get; init; }
+    internal required long[] SuperblockSectors { get; init; }
+    internal required long Buckets { get; init; }
+  }
+
+  private ulong NextSeed() {
+    // A node's identity only has to be unique and repeatable; this is the
+    // splitmix step, which is both.
+    this._seed += 0x9E3779B97F4A7C15UL;
+    var z = this._seed;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+    return z ^ (z >> 31);
+  }
 
   /// <summary>
-  /// Builds a single superblock (variable-length: 752 bytes fixed area + the
-  /// members_v2 section). The csum field at the start is left zero — we
-  /// declare BCH_SB_CSUM_TYPE = 0 (none) in flags[0] bits 2..8.
+  /// Writes every file's bytes and adds the extents that name them.
   /// </summary>
-  private byte[] BuildSuperblock(long primarySbSector) {
-    // Variable-area layout (every section is u64-aligned):
-    //   members_v1: 8-byte header + 120-byte member         = 128 bytes
-    //   replicas_v0: 8-byte header + 6 bytes data + 2 pad   = 16 bytes
-    //                   (entry1: btree/dev=[0]; entry2: journal/dev=[0])
-    //   errors: 8-byte header (u64s=1, no data)              = 8 bytes
-    // Total variable area = 152 bytes (19 u64s).
-    const int membersSectionLen  = 8 + MemberBytesPerEntry; // 128
-    const int replicasSectionLen = 16;                       // 8 hdr + 8 (3+3+2 pad)
-    const int errorsSectionLen   = 8;                        // header only
-    const int variableLen        = membersSectionLen + replicasSectionLen + errorsSectionLen;
-    var totalLen = FixedSbBytes + variableLen;               // 752 + 152 = 904 bytes (113 u64s)
-    var sb = new byte[totalLen];
+  /// <remarks>
+  /// An extent carries a checksum of the whole sectors it covers, tail padding
+  /// included, so the bytes are hashed on their way to the volume rather than read
+  /// back afterwards — a file that is streamed in is only ever read once.
+  /// </remarks>
+  private static void WriteFileData(Stream output, Plan plan) {
+    var extents = plan.Nodes[0];
+    var buffer = new byte[MaxExtentSectors * SectorSize];
+
+    foreach (var file in plan.Files) {
+      if (file.Length == 0) continue;
+
+      output.Position = file.FirstSector * SectorSize;
+      using var source = file.Payload.Open();
+
+      var remaining = file.Length;
+      var placed = 0L;
+      while (remaining > 0) {
+        var want = (int)Math.Min(buffer.Length, remaining);
+        var got = 0;
+        while (got < want) {
+          var n = source.Read(buffer, got, want - got);
+          if (n <= 0) break;
+          got += n;
+        }
+        if (got <= 0) break;
+
+        // The tail of the last extent is padding, and the checksum covers it.
+        var sectors = (got + SectorSize - 1) / SectorSize;
+        Array.Clear(buffer, got, sectors * SectorSize - got);
+        output.Write(buffer, 0, sectors * SectorSize);
+
+        extents.Add(ExtentKey(file, placed, sectors,
+          DataChecksum(buffer.AsSpan(0, sectors * SectorSize))));
+        placed += sectors;
+        remaining -= got;
+      }
+    }
+  }
+
+  private Plan BuildPlan() {
+    var directories = new Dictionary<string, PlannedDirectory>(StringComparer.Ordinal);
+    var files = new List<PlannedFile>();
+    var nextInode = 2147483648UL;
+
+    ulong DirectoryInode(string path, ulong parent, string leaf) {
+      if (directories.TryGetValue(path, out var existing)) return existing.Inode;
+      var inode = nextInode++;
+      directories[path] = new PlannedDirectory { Name = leaf, Inode = inode, Parent = parent };
+      return inode;
+    }
+
+    foreach (var (rawName, payload) in this._files) {
+      var parts = rawName.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0) continue;
+
+      var parent = RootInode;
+      var accumulated = string.Empty;
+      for (var i = 0; i < parts.Length - 1; ++i) {
+        accumulated = accumulated.Length == 0 ? parts[i] : accumulated + "/" + parts[i];
+        parent = DirectoryInode(accumulated, parent, parts[i]);
+      }
+
+      files.Add(new PlannedFile {
+        Name = parts[^1],
+        Inode = nextInode++,
+        Parent = parent,
+        Length = payload.Size,
+        Payload = payload,
+      });
+    }
+
+    // ── Where everything goes ─────────────────────────────────────────────
+    var bucket = (long)FirstMetadataBucket + BtreeCount;
+    foreach (var file in files) {
+      file.FirstSector = bucket * BucketSectors;
+      bucket += (file.Length + BucketBytes - 1) / BucketBytes;
+    }
+
+    var needed = (bucket + 1) * BucketBytes + (long)SbSlotSectors * SectorSize;
+    if (this._imageSize < needed)
+      this._imageSize = Math.Max(MinImageSize, (needed + (1L << 20) - 1) & ~((1L << 20) - 1));
+
+    var deviceSectors = this._imageSize / SectorSize;
+    var buckets = deviceSectors / BucketSectors;
+
+    // ── The trees ─────────────────────────────────────────────────────────
+    var magic = BinaryPrimitives.ReadUInt64LittleEndian(this._internalUuid.ToByteArray());
+    var nodes = new BcacheFsNodeBuilder[Btrees.Length];
+    for (var i = 0; i < Btrees.Length; ++i)
+      nodes[i] = new BcacheFsNodeBuilder {
+        BtreeId = Btrees[i], Seq = this.NextSeed(), SuperblockMagic = magic,
+      };
+
+    var inodes = nodes[1];
+    var dirents = nodes[2];
+
+    // The root directory, then every directory under it, then every file.
+    inodes.Add(InodeKey(RootInode, 0, 0, isDirectory: true, size: 0, sectors: 0,
+      links: directories.Values.Count(d => d.Parent == RootInode)));
+
+    foreach (var directory in directories.Values) {
+      var offset = DirentHash(HashSeed(directory.Parent), directory.Name);
+      inodes.Add(InodeKey(directory.Inode, directory.Parent, offset, isDirectory: true,
+        size: 0, sectors: 0,
+        links: directories.Values.Count(d => d.Parent == directory.Inode)));
+      dirents.Add(DirentKey(directory.Parent, directory.Name, directory.Inode, DtDir));
+    }
+
+    foreach (var file in files) {
+      var sectors = (file.Length + SectorSize - 1) / SectorSize;
+      var offset = DirentHash(HashSeed(file.Parent), file.Name);
+      inodes.Add(InodeKey(file.Inode, file.Parent, offset, isDirectory: false,
+        size: (ulong)file.Length, sectors: (ulong)sectors, links: 0));
+      dirents.Add(DirentKey(file.Parent, file.Name, file.Inode, DtReg));
+
+    }
+
+    // The one subvolume, the one snapshot, and the tree that ties them together.
+    nodes[3].Add(SubvolumeKey());
+    nodes[4].Add(SnapshotKey());
+    nodes[5].Add(SnapshotTreeKey());
+    nodes[6].Add(InodeAllocCursorKey(nextInode));
+
+    return new Plan {
+      Nodes = nodes,
+      Files = files,
+      Buckets = buckets,
+      SuperblockSectors = [
+        PrimarySbSector,
+        PrimarySbSector + SbSlotSectors,
+        deviceSectors - SbSlotSectors,
+      ],
+    };
+  }
+
+  // ── Keys ────────────────────────────────────────────────────────────────
+
+  /// <summary>The hash seed a directory's entries are placed by.</summary>
+  private static ulong HashSeed(ulong inode) => inode * 0x9E3779B97F4A7C15UL | 1UL;
+
+  private static Key InodeKey(ulong inode, ulong parent, ulong parentOffset,
+      bool isDirectory, ulong size, ulong sectors, int links) {
+    // The fixed part: journal sequence, hash seed, flags, sectors, size, version.
+    var fields = new byte[256];
+    var cursor = 0;
+
+    // The field list is positional — every field up to the last non-zero one is
+    // present, a zero field being a single zero byte.
+    void Field(ulong value, bool wide = false) {
+      cursor += WriteVarint(fields.AsSpan(cursor), value);
+      if (wide) fields[cursor++] = 0;   // the high half of a 96-bit time
+    }
+
+    Field(0, wide: true);                       // bi_atime
+    Field(0, wide: true);                       // bi_ctime
+    Field(0, wide: true);                       // bi_mtime
+    Field(0, wide: true);                       // bi_otime
+    Field(0);                                   // bi_uid
+    Field(0);                                   // bi_gid
+    // The stored count is the link count less what the kind of inode always has:
+    // one for a file, two for a directory. Storing the count itself gives every
+    // file a link it does not have.
+    Field((ulong)links);                        // bi_nlink, biased
+    Field(0);                                   // bi_generation
+    Field(0);                                   // bi_dev
+    Field(0);                                   // bi_data_checksum
+    Field(0);                                   // bi_compression
+    Field(0);                                   // bi_project
+    Field(0);                                   // bi_background_compression
+    Field(0);                                   // bi_data_replicas
+    Field(0);                                   // bi_promote_target
+    Field(0);                                   // bi_foreground_target
+    Field(0);                                   // bi_background_target
+    Field(0);                                   // bi_erasure_code
+    Field(0);                                   // bi_fields_set
+    Field(parent);                              // bi_dir
+    // Where in that directory the entry naming this inode sits — the same hash the
+    // entry is keyed by. A zero here is a back pointer to nowhere, and the kernel
+    // says so of every file on the volume.
+    Field(parentOffset);                        // bi_dir_offset
+    const int fieldsPresent = 21;
+
+    var value = new byte[48 + cursor];
+    BinaryPrimitives.WriteUInt64LittleEndian(value, 0);                       // bi_journal_seq
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), HashSeed(inode));
+    var mode = (ulong)(isDirectory ? 0x41ED : 0x81A4);                        // 040755 / 0100644
+    // The flags word carries the string-hash choice, how many fields follow, where
+    // they start, and the mode.
+    var flags = ((ulong)InodeStrHashSiphash << 20)
+      | ((ulong)fieldsPresent << 24)
+      | (6UL << 31)                                                          // fields start, in words
+      | (mode << 36);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(16), flags);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(24), sectors);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(32), size);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(40), 0);            // bi_version
+    fields.AsSpan(0, cursor).CopyTo(value.AsSpan(48));
+
+    return new Key(KeyInodeV3, new Bpos(0, inode, SnapshotIdMax), 0, value);
+  }
+
+  /// <summary>
+  /// The hash an inode says its directory entries were placed by.
+  /// </summary>
+  /// <remarks>
+  /// This is not the same number as the volume-wide option of the same name. The
+  /// option asks for "siphash" and is two; what an inode records is which siphash,
+  /// and the one whose key is the seed itself — rather than a digest of it — is
+  /// three. Writing the option's number into the inode asks for the older hash and
+  /// puts every name at an offset the kernel does not look at.
+  /// </remarks>
+  private const int InodeStrHashSiphash = 3;
+
+  /// <summary>The volume-wide option that asks for that hash.</summary>
+  private const int BchStrHashSiphash = 2;
+
+  /// <summary>The checksum option a volume written here asks for.</summary>
+  private const int ChecksumOptionCrc32C = 1;
+
+  private static Key DirentKey(ulong directory, string name, ulong target, byte type) {
+    var nameBytes = Encoding.UTF8.GetBytes(name);
+    // The value is the target, a type byte, and the name — padded out to a whole
+    // number of words, which is also what tells a reader where the name ends.
+    var length = 9 + nameBytes.Length;
+    var value = new byte[(length + 7) / 8 * 8];
+    BinaryPrimitives.WriteUInt64LittleEndian(value, target);
+    value[8] = type;
+    nameBytes.CopyTo(value.AsSpan(9));
+
+    var offset = DirentHash(HashSeed(directory), name);
+    return new Key(KeyDirent, new Bpos(directory, offset, SnapshotIdMax), 0, value);
+  }
+
+  private static Key ExtentKey(PlannedFile file, long firstSector, int sectors, uint checksum) {
+    var value = new byte[16];
+    BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(sectors, checksum));
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8),
+      ExtentPointer(file.FirstSector + firstSector));
+
+    // An extent is keyed by where it ends, not where it starts.
+    return new Key(KeyExtent, new Bpos(file.Inode, (ulong)(firstSector + sectors), SnapshotIdMax),
+      (uint)sectors, value);
+  }
+
+  private static Key SubvolumeKey() {
+    var value = new byte[32];
+    BinaryPrimitives.WriteUInt32LittleEndian(value, 0);                        // flags
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(4), SnapshotIdMax);  // snapshot
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), RootInode);
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(16), 0);             // creation_parent
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(20), 0);             // fs_path_parent
+    return new Key(KeySubvolume, new Bpos(0, RootSubvolume, 0), 0, value);
+  }
+
+  private static Key SnapshotKey() {
+    var value = new byte[40];
+    BinaryPrimitives.WriteUInt32LittleEndian(value, 0);                        // flags
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(4), 0);              // parent
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), 0);              // children[0]
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(12), 0);             // children[1]
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(16), RootSubvolume);
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(20), 1);             // tree
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(24), 0);             // depth
+    return new Key(KeySnapshot, new Bpos(0, SnapshotIdMax, 0), 0, value);
+  }
+
+  private static Key SnapshotTreeKey() {
+    var value = new byte[8];
+    BinaryPrimitives.WriteUInt32LittleEndian(value, RootSubvolume);
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(4), SnapshotIdMax);
+    return new Key(KeySnapshotTree, new Bpos(0, 1, 0), 0, value);
+  }
+
+  private static Key InodeAllocCursorKey(ulong next) {
+    var value = new byte[24];
+    BinaryPrimitives.WriteUInt64LittleEndian(value, 2147483648UL);             // min
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), long.MaxValue);  // max
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(16), next);          // idx
+    return new Key(KeyInodeAllocCursor, new Bpos(1, 1, 0), 0, value);
+  }
+
+  // ── Superblock ──────────────────────────────────────────────────────────
+
+  private byte[] BuildSuperblock(Plan plan, List<(int Btree, Key Pointer)> roots) {
+    var sections = new List<byte[]> {
+      this.MembersSection(plan),
+      JournalSection(),
+      CleanSection(roots),
+      ExtSection(),
+      ErrorsSection(),
+    };
+
+    var variable = sections.Sum(s => s.Length);
+    var sb = new byte[SbFixedBytes + variable];
     var span = sb.AsSpan();
 
-    // ── Fixed header per struct bch_sb (from fs/bcachefs/bcachefs_format.h) ──
-    // 0..16   csum (u64 lo + u64 hi) — left zero (csum_type = none)
-    // 16      version (u16)
-    BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(16, 2), SbVersion);
-    // 18      version_min (u16)
-    BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(18, 2), SbVersionMin);
-    // 20..24  pad[2] — left zero
-    // 24..40  magic (uuid)
-    BcachefsMagic.CopyTo(span.Slice(24, 16));
-    // 40..56  uuid (internal — never zero)
-    WriteGuid(span.Slice(40, 16), this._internalUuid);
-    // 56..72  user_uuid (never zero)
-    WriteGuid(span.Slice(56, 16), this._userUuid);
-    // 72..104 label[32]
-    WriteLabel(span.Slice(72, 32), this._label);
-    // 104..112 offset (sector address of THIS sb copy — primary by default)
-    BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(104, 8), (ulong)primarySbSector);
-    // 112..120 seq (≥1 — highest seq wins on conflict resolution)
-    BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(112, 8), 1UL);
-    // 120..122 block_size (u16) in sectors. 1 = 512 B (smallest valid).
-    BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(120, 2), 1);
-    // 122 dev_idx (u8) — this device's index inside the members array
-    sb[122] = 0;
-    // 123 nr_devices (u8) — single device
-    sb[123] = 1;
-    // 124..128 u64s (u32) — count of u64 cells in the variable area after FixedSbBytes
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(124, 4), (uint)(variableLen / 8));
-    // 128..136 time_base_lo (u64) — nanoseconds since epoch reference
-    BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(128, 8), 0UL);
-    // 136..140 time_base_hi (u32)
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(136, 4), 0U);
-    // 140..144 time_precision (u32) — MUST be 1..NSEC_PER_SEC (1e9)
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(140, 4), 1U);
-    // 144..200 flags[7] (u64×7) — every option whose `bch2_opt_table[].min > 0`
-    // MUST be stamped here, otherwise `bch2_opt_validate` fails with
-    // ERANGE_option_too_small during show-super / fsck. We mirror what
-    // mkfs.bcachefs would write for an all-defaults filesystem.
-    WriteSbOptions(span.Slice(144, 56));
-    // 200..208 write_time (u64) — left zero
-    // 208..224 features[2] (u64×2)
-    BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(208, 8), SbFeaturesAlways);
-    // 224..240 compat[2] (u64×2) — left zero
-    // 240..752 layout (bch_sb_layout) — written below
+    BinaryPrimitives.WriteUInt16LittleEndian(span[16..], BcacheFsFormat.Version);
+    BinaryPrimitives.WriteUInt16LittleEndian(span[18..], VersionMin);
+    Magic.CopyTo(span[24..]);
+    WriteGuid(span[40..], this._internalUuid);
+    WriteGuid(span[56..], this._userUuid);
+    var label = Encoding.ASCII.GetBytes(this._label);
+    label.AsSpan(0, Math.Min(31, label.Length)).CopyTo(span[72..]);
+    BinaryPrimitives.WriteUInt64LittleEndian(span[112..], 1);                  // seq
+    BinaryPrimitives.WriteUInt16LittleEndian(span[120..], 1);                  // block_size, in sectors
+    sb[122] = 0;                                                               // dev_idx
+    sb[123] = 1;                                                               // nr_devices
+    BinaryPrimitives.WriteUInt32LittleEndian(span[124..], (uint)(variable / 8));
+    BinaryPrimitives.WriteUInt32LittleEndian(span[140..], 1);                  // time_precision
 
-    // Inline layout copy. The kernel cross-references this with the
-    // sector-7 layout and rejects mismatches.
-    var sbOffsets = new long[NrSuperblocks];
-    var sbSlotSectors = 1 << SbMaxSizeBits;
-    var totalSectors = this._imageSize / 512;
-    sbOffsets[0] = BchSbSector;
-    sbOffsets[1] = BchSbSector + sbSlotSectors;
-    sbOffsets[2] = totalSectors - 2 * sbSlotSectors - 512;
-    sbOffsets[3] = totalSectors - sbSlotSectors - 256;
-    WriteLayout(span.Slice(LayoutOffsetInSb, LayoutStructSize), sbOffsets);
+    WriteFlags(span[144..200]);
+    BinaryPrimitives.WriteUInt64LittleEndian(span[208..],
+      FeatureNewSiphash | FeatureNewExtentOverwrite | FeatureBtreePtrV2
+      | FeatureExtentsAboveBtreeUpdates | FeatureBtreeUpdatesJournalled | FeatureNewVarint
+      | FeatureJournalNoFlush | FeatureAllocV2 | FeatureExtentsAcrossBtreeNodes
+      | FeatureIncompatVersionField | FeatureNoAllocInfo);
+    BinaryPrimitives.WriteUInt64LittleEndian(span[224..],
+      CompatAllocInfo | CompatAllocMetadata | CompatExtentsAboveBtreeUpdatesDone
+      | CompatBformatOverflowDone | CompatNoStalePtrs);
 
-    // ── Variable-length section: BCH_SB_FIELD_members_v1 ────────────
-    // bch_sb_field header: u32 u64s, u32 type. u64s = u64 cells of THIS
-    // section *including* the field header (per vstruct_bytes spec).
-    var membersStart = FixedSbBytes;
-    var membersU64s = (uint)(membersSectionLen / 8);
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(membersStart + 0, 4), membersU64s);
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(membersStart + 4, 4), MembersV1FieldType);
-    // First (and only) member entry follows immediately at +8 inside the
-    // section (no v2 size header — that's the v1/v2 difference).
-    var memberStart = membersStart + 8;
-    var memberSpan = span.Slice(memberStart, MemberBytesPerEntry);
-    // bch_member layout (v1 = 120 bytes; tools 1.3.x compile-time form):
-    //   0..16   uuid (device UUID)
-    WriteGuid(memberSpan.Slice(0, 16), this._internalUuid);
-    //   16..24  nbuckets — bucket count for this device. Must be ≥ BCH_MIN_NR_NBUCKETS = 512.
-    //   Bucket size MUST be ≥ btree_node_size (512 sectors = 256 KiB) — otherwise
-    //   bcachefs rejects with "bucket size N smaller than btree node size 512".
-    var bucketSize = 512; // sectors per bucket = 256 KiB (matches btree_node_size default)
-    var nbuckets = (ulong)Math.Max(512, this._imageSize / 512 / bucketSize);
-    BinaryPrimitives.WriteUInt64LittleEndian(memberSpan.Slice(16, 8), nbuckets);
-    //   24..26  first_bucket — index of first bucket used (0)
-    BinaryPrimitives.WriteUInt16LittleEndian(memberSpan.Slice(24, 2), 0);
-    //   26..28  bucket_size (sectors) — 16 sectors = 8 KiB
-    BinaryPrimitives.WriteUInt16LittleEndian(memberSpan.Slice(26, 2), (ushort)bucketSize);
-    //   28..32  pad (u32) — left zero
-    //   32..40  last_mount (time_t) — left zero
-    //   40..48  flags — left zero (state=rw, group=0, durability=0)
-    //   48..64  iops[4] — left zero
-    //   64..88  errors[3] — left zero
-    //   88..112 errors_at_reset[3] — left zero
-    //   112..120 errors_reset_time — left zero
+    // The layout: where every copy of this superblock is.
+    var layout = span[SbLayoutOffset..];
+    Magic.CopyTo(layout);
+    layout[16] = 0;                                                            // layout_type
+    layout[17] = SbMaxSizeBits;
+    layout[18] = (byte)plan.SuperblockSectors.Length;
+    for (var i = 0; i < plan.SuperblockSectors.Length; ++i)
+      BinaryPrimitives.WriteUInt64LittleEndian(layout[(24 + 8 * i)..], (ulong)plan.SuperblockSectors[i]);
 
-    // ── Variable section: BCH_SB_FIELD_replicas_v0 ──────────────────
-    // Two entries advertise that the single device holds both btree and
-    // journal replicas. Per <c>fs/bcachefs/bcachefs_format.h</c> the entry
-    // shape is `struct bch_replicas_entry_v0 { u8 data_type; u8 nr_devs;
-    // u8 devs[]; }`. data_type values: 2=journal, 3=btree (BCH_DATA_TYPES).
-    var replicasStart = membersStart + membersSectionLen;
-    var replicasU64s = (uint)(replicasSectionLen / 8);
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(replicasStart + 0, 4), replicasU64s);
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(replicasStart + 4, 4), ReplicasV0FieldType);
-    // entry 1: btree on dev[0]
-    sb[replicasStart + 8] = 3; // data_type = btree
-    sb[replicasStart + 9] = 1; // nr_devs
-    sb[replicasStart + 10] = 0; // devs[0]
-    // entry 2: journal on dev[0]
-    sb[replicasStart + 11] = 2; // data_type = journal
-    sb[replicasStart + 12] = 1; // nr_devs
-    sb[replicasStart + 13] = 0; // devs[0]
-    // bytes 14..15 are u64 alignment padding (already zero)
-
-    // ── Variable section: BCH_SB_FIELD_errors ───────────────────────
-    // Header-only (no error history). Required by bcachefs ≥ 1.3.x to
-    // confirm we're using the post-`SB_FIELD_errors` schema.
-    var errorsStart = replicasStart + replicasSectionLen;
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(errorsStart + 0, 4), 1);
-    BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(errorsStart + 4, 4), ErrorsFieldType);
+    var cursor = SbFixedBytes;
+    foreach (var section in sections) {
+      section.CopyTo(sb, cursor);
+      cursor += section.Length;
+    }
 
     return sb;
   }
 
-  /// <summary>
-  /// Writes a <c>bch_sb_layout</c> into the supplied 512-byte span at the
-  /// canonical offset 0. The same layout struct also lives inline in
-  /// <c>struct bch_sb</c>.
-  /// </summary>
-  private static void WriteLayout(Span<byte> dst, long[] sbOffsetsSectors) {
-    if (dst.Length < LayoutStructSize)
-      throw new ArgumentException("layout span must be at least 512 bytes", nameof(dst));
-    if (sbOffsetsSectors.Length == 0 || sbOffsetsSectors.Length > 61)
-      throw new ArgumentOutOfRangeException(nameof(sbOffsetsSectors));
+  private static void WriteFlags(Span<byte> flags) {
+    var words = new ulong[7];
 
-    // 0..16  magic — same UUID as the sb's magic field
-    BcachefsMagic.CopyTo(dst.Slice(0, 16));
-    // 16     layout_type — 0 (the only defined type today)
-    dst[16] = 0;
-    // 17     sb_max_size_bits — log2(sectors-per-sb-slot)
-    dst[17] = SbMaxSizeBits;
-    // 18     nr_superblocks — count of valid sb_offset[] entries
-    dst[18] = (byte)sbOffsetsSectors.Length;
-    // 19..24 pad[5] — left zero
-    // 24..512 sb_offset[61] (u64 LE)
-    for (var i = 0; i < sbOffsetsSectors.Length; i++)
-      BinaryPrimitives.WriteUInt64LittleEndian(dst.Slice(24 + 8 * i, 8), (ulong)sbOffsetsSectors[i]);
+    void Set(int word, int lo, int hi, ulong value)
+      => words[word] |= (value & ((1UL << (hi - lo)) - 1)) << lo;
+
+    Set(0, 0, 1, 1);                     // initialized
+    Set(0, 1, 2, 1);                     // clean
+    Set(0, 2, 8, CsumTypeCrc32CNonzero); // superblock checksum
+    Set(0, 12, 28, BucketSectors);       // btree node size, in sectors
+    Set(0, 28, 33, 8);                   // gc reserve, per cent
+    // These two name a choice, not a function: "crc32c" is one option, and which
+    // of the two crc32c variants it becomes depends on whether the block being
+    // summed is metadata or data.
+    Set(0, 40, 44, ChecksumOptionCrc32C);
+    Set(0, 44, 48, ChecksumOptionCrc32C);
+    Set(0, 48, 52, 1);                   // metadata replicas wanted
+    Set(0, 52, 56, 1);                   // data replicas wanted
+
+    Set(1, 0, 4, BchStrHashSiphash);
+    Set(1, 14, 20, 9);                   // encoded extent max, as a power of two sectors
+    Set(1, 20, 24, 1);                   // metadata replicas required
+    Set(1, 24, 28, 1);                   // data replicas required
+
+    Set(5, 0, 16, BcacheFsFormat.Version); // version upgrade complete
+
+    Set(6, 4, 14, 30);                   // write error timeout
+    Set(6, 14, 20, 3);                   // checksum error retries
+
+    for (var i = 0; i < 7; ++i)
+      BinaryPrimitives.WriteUInt64LittleEndian(flags[(8 * i)..], words[i]);
   }
 
-  /// <summary>
-  /// Stamps the option defaults into <c>flags[7]</c>. The kernel's
-  /// <c>bch2_opt_validate</c> iterates every SB-stored option and rejects
-  /// any value below the option's <c>min</c> with
-  /// <c>ERANGE_option_too_small</c>; we therefore initialise every option
-  /// with min &gt; 0 to its mkfs.bcachefs default. Bit ranges come from
-  /// <c>fs/bcachefs/bcachefs_format.h</c> LE64_BITMASK declarations; default
-  /// values come from <c>libbcachefs/opts.h</c> BCH_OPTS x-list.
-  /// </summary>
-  private static void WriteSbOptions(Span<byte> flags56) {
-    if (flags56.Length < 56) throw new ArgumentException("flags span < 56", nameof(flags56));
-    // Read each flags[i] u64, OR-in the option, write back.
-    Span<ulong> flags = stackalloc ulong[7];
-    // (all start at 0)
-
-    // ── flags[0] ────────────────────────────────────────────────────
-    // BCH_SB_INITIALIZED @ bit 0. This one is not an option, and leaving it clear
-    // is not a neutral omission: a kernel reads a volume that does not claim to be
-    // initialised as a device it has been asked to make a filesystem on, and makes
-    // one — over the top of everything written here. Claiming it sends the mount
-    // down the recovery path instead, where the volume is refused for what it is
-    // actually missing rather than silently replaced.
-    SetBits(ref flags[0], 0, 1, 1);
-    // BCH_SB_BTREE_NODE_SIZE @ bits 12..28 (16 bits): on-disk unit = sectors,
-    //   default 256 KiB / 512 B = 512 sectors.
-    SetBits(ref flags[0], 12, 28, 512);
-    // BCH_SB_GC_RESERVE @ bits 28..33 (5 bits): %, min 5, default 8.
-    SetBits(ref flags[0], 28, 33, 8);
-    // BCH_SB_META_REPLICAS_WANT @ bits 48..52: count, min 1, default 1.
-    SetBits(ref flags[0], 48, 52, 1);
-    // BCH_SB_DATA_REPLICAS_WANT @ bits 52..56: count, min 1, default 1.
-    SetBits(ref flags[0], 52, 56, 1);
-
-    // ── flags[1] ────────────────────────────────────────────────────
-    // BCH_SB_ENCODED_EXTENT_MAX_BITS @ bits 14..20 (6 bits): stored as
-    //   ilog2(sectors). Default 256 KiB → 512 sectors → ilog2 = 9.
-    SetBits(ref flags[1], 14, 20, 9);
-    // BCH_SB_META_REPLICAS_REQ @ bits 20..24: count, min 1, default 1.
-    SetBits(ref flags[1], 20, 24, 1);
-    // BCH_SB_DATA_REPLICAS_REQ @ bits 24..28: count, min 1, default 1.
-    SetBits(ref flags[1], 24, 28, 1);
-
-    // ── flags[6] ────────────────────────────────────────────────────
-    // BCH_SB_WRITE_ERROR_TIMEOUT @ bits 4..14: seconds, min 1, default 30.
-    SetBits(ref flags[6], 4, 14, 30);
-    // BCH_SB_CSUM_ERR_RETRY_NR @ bits 14..20: count, min 0, default 3.
-    //   Min is 0 so technically not required, but mkfs writes 3 — match.
-    SetBits(ref flags[6], 14, 20, 3);
-
-    for (var i = 0; i < 7; i++)
-      BinaryPrimitives.WriteUInt64LittleEndian(flags56.Slice(8 * i, 8), flags[i]);
+  private static byte[] Section(uint type, int payloadBytes) {
+    var section = new byte[8 + (payloadBytes + 7) / 8 * 8];
+    BinaryPrimitives.WriteUInt32LittleEndian(section, (uint)(section.Length / 8));
+    BinaryPrimitives.WriteUInt32LittleEndian(section.AsSpan(4), type);
+    return section;
   }
 
-  /// <summary>OR-stamps <paramref name="value"/> into <paramref name="word"/> at bits [<paramref name="lo"/>, <paramref name="hi"/>).</summary>
-  private static void SetBits(ref ulong word, int lo, int hi, ulong value) {
-    var width = hi - lo;
-    var mask = width >= 64 ? ulong.MaxValue : ((1UL << width) - 1UL);
-    word = (word & ~(mask << lo)) | ((value & mask) << lo);
+  private byte[] MembersSection(Plan plan) {
+    var section = Section(FieldMembersV2, 8 + MemberBytes);
+    BinaryPrimitives.WriteUInt16LittleEndian(section.AsSpan(8), MemberBytes);
+
+    var member = section.AsSpan(16);
+    WriteGuid(member, this._internalUuid);
+    BinaryPrimitives.WriteUInt64LittleEndian(member[16..], (ulong)plan.Buckets);
+    BinaryPrimitives.WriteUInt16LittleEndian(member[24..], 0);                 // first_bucket
+    BinaryPrimitives.WriteUInt16LittleEndian(member[26..], BucketSectors);
+    // The member's flags: readwrite, everything allowed on it, one copy of each
+    // thing that lands there.
+    var flags = (1UL << 14)              // discard
+      | (28UL << 15)                     // journal, btree and user data allowed
+      | (1UL << 28)                      // durability
+      | (1UL << 32) | (1UL << 33);       // rotational, and that we know it
+    BinaryPrimitives.WriteUInt64LittleEndian(member[40..], flags);
+    BinaryPrimitives.WriteUInt64LittleEndian(member[112..], 1);                // seq
+    return section;
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────
-
-  private static void WriteGuid(Span<byte> dst, Guid g) {
-    if (dst.Length < 16) throw new ArgumentException("guid span < 16", nameof(dst));
-    var bytes = g.ToByteArray();
-    bytes.CopyTo(dst);
+  private static byte[] JournalSection() {
+    // One range of buckets, given as a start and a count.
+    var section = Section(FieldJournalV2, 16);
+    BinaryPrimitives.WriteUInt64LittleEndian(section.AsSpan(8), JournalFirstBucket);
+    BinaryPrimitives.WriteUInt64LittleEndian(section.AsSpan(16), JournalBuckets);
+    return section;
   }
 
-  private static void WriteLabel(Span<byte> dst, string label) {
-    dst.Clear();
-    var maxBytes = dst.Length - 1; // leave room for trailing NUL
-    var encoded = Encoding.UTF8.GetBytes(label);
-    var copyLen = Math.Min(maxBytes, encoded.Length);
-    encoded.AsSpan(0, copyLen).CopyTo(dst);
+  private static byte[] CleanSection(List<(int Btree, Key Pointer)> roots) {
+    // Two clock entries, then one entry per b-tree root.
+    var entries = new List<byte[]>();
+
+    for (var clock = 0; clock < 2; ++clock) {
+      // A clock entry is the header, a byte saying which clock, and the time.
+      var entry = new byte[24];
+      BinaryPrimitives.WriteUInt16LittleEndian(entry, 2);                      // u64s past the header
+      entry[4] = 7;                                                            // type: clock
+      entry[8] = (byte)clock;                                                  // read or write
+      entries.Add(entry);
+    }
+
+    foreach (var (btree, pointer) in roots) {
+      var entry = new byte[8 + pointer.Bytes];
+      BinaryPrimitives.WriteUInt16LittleEndian(entry, (ushort)(pointer.Bytes / 8));
+      entry[2] = (byte)btree;
+      entry[3] = 0;                                                            // level
+      entry[4] = 1;                                                            // type: btree root
+      WriteKey(entry.AsSpan(8), pointer);
+      entries.Add(entry);
+    }
+
+    // The section's own head — flags, the two clocks that are no longer read, and
+    // the journal sequence — comes before the entries.
+    var payload = 16 + entries.Sum(e => e.Length);
+    var section = Section(FieldClean, payload);
+    BinaryPrimitives.WriteUInt32LittleEndian(section.AsSpan(8), 0);            // flags
+    BinaryPrimitives.WriteUInt64LittleEndian(section.AsSpan(16), 1);           // journal_seq
+
+    var cursor = 24;
+    foreach (var entry in entries) {
+      entry.CopyTo(section, cursor);
+      cursor += entry.Length;
+    }
+
+    return section;
+  }
+
+  private static byte[] ExtSection() => Section(FieldExt, 96);
+
+  private static byte[] ErrorsSection() => Section(FieldErrors, 0);
+
+  private static void StampSuperblockChecksum(byte[] superblock) {
+    var checksum = MetadataChecksum(superblock.AsSpan(16));
+    BinaryPrimitives.WriteUInt64LittleEndian(superblock, checksum);
+    BinaryPrimitives.WriteUInt64LittleEndian(superblock.AsSpan(8), 0);
+  }
+
+  private static void WriteGuid(Span<byte> destination, Guid value) {
+    Span<byte> bytes = stackalloc byte[16];
+    value.TryWriteBytes(bytes);
+    bytes.CopyTo(destination);
   }
 }

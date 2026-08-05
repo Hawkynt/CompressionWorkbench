@@ -1,121 +1,190 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
-using Compression.Core.DiskImage;
+using static FileSystem.BcacheFs.BcacheFsFormat;
 
 namespace FileSystem.BcacheFs;
 
 /// <summary>
-/// Reads the files a <see cref="BcacheFsWriter" /> placed in the CWB-BCH-WB
-/// payload area of a bcachefs image.
-/// <para>
-/// bcachefs keeps inodes, dirents and extents in b-trees whose keys are
-/// varint-packed bkeys; this reader does not walk them. It reads the marker in the
-/// reserved sectors ahead of the superblock layout and follows the chained
-/// directory the workbench writer left there. An image from real
-/// <c>bcachefs format</c> carries no marker and surfaces no entries.
-/// </para>
+/// Reads the files a bcachefs volume holds.
 /// </summary>
+/// <remarks>
+/// There is no directory to walk and no inode table to index. Names come from the
+/// dirents tree, each key of which sits at a position made of its directory's
+/// inode and a hash of the name; sizes come from the inodes tree; and the bytes
+/// come from the extents tree, whose keys are positioned by the inode and the
+/// sector one past the end of what they cover. A path is rebuilt by joining the
+/// three.
+/// </remarks>
 public sealed class BcacheFsReader : IDisposable {
 
-  private readonly ImageAccessor _image;
+  private readonly Stream _stream;
+  private readonly bool _leaveOpen;
   private readonly List<Entry> _entries = [];
 
-  /// <summary>True when the image starts with a bcachefs superblock.</summary>
+  /// <summary>True when the volume's superblock and b-tree roots read as they should.</summary>
   public bool Valid { get; }
 
-  /// <summary>Files the payload area holds. Empty for an image without the marker.</summary>
+  /// <summary>Why the volume did not read, when it did not.</summary>
+  public string Status { get; } = "";
+
+  /// <summary>Every file the volume holds, by full path.</summary>
   public IReadOnlyList<Entry> Entries => this._entries;
 
-  /// <summary>Total size of the backing image in bytes.</summary>
-  public long Length => this._image.Length;
+  /// <summary>The volume's length in bytes.</summary>
+  public long Length => this._stream.Length;
+
+  /// <summary>The label the superblock carries.</summary>
+  public string Label { get; } = "";
+
+  /// <summary>Directories the volume holds, by full path.</summary>
+  public IReadOnlyList<string> Directories { get; } = [];
+
+  /// <summary>One run of sectors belonging to a file.</summary>
+  /// <param name="FirstSector">Where it starts on the device.</param>
+  /// <param name="Sectors">How long it is.</param>
+  /// <param name="FileOffset">Which byte of the file it begins at.</param>
+  public readonly record struct Extent(long FirstSector, int Sectors, long FileOffset);
+
+  /// <summary>One file: its path, its length, and where its bytes are.</summary>
+  public sealed record Entry(string Name, long Size, ulong Inode, IReadOnlyList<Extent> Extents) {
+
+    /// <summary>Where the file's first byte is, or zero when it holds none.</summary>
+    public long FirstSector => this.Extents.Count == 0 ? 0 : this.Extents[0].FirstSector;
+  }
 
   public BcacheFsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
+    this._stream = stream;
+    this._leaveOpen = leaveOpen;
     if (stream.CanSeek) stream.Position = 0;
-    // Blocks are pulled on demand: the metadata is a handful of blocks however
-    // many gigabytes of payload follow it.
-    this._image = new ImageAccessor(stream, leaveOpen);
 
-    var minimum = BcacheFsWriter.FirstPayloadBlock * BcacheFsWriter.PayloadBlockSize;
-    if (this._image.Length < minimum) return;
+    var volume = BcacheFsVolume.Open(stream);
+    this.Valid = volume.Valid;
+    this.Status = volume.Status;
+    this.Label = volume.Label;
+    if (!volume.Valid) return;
 
-    // The superblock magic sits at sector 8, 24 bytes into the struct.
-    var primary = this._image.Read(BcacheFsWriter.BchSbSector * 512, 64);
-    this.Valid = primary.AsSpan(24, BcacheFsWriter.BcachefsMagic.Length)
-      .SequenceEqual(BcacheFsWriter.BcachefsMagic);
-
-    var marker = this._image.Read(BcacheFsWriter.PayloadMarkerOffset, 32);
-    if (!marker.AsSpan(0, BcacheFsWriter.PayloadMarker.Length)
-        .SequenceEqual(BcacheFsWriter.PayloadMarker))
-      return;
-
-    var dirBlock = BinaryPrimitives.ReadInt64LittleEndian(
-      marker.AsSpan((int)(BcacheFsWriter.PayloadDirOffset - BcacheFsWriter.PayloadMarkerOffset), 8));
-    this.ReadDirectory(dirBlock);
+    var directories = new List<string>();
+    this.Build(volume, directories);
+    this.Directories = directories;
   }
 
-  /// <summary>One file in the payload area: its name, first block and byte length.</summary>
-  public sealed record Entry(string Name, long FirstBlock, long Size);
+  private void Build(BcacheFsVolume volume, List<string> directories) {
+    // Names first: each dirent says which directory it is in and what it points at.
+    var children = new Dictionary<ulong, List<(string Name, ulong Target, bool IsDirectory)>>();
+    foreach (var key in volume.Keys(BtreeDirents)) {
+      if (key.Type != KeyDirent || key.Value.Length < 16) continue;
 
-  /// <summary>Reads a file's contents. Only valid below the array limit.</summary>
-  public byte[] Extract(Entry entry) {
+      var target = BinaryPrimitives.ReadUInt64LittleEndian(key.Value);
+      var type = key.Value[8] & 0x1F;
+      var name = ReadName(key.Value.AsSpan(9));
+      if (name.Length == 0) continue;
+
+      if (!children.TryGetValue(key.Position.Inode, out var list))
+        children[key.Position.Inode] = list = [];
+      list.Add((name, target, type == DtDir));
+    }
+
+    // Then sizes, from the inodes tree.
+    var sizes = new Dictionary<ulong, long>();
+    foreach (var key in volume.Keys(BtreeInodes)) {
+      if (key.Type != KeyInodeV3 || key.Value.Length < 48) continue;
+      sizes[key.Position.Offset] = (long)BinaryPrimitives.ReadUInt64LittleEndian(key.Value.AsSpan(32));
+    }
+
+    // Then the extents, gathered per inode and ordered by where they land in the file.
+    var extents = new Dictionary<ulong, List<Extent>>();
+    foreach (var key in volume.Keys(BtreeExtents)) {
+      if (key.Type != KeyExtent || key.Value.Length < 8) continue;
+
+      long sector = -1;
+      for (var offset = 0; offset + 8 <= key.Value.Length; offset += 8) {
+        var word = BinaryPrimitives.ReadUInt64LittleEndian(key.Value.AsSpan(offset));
+        if (!IsPointer(word)) continue;
+        sector = PointerSector(word);
+        break;
+      }
+
+      if (sector < 0) continue;
+
+      // A key names the sector one past its end, so its start is that less its size.
+      var start = (long)key.Position.Offset - key.Size;
+      if (!extents.TryGetValue(key.Position.Inode, out var list))
+        extents[key.Position.Inode] = list = [];
+      list.Add(new Extent(sector, (int)key.Size, start * SectorSize));
+    }
+
+    foreach (var list in extents.Values)
+      list.Sort((a, b) => a.FileOffset.CompareTo(b.FileOffset));
+
+    // Finally the paths, walked down from the root directory.
+    var pending = new Queue<(ulong Inode, string Path)>();
+    pending.Enqueue((RootInode, string.Empty));
+    var seen = new HashSet<ulong> { RootInode };
+
+    while (pending.Count > 0) {
+      var (inode, path) = pending.Dequeue();
+      if (!children.TryGetValue(inode, out var list)) continue;
+
+      foreach (var (name, target, isDirectory) in list) {
+        var full = path.Length == 0 ? name : path + "/" + name;
+        if (isDirectory) {
+          if (!seen.Add(target)) continue;
+          directories.Add(full);
+          pending.Enqueue((target, full));
+          continue;
+        }
+
+        var size = sizes.GetValueOrDefault(target, 0L);
+        var runs = extents.TryGetValue(target, out var found) ? found : [];
+        this._entries.Add(new Entry(full, size, target, runs));
+      }
+    }
+
+    this._entries.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+    directories.Sort(StringComparer.Ordinal);
+  }
+
+  private static string ReadName(ReadOnlySpan<byte> source) {
+    // The name runs to the end of the value, less whatever zero padding rounded it
+    // out to a whole number of words.
+    var end = source.Length;
+    while (end > 0 && source[end - 1] == 0) --end;
+    return end == 0 ? string.Empty : Encoding.UTF8.GetString(source[..end]);
+  }
+
+  /// <summary>Writes one file's bytes to <paramref name="output" />.</summary>
+  public void ExtractTo(Entry entry, Stream output) {
     ArgumentNullException.ThrowIfNull(entry);
-    if (entry.Size > Array.MaxLength)
-      throw new IOException(
-        $"BcacheFS: '{entry.Name}' is {entry.Size:N0} bytes, past the array limit; use ExtractTo.");
+    ArgumentNullException.ThrowIfNull(output);
+
+    var buffer = new byte[BucketBytes];
+    var remaining = entry.Size;
+    foreach (var extent in entry.Extents) {
+      if (remaining <= 0) break;
+
+      var want = Math.Min((long)extent.Sectors * SectorSize, remaining);
+      this._stream.Position = extent.FirstSector * SectorSize;
+
+      while (want > 0) {
+        var chunk = (int)Math.Min(buffer.Length, want);
+        this._stream.ReadExactly(buffer, 0, chunk);
+        output.Write(buffer, 0, chunk);
+        want -= chunk;
+        remaining -= chunk;
+      }
+    }
+  }
+
+  /// <summary>The whole of one file.</summary>
+  public byte[] Read(Entry entry) {
     using var buffer = new MemoryStream();
     this.ExtractTo(entry, buffer);
     return buffer.ToArray();
   }
 
-  /// <summary>
-  /// Writes <paramref name="entry" />'s contents into <paramref name="destination" />.
-  /// A file's blocks are one contiguous run, so this is a single forward copy.
-  /// Returns the number of bytes written.
-  /// </summary>
-  public long ExtractTo(Entry entry, Stream destination) {
-    ArgumentNullException.ThrowIfNull(entry);
-    ArgumentNullException.ThrowIfNull(destination);
-    if (entry.Size <= 0) return 0;
-
-    var offset = entry.FirstBlock * BcacheFsWriter.PayloadBlockSize;
-    if (offset < 0 || offset >= this._image.Length) return 0;
-    var take = Math.Min(entry.Size, this._image.Length - offset);
-    if (take <= 0) return 0;
-    this._image.CopyTo(offset, destination, take);
-    return take;
+  public void Dispose() {
+    if (!this._leaveOpen) this._stream.Dispose();
   }
-
-  private void ReadDirectory(long firstBlock) {
-    var visited = new HashSet<long>();
-    var block = firstBlock;
-    while (block != 0 && visited.Add(block)) {
-      var offset = block * BcacheFsWriter.PayloadBlockSize;
-      if (offset < 0 || offset + BcacheFsWriter.PayloadBlockSize > this._image.Length) break;
-      var buf = this._image.Read(offset, BcacheFsWriter.PayloadBlockSize);
-      if (!buf.AsSpan(0, BcacheFsWriter.DirMagic.Length).SequenceEqual(BcacheFsWriter.DirMagic)) break;
-
-      var next = BinaryPrimitives.ReadInt64LittleEndian(buf.AsSpan(8, 8));
-      var count = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(16, 4));
-      for (var i = 0; i < count && i < BcacheFsWriter.DirEntriesPerBlock; ++i) {
-        var o = BcacheFsWriter.DirHeadSize + i * BcacheFsWriter.DirEntrySize;
-        var name = ReadCString(buf.AsSpan(o, BcacheFsWriter.DirNameLength));
-        if (name.Length == 0) continue;
-        var first = BinaryPrimitives.ReadInt64LittleEndian(buf.AsSpan(o + BcacheFsWriter.DirNameLength, 8));
-        var size = BinaryPrimitives.ReadInt64LittleEndian(buf.AsSpan(o + BcacheFsWriter.DirNameLength + 8, 8));
-        if (size < 0) continue;
-        this._entries.Add(new Entry(name, first, size));
-      }
-      block = next;
-    }
-  }
-
-  private static string ReadCString(ReadOnlySpan<byte> span) {
-    var n = span.IndexOf((byte)0);
-    if (n < 0) n = span.Length;
-    return n == 0 ? "" : Encoding.UTF8.GetString(span[..n]);
-  }
-
-  public void Dispose() => this._image.Dispose();
 }

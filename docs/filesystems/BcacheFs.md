@@ -43,7 +43,7 @@ the bytes that actually move rather than the whole volume.
 
 | Property | Value | Meaning |
 |---|---|---|
-| Repoints runs independently | no | whether a file in several pieces can be moved one piece at a time |
+| Repoints runs independently | yes | whether a file in several pieces can be moved one piece at a time |
 | Relinks a whole allocation | no | whether a scattered file's chain can be restated in one call |
 | Holds runs outside the volume | yes | whether a full volume can be rearranged by lifting a run into memory |
 
@@ -51,23 +51,25 @@ the bytes that actually move rather than the whole volume.
 
 ### BcacheFsFormatDescriptor
 
-Descriptor for BcacheFS volume images (modern Linux FS, mainlined in kernel 6.7). Surfaces the parsed `bch_sb` superblock at offset 4096 as structured metadata plus the raw image, and emits a WORM-minimal, SB-only image via `BcacheFsWriter` that `bcachefs show-super` accepts. Walking the b-tree object graph (extents/dirents/inodes) and emitting B-tree nodes are explicitly out of scope — see `Hawkynt.FileFormats.FileSystems/README.md` for the full gap statement. References:
+Descriptor for bcachefs volumes: a superblock at offset 4096, and b-trees under it holding the names, the metadata and the positions of every file's bytes. Volumes written here are read by the kernel driver, and read back by `BcacheFsReader` — which understands both the packed keys `mkfs.bcachefs` writes and the plain ones this project does.
+
+What such a volume does not carry is allocation information: the trees a running filesystem keeps so it can decide where to write next. The format has a feature bit that says so and bcachefs's own tooling strips exactly those trees for read-only use; the consequence is that these volumes mount read-only with -o norecovery. See `BcacheFsWriter`.
+
+References:
 
 ### BcacheFsReader
 
-Reads the files a `BcacheFsWriter` placed in the CWB-BCH-WB payload area of a bcachefs image.
+Reads the files a bcachefs volume holds.
 
-bcachefs keeps inodes, dirents and extents in b-trees whose keys are varint-packed bkeys; this reader does not walk them. It reads the marker in the reserved sectors ahead of the superblock layout and follows the chained directory the workbench writer left there. An image from real bcachefs format carries no marker and surfaces no entries.
+There is no directory to walk and no inode table to index. Names come from the dirents tree, each key of which sits at a position made of its directory's inode and a hash of the name; sizes come from the inodes tree; and the bytes come from the extents tree, whose keys are positioned by the inode and the sector one past the end of what they cover. A path is rebuilt by joining the three.
 
 ### BcacheFsWriter
 
-Writes a WORM-minimal BcacheFS image: a spec-compliant primary superblock at byte offset 4096 (sector 8), the canonical four-copy `bch_sb_layout` describing the backup superblock locations, and three SB sections: `BCH_SB_FIELD_members_v1` (single device), `BCH_SB_FIELD_replicas_v0` (btree+journal on dev[0]), and a header-only `BCH_SB_FIELD_errors`. The image is sized so every backup-superblock slot named in the layout actually fits inside the file (`MinImageSize` = 128 MiB by default — required because `BCH_MIN_NR_NBUCKETS` = 512 paired with our 256 KiB bucket size needs at least 128 MiB).
+Writes a bcachefs volume: a superblock, the b-trees that describe the files, and the files themselves.
 
-Spec source: fs/bcachefs/bcachefs_format.h (kernel) and libbcachefs/sb-members_format.h (bcachefs-tools). Field offsets follow the actual struct layout, NOT the looser interpretation an earlier revision of the read-only descriptor was using:
+bcachefs keeps no directory blocks and no inode table. A file's name is a key in the dirents tree, its metadata a key in the inodes tree, and its bytes are named by keys in the extents tree; a volume is those trees plus a superblock that says where their roots are. Because the volume is written whole and never mounted for writing in between, the roots go in the superblock's clean section, and no journal entries are needed to find them.
 
-Scope: this writer satisfies bcachefs show-super on the resulting image. It does not produce a volume a kernel will mount, and does not pretend to: the journal is absent, and with it every btree root, so a mount stops at insufficient_journal_devices during replay. Also missing are the btrees themselves and the clean/journal_v2/counters/ members_v2 SB sections. Reaching a mountable volume is multi-week kernel-spec work tracked in Hawkynt.FileFormats.FileSystems/README.md.
-
-What the superblock does now say is that the volume is initialised. That is not cosmetic: a kernel reads a volume that does not claim it as a device it has been told to make a filesystem on, and makes one — over the top of everything written here, before reporting any error. Claiming it, together with the features every volume carries and the version floor an initialised volume is held to, sends the mount down the recovery path instead, where the volume is refused for what it is missing and left exactly as it was found.
+What is not written is the allocation information — the alloc, freespace, backpointer and accounting trees a running filesystem keeps so it can decide where to put the next write. A volume that will only ever be read does not need them, and the format has a feature bit that says so; bcachefs's own tooling strips exactly these trees for exactly this case. The consequence is visible and worth stating: such a volume is mounted read-only, with -o norecovery, and a read-write mount rebuilds what is missing before it will start.
 
 ## Parameters
 

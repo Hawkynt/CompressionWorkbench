@@ -456,7 +456,6 @@ public class MultiFsDefragmentTests {
 
   // ── Read-only / SB-only FSes — defragment surfaces but throws ───────
 
-  [TestCase("BcacheFs")]
   [TestCase("Reiser4")]
   [TestCase("Sfs")]
   public void ReadOnlyFs_Defragment_ThrowsNotSupported(string formatId) {
