@@ -19,8 +19,6 @@ namespace Compression.Tests.BcacheFs;
 [TestFixture]
 public class BcacheFsVolumeTests {
 
-  private const long Megabyte = 1024 * 1024;
-
   private static byte[] Payload(int seed, int length) {
     var data = new byte[length];
     for (var i = 0; i < length; ++i) data[i] = (byte)(i * 37 + seed * 11);
@@ -149,6 +147,40 @@ public class BcacheFsVolumeTests {
 
     Assert.That(FirstFreeGap(), Is.Zero, "consolidating at the start must leave no gap between runs");
     AssertReadsBack(image.ToArray(), files, "after consolidating at the start");
+  }
+
+  /// <summary>
+  /// More files than one b-tree node holds, and the trees grow a level.
+  /// </summary>
+  /// <remarks>
+  /// A node is one bucket. Past that a tree is a root of pointers over a row of
+  /// leaves, each responsible for a range of positions that has to meet its
+  /// neighbours' exactly — and the superblock has to say how deep the tree is, or a
+  /// reader looks for keys where the pointers are and finds the volume unreadable.
+  /// </remarks>
+  [Test, Category("RoundTrip")]
+  public void MoreFilesThanOneNodeHolds_GrowsTheTreesAndStillReadsBack() {
+    const int count = 1200;
+    var path = Path.Combine(Path.GetTempPath(), "cwb_bchbig_" + Guid.NewGuid().ToString("N")[..8] + ".bch");
+    try {
+      var writer = new BcacheFsWriter();
+      for (var i = 0; i < count; ++i)
+        writer.AddFile($"f{i:D5}.bin", System.Text.Encoding.ASCII.GetBytes($"payload-{i:D5}"));
+
+      using (var output = File.Create(path))
+        writer.WriteTo(output);
+
+      using var image = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
+      using var reader = new BcacheFsReader(image, leaveOpen: true);
+      Assert.That(reader.Valid, Is.True, reader.Status);
+      Assert.That(reader.Entries, Has.Count.EqualTo(count));
+
+      foreach (var entry in reader.Entries)
+        Assert.That(System.Text.Encoding.ASCII.GetString(reader.Read(entry)),
+          Is.EqualTo($"payload-{entry.Name.Substring(1, 5)}"), $"{entry.Name} must come back");
+    } finally {
+      try { File.Delete(path); } catch { /* the scratch image is gone already */ }
+    }
   }
 
   [Test, Category("RoundTrip")]

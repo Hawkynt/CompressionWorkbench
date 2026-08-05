@@ -35,6 +35,18 @@ internal sealed class BcacheFsNodeBuilder {
   /// <summary>The volume's magic, from which the node's is derived.</summary>
   internal required ulong SuperblockMagic { get; init; }
 
+  /// <summary>Zero for a node holding keys, one for a node holding pointers to those.</summary>
+  internal int Level { get; init; }
+
+  /// <summary>The lowest position this node is responsible for.</summary>
+  internal Bpos MinKey { get; init; } = Bpos.Min;
+
+  /// <summary>The highest, inclusive.</summary>
+  internal Bpos MaxKey { get; init; } = Bpos.Max;
+
+  /// <summary>The keys the node holds, in order, once it has been written.</summary>
+  internal IReadOnlyList<Key> Keys => this._keys;
+
   /// <summary>Adds a key. Keys are sorted before the node is written.</summary>
   internal void Add(Key key) => this._keys.Add(key);
 
@@ -59,6 +71,14 @@ internal sealed class BcacheFsNodeBuilder {
   internal int Write(Span<byte> destination) {
     this._keys.Sort((a, b) => Compare(a.Position, b.Position));
 
+    // A node is one bucket. Growing past it means a tree of more than one node,
+    // with interior nodes indexing the leaves, which this does not write — so it
+    // says so rather than laying keys over whatever follows.
+    if (this.Bytes > destination.Length)
+      throw new NotSupportedException(
+        $"A bcachefs b-tree of {this._keys.Count} keys needs {this.Bytes:N0} bytes, "
+        + $"more than the {destination.Length:N0} of a single node; this writer emits one node per tree.");
+
     var sectors = this.Sectors;
     destination[..(sectors * SectorSize)].Clear();
 
@@ -70,13 +90,16 @@ internal sealed class BcacheFsNodeBuilder {
     // and is not the identity the pointer matches — that is the bset's.
     var flags = (ulong)(uint)(this.BtreeId & 0xF)
       | ((ulong)(uint)(this.BtreeId >> 4) << 9)
+      | ((ulong)(uint)(this.Level & 0xF) << 4)
       | (1UL << 8)
       | (1UL << 32);
     BinaryPrimitives.WriteUInt64LittleEndian(destination[24..], flags);
 
-    // The node covers the whole tree: there is only ever one of them here.
-    WriteBpos(destination[32..], Bpos.Min);
-    WriteBpos(destination[52..], Bpos.Max);
+    // What this node is responsible for. A tree of one node covers all of it; a
+    // tree of several splits the range between its leaves, and every position in
+    // between has to fall inside exactly one of them.
+    WriteBpos(destination[32..], this.MinKey);
+    WriteBpos(destination[52..], this.MaxKey);
 
     // The key format: every field at its full width, which is what an unpacked key is.
     var format = destination[80..];
@@ -116,8 +139,10 @@ internal sealed class BcacheFsNodeBuilder {
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), this.Seq);
     BinaryPrimitives.WriteUInt16LittleEndian(value.AsSpan(16), (ushort)sectorsWritten);
     BinaryPrimitives.WriteUInt16LittleEndian(value.AsSpan(18), 0);             // flags
-    WriteBpos(value.AsSpan(20), Bpos.Min);                                     // min_key
+    // A pointer repeats the range the node it names is responsible for: the low end
+    // here, and the high end as the key's own position.
+    WriteBpos(value.AsSpan(20), this.MinKey);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(40), ExtentPointer(sector));
-    return new Key(KeyBtreePtrV2, Bpos.Max, 0, value);
+    return new Key(KeyBtreePtrV2, this.MaxKey, 0, value);
   }
 }

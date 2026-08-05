@@ -31,37 +31,46 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   /// pointer.
   /// </remarks>
   private sealed class Slot {
-    internal required long FieldOffset { get; init; }
+    internal required long NodeOffset { get; init; }
+    internal required int FieldOffset { get; init; }
     internal required long OriginalSector { get; init; }
     internal required long Sector { get; set; }
     internal required int Sectors { get; init; }
   }
 
   private readonly List<Slot> _slots = [];
-  private long _extentsNodeOffset;
-  private int _extentsNodeSectors;
+  private readonly List<long> _nodes = [];
+  private int _nodeSectors = BucketSectors;
 
   /// <summary>Reads the extents b-tree so its pointers can be found again.</summary>
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     this._slots.Clear();
-    this._extentsNodeOffset = 0;
+    this._nodes.Clear();
 
     var volume = BcacheFsVolume.Open(image);
-    if (!volume.Valid || !volume.Roots.TryGetValue(BtreeExtents, out var rootSector)) return;
+    if (!volume.Valid) return;
 
-    this._extentsNodeOffset = rootSector * SectorSize;
-    this._extentsNodeSectors = volume.BucketSectorCount;
+    this._nodeSectors = volume.BucketSectorCount;
+    var node = new byte[this._nodeSectors * SectorSize];
+    foreach (var sector in volume.NodeSectors(BtreeExtents)) {
+      var offset = sector * SectorSize;
+      if (offset + node.Length > image.Length) continue;
 
-    var node = new byte[volume.BucketSectorCount * SectorSize];
-    image.Position = this._extentsNodeOffset;
-    image.ReadExactly(node);
+      image.Position = offset;
+      image.ReadExactly(node);
 
-    foreach (var (fieldOffset, sector, sectors) in EnumeratePointers(node))
-      this._slots.Add(new Slot {
-        FieldOffset = this._extentsNodeOffset + fieldOffset,
-        OriginalSector = sector, Sector = sector, Sectors = sectors,
-      });
+      var found = false;
+      foreach (var (fieldOffset, extentSector, sectors) in EnumeratePointers(node)) {
+        this._slots.Add(new Slot {
+          NodeOffset = offset, FieldOffset = fieldOffset,
+          OriginalSector = extentSector, Sector = extentSector, Sectors = sectors,
+        });
+        found = true;
+      }
+
+      if (found) this._nodes.Add(offset);
+    }
   }
 
   /// <summary>Every extent pointer in a node: where its word is, and what it says.</summary>
@@ -186,29 +195,33 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   /// </remarks>
   public void Settle(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
-    if (this._extentsNodeOffset == 0 || this._slots.Count == 0) return;
+    if (this._nodes.Count == 0) return;
 
-    var node = new byte[this._extentsNodeSectors * SectorSize];
-    image.Position = this._extentsNodeOffset;
-    image.ReadExactly(node);
+    var node = new byte[this._nodeSectors * SectorSize];
+    foreach (var nodeOffset in this._nodes) {
+      image.Position = nodeOffset;
+      image.ReadExactly(node);
 
-    foreach (var slot in this._slots) {
-      var at = (int)(slot.FieldOffset - this._extentsNodeOffset);
-      var word = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(at));
-      var device = (byte)((word >> 48) & 0xFF);
-      var generation = (byte)((word >> 56) & 0xFF);
-      BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(at),
-        ExtentPointer(slot.Sector, device, generation));
+      foreach (var slot in this._slots) {
+        if (slot.NodeOffset != nodeOffset) continue;
+
+        var word = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(slot.FieldOffset));
+        var device = (byte)((word >> 48) & 0xFF);
+        var generation = (byte)((word >> 56) & 0xFF);
+        BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(slot.FieldOffset),
+          ExtentPointer(slot.Sector, device, generation));
+      }
+
+      var words = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(158));
+      var end = BcacheFsNodeBuilder.KeysOffset + words * 8;
+      var checksum = MetadataChecksum(node.AsSpan(16, end - 16));
+      BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(0), checksum);
+      BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(8), 0);
+
+      image.Position = nodeOffset;
+      image.Write(node, 0, (end + SectorSize - 1) / SectorSize * SectorSize);
     }
 
-    var words = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(158));
-    var end = BcacheFsNodeBuilder.KeysOffset + words * 8;
-    var checksum = MetadataChecksum(node.AsSpan(16, end - 16));
-    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(0), checksum);
-    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(8), 0);
-
-    image.Position = this._extentsNodeOffset;
-    image.Write(node, 0, (end + SectorSize - 1) / SectorSize * SectorSize);
     image.Flush();
   }
 }

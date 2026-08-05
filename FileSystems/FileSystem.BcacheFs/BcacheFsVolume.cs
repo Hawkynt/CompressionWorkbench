@@ -135,12 +135,66 @@ internal sealed class BcacheFsVolume {
   }
 
   /// <summary>Every key in the tree whose root is <paramref name="btree" />.</summary>
+  /// <remarks>
+  /// A tree may be one node or a root of pointers over a row of leaves; the node's
+  /// own header says which, and a pointer's value says where the next one is.
+  /// </remarks>
   internal IEnumerable<Entry> Keys(int btree) {
     if (!this.Roots.TryGetValue(btree, out var sector)) yield break;
+
+    foreach (var entry in this.KeysOfNode(sector, depth: 0))
+      yield return entry;
+  }
+
+  /// <summary>Where every node of a tree sits, roots and leaves alike.</summary>
+  internal IEnumerable<long> NodeSectors(int btree) {
+    if (!this.Roots.TryGetValue(btree, out var sector)) yield break;
+
+    var pending = new Stack<(long Sector, int Depth)>();
+    pending.Push((sector, 0));
+    while (pending.Count > 0) {
+      var (at, depth) = pending.Pop();
+      yield return at;
+      if (depth > 8) continue;
+
+      var node = this.ReadAt(at * SectorSize, this.BucketSectorCount * SectorSize);
+      if (node == null || ReadLevel(node) == 0) continue;
+
+      foreach (var child in this.ChildSectors(node))
+        pending.Push((child, depth + 1));
+    }
+  }
+
+  private static int ReadLevel(byte[] node)
+    => (int)((BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(24)) >> 4) & 0xF);
+
+  private IEnumerable<long> ChildSectors(byte[] node) {
+    foreach (var key in this.NodeEntries(node)) {
+      if (key.Type != KeyBtreePtrV2 || key.Value.Length < 48) continue;
+      var pointer = BinaryPrimitives.ReadUInt64LittleEndian(key.Value.AsSpan(40));
+      if (IsPointer(pointer)) yield return PointerSector(pointer);
+    }
+  }
+
+  private IEnumerable<Entry> KeysOfNode(long sector, int depth) {
+    if (depth > 8) yield break;
 
     var node = this.ReadAt(sector * SectorSize, this.BucketSectorCount * SectorSize);
     if (node == null || node.Length < BcacheFsNodeBuilder.KeysOffset) yield break;
 
+    if (ReadLevel(node) == 0) {
+      foreach (var entry in this.NodeEntries(node))
+        yield return entry;
+      yield break;
+    }
+
+    foreach (var child in this.ChildSectors(node))
+      foreach (var entry in this.KeysOfNode(child, depth + 1))
+        yield return entry;
+  }
+
+  /// <summary>The keys one node holds, across every run of them it carries.</summary>
+  private IEnumerable<Entry> NodeEntries(byte[] node) {
     var format = ReadFormat(node.AsSpan(80));
     // The first run of keys starts inside the node header; further runs, if the
     // node was appended to, follow at sector boundaries with a header of their own.

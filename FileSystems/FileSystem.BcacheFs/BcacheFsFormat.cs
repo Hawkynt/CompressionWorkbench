@@ -139,7 +139,7 @@ internal static class BcacheFsFormat {
   /// Where a volume's own structures end and its files may begin: the two front
   /// superblock slots, the journal, and one bucket for each b-tree.
   /// </summary>
-  internal const long MetadataEndBytes = (33L + 16 + 7) * BucketBytes;
+  internal const long MetadataEndBytes = (33L + 16 + 64) * BucketBytes;
 
   /// <summary>The root directory's inode number.</summary>
   internal const ulong RootInode = 4096;
@@ -304,6 +304,20 @@ internal static class BcacheFsFormat {
     BinaryPrimitives.WriteUInt32LittleEndian(destination, position.Snapshot);
     BinaryPrimitives.WriteUInt64LittleEndian(destination[4..], position.Offset);
     BinaryPrimitives.WriteUInt64LittleEndian(destination[12..], position.Inode);
+  }
+
+  /// <summary>The position immediately after this one.</summary>
+  /// <remarks>
+  /// It is what separates one b-tree node from the next: a node's range ends at a
+  /// key it holds, and its neighbour's begins at the position after it, so that no
+  /// position falls in both or in neither.
+  /// </remarks>
+  internal static Bpos Successor(Bpos position) {
+    if (position.Snapshot != uint.MaxValue)
+      return position with { Snapshot = position.Snapshot + 1 };
+    if (position.Offset != ulong.MaxValue)
+      return new Bpos(position.Inode, position.Offset + 1, 0);
+    return new Bpos(position.Inode + 1, 0, 0);
   }
 
   internal static Bpos ReadBpos(ReadOnlySpan<byte> source) => new(

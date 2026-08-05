@@ -45,6 +45,17 @@ public sealed class BcacheFsWriter {
 
   private const int FirstMetadataBucket = JournalFirstBucket + JournalBuckets;
 
+  /// <summary>
+  /// Buckets set aside for the b-trees, whatever shape they turn out to be.
+  /// </summary>
+  /// <remarks>
+  /// A fixed reservation rather than a count worked out from the files, because
+  /// where a volume's own structures end has to be knowable from the volume rather
+  /// than from what was written into it — the layout pass needs it, and so does
+  /// anything asking what space is free.
+  /// </remarks>
+  private const int MetadataBuckets = 64;
+
   /// <summary>Largest extent one key describes: the size field is seven bits of sectors.</summary>
   private const int MaxExtentSectors = 128;
 
@@ -98,7 +109,7 @@ public sealed class BcacheFsWriter {
     ArgumentNullException.ThrowIfNull(fileSizes);
     var sizes = fileSizes as IReadOnlyCollection<long> ?? [.. fileSizes];
 
-    var buckets = (long)FirstMetadataBucket + BtreeCount;
+    var buckets = (long)FirstMetadataBucket + MetadataBuckets;
     foreach (var size in sizes)
       buckets += (size + BucketBytes - 1) / BucketBytes;
 
@@ -130,16 +141,11 @@ public sealed class BcacheFsWriter {
     // it covers and those are not known until they have been read.
     WriteFileData(output, plan);
 
-    var roots = new List<(int Btree, Key Pointer)>(Btrees.Length);
-    var node = new byte[BucketBytes];
+    var roots = new List<(int Btree, int Level, Key Pointer)>(Btrees.Length);
+    var nextMetadataBucket = (long)FirstMetadataBucket;
     for (var i = 0; i < Btrees.Length; ++i) {
-      var builder = plan.Nodes[i];
-      Array.Clear(node);
-      var sectors = builder.Write(node);
-      var sector = (long)(FirstMetadataBucket + i) * BucketSectors;
-      output.Position = sector * SectorSize;
-      output.Write(node, 0, sectors * SectorSize);
-      roots.Add((Btrees[i], builder.Pointer(sector, sectors)));
+      var (level, pointer) = this.WriteTree(output, plan.Nodes[i], ref nextMetadataBucket);
+      roots.Add((Btrees[i], level, pointer));
     }
 
     // ── The superblock, and its copies ────────────────────────────────────
@@ -155,6 +161,79 @@ public sealed class BcacheFsWriter {
     output.Position = LayoutSector * SectorSize;
     output.Write(superblock, SbLayoutOffset, SbLayoutBytes);
     output.Flush();
+  }
+
+
+  /// <summary>
+  /// Writes one b-tree and returns the pointer to its root.
+  /// </summary>
+  /// <remarks>
+  /// A tree whose keys fit in one node is that node. A tree whose keys do not is a
+  /// row of leaves, each responsible for a range of positions, under a root that
+  /// holds one pointer per leaf — and the ranges have to meet exactly: a leaf ends
+  /// at the last key it holds and its neighbour begins at the position after it, so
+  /// that every position falls inside exactly one of them.
+  /// </remarks>
+  private (int Level, Key Pointer) WriteTree(Stream output, BcacheFsNodeBuilder tree, ref long nextBucket) {
+    var buffer = new byte[BucketBytes];
+
+    Key Place(BcacheFsNodeBuilder node, ref long bucket) {
+      Array.Clear(buffer);
+      var sectors = node.Write(buffer);
+      var sector = bucket * BucketSectors;
+      ++bucket;
+      if (bucket > FirstMetadataBucket + MetadataBuckets)
+        throw new NotSupportedException(
+          $"A bcachefs volume of this many files needs more than the {MetadataBuckets} buckets "
+          + "reserved for its b-trees.");
+
+      output.Position = sector * SectorSize;
+      output.Write(buffer, 0, sectors * SectorSize);
+      return node.Pointer(sector, sectors);
+    }
+
+    if (tree.Bytes <= BucketBytes)
+      return (0, Place(tree, ref nextBucket));
+
+    var keys = tree.Keys.OrderBy(k => k, Comparer<Key>.Create((a, b) => Compare(a.Position, b.Position))).ToList();
+    var leaves = new List<BcacheFsNodeBuilder>();
+    var root = new BcacheFsNodeBuilder {
+      BtreeId = tree.BtreeId, Seq = this.NextSeed(), SuperblockMagic = tree.SuperblockMagic, Level = 1,
+    };
+
+    var index = 0;
+    while (index < keys.Count) {
+      var leaf = new BcacheFsNodeBuilder {
+        BtreeId = tree.BtreeId, Seq = this.NextSeed(), SuperblockMagic = tree.SuperblockMagic,
+        MinKey = leaves.Count == 0 ? Bpos.Min : Successor(keys[index - 1].Position),
+      };
+
+      var bytes = BcacheFsNodeBuilder.KeysOffset;
+      while (index < keys.Count && bytes + keys[index].Bytes <= BucketBytes) {
+        bytes += keys[index].Bytes;
+        leaf.Add(keys[index]);
+        ++index;
+      }
+
+      if (leaf.Count == 0)
+        throw new NotSupportedException("A bcachefs key too large for one b-tree node.");
+
+      leaves.Add(leaf);
+    }
+
+    for (var i = 0; i < leaves.Count; ++i) {
+      // The last leaf carries the tree's upper bound; the rest end at their own
+      // last key.
+      var bounded = new BcacheFsNodeBuilder {
+        BtreeId = leaves[i].BtreeId, Seq = leaves[i].Seq, SuperblockMagic = leaves[i].SuperblockMagic,
+        MinKey = leaves[i].MinKey,
+        MaxKey = i == leaves.Count - 1 ? Bpos.Max : leaves[i].Keys[^1].Position,
+      };
+      foreach (var key in leaves[i].Keys) bounded.Add(key);
+      root.Add(Place(bounded, ref nextBucket));
+    }
+
+    return (1, Place(root, ref nextBucket));
   }
 
   // ── Planning ────────────────────────────────────────────────────────────
@@ -267,7 +346,7 @@ public sealed class BcacheFsWriter {
     }
 
     // ── Where everything goes ─────────────────────────────────────────────
-    var bucket = (long)FirstMetadataBucket + BtreeCount;
+    var bucket = (long)FirstMetadataBucket + MetadataBuckets;
     foreach (var file in files) {
       file.FirstSector = bucket * BucketSectors;
       bucket += (file.Length + BucketBytes - 1) / BucketBytes;
@@ -501,7 +580,7 @@ public sealed class BcacheFsWriter {
 
   // ── Superblock ──────────────────────────────────────────────────────────
 
-  private byte[] BuildSuperblock(Plan plan, List<(int Btree, Key Pointer)> roots) {
+  private byte[] BuildSuperblock(Plan plan, List<(int Btree, int Level, Key Pointer)> roots) {
     var sections = new List<byte[]> {
       this.MembersSection(plan),
       JournalSection(),
@@ -624,7 +703,7 @@ public sealed class BcacheFsWriter {
     return section;
   }
 
-  private static byte[] CleanSection(List<(int Btree, Key Pointer)> roots) {
+  private static byte[] CleanSection(List<(int Btree, int Level, Key Pointer)> roots) {
     // Two clock entries, then one entry per b-tree root.
     var entries = new List<byte[]>();
 
@@ -637,11 +716,13 @@ public sealed class BcacheFsWriter {
       entries.Add(entry);
     }
 
-    foreach (var (btree, pointer) in roots) {
+    foreach (var (btree, level, pointer) in roots) {
       var entry = new byte[8 + pointer.Bytes];
       BinaryPrimitives.WriteUInt16LittleEndian(entry, (ushort)(pointer.Bytes / 8));
       entry[2] = (byte)btree;
-      entry[3] = 0;                                                            // level
+      // How deep the tree is: a reader checks this against the node it finds, and a
+      // root of pointers announced as a root of keys is a root it will not read.
+      entry[3] = (byte)level;
       entry[4] = 1;                                                            // type: btree root
       WriteKey(entry.AsSpan(8), pointer);
       entries.Add(entry);
