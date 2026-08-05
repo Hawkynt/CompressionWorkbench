@@ -40,14 +40,12 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   private readonly List<Slot> _slots = [];
   private long _extentsNodeOffset;
   private int _extentsNodeSectors;
-  private long _firstDataByte;
 
   /// <summary>Reads the extents b-tree so its pointers can be found again.</summary>
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     this._slots.Clear();
     this._extentsNodeOffset = 0;
-    this._firstDataByte = MetadataEndBytes;
 
     var volume = BcacheFsVolume.Open(image);
     if (!volume.Valid || !volume.Roots.TryGetValue(BtreeExtents, out var rootSector)) return;
@@ -59,16 +57,11 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
     image.Position = this._extentsNodeOffset;
     image.ReadExactly(node);
 
-    var first = long.MaxValue;
-    foreach (var (fieldOffset, sector, sectors) in EnumeratePointers(node)) {
+    foreach (var (fieldOffset, sector, sectors) in EnumeratePointers(node))
       this._slots.Add(new Slot {
         FieldOffset = this._extentsNodeOffset + fieldOffset,
         OriginalSector = sector, Sector = sector, Sectors = sectors,
       });
-      first = Math.Min(first, sector * SectorSize);
-    }
-
-    if (first != long.MaxValue) this._firstDataByte = first;
   }
 
   /// <summary>Every extent pointer in a node: where its word is, and what it says.</summary>
@@ -116,8 +109,16 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   /// </remarks>
   public int BlockSize => BucketBytes;
 
-  /// <inheritdoc />
-  public long FirstDataByte => this._firstDataByte;
+  /// <summary>
+  /// The first byte a file's bytes may occupy.
+  /// </summary>
+  /// <remarks>
+  /// It is where the volume's own structures end, not where the first file
+  /// currently starts. Taking the second would mean a volume whose files had been
+  /// pushed to the tail could never be brought back to the front: the layout would
+  /// be told the front was occupied by something it must not touch.
+  /// </remarks>
+  public long FirstDataByte => MetadataEndBytes;
 
   /// <inheritdoc />
   public bool RepointsRunsIndependently => true;

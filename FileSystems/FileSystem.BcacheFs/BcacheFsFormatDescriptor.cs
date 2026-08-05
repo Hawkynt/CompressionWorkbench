@@ -361,18 +361,16 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       using var reader = new BcacheFsReader(image);
       if (!reader.Valid) return [];
 
-      var firstData = reader.Length;
       List<DefragBlockInfo> files = [];
-      foreach (var entry in reader.Entries) {
-        foreach (var extent in entry.Extents) {
-          var offset = extent.FirstSector * BcacheFsFormat.SectorSize;
-          if (offset < firstData) firstData = offset;
-          files.Add(new DefragBlockInfo(offset, (long)extent.Sectors * BcacheFsFormat.SectorSize,
-            DefragBlockKind.Used, entry.Name));
-        }
-      }
+      foreach (var entry in reader.Entries)
+        foreach (var extent in entry.Extents)
+          files.Add(new DefragBlockInfo(extent.FirstSector * BcacheFsFormat.SectorSize,
+            (long)extent.Sectors * BcacheFsFormat.SectorSize, DefragBlockKind.Used, entry.Name));
 
-      var metadataEnd = files.Count > 0 ? firstData : BcacheFsFormat.MetadataEndBytes;
+      // The volume's own structures occupy a fixed run at the front, whatever the
+      // files have since been moved to; saying "up to the first file" instead would
+      // put free space out of reach the moment a layout pushed the files back.
+      const long metadataEnd = BcacheFsFormat.MetadataEndBytes;
       result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
         "Superblock slots, the journal and the b-trees"));
       files.Sort((a, b) => a.Offset.CompareTo(b.Offset));
