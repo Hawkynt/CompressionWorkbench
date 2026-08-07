@@ -7,13 +7,17 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.BcacheFs;
 
 /// <summary>
-/// Descriptor for BcacheFS volume images (modern Linux FS, mainlined in
-/// kernel 6.7). Surfaces the parsed <c>bch_sb</c> superblock at offset 4096
-/// as structured metadata plus the raw image, and emits a WORM-minimal,
-/// SB-only image via <see cref="BcacheFsWriter"/> that <c>bcachefs show-super</c>
-/// accepts. Walking the b-tree object graph (extents/dirents/inodes) and
-/// emitting B-tree nodes are explicitly out of scope — see
-/// <c>Hawkynt.FileFormats.FileSystems/README.md</c> for the full gap statement.
+/// Descriptor for bcachefs volumes: a superblock at offset 4096, and b-trees under
+/// it holding the names, the metadata and the positions of every file's bytes.
+/// Volumes written here are read by the kernel driver, and read back by
+/// <see cref="BcacheFsReader" /> — which understands both the packed keys
+/// <c>mkfs.bcachefs</c> writes and the plain ones this project does.
+///
+/// <para>What such a volume does not carry is allocation information: the trees a
+/// running filesystem keeps so it can decide where to write next. The format has a
+/// feature bit that says so and bcachefs's own tooling strips exactly those trees
+/// for read-only use; the consequence is that these volumes mount read-only with
+/// <c>-o norecovery</c>. See <see cref="BcacheFsWriter" />.</para>
 ///
 /// References:
 /// <list type="bullet">
@@ -99,7 +103,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return entries;
   }
 
-  /// <summary>Files the CWB-BCH-WB payload area holds. Never throws — empty when there are none.</summary>
+  /// <summary>The files the volume holds. Never throws — empty when it holds none.</summary>
   private static IReadOnlyList<BcacheFsReader.Entry> ReadPayload(Stream stream) {
     try {
       if (stream.CanSeek) stream.Position = 0;
@@ -150,12 +154,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
-  /// Emits a BcacheFS image carrying a spec-compliant <c>struct bch_sb</c> +
-  /// four-copy <c>bch_sb_layout</c> + <c>BCH_SB_FIELD_members_v2</c> describing
-  /// the single device, plus the input files in the CWB-BCH-WB payload area.
-  /// <c>bcachefs show-super</c> accepts the result; the payload is not a b-tree,
-  /// so the kernel driver does not see the files — the scope
-  /// <see cref="BcacheFsWriter" /> documents.
+  /// Writes a bcachefs volume: the superblock and the layout naming its copies, the
+  /// member entry describing the single device, and the b-trees that hold the input
+  /// files' names, metadata and bytes.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -201,28 +202,22 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// BcacheFS defragment is unsupported in this implementation. The writer
-  /// emits an SB-only WORM image with no B-tree (extents/dirents/inodes are
-  /// the multi-week follow-up); without a reader that walks the b-tree
-  /// object graph there is nothing to extract and re-pack, so the rebuild
-  /// path is not viable. Per project policy, the descriptor still advertises
-  /// the capability so capability surfaces stay honest.
+  /// Lays the volume's files out as asked, moving them where that can be done and
+  /// writing the volume out again where it cannot.
   /// </summary>
-  /// <summary>
-  /// Rewrites the image with every file laid out contiguously from the start of
-  /// the payload area. Each entry is spilled to scratch and the writer pulls it
-  /// back, so the rebuild is not bounded by what a byte[] can hold.
-  /// </summary>
+  /// <remarks>
+  /// Moving is the first choice because in bcachefs it is cheap: where a run of
+  /// bytes sits is one word in one key of the extents b-tree, so a move is the copy
+  /// plus that word. The rebuild is kept for the layouts the planner declines and
+  /// for the case where the moved volume no longer reads back.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
-    // Moving what is out of place beats writing the image out again: a file in
-    // the payload area is one contiguous run of blocks and its directory entry
-    // records where that run starts, so a move is the copy plus eight bytes.
-    // It is also what lets the other two modes work at all — the rebuild lays
-    // every file out from the start of the payload area and can do nothing
-    // else.
+    // Moving what is out of place beats writing the volume out again, and it is
+    // also what lets every mode work: the rebuild can only lay files out from the
+    // front, so it answers for two of the modes and nothing else.
     {
       var planned = false;
       // The in-place pass is kept only if every payload still reads back: it
@@ -325,8 +320,13 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     options.OnProgress?.Invoke(new DefragProgressEvent(
       "scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
 
+    // The volume ends before the file does: the last superblock slot sits at the
+    // tail, and a layout that runs into it writes over the copy a reader falls
+    // back on.
+    var volumeEnd = archive.Length - (long)BcacheFsFormat.SbSlotSectors * BcacheFsFormat.SectorSize;
+
     var moves = Compression.Core.Layout.DefragPlanner.Plan(
-      extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+      extents, mover.FirstDataByte, volumeEnd, mover.BlockSize,
       options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
       metadataZone: options.MetadataZonePlacement);
     if (moves.Count == 0) {
@@ -336,7 +336,11 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
 
     Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
-      archive.Length, reinitAfterMove: null);
+      volumeEnd, reinitAfterMove: null);
+
+    // Every pointer the pass moved is written back at once: they all live in one
+    // b-tree node, under one checksum.
+    mover.Settle(archive);
 
     archive.Position = 0;
     var postExtents = this.EnumerateExtents(archive).ToList();
@@ -345,9 +349,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
-  /// Reports the image's layout: the superblock slots and the payload directory
-  /// as metadata, each file's contiguous run of blocks as used, and the tail —
-  /// where the end-of-device backup superblocks live — as reserved.
+  /// Reports the volume's layout: everything up to the first file's bytes is the
+  /// superblock, the journal and the b-trees; each file's extents are its own; and
+  /// the slot at the tail holds the last copy of the superblock.
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
@@ -357,27 +361,26 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       using var reader = new BcacheFsReader(image);
       if (!reader.Valid) return [];
 
-      var firstData = reader.Length;
       List<DefragBlockInfo> files = [];
-      foreach (var e in reader.Entries) {
-        if (e.Size <= 0) continue;
-        var offset = e.FirstBlock * (long)BcacheFsWriter.PayloadBlockSize;
-        if (offset < firstData) firstData = offset;
-        files.Add(new DefragBlockInfo(offset, e.Size, DefragBlockKind.Used, e.Name));
-      }
+      foreach (var entry in reader.Entries)
+        foreach (var extent in entry.Extents)
+          files.Add(new DefragBlockInfo(extent.FirstSector * BcacheFsFormat.SectorSize,
+            (long)extent.Sectors * BcacheFsFormat.SectorSize, DefragBlockKind.Used, entry.Name));
 
-      var metadataEnd = files.Count > 0
-        ? firstData
-        : Math.Min(reader.Length, BcacheFsWriter.FirstPayloadBlock * (long)BcacheFsWriter.PayloadBlockSize);
+      // The volume's own structures occupy a fixed run at the front, whatever the
+      // files have since been moved to; saying "up to the first file" instead would
+      // put free space out of reach the moment a layout pushed the files back.
+      const long metadataEnd = BcacheFsFormat.MetadataEndBytes;
       result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
-        "Superblock layout, superblock slots and the payload directory"));
+        "Superblock slots, the journal and the b-trees"));
+      files.Sort((a, b) => a.Offset.CompareTo(b.Offset));
       result.AddRange(files);
 
-      // The last megabyte holds the end-of-device backup superblocks.
-      var tail = Math.Max(0, reader.Length - (1L << 20));
+      // The last superblock slot sits at the end of the device.
+      var tail = reader.Length - (long)BcacheFsFormat.SbSlotSectors * BcacheFsFormat.SectorSize;
       if (tail > metadataEnd)
         result.Add(new DefragBlockInfo(tail, reader.Length - tail,
-          DefragBlockKind.MetadataReserved, "End-of-device superblock backups"));
+          DefragBlockKind.MetadataReserved, "The superblock copy at the end of the device"));
     } catch {
       return [];
     }

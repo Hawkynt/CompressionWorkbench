@@ -121,8 +121,8 @@ public static class ApfsStructuralValidator {
     r.MaxXidSeen = Math.Max(r.MaxXidSeen, apsbXid);
 
     // Walk volume OMAP and resolve FS-tree root.
-    var volOmapPhys = BinaryPrimitives.ReadUInt64LittleEndian(apsb[392..]);
-    var fsTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsb[400..]);
+    var volOmapPhys = BinaryPrimitives.ReadUInt64LittleEndian(apsb[APSB_OMAP_OID..]);
+    var fsTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsb[APSB_ROOT_TREE_OID..]);
     if (volOmapPhys == 0 || fsTreeVirtOid == 0) {
       r.Errors.Add("APSB omap_oid or root_tree_oid is zero");
       return r;
@@ -338,9 +338,11 @@ public static class ApfsStructuralValidator {
       if (!inodes.Contains(childIno))
         r.Errors.Add($"FS-tree: DIR_REC name={name} → inode {childIno} not found");
 
-    // Every non-root inode must be named by a DIR_REC.
+    // Every non-root inode must be named by a DIR_REC. The reserved inodes below the
+    // first user one are the exception: the root, and the private directory a mount
+    // reads by number, which nothing in the volume links to.
     foreach (var ino in inodes) {
-      if (ino == APFS_ROOT_DIR_INO_NUM) continue;
+      if (ino < APFS_MIN_USER_INO_NUM) continue;
       if (!inodesNamed.Contains(ino))
         r.Errors.Add($"FS-tree: orphaned inode {ino} not named by any DIR_REC");
     }
@@ -354,12 +356,8 @@ public static class ApfsStructuralValidator {
     }
   }
 
-  private static string SafeReadName(byte[] key) {
-    if (key.Length < 12) return string.Empty;
-    var nameLen = (int)(BinaryPrimitives.ReadUInt32LittleEndian(key.AsSpan(8)) & 0x3FFu);
-    if (nameLen <= 0 || 12 + nameLen > key.Length) return string.Empty;
-    return Encoding.UTF8.GetString(key, 12, nameLen).TrimEnd('\0');
-  }
+  private static string SafeReadName(byte[] key)
+    => ApfsDrecKey.TryReadName(key, out var name) ? name : string.Empty;
 
   /// <summary>
   /// Compares two B-tree keys in APFS canonical order: (oid asc, type asc, then

@@ -356,11 +356,17 @@ public sealed class F2fsWriter {
     // Decide each directory's dentry storage: inline when the children (plus "." and
     // "..") fit the inline slot count, otherwise regular dentry data blocks laid out per
     // the F2FS multi-level hash-bucket scheme (fs/f2fs/dir.c).
+    // The root is the one directory that never gets inline dentries. The kernel reads a
+    // mounted inode's block count as the recorded one minus the inode itself, and
+    // f2fs_fill_super refuses the volume when the root's comes out zero — which is
+    // exactly what an inline root records, since it owns no data block at all. That
+    // refusal carries no message, so the volume simply fails to mount; mkfs.f2fs gives
+    // the root a real dentry block for the same reason.
     const int dotsSlots = 2;
     var allDirs = subdirPlan.Prepend(root).ToList();
     foreach (var d in allDirs) {
       var slots = dotsSlots + d.Children.Sum(c => DentrySlotsFor(c.Name));
-      if (slots <= NrInlineDentry) {
+      if (d.Nid != RootIno && slots <= NrInlineDentry) {
         d.UsesInlineDentry = true;
       } else {
         d.UsesInlineDentry = false;

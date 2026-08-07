@@ -14,9 +14,10 @@ namespace Compression.Tests.Qnx6;
 ///      content and round-trips alongside the pre-existing entries.
 ///   2. Remove eliminates the entry from List, zeroes the data extent (the
 ///      wipe contract), and the result still self-round-trips.
-///   3. After every mutation the secondary superblock at the tail is byte-equal
-///      to the primary at 0x2000 — the dual-superblock Power-Safe contract
-///      must hold synchronously across every Add/Remove call.
+///   3. After every mutation the secondary superblock — wherever the primary's own
+///      block count puts it, not simply at the tail — is byte-equal to the primary
+///      at 0x2000: the dual-superblock Power-Safe contract must hold synchronously
+///      across every Add/Remove call.
 ///
 /// External validation: the Linux kernel ships a read-only qnx6 driver
 /// (mainline since 2.6.39). When WSL + sudo + loop devices + qnx6 module are
@@ -269,9 +270,20 @@ public class Qnx6RwTests {
     Assert.That(img.Length, Is.GreaterThan(0x2000 + 512),
       $"{context}: image must be larger than primary superblock window.");
     var primary = img.AsSpan(0x2000, 512).ToArray();
-    var secondary = img.AsSpan(img.Length - 512, 512).ToArray();
+
+    // The mirror is not simply at the end of the image. A driver adds the boot and
+    // superblock areas to the block count the primary records and reads it there,
+    // so that is where it has to be — and the block it occupies is not one of the
+    // filesystem's own, which is what the count leaves room for.
+    var blockSize = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(0x2000 + 0x30));
+    var numBlocks = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(0x2000 + 0x3C));
+    var mirrorAt = (long)(numBlocks + (0x2000 + 0x1000) / blockSize) * blockSize;
+    Assert.That(mirrorAt + 512, Is.LessThanOrEqualTo(img.Length),
+      $"{context}: the mirror the superblock points at must be inside the image.");
+
+    var secondary = img.AsSpan((int)mirrorAt, 512).ToArray();
     Assert.That(secondary, Is.EqualTo(primary).AsCollection,
-      $"{context}: secondary superblock at tail must mirror primary byte-for-byte (Power-Safe contract).");
+      $"{context}: the secondary superblock must mirror the primary byte-for-byte (Power-Safe contract).");
   }
 
   private static int IndexOf(byte[] haystack, byte[] needle) {

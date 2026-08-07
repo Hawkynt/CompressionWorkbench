@@ -145,8 +145,7 @@ public static class NtfsInPlaceAdder {
     pos = WriteFileName(record, pos, name, parent, 0, isDirectory: true);
     pos = WriteEmptyIndexRoot(record, pos);
 
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0xFFFFFFFF);
-    pos += 4;
+    pos = NtfsWriter.WriteEndOfAttributes(record, pos);
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)pos);
     WriteUsaFixup(record, geo);
     return record;
@@ -659,8 +658,7 @@ public static class NtfsInPlaceAdder {
       ? WriteResidentData(record, pos, residentData)
       : WriteNonResidentData(record, pos, geo, runs!, dataSize);
 
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0xFFFFFFFF);
-    pos += 4;
+    pos = NtfsWriter.WriteEndOfAttributes(record, pos);
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)pos);         // used size
 
     WriteUsaFixup(record, geo);
@@ -691,7 +689,8 @@ public static class NtfsInPlaceAdder {
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 16), (uint)valueLen);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 20), 24);
     var v = pos + 24;
-    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v), (long)parent | (1L << 48));
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v),
+      (long)parent | ((long)NtfsWriter.SequenceOf(parent) << 48));
     var now = DateTime.UtcNow.ToFileTimeUtc();
     for (var t = 0; t < 4; t++) BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + 8 + t * 8), now);
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + 40), size);            // allocated
@@ -1182,14 +1181,16 @@ public static class NtfsInPlaceAdder {
     var keyLen = 66 + name.Length * 2;
     var entryLen = (16 + keyLen + 7) & ~7;
     var e = new byte[entryLen];
-    BinaryPrimitives.WriteInt64LittleEndian(e.AsSpan(0), (long)recordNum | (1L << 48)); // MFT ref (seq 1)
+    BinaryPrimitives.WriteInt64LittleEndian(e.AsSpan(0),
+      (long)recordNum | ((long)NtfsWriter.SequenceOf(recordNum) << 48)); // MFT ref
     BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(8), (ushort)entryLen);
     BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(10), (ushort)keyLen);
     // flags @12 = 0 (leaf, not last)
     // key = $FILE_NAME: parent ref @0, timestamps, sizes, name. ntfs-3g only needs
     // parent ref + name + namespace for index lookups; fill the rest coherently.
     var k = 16;
-    BinaryPrimitives.WriteInt64LittleEndian(e.AsSpan(k), (long)RootRecord | (1L << 48));
+    BinaryPrimitives.WriteInt64LittleEndian(e.AsSpan(k),
+      (long)RootRecord | ((long)NtfsWriter.SequenceOf(RootRecord) << 48));
     var now = DateTime.UtcNow.ToFileTimeUtc();
     for (var t = 0; t < 4; t++) BinaryPrimitives.WriteInt64LittleEndian(e.AsSpan(k + 8 + t * 8), now);
     e[k + 64] = (byte)name.Length;

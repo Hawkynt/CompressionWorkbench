@@ -1900,73 +1900,37 @@ public class ExternalFsInteropTests {
   }
 
   /// <summary>
-  /// Gap-documenting test: <c>bcachefs fsck</c> is expected to FAIL against
-  /// our current writer because we emit only an SB-validated image, not a
-  /// fully-bootable filesystem. The kernel rejects with
-  /// <c>insufficient_devices</c> during <c>bch2_trans_mark_dev_sb</c> because
-  /// the alloc B-tree is absent (we have no on-disk B-tree roots, no journal
-  /// entries, no replicas section, no allocator metadata).
+  /// <c>bcachefs fsck</c> accepts a volume written here, with nothing to fix.
   /// </summary>
   /// <remarks>
-  /// <para>
-  /// Reaching <c>bcachefs fsck</c> exit 0 against an empty filesystem requires
-  /// adding (per <c>fs/bcachefs/</c> in Linux 6.7+):
-  /// </para>
-  /// <list type="number">
-  ///   <item>SB sections: <c>replicas_v0</c> (16 B), <c>errors</c> (8 B),
-  ///     <c>counters</c> (~624 B), <c>journal_v2</c> (40 B), <c>members_v2</c>
-  ///     (~136 B), <c>clean</c> (~2768 B with 8 btree_root pointers + per-dev
-  ///     usage stats + clock).</item>
-  ///   <item>Compat-features bitmap:
-  ///     <c>alloc_info | alloc_metadata | extents_above_btree_updates_done | bformat_overflow_done</c>.</item>
-  ///   <item>8 on-disk btree roots (inodes, dirents, alloc, subvolumes,
-  ///     snapshots, freespace, backpointers, snapshot_trees) at bucket-aligned
-  ///     sectors, each carrying a <c>btree_node</c> header with CRC32C csum
-  ///     of the node body.</item>
-  ///   <item>Allocator metadata: every used bucket (~25 SB + 8 btree + 10
-  ///     journal) has a <c>bch_alloc</c> key in the alloc btree.</item>
-  ///   <item>Journal entries written into journal-bucket sectors with their
-  ///     own CRC32C csums.</item>
-  /// </list>
-  /// <para>
-  /// Honest scope: this is multi-week kernel-spec work. Until it lands, this
-  /// test asserts that fsck reports the *expected* failure (rather than
-  /// passing, which would be a false-positive). When the gap is closed, flip
-  /// the assertion to expect exit 0 and rename the test.
-  /// </para>
+  /// This test used to assert the opposite, and said so: the writer emitted a
+  /// superblock and no b-trees, so the checker refused the volume, and the test
+  /// held that refusal in place so a silent pass could not be mistaken for
+  /// correctness. The trees are written now — extents, inodes, dirents, and the
+  /// subvolume and snapshot keys that root them — and the checker walks all of
+  /// them and finds nothing to say.
   /// </remarks>
   [Test]
-  public void BcacheFs_OurImage_FsckRejectsExpectedGap() {
+  public void BcacheFs_OurImage_PassesFsck() {
     RequireWslTool("bcachefs", "bcachefs-tools");
     var w = new FileSystem.BcacheFs.BcacheFsWriter();
-    w.SetLabel("cwb-bcachefs-fsck-gap");
-    var imgPath = Path.Combine(this._tmpDir, "bcachefs_fsck_gap.img");
+    w.SetLabel("cwb-bcachefs-fsck");
+    w.AddFile("HELLO.TXT", System.Text.Encoding.ASCII.GetBytes("a file to check"));
+    w.AddFile("sub/NESTED.BIN", new byte[9000]);
+
+    var imgPath = Path.Combine(this._tmpDir, "bcachefs_fsck.img");
     using (var fs = File.Create(imgPath))
       w.WriteTo(fs);
     var wslImg = FsInteropToolbox.WinToWsl(imgPath);
 
-    // bcachefs fsck either crashes (SIGABRT in the journal subsystem because
-    // we have no journal at all) or reports `insufficient_devices` because
-    // the alloc btree is absent. Both prove the gap; what we MUST NOT see is
-    // a clean fsck pass, which would mean we're silently wrong about the gap.
-    // The "going read-write" + "check_inodes...done" + "delete_dead_inodes...done"
-    // sequence is what a successful empty-FS fsck looks like (see reference
-    // image fsck output in Hawkynt.FileFormats.FileSystems/README.md). We sniff for either of those
-    // success markers and fail loudly if seen.
-    var result = FsInteropToolbox.RunWsl($"bcachefs fsck -y {wslImg}");
+    var result = FsInteropToolbox.RunWsl($"bcachefs fsck -n {wslImg}");
     var combined = (result.StdOut ?? "") + "\n" + (result.StdErr ?? "");
-    var lookedClean =
-      result.ExitCode == 0
-      && combined.Contains("check_inodes... done", StringComparison.Ordinal)
-      && combined.Contains("check_root... done", StringComparison.Ordinal);
-    if (lookedClean)
-      Assert.Fail("bcachefs fsck unexpectedly succeeded against our SB-only image — " +
-                  "either we shipped real B-tree/journal/alloc support (great! promote " +
-                  "in Hawkynt.FileFormats.FileSystems/README.md and flip this assertion to expect exit 0) or " +
-                  "fsck silently skipped validation. Output:\n" + combined);
-    // Otherwise: gap is intact, test is informative. Don't fail CI on it.
-    TestContext.Out.WriteLine("[expected gap] bcachefs fsck rejected our SB-only image, as designed:");
-    TestContext.Out.WriteLine(combined.Length > 2048 ? combined[..2048] + "..." : combined);
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"bcachefs fsck rejected our volume:\n{combined}");
+    Assert.That(combined, Does.Contain("check_root... done"),
+      $"fsck should have walked the whole volume:\n{combined}");
+    Assert.That(combined, Does.Not.Contain(", fixing"),
+      $"fsck should have found nothing to repair:\n{combined}");
   }
 
   /// <summary>

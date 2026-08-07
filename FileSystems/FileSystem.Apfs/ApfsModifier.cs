@@ -186,13 +186,13 @@ internal static class ApfsModifier {
     // APSB.
     var apsb = ctx.Image.AsSpan((int)(ctx.ApsbBlock * BlockSize), (int)BlockSize);
     BinaryPrimitives.WriteUInt64LittleEndian(apsb[16..], newXid);
-    BinaryPrimitives.WriteUInt64LittleEndian(apsb[520..],
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[APSB_LAST_MOD_TIME..],
       (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL);
-    BinaryPrimitives.WriteUInt64LittleEndian(apsb[440..], ctx.NextOid);
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[APSB_NEXT_OBJ_ID..], ctx.NextOid);
     var fileCount = (ulong)CountInodes(ctx.FsRecords, isDir: false);
     var dirCount = (ulong)CountInodes(ctx.FsRecords, isDir: true);
-    BinaryPrimitives.WriteUInt64LittleEndian(apsb[448..], fileCount);
-    BinaryPrimitives.WriteUInt64LittleEndian(apsb[456..], dirCount);
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[APSB_NUM_FILES..], fileCount);
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[APSB_NUM_DIRECTORIES..], dirCount);
     ApfsFletcher64.Stamp(apsb);
 
     // Checkpoint map.
@@ -279,9 +279,7 @@ internal static class ApfsModifier {
       var keyType = (int)(oidAndType >> 60);
       var oid = oidAndType & 0x0FFFFFFFFFFFFFFFUL;
       if (keyType != APFS_TYPE_DIR_REC || oid != parentOid) continue;
-      var nameLen = (int)(BinaryPrimitives.ReadUInt32LittleEndian(rec.Key.AsSpan(8)) & 0x3FFu);
-      if (nameLen <= 0 || 12 + nameLen > rec.Key.Length) continue;
-      var actual = Encoding.UTF8.GetString(rec.Key, 12, nameLen).TrimEnd('\0');
+      if (!ApfsDrecKey.TryReadName(rec.Key, out var actual)) continue;
       if (!string.Equals(actual, name, StringComparison.Ordinal)) continue;
       if (rec.Value.Length < 18) continue;
       childOid = BinaryPrimitives.ReadUInt64LittleEndian(rec.Value);
@@ -344,12 +342,9 @@ internal static class ApfsModifier {
       var oid = oidAndType & 0x0FFFFFFFFFFFFFFFUL;
 
       if (keyType == APFS_TYPE_DIR_REC && oid == parentIno) {
-        var nameLen = (int)(BinaryPrimitives.ReadUInt32LittleEndian(rec.Key.AsSpan(8)) & 0x3FFu);
-        if (nameLen > 0 && 12 + nameLen <= rec.Key.Length) {
-          var actualName = Encoding.UTF8.GetString(rec.Key, 12, nameLen).TrimEnd('\0');
-          if (string.Equals(actualName, fileName, StringComparison.Ordinal))
-            continue;
-        }
+        if (ApfsDrecKey.TryReadName(rec.Key, out var actualName)
+            && string.Equals(actualName, fileName, StringComparison.Ordinal))
+          continue;
       }
       if ((keyType == APFS_TYPE_INODE || keyType == APFS_TYPE_FILE_EXTENT) && oid == fileIno)
         continue;
@@ -448,8 +443,8 @@ internal static class ApfsModifier {
       throw new InvalidDataException("APFS: cannot resolve APSB via container OMAP.");
 
     var apsb = image.AsSpan((int)(apsbPhys * BlockSize), (int)BlockSize);
-    var volOmapBlock = BinaryPrimitives.ReadUInt64LittleEndian(apsb[392..]);
-    var fsTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsb[400..]);
+    var volOmapBlock = BinaryPrimitives.ReadUInt64LittleEndian(apsb[APSB_OMAP_OID..]);
+    var fsTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsb[APSB_ROOT_TREE_OID..]);
     var volOmap = image.AsSpan((int)(volOmapBlock * BlockSize), (int)BlockSize);
     var volOmapTreeBlock = BinaryPrimitives.ReadUInt64LittleEndian(volOmap[48..]);
     var fsTreePhys = ApfsBtreeOps.ResolveOidViaOmapTree(image, volOmapTreeBlock, fsTreeVirtOid);
@@ -466,7 +461,7 @@ internal static class ApfsModifier {
       Image = image,
       FsRecords = fsRecords,
       CurrentXid = BinaryPrimitives.ReadUInt64LittleEndian(nx[16..]),
-      NextOid = Math.Max(BinaryPrimitives.ReadUInt64LittleEndian(apsb[440..]), APFS_MIN_USER_INO_NUM),
+      NextOid = Math.Max(BinaryPrimitives.ReadUInt64LittleEndian(apsb[APSB_NEXT_OBJ_ID..]), APFS_MIN_USER_INO_NUM),
       FsTreeRootBlock = fsTreePhys,
       FsTreeOid = fsTreeOid,
       FsTreeVirtOid = fsTreeVirtOid,
@@ -504,6 +499,9 @@ internal static class ApfsModifier {
       new(BuildDrecKey(parentIno, name), BuildDrecValue(fileIno, isDir: false)),
       new(BuildInodeKey(fileIno), BuildInodeValue(fileIno, parentIno, data.LongLength, isDir: false, nchildren: 1)),
     };
+    // The stream's share count, which a driver reads before it opens the file.
+    list.Add(new ApfsBtreeOps.Record(
+      ApfsInodeRecord.BuildDstreamIdKey(fileIno), ApfsInodeRecord.BuildDstreamIdValue(1)));
     if (data.Length > 0)
       list.Add(new ApfsBtreeOps.Record(BuildFileExtentKey(fileIno, 0),
         BuildFileExtentValue((ulong)data.LongLength, physBlock)));
@@ -516,14 +514,8 @@ internal static class ApfsModifier {
     return k;
   }
 
-  private static byte[] BuildDrecKey(ulong parentOid, string name) {
-    var nameBytes = Encoding.UTF8.GetBytes(name + "\0");
-    var k = new byte[8 + 4 + nameBytes.Length];
-    BinaryPrimitives.WriteUInt64LittleEndian(k, parentOid | ((ulong)APFS_TYPE_DIR_REC << 60));
-    BinaryPrimitives.WriteUInt32LittleEndian(k.AsSpan(8), (uint)nameBytes.Length & 0x3FFu);
-    nameBytes.CopyTo(k, 12);
-    return k;
-  }
+  private static byte[] BuildDrecKey(ulong parentOid, string name)
+    => ApfsDrecKey.Build(parentOid, name);
 
   private static byte[] BuildFileExtentKey(ulong ino, ulong logicalOffset) {
     var k = new byte[16];
@@ -532,21 +524,9 @@ internal static class ApfsModifier {
     return k;
   }
 
-  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren) {
-    var v = new byte[92];
-    BinaryPrimitives.WriteUInt64LittleEndian(v, parentId);
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(8), ino);
-    var nowNs = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL;
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(16), nowNs);
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(24), nowNs);
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(32), nowNs);
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(40), nowNs);
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(48), 0);
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(56), nchildren);
-    BinaryPrimitives.WriteUInt16LittleEndian(v.AsSpan(80), isDir ? S_IFDIR : S_IFREG);
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(84), (ulong)size);
-    return v;
-  }
+  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren)
+    => ApfsInodeRecord.BuildValue(ino, parentId, size, isDir, nchildren);
+
 
   private static byte[] BuildDrecValue(ulong fileId, bool isDir) {
     var v = new byte[18];
@@ -557,9 +537,11 @@ internal static class ApfsModifier {
     return v;
   }
 
+  /// <summary>Writes one file extent, whose length names whole blocks.</summary>
   private static byte[] BuildFileExtentValue(ulong lengthBytes, ulong physBlockNum) {
     var v = new byte[24];
-    BinaryPrimitives.WriteUInt64LittleEndian(v, lengthBytes & 0x00FFFFFFFFFFFFFFUL);
+    var covered = (lengthBytes + DEFAULT_BLOCK_SIZE - 1) / DEFAULT_BLOCK_SIZE * DEFAULT_BLOCK_SIZE;
+    BinaryPrimitives.WriteUInt64LittleEndian(v, covered & 0x00FFFFFFFFFFFFFFUL);
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(8), physBlockNum);
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(16), 0);
     return v;

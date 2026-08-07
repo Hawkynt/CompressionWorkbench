@@ -73,9 +73,9 @@ public sealed class ApfsReader : IDisposable {
     var apsbBlock = this.BlockSpan((long)apsbPhys);
     if (BinaryPrimitives.ReadUInt32LittleEndian(apsbBlock[32..]) != ApsbMagicLE) return;
 
-    // APSB → volume OMAP phys oid (apfs_omap_oid at +392), root tree virtual OID at +400.
-    var volOmapPhys = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[392..]);
-    var rootTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[400..]);
+    // APSB → the volume's object map, by block, and its filesystem tree, by identifier.
+    var volOmapPhys = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_OMAP_OID..]);
+    var rootTreeVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(apsbBlock[APSB_ROOT_TREE_OID..]);
     if (volOmapPhys == 0 || rootTreeVirtOid == 0) return;
 
     var rootTreePhys = this.ResolveOidViaOmap(volOmapPhys, rootTreeVirtOid);
@@ -118,10 +118,9 @@ public sealed class ApfsReader : IDisposable {
     var treePhys = BinaryPrimitives.ReadUInt64LittleEndian(omap[48..]);
     if (treePhys == 0) return 0;
 
-    var treeBlock = this.BlockSpan((long)treePhys);
-    // B-tree leaf node walk — look up (virtOid, *) and return paddr.
-    var records = EnumerateBtreeLeafRecords(treeBlock, isRoot: true);
-    foreach (var (key, value) in records) {
+    // The map is a tree like any other: a volume with many nodes to name has a map
+    // deeper than one node, and reading only its root finds nothing at all.
+    foreach (var (key, value) in this.CollectAllLeafRecords((long)treePhys)) {
       if (key.Length < 16) continue;
       var ok = BinaryPrimitives.ReadUInt64LittleEndian(key);
       if (ok != virtOid) continue;
@@ -266,11 +265,8 @@ public sealed class ApfsReader : IDisposable {
           break;
 
         case APFS_TYPE_DIR_REC:
-          if (key.Length < 12 || val.Length < 18) break;
-          var nameLenAndHash = BinaryPrimitives.ReadUInt32LittleEndian(key.AsSpan(8));
-          var nameLen = (int)(nameLenAndHash & 0x3FF);
-          if (nameLen <= 0 || 12 + nameLen > key.Length) break;
-          var name = Encoding.UTF8.GetString(key, 12, nameLen).TrimEnd('\0');
+          if (val.Length < 18) break;
+          if (!ApfsDrecKey.TryReadName(key, out var name)) break;
           var childIno = BinaryPrimitives.ReadUInt64LittleEndian(val);
           var flags = BinaryPrimitives.ReadUInt16LittleEndian(val.AsSpan(16));
           var dirType = flags & APFS_DIR_REC_FLAGS_MASK;

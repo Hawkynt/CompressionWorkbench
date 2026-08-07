@@ -91,8 +91,8 @@ internal static class ApfsLayout {
 
     var apsb = ReadBlock(image, volumeSuperblock, blockSize);
     if (apsb == null) return null;
-    var volumeOmap = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(392));
-    var fsTreeOid = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(400));
+    var volumeOmap = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(APSB_OMAP_OID));
+    var fsTreeOid = BinaryPrimitives.ReadUInt64LittleEndian(apsb.AsSpan(APSB_ROOT_TREE_OID));
     container.MetadataBlocks.Add(volumeOmap);
 
     var volumeOmapBlock = ReadBlock(image, volumeOmap, blockSize);

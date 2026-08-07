@@ -121,10 +121,21 @@ public class F2fsTests {
     Assert.That(allZero, Is.False);
   }
 
+  /// <summary>
+  /// A small subdirectory keeps its dentries inside its inode; the root never does.
+  /// </summary>
+  /// <remarks>
+  /// The root is the exception because of what a mount does with its block count: the
+  /// kernel subtracts the inode itself and refuses the volume when nothing is left, so
+  /// a root that owns no data block cannot be mounted. It does so without printing a
+  /// word, which is why a volume written that way looked sound to <c>fsck.f2fs</c> and
+  /// was still turned away at the door.
+  /// </remarks>
   [Test, Category("HappyPath")]
   public void Writer_InlineDentryLayout() {
     var w = new F2fsWriter();
     w.AddFile("foo", "bar"u8.ToArray());
+    w.AddFile("sub/foo", "bar"u8.ToArray());
     var img = w.Build();
 
     // Root inode block is the first block of the main area.
@@ -135,9 +146,24 @@ public class F2fsTests {
     var mode = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(rootOff));
     Assert.That(mode & 0xF000, Is.EqualTo(0x4000));
 
-    // i_inline flag at offset 3 MUST include F2FS_INLINE_DENTRY (0x04).
-    var inlineFlag = img[rootOff + 3];
-    Assert.That(inlineFlag & 0x04, Is.EqualTo(0x04));
+    // i_inline at offset 3 carries no F2FS_INLINE_DENTRY (0x04) for the root, and its
+    // i_blocks at offset 24 counts the inode plus at least one dentry block.
+    Assert.That(img[rootOff + 3] & 0x04, Is.EqualTo(0),
+      "the root directory must not hold its dentries inline");
+    var rootBlocks = BinaryPrimitives.ReadUInt64LittleEndian(img.AsSpan(rootOff + 24));
+    Assert.That(rootBlocks, Is.GreaterThanOrEqualTo(2UL),
+      "the root must own a data block, or the kernel reads its block count as zero");
+
+    // "sub" is the third node allocated (root 3, then the file "foo", then the directory),
+    // so the node allocation table names where its inode went.
+    var natOff = (int)BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(0x400 + 84)) * 4096;
+    var subBlock = BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(natOff + 5 * 9 + 5));
+    var subOff = (int)subBlock * 4096;
+    Assert.That(subBlock, Is.GreaterThan(0u), "the subdirectory inode must be there");
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(subOff)) & 0xF000,
+      Is.EqualTo(0x4000), "and it must be a directory");
+    Assert.That(img[subOff + 3] & 0x04, Is.EqualTo(0x04),
+      "a small subdirectory keeps its dentries inline");
   }
 
   [Test, Category("HappyPath")]

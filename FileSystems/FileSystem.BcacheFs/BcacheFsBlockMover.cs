@@ -1,127 +1,227 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using Compression.Registry;
+using static FileSystem.BcacheFs.BcacheFsFormat;
 
 namespace FileSystem.BcacheFs;
 
 /// <summary>
-/// Moves a file's blocks inside the payload area of a bcachefs image and
-/// repoints its directory entry.
+/// Moves a file's bytes inside a bcachefs volume and rewrites the extent keys that
+/// name them.
 /// </summary>
 /// <remarks>
-/// <para>A file in the payload area is one contiguous run of blocks, and the
-/// chained directory ahead of it records where that run starts in a single
-/// eight-byte field. Nothing else notes the position — the superblock describes
-/// the device, not which of it is taken — so relocating a file is the copy plus
-/// that field.</para>
+/// <para>Where a run of a file's bytes sits is one word in one key in the extents
+/// b-tree: the pointer, whose middle forty-four bits are a sector. Moving the run
+/// is the copy plus that word — nothing else on the volume records the position,
+/// because in bcachefs nothing else can.</para>
 ///
-/// <para>The entry is found by the block it still names rather than by the
-/// file's name, so two entries sharing a name cannot send the wrong one
-/// somewhere.</para>
+/// <para>The node the keys live in carries a checksum over everything it holds, so
+/// the whole node is re-stamped once the pass is over rather than after each move.
+/// Doing it per move would be correct and would rewrite the same sector once for
+/// every extent on the volume.</para>
 /// </remarks>
 public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
 
-  private readonly List<long> _directoryBlocks = [];
-  private long _firstDataByte;
+  /// <summary>One extent key's pointer: where it points, and where that word is.</summary>
+  /// <remarks>
+  /// Two sectors are kept, not one. The pass is told where a run started, even for
+  /// a run it lifted out of the volume and put back later, so that is what a
+  /// pointer answers to; where the run is now is the answer, and matching on it
+  /// would let a run that has landed on another's old address claim that other's
+  /// pointer.
+  /// </remarks>
+  private sealed class Slot {
+    internal required long NodeOffset { get; init; }
+    internal required int FieldOffset { get; init; }
+    internal required long OriginalSector { get; init; }
+    internal required long Sector { get; set; }
+    internal required int Sectors { get; init; }
+  }
 
-  /// <summary>Walks the directory chain so its entries can be found again.</summary>
+  private readonly List<Slot> _slots = [];
+  private readonly List<long> _nodes = [];
+  private int _nodeSectors = BucketSectors;
+
+  /// <summary>Reads the extents b-tree so its pointers can be found again.</summary>
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
-    this._directoryBlocks.Clear();
+    this._slots.Clear();
+    this._nodes.Clear();
 
-    var marker = new byte[32];
-    image.Position = BcacheFsWriter.PayloadMarkerOffset;
-    image.ReadExactly(marker);
-    if (!marker.AsSpan(0, BcacheFsWriter.PayloadMarker.Length)
-        .SequenceEqual(BcacheFsWriter.PayloadMarker))
-      throw new NotSupportedException(
-        "bcachefs: this image carries no payload directory, so nothing records where a file starts.");
+    var volume = BcacheFsVolume.Open(image);
+    if (!volume.Valid) return;
 
-    var block = BinaryPrimitives.ReadInt64LittleEndian(
-      marker.AsSpan((int)(BcacheFsWriter.PayloadDirOffset - BcacheFsWriter.PayloadMarkerOffset), 8));
+    this._nodeSectors = volume.BucketSectorCount;
+    var node = new byte[this._nodeSectors * SectorSize];
+    foreach (var sector in volume.NodeSectors(BtreeExtents)) {
+      var offset = sector * SectorSize;
+      if (offset + node.Length > image.Length) continue;
 
-    var head = new byte[BcacheFsWriter.DirHeadSize];
-    var seen = new HashSet<long>();
-    while (block != 0 && seen.Add(block)) {
-      var at = block * BcacheFsWriter.PayloadBlockSize;
-      if (at < 0 || at + BcacheFsWriter.PayloadBlockSize > image.Length) break;
+      image.Position = offset;
+      image.ReadExactly(node);
 
-      image.Position = at;
-      image.ReadExactly(head);
-      if (!head.AsSpan(0, BcacheFsWriter.DirMagic.Length).SequenceEqual(BcacheFsWriter.DirMagic)) break;
+      var found = false;
+      foreach (var (fieldOffset, extentSector, sectors) in EnumeratePointers(node)) {
+        this._slots.Add(new Slot {
+          NodeOffset = offset, FieldOffset = fieldOffset,
+          OriginalSector = extentSector, Sector = extentSector, Sectors = sectors,
+        });
+        found = true;
+      }
 
-      this._directoryBlocks.Add(block);
-      block = BinaryPrimitives.ReadInt64LittleEndian(head.AsSpan(8, 8));
+      if (found) this._nodes.Add(offset);
     }
-
-    if (this._directoryBlocks.Count == 0)
-      throw new InvalidDataException("bcachefs: the payload directory does not parse.");
-
-    // A file starts past the last directory block: the writer lays the chain
-    // down first and allocates from the block after it.
-    this._firstDataByte = (this._directoryBlocks.Max() + 1) * (long)BcacheFsWriter.PayloadBlockSize;
   }
 
-  /// <summary>The payload area's block. A directory entry names a block, not a byte.</summary>
-  public int BlockSize => BcacheFsWriter.PayloadBlockSize;
+  /// <summary>Every extent pointer in a node: where its word is, and what it says.</summary>
+  private static IEnumerable<(int FieldOffset, long Sector, int Sectors)> EnumeratePointers(byte[] node) {
+    var offset = BcacheFsNodeBuilder.KeysOffset;
+    var words = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(158));
+    var end = offset + words * 8;
+    if (end > node.Length) yield break;
 
-  /// <summary>First byte a file may occupy: past the superblocks and the directory chain.</summary>
-  public long FirstDataByte => this._firstDataByte;
+    while (offset + 8 <= end) {
+      var keyWords = node[offset];
+      if (keyWords == 0) yield break;
+
+      var bytes = keyWords * 8;
+      if (offset + bytes > end) yield break;
+
+      // Only keys written unpacked are moved: those are the ones this project
+      // writes, and a volume it did not write is not one it rearranges.
+      if ((node[offset + 1] & 0x7F) == KeyFormatCurrent && node[offset + 2] == KeyExtent) {
+        var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(offset + 16));
+        for (var value = offset + BkeyBytes; value + 8 <= offset + bytes; value += 8) {
+          var word = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(value));
+          if (!IsPointer(word)) continue;
+          yield return (value, PointerSector(word), size);
+          break;
+        }
+      }
+
+      offset += bytes;
+    }
+  }
 
   /// <inheritdoc />
+  public int AllocationBlockSize => BucketBytes;
+
   /// <summary>
-  /// A run may be held outside the volume while the rest of the layout moves,
-  /// which is what lets a full volume be rearranged at all.
+  /// The unit a layout may place a run at: a whole bucket.
   /// </summary>
+  /// <remarks>
+  /// A pointer names a sector, so finer placement is expressible — and refused. An
+  /// extent may not straddle a bucket boundary, because a bucket is what bcachefs
+  /// allocates and accounts in; a run laid down across one is read as an invalid
+  /// key and the file it belongs to comes back as a hole. Quantising the layout to
+  /// buckets is what keeps every run inside one.
+  /// </remarks>
+  public int BlockSize => BucketBytes;
+
+  /// <summary>
+  /// The first byte a file's bytes may occupy.
+  /// </summary>
+  /// <remarks>
+  /// It is where the volume's own structures end, not where the first file
+  /// currently starts. Taking the second would mean a volume whose files had been
+  /// pushed to the tail could never be brought back to the front: the layout would
+  /// be told the front was occupied by something it must not touch.
+  /// </remarks>
+  public long FirstDataByte => MetadataEndBytes;
+
+  /// <inheritdoc />
+  public bool RepointsRunsIndependently => true;
+
+  /// <inheritdoc />
   public bool SupportsHeldRuns => true;
 
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
-    if (length <= 0 || srcOffset == dstOffset) return;
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long sourceOffset, long destinationOffset, long length,
+      bool zeroSource = false) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (sourceOffset == destinationOffset || length <= 0) return;
 
-    // Overlap-safe: a run shifted forward by less than its own length
-    // overwrites its own tail, and copying that front to back reads bytes
-    // the copy has already replaced.
-    Compression.Core.DiskImage.ExtentCopy.Move(image, srcOffset, dstOffset, length);
-    if (zeroSource)
-      Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, length);
+    var buffer = new byte[Math.Min(length, BucketBytes)];
+    var moved = 0L;
+    while (moved < length) {
+      var chunk = (int)Math.Min(buffer.Length, length - moved);
+      image.Position = sourceOffset + moved;
+      image.ReadExactly(buffer, 0, chunk);
+      image.Position = destinationOffset + moved;
+      image.Write(buffer, 0, chunk);
+      moved += chunk;
+    }
+
+    if (!zeroSource) return;
+
+    Array.Clear(buffer);
+    var cleared = 0L;
+    while (cleared < length) {
+      var chunk = (int)Math.Min(buffer.Length, length - cleared);
+      image.Position = sourceOffset + cleared;
+      image.Write(buffer, 0, chunk);
+      cleared += chunk;
+    }
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName,
+      long sourceOffset, long destinationOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(fileName);
-    if (this._directoryBlocks.Count == 0) this.Init(image);
+    _ = fileName;   // a pointer is found by where it points, not by whose bytes they are
+    if (sourceOffset == destinationOffset) return;
 
-    if (newOffset % BcacheFsWriter.PayloadBlockSize != 0)
-      throw new NotSupportedException(
-        $"bcachefs: {newOffset} is not on a {BcacheFsWriter.PayloadBlockSize}-byte block boundary, " +
-        "which is all a directory entry can name.");
+    var sourceSector = sourceOffset / SectorSize;
+    var sectors = (int)((length + SectorSize - 1) / SectorSize);
 
-    var oldBlock = oldOffset / BcacheFsWriter.PayloadBlockSize;
-    var newBlock = newOffset / BcacheFsWriter.PayloadBlockSize;
-    if (oldBlock == newBlock) return;
+    // Where the run began is what the pass names it by, and no two runs began in
+    // the same place. Where it happens to be now is not usable as a name: another
+    // run may have been laid down there in the meantime.
+    var slot = this._slots.FirstOrDefault(s => s.OriginalSector == sourceSector && s.Sectors == sectors)
+      ?? this._slots.FirstOrDefault(s => s.OriginalSector == sourceSector)
+      ?? this._slots.FirstOrDefault(s => s.Sector == sourceSector && s.Sectors == sectors);
+    if (slot == null) return;
 
-    Span<byte> field = stackalloc byte[8];
-    foreach (var directoryBlock in this._directoryBlocks) {
-      var blockAt = directoryBlock * (long)BcacheFsWriter.PayloadBlockSize;
-      for (var i = 0; i < BcacheFsWriter.DirEntriesPerBlock; ++i) {
-        var at = blockAt + BcacheFsWriter.DirHeadSize + (long)i * BcacheFsWriter.DirEntrySize
-               + BcacheFsWriter.DirNameLength;
-        if (at + 8 > image.Length) break;
+    slot.Sector = destinationOffset / SectorSize;
+  }
 
-        image.Position = at;
-        image.ReadExactly(field);
-        if (BinaryPrimitives.ReadInt64LittleEndian(field) != oldBlock) continue;
+  /// <summary>
+  /// Writes every pointer back and re-stamps the node that holds them.
+  /// </summary>
+  /// <remarks>
+  /// A b-tree node's checksum covers all the keys it holds, so this is done once
+  /// the whole pass is over: until then the node on disk and the pointers in hand
+  /// disagree, and stamping it early would only be undone by the next move.
+  /// </remarks>
+  public void Settle(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (this._nodes.Count == 0) return;
 
-        BinaryPrimitives.WriteInt64LittleEndian(field, newBlock);
-        image.Position = at;
-        image.Write(field);
-        image.Flush();
-        return;
+    var node = new byte[this._nodeSectors * SectorSize];
+    foreach (var nodeOffset in this._nodes) {
+      image.Position = nodeOffset;
+      image.ReadExactly(node);
+
+      foreach (var slot in this._slots) {
+        if (slot.NodeOffset != nodeOffset) continue;
+
+        var word = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(slot.FieldOffset));
+        var device = (byte)((word >> 48) & 0xFF);
+        var generation = (byte)((word >> 56) & 0xFF);
+        BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(slot.FieldOffset),
+          ExtentPointer(slot.Sector, device, generation));
       }
+
+      var words = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(158));
+      var end = BcacheFsNodeBuilder.KeysOffset + words * 8;
+      var checksum = MetadataChecksum(node.AsSpan(16, end - 16));
+      BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(0), checksum);
+      BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(8), 0);
+
+      image.Position = nodeOffset;
+      image.Write(node, 0, (end + SectorSize - 1) / SectorSize * SectorSize);
     }
 
-    throw new InvalidOperationException(
-      $"bcachefs: no directory entry names block {oldBlock}, so '{fileName}' cannot be repointed.");
+    image.Flush();
   }
 }

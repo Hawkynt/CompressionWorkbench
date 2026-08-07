@@ -407,8 +407,13 @@ public static class Qnx6Modifier {
     }
     // sb_num_blocks counts the filesystem's own blocks — the ones after the
     // boot and superblock areas — because that is what the driver adds its
-    // offset to when it goes looking for the mirror superblock.
-    var numBlocks = (uint)(img.Length / BlockSize - Qnx6Geometry.BlocksBefore(BlockSize));
+    // offset to when it goes looking for the mirror superblock. The block the
+    // mirror itself sits in is not one of them: counting it puts the mirror one
+    // block past the end of the image, and the volume stops mounting with
+    // nothing said about it but "unable to read the second superblock".
+    const int mirrorBlocks = (SuperblockSize + BlockSize - 1) / BlockSize;
+    var numBlocks = (uint)(img.Length / BlockSize
+      - Qnx6Geometry.BlocksBefore(BlockSize) - mirrorBlocks);
     BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(0x3C), numBlocks);
   }
 

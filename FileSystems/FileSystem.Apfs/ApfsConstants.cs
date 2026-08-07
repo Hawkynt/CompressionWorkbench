@@ -31,6 +31,47 @@ internal static class ApfsConstants {
   // NX features.
   public const ulong NX_INCOMPAT_VERSION2 = 0x2;
 
+  // ── Volume superblock (apfs_superblock) field offsets ──────────────────────
+  //
+  // These are the struct's own offsets. The encryption state at 0x60 is twenty
+  // bytes; reading it as anything longer moves every field after it, including
+  // the two identifiers a mount follows to reach the volume's object map and its
+  // filesystem tree — which is how a volume comes to be reported as encrypted
+  // and rootless when it is neither.
+  public const int APSB_MAGIC = 0x20;
+  public const int APSB_FS_INDEX = 0x24;
+  public const int APSB_FEATURES = 0x28;
+  public const int APSB_READONLY_COMPAT_FEATURES = 0x30;
+  public const int APSB_INCOMPAT_FEATURES = 0x38;
+  public const int APSB_UNMOUNT_TIME = 0x40;
+  public const int APSB_RESERVE_BLOCK_COUNT = 0x48;
+  public const int APSB_QUOTA_BLOCK_COUNT = 0x50;
+  public const int APSB_ALLOC_COUNT = 0x58;
+  public const int APSB_ROOT_TREE_TYPE = 0x74;
+  public const int APSB_EXTENTREF_TREE_TYPE = 0x78;
+  public const int APSB_SNAP_META_TREE_TYPE = 0x7C;
+  public const int APSB_OMAP_OID = 0x80;
+  public const int APSB_ROOT_TREE_OID = 0x88;
+  public const int APSB_EXTENTREF_TREE_OID = 0x90;
+  public const int APSB_SNAP_META_TREE_OID = 0x98;
+  public const int APSB_REVERT_TO_XID = 0xA0;
+  public const int APSB_REVERT_TO_SBLOCK_OID = 0xA8;
+  public const int APSB_NEXT_OBJ_ID = 0xB0;
+  public const int APSB_NUM_FILES = 0xB8;
+  public const int APSB_NUM_DIRECTORIES = 0xC0;
+  public const int APSB_VOL_UUID = 0xF0;
+  public const int APSB_LAST_MOD_TIME = 0x100;
+  public const int APSB_FS_FLAGS = 0x108;
+  public const int APSB_FORMATTED_BY = 0x110;
+  public const int APSB_VOLNAME = 0x2C0;
+  public const int APSB_VOLNAME_LEN = 256;
+
+  /// <summary>The apfs_fs_flags bit that says the volume is not encrypted.</summary>
+  public const ulong APFS_FS_UNENCRYPTED = 0x1;
+
+  /// <summary>The inode internal flag marking an object the filesystem owns itself.</summary>
+  public const ulong APFS_INODE_IS_APFS_PRIVATE = 0x00000001;
+
   // Filesystem-tree key types (high nibble of oid_and_type).
   public const int APFS_TYPE_SNAP_METADATA = 1;
   public const int APFS_TYPE_EXTENT = 2;
@@ -47,6 +88,7 @@ internal static class ApfsConstants {
 
   // Reserved object IDs.
   public const ulong NX_SUPERBLOCK_OID = 1;
+  public const ulong APFS_ROOT_DIR_PARENT = 1;
   public const ulong APFS_ROOT_DIR_INO_NUM = 2;
   public const ulong APFS_PRIV_DIR_INO_NUM = 3;
   public const ulong APFS_SNAP_DIR_INO_NUM = 6;

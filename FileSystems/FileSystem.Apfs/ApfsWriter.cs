@@ -36,6 +36,7 @@ namespace FileSystem.Apfs;
 public sealed class ApfsWriter {
   private const uint BlockSize = DEFAULT_BLOCK_SIZE;
   private const int ObjHeaderSize = 32;
+
   private const int BtreeInfoSize = 40;
 
   private readonly List<FileEntry> _files = [];
@@ -171,13 +172,26 @@ public sealed class ApfsWriter {
     // file data blocks.
     const int dynamicStartBlock = 11;
 
-    // OIDs.
-    const ulong ctrOmapOid = 0x400; // ephemeral/physical; we use physical-semantic OIDs
+    // OIDs. A physical object's identifier is not a name it can be given: it is the
+    // block the object occupies, and a reference to one is followed straight to that
+    // block with no map in between. Numbering these from 0x400 while writing them at
+    // the front of the volume sent every such reference a thousand blocks past where
+    // the object was — to zeroes, which read as a tree with no root.
+    //
+    // Only two objects here are virtual, and those are the two the object maps exist
+    // to resolve: the volume superblock, through the container's map, and the
+    // filesystem tree, through the volume's.
+    const ulong ctrOmapOid = ctrOmapBlock;
     const ulong apsbVirtOid = 0x402;
-    const ulong volOmapOid = 0x403;
-    const ulong fsTreeVirtOid = 0x404;
-    const ulong extrefTreeVirtOid = 0x405;
-    const ulong snapMetaTreeVirtOid = 0x406;
+    const ulong volOmapOid = volOmapBlock;
+    // The filesystem tree is virtual: its nodes are reached through the volume's
+    // object map, and any identifier would do. Each node is given the number of the
+    // block it sits on, and the map says so — which keeps every reference to a node
+    // the same whether it goes through the map or not, and makes a collision between
+    // two nodes' identifiers impossible.
+    const ulong fsTreeVirtOid = fsTreeBlock;
+    const ulong extrefTreeOid = extrefTreeBlock;
+    const ulong snapMetaTreeOid = snapMetaTreeBlock;
     const ulong xid = 4;
 
     // ── Build the directory tree (real directory inodes for path components) ──
@@ -196,7 +210,19 @@ public sealed class ApfsWriter {
     // region starting at block 11; file data follows after them.
     var extraLeafBlocks = isMultiLevel ? leafPartitions.Count : 0;
     var firstLeafBlock = (ulong)dynamicStartBlock;
-    var fileDataStartBlock = dynamicStartBlock + extraLeafBlocks;
+
+    // Every leaf of the filesystem tree is named in the volume's object map, so a
+    // tree that spilled into leaves spills the map along with it. Each map record is
+    // the same size, so how many nodes the map needs follows from the count alone.
+    var volOmapRecordCount = 1 + extraLeafBlocks;
+    const int omapRecordCost = TocEntrySize + 16 + 16;
+    var omapFitsInRoot = volOmapRecordCount * omapRecordCost <= NodePayloadCapacity(isRoot: true);
+    var omapLeafCount = omapFitsInRoot
+      ? 0
+      : (volOmapRecordCount * omapRecordCost + NodePayloadCapacity(isRoot: false) - 1)
+        / NodePayloadCapacity(isRoot: false);
+    var firstOmapLeafBlock = firstLeafBlock + (ulong)extraLeafBlocks;
+    var fileDataStartBlock = dynamicStartBlock + extraLeafBlocks + omapLeafCount;
 
     // Compute image size (extra leaf nodes + file data blocks).
     var fileDataBlocks = 0L;
@@ -230,10 +256,13 @@ public sealed class ApfsWriter {
     leafPartitions = PartitionIntoLeaves(fileRecords);
 
     // ── FS tree (block 8 is the root) ─────────────────────────────────────
+    // Every node of the filesystem tree is virtual, root and leaves alike, so each
+    // leaf needs an entry in the volume's object map as well as the root.
+    var fsTreeLeafOids = new List<ulong>(leafPartitions.Count);
     if (!isMultiLevel) {
       // Single root-leaf node holding inodes + drec + file_extent.
       WriteBtreeRootLeaf(BlockOf(disk, fsTreeBlock),
-        fileRecords, (ulong)fsTreeBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
+        fileRecords, fsTreeVirtOid, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
     } else {
       // 2-level tree: an internal root at block 8 indexing dedicated leaf nodes.
       var childAddrs = new List<ulong>(leafPartitions.Count);
@@ -244,25 +273,50 @@ public sealed class ApfsWriter {
           leafBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
         childAddrs.Add(leafBlock);
         childFirstKeys.Add(leafPartitions[i][0].Key);
+        fsTreeLeafOids.Add(leafBlock);
       }
       WriteBtreeRootInternal(BlockOf(disk, fsTreeBlock), childFirstKeys, childAddrs,
-        fileRecords, (ulong)fsTreeBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
+        fileRecords, fsTreeVirtOid, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
     }
 
     // ── Extent-ref tree (block 9): empty root ─────────────────────────────
     WriteBtreeRootLeaf(BlockOf(disk, extrefTreeBlock),
-      [], (ulong)extrefTreeBlock, OBJECT_TYPE_BLOCKREFTREE | OBJ_PHYSICAL, xid);
+      [], extrefTreeOid, OBJECT_TYPE_BLOCKREFTREE | OBJ_PHYSICAL, xid);
 
     // ── Snap-meta tree (block 10): empty root ─────────────────────────────
     WriteBtreeRootLeaf(BlockOf(disk, snapMetaTreeBlock),
-      [], (ulong)snapMetaTreeBlock, OBJECT_TYPE_SNAPMETATREE | OBJ_PHYSICAL, xid);
+      [], snapMetaTreeOid, OBJECT_TYPE_SNAPMETATREE | OBJ_PHYSICAL, xid);
 
     // ── Volume OMAP B-tree root (block 7): maps FS-tree virtual OID → phys ─
     var volOmapRecs = new List<BtreeRecord> {
       BuildOmapRecord(fsTreeVirtOid, xid, (ulong)fsTreeBlock),
     };
-    WriteBtreeRootLeaf(BlockOf(disk, volOmapTreeBlock),
-      volOmapRecs, (ulong)volOmapTreeBlock, OBJECT_TYPE_BTREE | OBJ_PHYSICAL, xid);
+    for (var i = 0; i < fsTreeLeafOids.Count; i++)
+      volOmapRecs.Add(BuildOmapRecord(fsTreeLeafOids[i], xid, firstLeafBlock + (ulong)i));
+
+    if (omapLeafCount == 0) {
+      WriteBtreeRootLeaf(BlockOf(disk, volOmapTreeBlock),
+        volOmapRecs, (ulong)volOmapTreeBlock, OBJECT_TYPE_BTREE | OBJ_PHYSICAL, xid);
+    } else {
+      // The map's own nodes are physical, so its root indexes them by block.
+      var omapPartitions = PartitionIntoLeaves(volOmapRecs);
+      if (omapPartitions.Count > omapLeafCount)
+        throw new InvalidOperationException(
+          "APFS writer: the volume object map needs more nodes than were reserved for it.");
+
+      var omapChildBlocks = new List<ulong>(omapPartitions.Count);
+      var omapChildKeys = new List<byte[]>(omapPartitions.Count);
+      for (var i = 0; i < omapPartitions.Count; i++) {
+        var block = firstOmapLeafBlock + (ulong)i;
+        WriteBtreeLeafNode(BlockOf(disk, (long)block), omapPartitions[i],
+          block, OBJECT_TYPE_BTREE | OBJ_PHYSICAL, xid);
+        omapChildBlocks.Add(block);
+        omapChildKeys.Add(omapPartitions[i][0].Key);
+      }
+
+      WriteBtreeRootInternal(BlockOf(disk, volOmapTreeBlock), omapChildKeys, omapChildBlocks,
+        volOmapRecs, (ulong)volOmapTreeBlock, OBJECT_TYPE_BTREE | OBJ_PHYSICAL, xid);
+    }
 
     // ── Volume OMAP phys (block 6) ────────────────────────────────────────
     WriteOmapPhys(BlockOf(disk, volOmapBlock),
@@ -273,7 +327,7 @@ public sealed class ApfsWriter {
     // OMAP phys object (not a virtual OID resolved via the container OMAP).
     WriteVolumeSuperblock(BlockOf(disk, apsbBlock),
       apsbVirtOid, xid, volOmapPhysOid: (ulong)volOmapBlock,
-      fsTreeVirtOid, extrefTreeVirtOid, snapMetaTreeVirtOid,
+      fsTreeVirtOid, extrefTreeOid, snapMetaTreeOid,
       fileCount: tree.FileCount, dirCount: tree.DirectoryCount,
       nextObjId: tree.NextObjId, volumeName: this._volumeName);
 
@@ -415,53 +469,35 @@ public sealed class ApfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(block[80..], 0);
     // apfs_fs_alloc_count (u64) at 88.
     BinaryPrimitives.WriteUInt64LittleEndian(block[88..], 0);
-    // apfs_meta_crypto_state (284 bytes) at 96 — zeros for unencrypted.
-    // apfs_root_tree_type (u32) at 380.
-    BinaryPrimitives.WriteUInt32LittleEndian(block[380..], OBJECT_TYPE_BTREE | OBJ_VIRTUAL);
-    // apfs_extentref_tree_type (u32) at 384.
-    BinaryPrimitives.WriteUInt32LittleEndian(block[384..], OBJECT_TYPE_BTREE | OBJ_PHYSICAL);
-    // apfs_snap_meta_tree_type (u32) at 388.
-    BinaryPrimitives.WriteUInt32LittleEndian(block[388..], OBJECT_TYPE_BTREE | OBJ_PHYSICAL);
-    // apfs_omap_oid (u64) at 392 — physical block number of the volume OMAP object.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[392..], volOmapPhysOid);
-    // apfs_root_tree_oid (u64) at 400.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[400..], rootTreeOid);
-    // apfs_extentref_tree_oid (u64) at 408.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[408..], extrefTreeOid);
-    // apfs_snap_meta_tree_oid (u64) at 416.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[416..], snapMetaTreeOid);
-    // apfs_revert_to_xid (u64) at 424.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[424..], 0);
-    // apfs_revert_to_sblock_oid (u64) at 432.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[432..], 0);
-    // apfs_next_obj_id (u64) at 440.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[440..], nextObjId);
-    // apfs_num_files (u64) at 448.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[448..], fileCount);
-    // apfs_num_directories (u64) at 456 — created directories plus the root.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[456..], dirCount);
-    // apfs_num_symlinks (u64) at 464 — 0.
-    // apfs_num_other_fsobjects (u64) at 472 — 0.
-    // apfs_num_snapshots (u64) at 480 — 0.
-    // apfs_total_blocks_alloced (u64) at 488.
-    // apfs_total_blocks_freed (u64) at 496.
-    // apfs_vol_uuid[16] at 504.
-    Guid.NewGuid().ToByteArray().CopyTo(block[504..]);
-    // apfs_last_mod_time (u64) at 520.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[520..],
+    // apfs_meta_crypto (20 bytes) at 0x60 — zeros for an unencrypted volume.
+    BinaryPrimitives.WriteUInt32LittleEndian(block[APSB_ROOT_TREE_TYPE..], OBJECT_TYPE_BTREE | OBJ_VIRTUAL);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[APSB_EXTENTREF_TREE_TYPE..], OBJECT_TYPE_BTREE | OBJ_PHYSICAL);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[APSB_SNAP_META_TREE_TYPE..], OBJECT_TYPE_BTREE | OBJ_PHYSICAL);
+    // The volume's object map, by block; then its three trees, the first by
+    // virtual identifier and the other two by block.
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_OMAP_OID..], volOmapPhysOid);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_ROOT_TREE_OID..], rootTreeOid);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_EXTENTREF_TREE_OID..], extrefTreeOid);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_SNAP_META_TREE_OID..], snapMetaTreeOid);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_REVERT_TO_XID..], 0);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_REVERT_TO_SBLOCK_OID..], 0);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_NEXT_OBJ_ID..], nextObjId);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_NUM_FILES..], fileCount);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_NUM_DIRECTORIES..], dirCount);
+    // Symlink, other-object and snapshot counts, and the allocated/freed totals,
+    // all follow and are all zero here.
+    Guid.NewGuid().ToByteArray().CopyTo(block[APSB_VOL_UUID..]);
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_LAST_MOD_TIME..],
       (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL);
-    // apfs_fs_flags (u64) at 528.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[528..], 0);
-    // apfs_formatted_by (32 bytes of apfs_modified_by_t) at 536:
-    //   id[32] + timestamp(u64) + last_xid(u64).
-    var formattedBy = "CompressionWorkbench 1.0"u8;
-    formattedBy.CopyTo(block[536..]);
-    // Skip apfs_modified_by[8] array at 584 (8 × 48 = 384 bytes) — zeros.
-    // apfs_volname[256] at 968 — NUL-terminated UTF-8, truncated to 255 bytes.
+    // Saying nothing here reads as "encrypted", which is not what this volume is.
+    BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_FS_FLAGS..], APFS_FS_UNENCRYPTED);
+    // apfs_formatted_by: id[32] + timestamp(u64) + last_xid(u64), then eight more
+    // of the same for the modification history, all left zero.
+    "CompressionWorkbench 1.0"u8.CopyTo(block[APSB_FORMATTED_BY..]);
     var volnameBytes = Encoding.UTF8.GetBytes(volumeName);
-    var volnameLen = Math.Min(volnameBytes.Length, 255);
-    block.Slice(968, 256).Clear();
-    volnameBytes.AsSpan(0, volnameLen).CopyTo(block[968..]);
+    var volnameLen = Math.Min(volnameBytes.Length, APSB_VOLNAME_LEN - 1);
+    block.Slice(APSB_VOLNAME, APSB_VOLNAME_LEN).Clear();
+    volnameBytes.AsSpan(0, volnameLen).CopyTo(block[APSB_VOLNAME..]);
 
     ApfsFletcher64.Stamp(block);
   }
@@ -822,8 +858,17 @@ public sealed class ApfsWriter {
     var rootChildren = tree.Nodes.Count(n => n.ParentIno == APFS_ROOT_DIR_INO_NUM);
     list.Add((APFS_ROOT_DIR_INO_NUM, APFS_TYPE_INODE, string.Empty,
       BuildInodeKey(APFS_ROOT_DIR_INO_NUM),
-      BuildInodeValue(APFS_ROOT_DIR_INO_NUM, parentId: APFS_ROOT_DIR_INO_NUM,
+      BuildInodeValue(APFS_ROOT_DIR_INO_NUM, parentId: APFS_ROOT_DIR_PARENT,
         size: 0, isDir: true, nchildren: (uint)rootChildren)));
+
+    // The private directory. A mount reads this inode before it reads the root and
+    // refuses the volume when it is not there — it is where a file goes that is
+    // still open after its last name is gone. Nothing in the root links to it, so
+    // it is an inode record and nothing else.
+    list.Add((APFS_PRIV_DIR_INO_NUM, APFS_TYPE_INODE, string.Empty,
+      BuildInodeKey(APFS_PRIV_DIR_INO_NUM),
+      BuildInodeValue(APFS_PRIV_DIR_INO_NUM, parentId: APFS_ROOT_DIR_PARENT,
+        size: 0, isDir: true, nchildren: 0, internalFlags: APFS_INODE_IS_APFS_PRIVATE)));
 
     foreach (var node in tree.Nodes) {
       // DIR_REC under the parent directory pointing at this node.
@@ -837,6 +882,14 @@ public sealed class ApfsWriter {
         BuildInodeKey(node.Ino),
         BuildInodeValue(node.Ino, parentId: node.ParentIno, size: size,
           isDir: node.IsDir, nchildren: node.IsDir ? (uint)node.ChildCount : 1u)));
+
+      // Every file that has a data stream needs a record counting who shares it.
+      // A driver looks this up before it will open the file, and treats its absence
+      // as corruption rather than as "no one else has it".
+      if (!node.IsDir) {
+        list.Add((node.Ino, APFS_TYPE_DSTREAM_ID, string.Empty,
+          ApfsInodeRecord.BuildDstreamIdKey(node.Ino), ApfsInodeRecord.BuildDstreamIdValue(refCount: 1)));
+      }
 
       // FILE_EXTENT for non-empty regular files.
       if (!node.IsDir && node.Payload is { Size: > 0 } payload) {
@@ -868,18 +921,8 @@ public sealed class ApfsWriter {
     return k;
   }
 
-  private static byte[] BuildDrecKey(ulong parentOid, string name) {
-    // j_drec_key_t: u64 oid_and_type; u32 name_len_and_hash; u8 name[].
-    var nameBytes = Encoding.UTF8.GetBytes(name + "\0");
-    var k = new byte[8 + 4 + nameBytes.Length];
-    var oidAndType = parentOid | ((ulong)APFS_TYPE_DIR_REC << 60);
-    BinaryPrimitives.WriteUInt64LittleEndian(k, oidAndType);
-    // name_len_and_hash: low 10 bits = length (incl. null term), upper 22 bits = hash (0 for us).
-    var nameLenAndHash = (uint)nameBytes.Length & 0x3FF;
-    BinaryPrimitives.WriteUInt32LittleEndian(k.AsSpan(8), nameLenAndHash);
-    nameBytes.CopyTo(k, 12);
-    return k;
-  }
+  private static byte[] BuildDrecKey(ulong parentOid, string name)
+    => ApfsDrecKey.Build(parentOid, name);
 
   private static byte[] BuildFileExtentKey(ulong ino, ulong logicalOffset) {
     // j_file_extent_key_t: u64 oid_and_type + u64 logical_addr.
@@ -892,42 +935,10 @@ public sealed class ApfsWriter {
 
   // Value helpers.
 
-  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren) {
-    // j_inode_val_t (simplified fixed prefix, 92 bytes + optional xfields):
-    //   u64 parent_id
-    //   u64 private_id
-    //   u64 create_time, mod_time, change_time, access_time
-    //   u64 internal_flags
-    //   u32 nchildren or nlink (union)
-    //   u32 default_protection_class
-    //   u32 write_generation_counter
-    //   u32 bsd_flags
-    //   u32 owner
-    //   u32 group
-    //   u16 mode
-    //   u16 pad1
-    //   u64 uncompressed_size
-    //   u8  xfields[] (variable)
-    var v = new byte[92];
-    BinaryPrimitives.WriteUInt64LittleEndian(v, parentId);
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(8), ino); // private_id = own inode number
-    var nowNs = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL;
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(16), nowNs); // create_time
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(24), nowNs); // mod_time
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(32), nowNs); // change_time
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(40), nowNs); // access_time
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(48), 0);     // internal_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(56), nchildren); // nchildren (dir) or nlink (file)
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(60), 0);     // default_protection_class
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(64), 0);     // write_generation_counter
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(68), 0);     // bsd_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(72), 0);     // owner
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(76), 0);     // group
-    BinaryPrimitives.WriteUInt16LittleEndian(v.AsSpan(80), isDir ? S_IFDIR : S_IFREG);
-    BinaryPrimitives.WriteUInt16LittleEndian(v.AsSpan(82), 0);     // pad1
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(84), (ulong)size); // uncompressed_size
-    return v;
-  }
+  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren,
+      ulong internalFlags = 0)
+    => ApfsInodeRecord.BuildValue(ino, parentId, size, isDir, nchildren, internalFlags);
+
 
   private static byte[] BuildDrecValue(ulong fileId, bool isDir) {
     // j_drec_val_t: u64 file_id; u64 date_added; u16 flags.
@@ -940,11 +951,20 @@ public sealed class ApfsWriter {
     return v;
   }
 
+  /// <summary>
+  /// Writes one file extent: how much it covers, where, and under whose key.
+  /// </summary>
+  /// <remarks>
+  /// The length is what the extent covers on disk, not what the file holds — it names
+  /// whole blocks, and a driver rejects an extent whose length is not a multiple of
+  /// one. The file's own length is recorded on its inode instead.
+  /// </remarks>
   private static byte[] BuildFileExtentValue(ulong lengthBytes, ulong physBlockNum) {
     // j_file_extent_val_t: u64 len_and_flags; u64 phys_block_num; u64 crypto_id.
     var v = new byte[24];
+    var covered = (lengthBytes + BlockSize - 1) / BlockSize * BlockSize;
     // Low 56 bits = length in bytes; high 8 bits = flags (0 = no compression).
-    var lenAndFlags = lengthBytes & 0x00FFFFFFFFFFFFFFUL;
+    var lenAndFlags = covered & 0x00FFFFFFFFFFFFFFUL;
     BinaryPrimitives.WriteUInt64LittleEndian(v, lenAndFlags);
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(8), physBlockNum);
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(16), 0);

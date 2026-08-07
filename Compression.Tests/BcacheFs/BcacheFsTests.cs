@@ -178,19 +178,28 @@ public class BcacheFsTests {
     var img = ms.ToArray();
     var version = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(4096 + 16, 2));
     var versionMin = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(4096 + 18, 2));
-    // We pick a version recognised by the widely-deployed bcachefs-tools 1.3.x
-    // line — newer kernels accept it, older tools accept it.
-    Assert.That(version, Is.EqualTo((1 << 10) | 3), "version should be BCH_VERSION(1, 3)");
-    Assert.That(versionMin, Is.EqualTo(9), "version_min should be bcachefs_metadata_version_min = 9");
+    // The version a current kernel writes, and the one whose structures this
+    // writer produces.
+    Assert.That(version, Is.EqualTo((1 << 10) | 38),
+      "version should be BCH_VERSION(1, 38)");
+    // A volume that says it is initialised — and this one does, so that a mount
+    // refuses it rather than formatting over it — is held to the version that put
+    // the written-sector count in btree pointers, and turned away below it.
+    Assert.That(versionMin, Is.EqualTo(14),
+      "version_min should be BCH_VERSION(0, 14), the floor an initialised volume is held to");
     Assert.That(versionMin, Is.LessThanOrEqualTo(version), "version_min must be ≤ version");
   }
 
   /// <summary>
-  /// The layout struct (sector 7) advertises four backup superblocks; each
-  /// advertised slot must actually contain a valid SB (magic at +24).
+  /// Every superblock the layout advertises is really there.
   /// </summary>
+  /// <remarks>
+  /// Three of them: the primary, the copy in the slot behind it, and the one at
+  /// the end of the device — which is what <c>mkfs.bcachefs</c> writes and what a
+  /// reader falls back through.
+  /// </remarks>
   [Test, Category("HappyPath")]
-  public void Writer_FourBackupSuperblocksPresent() {
+  public void Writer_EverySuperblockTheLayoutNamesIsThere() {
     var w = new FileSystem.BcacheFs.BcacheFsWriter();
     using var ms = new MemoryStream();
     w.WriteTo(ms);
@@ -203,7 +212,7 @@ public class BcacheFsTests {
     var layoutMagic = img.AsSpan(layoutOff, 16).ToArray();
     Assert.That(layoutMagic, Is.EqualTo(FileSystem.BcacheFs.BcacheFsWriter.BcachefsMagic));
     var nrSbs = img[layoutOff + 18];
-    Assert.That(nrSbs, Is.EqualTo(4), "layout should advertise 4 superblock copies");
+    Assert.That(nrSbs, Is.EqualTo(3), "the layout should advertise three superblocks");
 
     // Walk every advertised offset and verify the magic UUID is at sector + 24 bytes.
     for (var i = 0; i < nrSbs; i++) {

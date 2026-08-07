@@ -259,7 +259,11 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // position is recorded in the boot sector or in their MFT record, both of
     // which the mover rewrites. A layout that asks for metadata at the front
     // can then actually move the MFT there instead of planning around it.
-    var moves = DefragPlanner.Plan(extents, dataOrigin, archive.Length, mover.ClusterSize,
+    // The volume ends before the image does — the last sector is the boot sector's
+    // backup — so that, and not the file's length, is what bounds a layout.
+    var volumeEnd = mover.VolumeEndByte > 0 ? Math.Min(mover.VolumeEndByte, archive.Length) : archive.Length;
+
+    var moves = DefragPlanner.Plan(extents, dataOrigin, volumeEnd, mover.ClusterSize,
       options.Profile, options.Mode, metadataZone: options.MetadataZonePlacement,
       movableMetadata: mover.RelocatableMetadata);
     if (moves.Count == 0) {
@@ -269,7 +273,7 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     // After each move, re-init the mover by re-reading only the boot sector +
     // record 0 from the now-mutated stream — no whole-image load.
-    DefragPlannerExecutor.Execute(archive, options, mover, moves, archive.Length, () => {
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, volumeEnd, () => {
       archive.Position = 0;
       mover.Init(archive);
     }, metadataMover: mover);
