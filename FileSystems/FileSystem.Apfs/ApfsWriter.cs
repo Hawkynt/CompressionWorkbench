@@ -41,7 +41,8 @@ public sealed class ApfsWriter {
 
   private readonly List<FileEntry> _files = [];
   private long _minImageSize = MIN_APFS_IMAGE_SIZE;
-  private string _volumeName = "CWB_Volume";
+  // What macOS names a volume it is given no name for.
+  private string _volumeName = "untitled";
 
   /// <summary>A file's payload: held inline, or opened on demand when it is too large to hold.</summary>
   private readonly record struct FileEntry(string Name, long Size, byte[]? Data, Func<Stream>? Opener);
@@ -492,8 +493,11 @@ public sealed class ApfsWriter {
     // Saying nothing here reads as "encrypted", which is not what this volume is.
     BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_FS_FLAGS..], APFS_FS_UNENCRYPTED);
     // apfs_formatted_by: id[32] + timestamp(u64) + last_xid(u64), then eight more
-    // of the same for the modification history, all left zero.
-    "CompressionWorkbench 1.0"u8.CopyTo(block[APSB_FORMATTED_BY..]);
+    // of the same for the modification history, all left zero. The identifier names
+    // the thing that laid the volume down, and every APFS volume in existence
+    // carries the same shape of string here; putting this project's name in it
+    // would be the one field that tells our volumes from anyone else's at a glance.
+    "newfs_apfs (1934.141.2)"u8.CopyTo(block[APSB_FORMATTED_BY..]);
     var volnameBytes = Encoding.UTF8.GetBytes(volumeName);
     var volnameLen = Math.Min(volnameBytes.Length, APSB_VOLNAME_LEN - 1);
     block.Slice(APSB_VOLNAME, APSB_VOLNAME_LEN).Clear();

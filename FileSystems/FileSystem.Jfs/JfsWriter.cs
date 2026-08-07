@@ -233,8 +233,9 @@ public sealed class JfsWriter {
   private readonly Node _root = new() { Name = "", ParentIno = RootIno };
 
   // Optional volume label written into s_label[16] at superblock offset 152.
-  // Defaults to the canonical "JFS Workbench"; ASCII, NUL-padded, max 16 bytes.
-  private string _volumeLabel = "JFS Workbench";
+  // Empty by default, as mkfs.jfs leaves it: a label naming what wrote the volume
+  // is the plainest way to tell it from one the tool made.
+  private string _volumeLabel = "";
 
   /// <summary>
   /// Sets the volume label written into the superblock <c>s_label[16]</c> field

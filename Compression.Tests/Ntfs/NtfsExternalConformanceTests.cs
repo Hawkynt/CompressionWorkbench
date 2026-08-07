@@ -55,7 +55,7 @@ public class NtfsExternalConformanceTests {
   }
 
   private string BuildRepresentativeImage(string fileName) {
-    var w = new NtfsWriter();
+    var w = new NtfsWriter("CONFORMANCE");
     w.AddFile("hello.txt", "Hello from CompressionWorkbench NTFS writer."u8.ToArray());
     w.AddFile("notes.txt", "Second file for ntfs-3g userspace acceptance gate."u8.ToArray());
     var imgPath = Path.Combine(this._tmpDir, fileName);
@@ -125,8 +125,10 @@ public class NtfsExternalConformanceTests {
     Assert.That(info.ExitCode, Is.EqualTo(0),
       $"ntfsinfo failed to read our volume metadata.\n{combined}");
 
-    // With $Volume populated we expect the label + version 3.1.
-    Assert.That(combined, Does.Contain("CWB-NTFS"),
+    // With $Volume populated we expect the label we asked for, and version 3.1.
+    // The writer's own default is no label at all, which is what mkntfs leaves;
+    // this asks for one so that the field is exercised.
+    Assert.That(combined, Does.Contain("CONFORMANCE"),
       $"ntfsinfo did not pick up the $Volume label.\n{combined}");
     Assert.That(combined, Does.Contain("3.1"),
       $"ntfsinfo did not report NTFS version 3.1 from $Volume.\n{combined}");

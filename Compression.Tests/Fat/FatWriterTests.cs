@@ -102,11 +102,15 @@ public class FatWriterTests {
       int totalSectors, int forcedFatType = 0, int requestedClusterSize = 0,
       string? volumeLabel = null, bool enableLfn = true, bool transactionFat = false,
       int requestedRootEntries = 0) {
-    var w1 = new FileSystem.Fat.FatWriter(); addFiles(w1);
+    // Both writers get the same serial: a volume's is drawn when it is made, so two
+    // volumes never share one, and comparing two builds means pinning it — which is
+    // what a formatting tool's own switch for it is for.
+    const uint serial = 0x5A17C0DE;
+    var w1 = new FileSystem.Fat.FatWriter(); w1.SetVolumeSerial(serial); addFiles(w1);
     var inMemory = w1.Build(totalSectors, 512, requestedClusterSize, volumeLabel,
       forcedFatType, enableLfn, transactionFat, requestedRootEntries);
 
-    var w2 = new FileSystem.Fat.FatWriter(); addFiles(w2);
+    var w2 = new FileSystem.Fat.FatWriter(); w2.SetVolumeSerial(serial); addFiles(w2);
     using var ms = new MemoryStream();
     w2.BuildTo(ms, totalSectors, 512, requestedClusterSize, volumeLabel,
       forcedFatType, enableLfn, transactionFat, requestedRootEntries);

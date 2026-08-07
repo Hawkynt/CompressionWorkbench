@@ -62,7 +62,8 @@ public sealed class BcacheFsWriter {
   private const int MaxExtentSectors = 128;
 
   private readonly List<(string Name, FilePayload Payload)> _files = [];
-  private string _label = "cwb-bcachefs";
+  // Empty by default, as `bcachefs format` leaves it unless a label is asked for.
+  private string _label = "";
   private long _imageSize = MinImageSize;
   private Guid _internalUuid = Guid.NewGuid();
   private Guid _userUuid = Guid.NewGuid();

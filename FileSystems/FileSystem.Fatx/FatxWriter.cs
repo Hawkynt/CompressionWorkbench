@@ -64,7 +64,7 @@ public sealed class FatxWriter {
   /// 0 = auto-pick (4 sectors / 2 KiB for tiny images, 32 sectors / 16 KiB
   /// for anything &gt; 1 MiB matching the original Xbox HDD layout).</param>
   /// <param name="volumeId">32-bit volume identifier stored in the superblock.</param>
-  public byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0x12345678) {
+  public byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0) {
     // ── Phase 1: tree + planning ────────────────────────────────────────
     var root = this.BuildTree();
     var totalBytes = SumPayload(root);
@@ -148,6 +148,12 @@ public sealed class FatxWriter {
 
     // ── Phase 3: superblock ─────────────────────────────────────────────
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x00), MagicFatx);
+    // Zero means "pick one". A volume identifier is derived from the moment of
+    // formatting on every real tool, so no two volumes share one; writing the same
+    // number into every volume this makes would be the first thing to give them
+    // away as coming from one place.
+    if (volumeId == 0)
+      volumeId = (uint)System.Security.Cryptography.RandomNumberGenerator.GetInt32(1, int.MaxValue);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x04), volumeId);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x08), (uint)sectorsPerCluster);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0x0C), root.StartCluster);
@@ -448,7 +454,7 @@ public sealed class FatxWriter {
   /// materialise the image, so a seekable one is bounded by the disk rather than
   /// by what a byte[] can address.
   /// </summary>
-  public void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0x12345678) {
+  public void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek) {
       var full = this.Build(sectorsPerCluster, volumeId);

@@ -203,7 +203,8 @@ public sealed class F2fsWriter {
   public const int MinimumSegmentCount = MinTotalSegments;
 
   private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
-  private string _volumeLabel = "CompressionWorkbench";
+  // Empty by default, as mkfs.f2fs leaves it unless a label is asked for.
+  private string _volumeLabel = "";
 
   /// <summary>
   /// Streaming-allocations side-effect: when non-null, every streaming entry's
@@ -637,11 +638,16 @@ public sealed class F2fsWriter {
     };
 
     // Copy CP pack to slot 0 (segment 1) with the newer version (1).
-    var cpPack = BuildCheckpointPack(cpArgs, checkpointVer: 1UL);
+    // mkfs.f2fs stamps a fresh volume with an arbitrary checkpoint version rather
+    // than starting at one, and fsck prints it. Always writing the same number is a
+    // fingerprint no volume the tool made ever carries; only the ordering of the
+    // two packs matters, so the pair moves together.
+    var checkpointVersion = NewCheckpointVersion();
+    var cpPack = BuildCheckpointPack(cpArgs, checkpointVersion);
     disk.Write((long)cpBlkAddr * BlockSize, cpPack);
     // Copy CP pack to slot 1 (segment 2). mkfs uses checkpoint_ver 0 for the unused pack so
     // the newer one (ver 1) is selected.
-    var cpPack2 = BuildCheckpointPack(cpArgs, checkpointVer: 0UL);
+    var cpPack2 = BuildCheckpointPack(cpArgs, checkpointVersion - 1);
     disk.Write((long)(cpBlkAddr + BlocksPerSeg) * BlockSize, cpPack2);
 
     // ---- 6) Write both superblock copies ----
@@ -905,9 +911,62 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(1148), 0); // extension_count
     // extension_list[64][8] = 512 bytes — leave zero.
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(1148 + 4 + 512), 0); // cp_payload (none)
-    // Remaining fields (version[256], init_version[256], feature, …) zero-filled.
+
+    // version[256] and init_version[256]: what made the volume, and what made it
+    // first. mkfs.f2fs puts the running kernel's version line here, and fsck.f2fs
+    // prints both back — a volume that leaves them empty announces that whatever
+    // wrote it was not mkfs.
+    var version = HostVersion();
+    version.CopyTo(sb.AsSpan(VersionOffset));
+    version.CopyTo(sb.AsSpan(VersionOffset + VersionLength));
+    // Remaining fields (feature, encryption level, …) zero-filled.
 
     sb.CopyTo(disk.At(off, 3072));
+  }
+
+  /// <summary>
+  /// The version to stamp a fresh volume's checkpoint with.
+  /// </summary>
+  /// <remarks>
+  /// Any value does, as long as the standby pack's is lower — the pair is only ever
+  /// compared with each other. It is kept above one so the standby's is a real
+  /// number too, and away from the top so that a volume can be written to many
+  /// times before it wraps.
+  /// </remarks>
+  private static ulong NewCheckpointVersion()
+    => (ulong)System.Security.Cryptography.RandomNumberGenerator.GetInt32(2, int.MaxValue);
+
+  /// <summary>Bytes the superblock gives each of its two version strings.</summary>
+  private const int VersionLength = 256;
+
+  private const int VersionOffset = 1148 + 4 + 512 + 4;
+
+  /// <summary>
+  /// The version line a volume records as having made it.
+  /// </summary>
+  /// <remarks>
+  /// mkfs.f2fs writes the running kernel's <c>/proc/version</c> line, truncated to
+  /// the field. Off Linux there is no such line — and no mkfs.f2fs either — so a
+  /// plausible one stands in rather than leaving the field empty, which is the one
+  /// value no volume made by the tool ever has.
+  /// </remarks>
+  private static byte[] HostVersion() {
+    var line = "Linux version 6.12.0";
+    try {
+      if (File.Exists("/proc/version")) {
+        var read = File.ReadAllText("/proc/version").Trim();
+        if (read.Length > 0) line = read;
+      }
+    } catch (IOException) {
+      // No /proc here; the fallback stands.
+    } catch (UnauthorizedAccessException) {
+      // Likewise.
+    }
+
+    var bytes = new byte[VersionLength];
+    var encoded = Encoding.UTF8.GetBytes(line);
+    encoded.AsSpan(0, Math.Min(encoded.Length, VersionLength - 1)).CopyTo(bytes);
+    return bytes;
   }
 
   // ==================================================================

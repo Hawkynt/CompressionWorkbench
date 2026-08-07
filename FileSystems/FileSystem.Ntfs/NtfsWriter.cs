@@ -189,7 +189,7 @@ public sealed class NtfsWriter {
   /// — the equivalent of <c>fsutil behavior set disable8dot3</c> — names are
   /// recorded in the Win32-only namespace and no DOS short name is created.
   /// </param>
-  public NtfsWriter(string volumeLabel = "CWB-NTFS", bool generateShortNames = true) {
+  public NtfsWriter(string volumeLabel = "", bool generateShortNames = true) {
     ArgumentNullException.ThrowIfNull(volumeLabel);
     this._volumeLabel = volumeLabel;
     this._fileNameNamespace = generateShortNames ? NamespaceWin32AndDos : NamespaceWin32;

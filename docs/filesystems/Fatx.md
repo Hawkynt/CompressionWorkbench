@@ -72,7 +72,7 @@ FATX dirent names are limited to 42 ASCII bytes — no LFN, no Unicode. Names lo
 | Key | Kind | Default | Allowed | Meaning |
 |---|---|---|---|---|
 | `SectorsPerCluster` | Enum | `0` | `0`, `4`, `8`, `16`, `32`, `64`, `128` | FATX cluster size in 512-byte sectors (0 = auto-optimise for least slack; 32 = 16 KiB Xbox default). |
-| `VolumeId` | String | `` | any | 32-bit volume identifier (hex or decimal). Blank = 0x12345678. |
+| `VolumeId` | String | `` | any | 32-bit volume identifier (hex or decimal). Blank picks one, the way formatting does. |
 
 ## Storage methods
 

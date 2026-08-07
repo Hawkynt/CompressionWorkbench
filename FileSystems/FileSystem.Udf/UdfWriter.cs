@@ -529,7 +529,9 @@ public sealed class UdfWriter {
     // partRef at 256 = 0 (default)
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(264), 6);        // map table length (one Type-1 map)
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(268), 1);        // number of partition maps
-    WriteRegid(buf, 272, "*CompressionWorkbench", default);             // implementation identifier
+    // The implementation identifier names the UDF implementation, not the product:
+    // an image made on Linux says so, whichever tool wrote it.
+    WriteRegid(buf, 272, "*Linux UDFFS", default);                      // implementation identifier
     // Type-1 partition map @440: type(1)=1, length(1)=6, vol_seq(2)=1, part_num(2)=0
     buf[440] = 1;
     buf[441] = 6;

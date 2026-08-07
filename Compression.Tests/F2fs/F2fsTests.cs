@@ -80,9 +80,15 @@ public class F2fsTests {
     Assert.That(cpBlkAddr, Is.GreaterThan(0));
     var cpOff = cpBlkAddr * 4096;
 
-    // checkpoint_ver at offset 0 — we write 1.
+    // checkpoint_ver at offset 0. What it is does not matter — only that the pack
+    // in the second segment carries a lower one, since that is the whole of how a
+    // reader tells which of the two is current. It is not a constant: mkfs.f2fs
+    // stamps an arbitrary version, and always writing the same one would mark
+    // every volume this produces.
     var ver = BinaryPrimitives.ReadUInt64LittleEndian(img.AsSpan(cpOff));
-    Assert.That(ver, Is.EqualTo(1UL));
+    var standbyVer = BinaryPrimitives.ReadUInt64LittleEndian(img.AsSpan(cpOff + 512 * 4096));
+    Assert.That(ver, Is.GreaterThan(standbyVer),
+      "the active checkpoint pack must out-rank the standby one");
 
     // Magic is repeated just before the checksum at offset 4088.
     var cpMagic = BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(cpOff + 4088));

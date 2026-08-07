@@ -21,6 +21,42 @@ namespace FileSystem.Fat;
 /// checksum of the associated short name.
 /// </remarks>
 public sealed class FatWriter {
+
+  /// <summary>
+  /// The serial number a freshly made volume carries.
+  /// </summary>
+  /// <remarks>
+  /// Every tool that formats a FAT volume derives this from the moment it does so,
+  /// which is why no two volumes share one. A constant here — and it was
+  /// 0x12345678, which is not even a plausible constant — marks every volume this
+  /// writes as coming from the same place, and is the first field anyone comparing
+  /// two images would look at.
+  /// </remarks>
+  /// <remarks>
+  /// Drawn once per writer, not once per write: the same writer asked for the same
+  /// volume twice has to produce the same bytes, and a serial redrawn each time
+  /// would make two builds of one volume differ.
+  /// </remarks>
+  private uint _volumeSerial = NewSerial();
+
+  /// <summary>
+  /// Pins the volume serial instead of letting one be drawn.
+  /// </summary>
+  /// <remarks>
+  /// Formatting tools offer the same (mkfs.fat spells it <c>-i</c>), for the same
+  /// reason: a volume that has to come out byte for byte the same twice cannot have
+  /// a fresh serial each time.
+  /// </remarks>
+  public void SetVolumeSerial(uint serial) => this._volumeSerial = serial;
+
+  private static uint NewSerial() {
+    // The classic derivation is the date and time folded into a doubleword. Drawing
+    // it at random gives the same shape without two volumes made in the same second
+    // colliding.
+    var value = (uint)System.Security.Cryptography.RandomNumberGenerator.GetInt32(int.MinValue, int.MaxValue);
+    return value == 0 ? 0xA1B2C3D4u : value;
+  }
+
   private readonly List<(string Name, byte[] Data, DateTime? ModTime)> _files = [];
   // Parallel list of streaming inputs (name, size, factory, modTime). When
   // populated, BuildToStreaming() uses these to size the image and stream
@@ -265,7 +301,7 @@ public sealed class FatWriter {
       // BS_FilSysType instead.
       disk[65] = 0x00;
       disk[66] = 0x29;                                                             // BS_BootSig: extended BPB present
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(67), 0x12345678u);     // BS_VolID
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(67), this._volumeSerial); // BS_VolID
       labelBytes.CopyTo(disk.AsSpan(71, 11));                                      // BS_VolLab (11 bytes, sanitised)
       Encoding.ASCII.GetBytes("FAT32   ").CopyTo(disk, 82);                        // BS_FilSysType (8 bytes)
     } else {
@@ -273,7 +309,7 @@ public sealed class FatWriter {
       disk[36] = 0x80;
       disk[37] = 0x00;  // BS_Reserved1 — see the FAT32 branch above.
       disk[38] = 0x29;
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(39), 0x12345678u);
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(39), this._volumeSerial);
       labelBytes.CopyTo(disk.AsSpan(43, 11));                                      // BS_VolLab (11 bytes, sanitised)
       Encoding.ASCII.GetBytes(fatType == 12 ? "FAT12   " : "FAT16   ").CopyTo(disk, 54);
     }
@@ -509,14 +545,14 @@ public sealed class FatWriter {
       boot[64] = 0x80;
       boot[65] = transactionFat ? (byte)0x01 : (byte)0x00;
       boot[66] = 0x29;
-      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(67), 0x12345678u);
+      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(67), this._volumeSerial);
       Encoding.ASCII.GetBytes(label).CopyTo(boot, 71);
       Encoding.ASCII.GetBytes("FAT32   ").CopyTo(boot, 82);
     } else {
       boot[36] = 0x80;
       boot[37] = 0x00;  // BS_Reserved1 — never the dirty bit's business.
       boot[38] = 0x29;
-      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(39), 0x12345678u);
+      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(39), this._volumeSerial);
       Encoding.ASCII.GetBytes(label).CopyTo(boot, 43);
       Encoding.ASCII.GetBytes(fatType == 12 ? "FAT12   " : "FAT16   ").CopyTo(boot, 54);
     }

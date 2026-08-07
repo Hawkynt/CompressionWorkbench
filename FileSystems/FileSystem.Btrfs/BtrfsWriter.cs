@@ -684,9 +684,9 @@ public sealed class BtrfsWriter {
     var devItem = BuildSuperblockDevItem();
     devItem.CopyTo(image, SbOffset + 0xC9);
 
-    // Label at 0x12B (256 bytes, NUL-padded).
-    var label = "CWB-BTRFS"u8;
-    label.CopyTo(image.AsSpan(SbOffset + 0x12B));
+    // Label at 0x12B (256 bytes, NUL-padded). Left empty, which is what
+    // mkfs.btrfs leaves it unless asked otherwise; a volume that names the thing
+    // that made it is one anybody can pick out of a line-up.
 
     // sys_chunk_array at the canonical 0x32B offset. Size is declared at
     // 0xA0 per fs/btrfs/ctree.h.

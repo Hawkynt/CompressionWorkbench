@@ -32,7 +32,7 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       AllowedValues: ["0", "4", "8", "16", "32", "64", "128"],
       Description: "FATX cluster size in 512-byte sectors (0 = auto-optimise for least slack; 32 = 16 KiB Xbox default)."),
     new("VolumeId", "Volume ID", FormatOptionKind.String, "",
-      Description: "32-bit volume identifier (hex or decimal). Blank = 0x12345678."),
+      Description: "32-bit volume identifier (hex or decimal). Blank picks one, the way formatting does."),
   ];
   public string Id => "Fatx";
   public string DisplayName => "FATX (Xbox)";
@@ -117,7 +117,7 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // sizes stay byte-identical.
     var spc = options.GetOptionInt("SectorsPerCluster", 0);
     var volIdStr = options.GetOption("VolumeId", "");
-    var volumeId = 0x12345678u;
+    var volumeId = 0u;   // zero asks the writer to pick one
     if (!string.IsNullOrEmpty(volIdStr)) {
       var span = volIdStr.AsSpan();
       var hex = span.StartsWith("0x") || span.StartsWith("0X");
