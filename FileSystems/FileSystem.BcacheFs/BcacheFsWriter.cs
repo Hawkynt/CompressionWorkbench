@@ -20,12 +20,14 @@ namespace FileSystem.BcacheFs;
 ///
 /// <para>What is not written is the allocation information — the alloc, freespace,
 /// backpointer and accounting trees a running filesystem keeps so it can decide
-/// where to put the next write. A volume that will only ever be read does not need
-/// them, and the format says so twice: with the feature bit for a volume without
-/// them, and with the one that says the volume is an image file that was never
-/// sized to a device. A kernel reading those mounts it read-only rather than
-/// stopping to build what is absent, and its checker passes. Going read-write is
-/// what such a volume cannot do; that is the whole of the difference.</para>
+/// where to put the next write. A volume written whole does not have them, and the
+/// two mounts want opposite things of that: a read-only mount has to be told not
+/// to go and build them, because building them is a write, while a read-write
+/// mount has to be allowed to, because it cannot allocate without them. The format
+/// has a bit for each case and they are mutually exclusive, so which one a volume
+/// gets is a choice — see <see cref="SetReadWriteCapable" />. By default it is the
+/// first, because a volume written whole is an image, and such a volume mounts
+/// read-only and passes the format's own checker.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
 
@@ -65,6 +67,7 @@ public sealed class BcacheFsWriter {
   private Guid _internalUuid = Guid.NewGuid();
   private Guid _userUuid = Guid.NewGuid();
   private ulong _seed = 0x9E3779B97F4A7C15UL;
+  private bool _readWriteCapable;
 
   /// <summary>Sets the volume label; it is truncated into the superblock's 32-byte field.</summary>
   public void SetLabel(string label) {
@@ -77,6 +80,25 @@ public sealed class BcacheFsWriter {
 
   /// <summary>Overrides the user-facing UUID.</summary>
   public void SetUserUuid(Guid uuid) => this._userUuid = uuid;
+
+  /// <summary>
+  /// Chooses which mount a volume is written for.
+  /// </summary>
+  /// <remarks>
+  /// <para>A volume written whole carries no allocation information — the trees a
+  /// running filesystem keeps so it can decide where to write next — and the two
+  /// mounts want opposite things of that. A read-only mount needs to be told not to
+  /// go and build them, because building them is a write; a read-write mount needs
+  /// to be allowed to, because it cannot allocate without them.</para>
+  ///
+  /// <para>The format has a bit for each case and they are mutually exclusive. By
+  /// default the volume says it is an image file that was never sized to a device,
+  /// which is what it is, and a kernel mounts it read-only without stopping.
+  /// Setting this instead lets a read-write mount rebuild the allocation
+  /// information on the way in — at the cost of the read-only mount, which then has
+  /// nothing to stop it trying the same thing and failing.</para>
+  /// </remarks>
+  public void SetReadWriteCapable(bool readWriteCapable) => this._readWriteCapable = readWriteCapable;
 
   /// <summary>Sets the total volume size in bytes.</summary>
   public void SetImageSize(long bytes) {
@@ -608,11 +630,15 @@ public sealed class BcacheFsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(span[140..], 1);                  // time_precision
 
     WriteFlags(span[144..200]);
-    BinaryPrimitives.WriteUInt64LittleEndian(span[208..],
-      FeatureNewSiphash | FeatureNewExtentOverwrite | FeatureBtreePtrV2
+    var features = FeatureNewSiphash | FeatureNewExtentOverwrite | FeatureBtreePtrV2
       | FeatureExtentsAboveBtreeUpdates | FeatureBtreeUpdatesJournalled | FeatureNewVarint
       | FeatureJournalNoFlush | FeatureAllocV2 | FeatureExtentsAcrossBtreeNodes
-      | FeatureIncompatVersionField | FeatureNoAllocInfo | FeatureSmallImage);
+      | FeatureIncompatVersionField | FeatureNoAllocInfo;
+    // Saying the volume is an unresized image is what lets a read-only mount past
+    // the allocation information it has not got. A volume meant to be mounted
+    // read-write must not say it, or the kernel refuses to go read-write at all.
+    if (!this._readWriteCapable) features |= FeatureSmallImage;
+    BinaryPrimitives.WriteUInt64LittleEndian(span[208..], features);
     BinaryPrimitives.WriteUInt64LittleEndian(span[224..],
       CompatAllocInfo | CompatAllocMetadata | CompatExtentsAboveBtreeUpdatesDone
       | CompatBformatOverflowDone | CompatNoStalePtrs);
@@ -688,7 +714,11 @@ public sealed class BcacheFsWriter {
     // thing that lands there.
     var flags = (1UL << 14)              // discard
       | (28UL << 15)                     // journal, btree and user data allowed
-      | (1UL << 28)                      // durability
+      // Durability is stored one higher than it is, so that a zero can mean "the
+      // default, which is one". Storing the durability itself declares a device
+      // that keeps no copy of anything, and such a device is never chosen to hold
+      // a journal or a b-tree — which is what "no writeable journal devices" means.
+      | (2UL << 28)
       | (1UL << 32) | (1UL << 33);       // rotational, and that we know it
     BinaryPrimitives.WriteUInt64LittleEndian(member[40..], flags);
     BinaryPrimitives.WriteUInt64LittleEndian(member[112..], 1);                // seq

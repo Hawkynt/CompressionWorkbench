@@ -223,6 +223,43 @@ public class BcacheFsVolumeTests {
   }
 
   /// <summary>
+  /// A volume written for writing is one the kernel will mount read-write.
+  /// </summary>
+  /// <remarks>
+  /// <para>The two mounts want opposite things of a volume that carries no
+  /// allocation information, and the format has a bit for each. By default the
+  /// volume says it is an image file, which a read-only mount takes as it is;
+  /// asking for the other lets a read-write mount rebuild the allocation
+  /// information on the way in.</para>
+  ///
+  /// <para>Either way the device has to declare a durability, and that field holds
+  /// one more than it is so that zero can mean the default. A device that declares
+  /// zero durability keeps no copy of anything, and is never chosen to hold a
+  /// journal or a b-tree — which is how a volume comes to be refused for having no
+  /// writeable journal device on it.</para>
+  /// </remarks>
+  [Test, Category("OsIntegration")]
+  public void AVolumeWrittenForWriting_MountsReadWrite() {
+    if (!ThirdPartyFsCheck.IsSupported("BcacheFs")) Assert.Ignore("no third-party reader configured");
+
+    var files = Contents();
+    var path = Path.Combine(Path.GetTempPath(), "cwb_bchrw_" + Guid.NewGuid().ToString("N")[..8] + ".bch");
+    try {
+      var writer = new BcacheFsWriter();
+      writer.SetReadWriteCapable(true);
+      foreach (var (name, data) in files) writer.AddFile(name, data);
+      using (var output = File.Create(path)) writer.WriteTo(output);
+
+      var result = ThirdPartyFsCheck.ReadBack("BcacheFs", path,
+        [.. files.Values.Where(v => v.Length > 0)], readOnly: false);
+      if (!result.Ran) Assert.Ignore($"the kernel driver did not run here — {result.Detail}");
+      Assert.That(result.Ok, Is.True, $"{result.Tool}: {result.Detail}");
+    } finally {
+      try { File.Delete(path); } catch { /* the scratch image is gone already */ }
+    }
+  }
+
+  /// <summary>
   /// The kernel reads a volume written here, and reads the same bytes out of it.
   /// </summary>
   [Test, Category("OsIntegration")]

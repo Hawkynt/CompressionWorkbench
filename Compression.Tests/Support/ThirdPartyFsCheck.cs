@@ -113,7 +113,14 @@ internal static class ThirdPartyFsCheck {
   /// <paramref name="formatId" /> and checks that every payload in
   /// <paramref name="expected" /> comes back.
   /// </summary>
-  public static Result ReadBack(string formatId, string imagePath, IReadOnlyList<byte[]> expected) {
+  /// <param name="readOnly">
+  /// Whether to mount read-only. Almost everything is read here, and mounting
+  /// read-only is what keeps a driver from writing to the image being checked; a
+  /// caller passes false only when what it is checking is that the volume can be
+  /// mounted the other way.
+  /// </param>
+  public static Result ReadBack(string formatId, string imagePath, IReadOnlyList<byte[]> expected,
+      bool readOnly = true) {
     ArgumentNullException.ThrowIfNull(formatId);
     ArgumentNullException.ThrowIfNull(imagePath);
     ArgumentNullException.ThrowIfNull(expected);
@@ -121,7 +128,7 @@ internal static class ThirdPartyFsCheck {
       return Result.NotAvailable($"{formatId}: no third-party reader is configured for this format.");
 
     if (strategy.MountType != null && CanMount) {
-      var mounted = TryMountAndCollect(strategy, imagePath);
+      var mounted = TryMountAndCollect(strategy, imagePath, readOnly);
       if (mounted.Ran)
         return Compare(mounted, expected, $"mount -t {strategy.MountType}");
     }
@@ -191,11 +198,11 @@ internal static class ThirdPartyFsCheck {
 
   private readonly record struct Collected(bool Ran, List<byte[]> Payloads, string Detail);
 
-  private static Collected TryMountAndCollect(Strategy strategy, string imagePath) {
+  private static Collected TryMountAndCollect(Strategy strategy, string imagePath, bool readOnly = true) {
     var mountPoint = Path.Combine(Path.GetTempPath(), "cwb_tp_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(mountPoint);
     try {
-      var options = "loop,ro,noatime";
+      var options = readOnly ? "loop,ro,noatime" : "loop,noatime";
       if (strategy.MountOptions.Length > 0) options += "," + strategy.MountOptions;
       // Ownership options let the invoking user read what was mounted; drivers
       // that do not know them reject the mount, so they are only added for the

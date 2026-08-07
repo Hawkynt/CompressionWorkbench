@@ -53,7 +53,7 @@ the bytes that actually move rather than the whole volume.
 
 Descriptor for bcachefs volumes: a superblock at offset 4096, and b-trees under it holding the names, the metadata and the positions of every file's bytes. Volumes written here are read by the kernel driver, and read back by `BcacheFsReader` — which understands both the packed keys `mkfs.bcachefs` writes and the plain ones this project does.
 
-What such a volume does not carry is allocation information: the trees a running filesystem keeps so it can decide where to write next. The format has a feature bit that says so and bcachefs's own tooling strips exactly those trees for read-only use; the consequence is that these volumes mount read-only with -o norecovery. See `BcacheFsWriter`.
+What such a volume does not carry is allocation information: the trees a running filesystem keeps so it can decide where to write next. bcachefs's own image tooling leaves them out too, and rebuilds them on the first read-write mount. Which of the two mounts a volume is written for is an option; the default is reading. See `BcacheFsWriter`.
 
 References:
 
@@ -69,13 +69,14 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 
 bcachefs keeps no directory blocks and no inode table. A file's name is a key in the dirents tree, its metadata a key in the inodes tree, and its bytes are named by keys in the extents tree; a volume is those trees plus a superblock that says where their roots are. Because the volume is written whole and never mounted for writing in between, the roots go in the superblock's clean section, and no journal entries are needed to find them.
 
-What is not written is the allocation information — the alloc, freespace, backpointer and accounting trees a running filesystem keeps so it can decide where to put the next write. A volume that will only ever be read does not need them, and the format says so twice: with the feature bit for a volume without them, and with the one that says the volume is an image file that was never sized to a device. A kernel reading those mounts it read-only rather than stopping to build what is absent, and its checker passes. Going read-write is what such a volume cannot do; that is the whole of the difference.
+What is not written is the allocation information — the alloc, freespace, backpointer and accounting trees a running filesystem keeps so it can decide where to put the next write. A volume written whole does not have them, and the two mounts want opposite things of that: a read-only mount has to be told not to go and build them, because building them is a write, while a read-write mount has to be allowed to, because it cannot allocate without them. The format has a bit for each case and they are mutually exclusive, so which one a volume gets is a choice — see `SetReadWriteCapable`. By default it is the first, because a volume written whole is an image, and such a volume mounts read-only and passes the format's own checker.
 
 ## Parameters
 
 | Key | Kind | Default | Allowed | Meaning |
 |---|---|---|---|---|
-| `ImageSize` | Enum | `Auto (fit to files)` | `Auto (fit to files)`, `128 MB`, `256 MB`, `512 MB` | Total image capacity. Must be at least 128 MB so all four backup superblocks fit. |
+| `ImageSize` | Enum | `Auto (fit to files)` | `Auto (fit to files)`, `128 MB`, `256 MB`, `512 MB` | Total image capacity. Must be at least 128 MB so the superblock copies fit. |
+| `MountFor` | Enum | `Reading` | `Reading`, `Writing` | A volume written whole has no allocation information, and the two mounts want opposite things of that. Reading: the volume says it is an image file, and a read-only mount takes it as it is. Writing: a read-write mount rebuilds the allocation information on the way in, and a read-only mount no longer works. |
 | `VolumeLabel` | String | `` | any | Volume name shown by file managers (max 31 chars). |
 
 ## Storage methods

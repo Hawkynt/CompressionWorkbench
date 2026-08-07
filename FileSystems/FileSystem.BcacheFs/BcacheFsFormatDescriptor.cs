@@ -14,10 +14,10 @@ namespace FileSystem.BcacheFs;
 /// <c>mkfs.bcachefs</c> writes and the plain ones this project does.
 ///
 /// <para>What such a volume does not carry is allocation information: the trees a
-/// running filesystem keeps so it can decide where to write next. The format has a
-/// feature bit that says so and bcachefs's own tooling strips exactly those trees
-/// for read-only use; the consequence is that these volumes mount read-only with
-/// <c>-o norecovery</c>. See <see cref="BcacheFsWriter" />.</para>
+/// running filesystem keeps so it can decide where to write next. bcachefs's own
+/// image tooling leaves them out too, and rebuilds them on the first read-write
+/// mount. Which of the two mounts a volume is written for is an option; the
+/// default is reading. See <see cref="BcacheFsWriter" />.</para>
 ///
 /// References:
 /// <list type="bullet">
@@ -31,17 +31,25 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
-  /// Knobs the WORM superblock writer honours. <c>VolumeLabel</c> maps to
-  /// <see cref="BcacheFsWriter.SetLabel"/> (label[32], read back as
-  /// <c>BcacheFsSuperblock.Label</c>); <c>ImageSize</c> maps to
-  /// <see cref="BcacheFsWriter.SetImageSize"/> and must be at least
-  /// <see cref="BcacheFsWriter.MinImageSize"/> (128&#160;MiB) so the four backup
-  /// superblocks fit. The 512-byte block size is fixed, so it is not exposed.
+  /// What the writer can be asked for. <c>VolumeLabel</c> is the superblock's
+  /// 32-byte label; <c>ImageSize</c> is the volume's capacity and must leave room
+  /// for the superblock copies; <c>MountFor</c> chooses which of the two mounts the
+  /// volume is written for. The 512-byte block size is fixed, so it is not offered.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
     FilesystemSchemaPresets.ImageSize(["128 MB", "256 MB", "512 MB"],
-      description: "Total image capacity. Must be at least 128 MB so all four backup superblocks fit."),
+      description: "Total image capacity. Must be at least 128 MB so the superblock copies fit."),
+    new FormatOptionDescriptor(
+      Key: "MountFor",
+      DisplayName: "Mount for",
+      Kind: FormatOptionKind.Enum,
+      Default: "Reading",
+      AllowedValues: ["Reading", "Writing"],
+      Description: "A volume written whole has no allocation information, and the two mounts "
+        + "want opposite things of that. Reading: the volume says it is an image file, and a "
+        + "read-only mount takes it as it is. Writing: a read-write mount rebuilds the "
+        + "allocation information on the way in, and a read-only mount no longer works."),
   ];
 
   public string Id => "BcacheFs";
@@ -166,6 +174,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     if (!string.IsNullOrEmpty(label))
       w.SetLabel(label);
 
+    w.SetReadWriteCapable(
+      string.Equals(options?.GetOption("MountFor", "Reading"), "Writing", StringComparison.OrdinalIgnoreCase));
+
     var sizes = new List<long>();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
@@ -179,8 +190,8 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       w.AddStreamingFile(i.ArchiveName, length, () => File.OpenRead(path));
     }
 
-    // The requested size is a floor: the image has to be at least large enough
-    // for the payload's directory chain and data blocks.
+    // The requested size is a floor: the volume has to be at least large enough for
+    // its b-trees and every file's bytes.
     var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
     w.SetImageSize(Math.Max(sizeBytes, BcacheFsWriter.EstimateSize(sizes)));
     w.WriteTo(output);

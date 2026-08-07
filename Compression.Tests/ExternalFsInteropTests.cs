@@ -1934,6 +1934,51 @@ public class ExternalFsInteropTests {
   }
 
   /// <summary>
+  /// Our reader reads a volume <c>bcachefs format</c> wrote, keys and all.
+  /// </summary>
+  /// <remarks>
+  /// It is the other half of the format. bcachefs writes its keys packed — every
+  /// field squeezed to the width the node's own format gives it and stored as one
+  /// large integer in machine word order — while this project writes them with the
+  /// fields laid out in full. A reader that only understood the second could round
+  /// trip its own volumes and nothing else, which is not reading the format.
+  /// </remarks>
+  [Test]
+  public void BcacheFs_BcachefsToolsFormat_OurReaderReadsItBack() {
+    RequireWslTool("bcachefs", "bcachefs-tools");
+
+    var sourceDir = Path.Combine(this._tmpDir, "bch_src");
+    Directory.CreateDirectory(Path.Combine(sourceDir, "sub"));
+    var expected = new Dictionary<string, byte[]>(StringComparer.Ordinal) {
+      ["F0.BIN"] = Enumerable.Range(0, 20000).Select(i => (byte)(i * 31 + 7)).ToArray(),
+      ["F1.BIN"] = Enumerable.Range(0, 5000).Select(i => (byte)(i * 17 + 3)).ToArray(),
+      ["sub/DEEP.BIN"] = Enumerable.Range(0, 900).Select(i => (byte)(i * 5 + 1)).ToArray(),
+    };
+    foreach (var (name, data) in expected)
+      File.WriteAllBytes(Path.Combine(sourceDir, name.Replace('/', Path.DirectorySeparatorChar)), data);
+
+    var imgPath = Path.Combine(this._tmpDir, "bcachefs_theirs.img");
+    var wslImg = FsInteropToolbox.WinToWsl(imgPath);
+    var wslSrc = FsInteropToolbox.WinToWsl(sourceDir);
+    var prep = FsInteropToolbox.RunWsl(
+      $"dd if=/dev/zero of={wslImg} bs=1M count=128 status=none && " +
+      $"bcachefs format --force --source={wslSrc} {wslImg}");
+    if (prep.ExitCode != 0)
+      Assert.Ignore($"`bcachefs format --source` failed (likely a bcachefs-tools version without it):\n" +
+                    $"stdout:\n{prep.StdOut}\nstderr:\n{prep.StdErr}");
+
+    using var image = File.OpenRead(imgPath);
+    using var reader = new FileSystem.BcacheFs.BcacheFsReader(image);
+    Assert.That(reader.Valid, Is.True, reader.Status);
+
+    foreach (var (name, data) in expected) {
+      var entry = reader.Entries.FirstOrDefault(e => e.Name == name);
+      Assert.That(entry, Is.Not.Null, $"{name} must be found in a volume bcachefs wrote");
+      Assert.That(reader.Read(entry!), Is.EqualTo(data), $"{name} must come back byte for byte");
+    }
+  }
+
+  /// <summary>
   /// Round-trip via bcachefs-tools' own format command — orthogonal coverage
   /// proving that running `bcachefs format` (instead of our writer) inside
   /// WSL still produces bytes our descriptor's reader can parse. Catches
