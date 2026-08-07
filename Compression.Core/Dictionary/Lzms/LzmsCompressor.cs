@@ -296,13 +296,32 @@ public sealed class LzmsCompressor {
   // Forward bitstream (MSB-first)
   // -------------------------------------------------------------------------
 
+  /// <summary>
+  /// Grows the forward buffer so that one more byte fits.
+  /// </summary>
+  /// <remarks>
+  /// The initial estimate of twice the input plus 1 KiB holds for ordinary data,
+  /// but it is an estimate rather than a bound: a Huffman table whose code
+  /// lengths have run out to the 15-bit limit emits up to 1.875 bytes per input
+  /// byte until the periodic rebuild shortens them again. Overrunning it used to
+  /// discard the excess bits silently, which left a truncated forward stream that
+  /// no decoder can read. Growing instead keeps every stream that already fitted
+  /// byte-for-byte identical.
+  /// </remarks>
+  private void EnsureForwardCapacity() {
+    if (_fwdPos < _fwdOutput.Length)
+      return;
+
+    Array.Resize(ref _fwdOutput, _fwdOutput.Length * 2);
+  }
+
   private void WriteForwardBits(int value, int count) {
     _fwdBitBuf |= ((ulong)value & ((1ul << count) - 1)) << (64 - _fwdBitsUsed - count);
     _fwdBitsUsed += count;
 
     while (_fwdBitsUsed >= 8) {
-      if (_fwdPos < _fwdOutput.Length)
-        _fwdOutput[_fwdPos++] = (byte)(_fwdBitBuf >> 56);
+      EnsureForwardCapacity();
+      _fwdOutput[_fwdPos++] = (byte)(_fwdBitBuf >> 56);
       _fwdBitBuf <<= 8;
       _fwdBitsUsed -= 8;
     }
@@ -349,8 +368,8 @@ public sealed class LzmsCompressor {
 
   private void FlushForwardBits() {
     while (_fwdBitsUsed > 0) {
-      if (_fwdPos < _fwdOutput.Length)
-        _fwdOutput[_fwdPos++] = (byte)(_fwdBitBuf >> 56);
+      EnsureForwardCapacity();
+      _fwdOutput[_fwdPos++] = (byte)(_fwdBitBuf >> 56);
       _fwdBitBuf <<= 8;
       _fwdBitsUsed -= 8;
     }
