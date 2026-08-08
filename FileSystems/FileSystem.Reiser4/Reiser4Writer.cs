@@ -168,6 +168,22 @@ public sealed class Reiser4Writer {
   // by offset for its blocks. The block allocator bitmap and the superblock's free
   // count already move with the payload area and would move with these instead.
   //
+  // A key is four little-endian words: the locality in the top sixty bits of the
+  // first with the item type in its low four, an ordering, the object id, and an
+  // offset. A file's stat data and its body share locality, ordering and object id
+  // and differ only in that type and in the offset.
+  //
+  // A directory entry's key carries the name itself rather than a hash of it, for
+  // any name of twenty-three characters or fewer — which is every name this writer
+  // produces. The bytes pack big-endian into the ordering starting one byte in,
+  // then into the object id, then into the offset; the top seven bits of the
+  // ordering hold a fibre, which is the last character of the name when the one
+  // before it is a dot and zero otherwise. Checked rather than assumed: packing
+  // ".." that way gives 0x2e2e0000000000, which is what a volume made by
+  // mkfs.reiser4 has on it. A name held in its key is stored nowhere else, so its
+  // entry is the twenty-four bytes of the target's key alone — which is the spacing
+  // a real volume shows between "." and "..".
+  //
   // fsck.reiser4 gates it and debugfs.reiser4 -t reads back what was written, which
   // is the same pair of tools that turned four supposed kernel limits in NILFS2
   // into four bugs of this project's own.
