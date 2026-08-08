@@ -205,6 +205,7 @@ public sealed class Qnx6Writer {
     WriteSuperblock(
       image.At(SuperblockOffset, SuperblockSize),
       inodeTablePtr: (uint)(InodeTableBlock - blocksBefore),
+      inodeTableBlocks: inodeTableBlocks,
       numInodes: (uint)totalInodes,
       numBlocks: filesystemBlocks,
       freeInodes: (uint)Math.Max(0, MaxFiles - accepted.Count),
@@ -283,6 +284,7 @@ public sealed class Qnx6Writer {
   private static void WriteSuperblock(
     Span<byte> sb,
     uint inodeTablePtr,
+    int inodeTableBlocks,
     uint numInodes,
     uint numBlocks,
     uint freeInodes,
@@ -322,9 +324,20 @@ public sealed class Qnx6Writer {
     //         size: total inode table bytes — we record the table extent
     //               here so a recovery tool can size the inode array.
     BinaryPrimitives.WriteUInt64LittleEndian(sb.Slice(0x48), (ulong)numInodes * InodeSize);
-    // First ptr at +0x50 = inode table block, as the filesystem numbers it.
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x50), inodeTablePtr);
-    // Remaining ptrs and levels stay zero (we use a flat array, not a B-tree).
+    // A pointer for each block of the table, at +0x50 onward. With no levels
+    // these name blocks directly, so a table spanning more than one block needs
+    // more than one of them named — with only the first written, a reader reaches
+    // the inodes in that block and no others, and every file past the seventh
+    // vanishes from the volume while its directory entry stays.
+    if (inodeTableBlocks > DirectPointers)
+      throw new InvalidOperationException(
+        $"QNX6: the inode table spans {inodeTableBlocks} blocks, more than the "
+        + $"{DirectPointers} an inode names without going a level deeper.");
+
+    for (var i = 0; i < inodeTableBlocks; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x50 + i * 4), (uint)(inodeTablePtr + i));
+
+    // Levels stay zero (we use a flat array, not a B-tree).
     // The Bitmap, Longfile and Unknown root nodes that follow stay zero too,
     // which reads as "no levels" and is what a driver sanity-checks them for.
 
