@@ -52,7 +52,7 @@ public sealed class UfsWriter {
   internal static readonly int FsMagicOffset = SuperblockSize - 4; // 1372
 
   private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
-  private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray();
+  private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray(bigEndian: true);
 
   /// <summary>Optional volume label, written to the superblock's <c>fs_volname</c>
   /// field (struct fs offset 680, <c>MAXVOLLEN</c>=32, NUL-terminated ASCII) — the

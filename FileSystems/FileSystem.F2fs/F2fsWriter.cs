@@ -899,7 +899,7 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(104), MetaIno);
 
     // uuid[16] — 128-bit, guaranteed non-zero.
-    var uuid = Guid.NewGuid().ToByteArray();
+    var uuid = Guid.NewGuid().ToByteArray(bigEndian: true);
     Array.Copy(uuid, 0, sb, 108, 16);
 
     // volume_name[512] __le16 — UTF-16LE, up to 511 code units + null terminator.

@@ -152,14 +152,28 @@ public sealed class BtrfsWriter {
   private const long FirstFreeObjectId = 256;
 
   private static readonly byte[] Magic = "_BHRfS_M"u8.ToArray();
-  private static readonly byte[] FsUuid = {
-    0xb7, 0xe5, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x72, 0x74, 0x72, 0x66,
-  };
-  private static readonly byte[] DevUuid = {
-    0xb7, 0xe5, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x64, 0x65, 0x76, 0x31,
-  };
+
+  // The volume's identity and the device's within it. Both are freshly random per
+  // volume: two btrfs volumes sharing a fsid cannot be mounted at once, and a fsid
+  // that came out the same every time would name the program that wrote it.
+  private byte[] _fsUuid = NewUuid();
+  private byte[] _devUuid = NewUuid();
+
+  /// <summary>Fixes the volume and device identities, for a build that has to come out the same twice.</summary>
+  /// <param name="filesystem">The volume's identity.</param>
+  /// <param name="device">The device's identity within it.</param>
+  public void SetUuids(Guid filesystem, Guid device) {
+    this._fsUuid = filesystem.ToByteArray(bigEndian: true);
+    this._devUuid = device.ToByteArray(bigEndian: true);
+  }
+
+  private static byte[] NewUuid() {
+    var uuid = new byte[16];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(uuid);
+    uuid[6] = (byte)((uuid[6] & 0x0F) | 0x40);   // version 4
+    uuid[8] = (byte)((uuid[8] & 0x3F) | 0x80);   // variant
+    return uuid;
+  }
 
   private readonly List<(string name, byte[] data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
 
@@ -471,7 +485,7 @@ public sealed class BtrfsWriter {
     WriteLeafNode(image, (int)this._dataRelocTreeOff, DataRelocTreeObjectId, items);
   }
 
-  private static void WriteEmptyTree(byte[] image, int nodeOff, long ownerObjectId) {
+  private void WriteEmptyTree(byte[] image, int nodeOff, long ownerObjectId) {
     WriteLeafNode(image, nodeOff, ownerObjectId,
       new List<(long, byte, long, byte[])>());
   }
@@ -647,7 +661,7 @@ public sealed class BtrfsWriter {
     // 0x23B metadata_uuid[16]
     // ...
     // 0x32B sys_chunk_array[2048]
-    FsUuid.CopyTo(sb.Slice(0x20));
+    this._fsUuid.CopyTo(sb.Slice(0x20));
     BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x30), SbOffset);
     Magic.CopyTo(sb.Slice(0x40));
     BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x48), 1); // generation
@@ -715,8 +729,8 @@ public sealed class BtrfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(60), 0);            // dev_group
     d[64] = 0; // seek_speed
     d[65] = 0; // bandwidth
-    DevUuid.CopyTo(d.AsSpan(66));
-    FsUuid.CopyTo(d.AsSpan(82));
+    this._devUuid.CopyTo(d.AsSpan(66));
+    this._fsUuid.CopyTo(d.AsSpan(82));
     return d;
   }
 
@@ -731,7 +745,7 @@ public sealed class BtrfsWriter {
   //              + io_align(4) + io_width(4) + sector_size(4)
   //              + num_stripes(2) + sub_stripes(2)                    = 48
   //   stripe:      devid(8) + offset(8) + dev_uuid(16)                = 32
-  private static byte[] BuildSysChunkArray() {
+  private byte[] BuildSysChunkArray() {
     var a = new byte[17 + 48 + 32];
     BinaryPrimitives.WriteInt64LittleEndian(a.AsSpan(0), FirstChunkTreeObjectId);
     a[8] = ChunkItem;
@@ -749,7 +763,7 @@ public sealed class BtrfsWriter {
     var s = c + 48;
     BinaryPrimitives.WriteInt64LittleEndian(a.AsSpan(s + 0), 1);                 // devid
     BinaryPrimitives.WriteInt64LittleEndian(a.AsSpan(s + 8), SystemChunkStart);  // physical
-    DevUuid.CopyTo(a.AsSpan(s + 16));
+    this._devUuid.CopyTo(a.AsSpan(s + 16));
     return a;
   }
 
@@ -774,7 +788,7 @@ public sealed class BtrfsWriter {
   }
 
   // 80-byte chunk value = 48-byte chunk_item header + 32-byte stripe.
-  private static byte[] BuildChunkItem(long length, ulong type, long physicalStart) {
+  private byte[] BuildChunkItem(long length, ulong type, long physicalStart) {
     var data = new byte[48 + 32];
     BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(0), length);
     BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(8), RootTreeObjectId);
@@ -787,7 +801,7 @@ public sealed class BtrfsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(46), 0);
     BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(48), 1);
     BinaryPrimitives.WriteInt64LittleEndian(data.AsSpan(56), physicalStart);
-    DevUuid.CopyTo(data.AsSpan(64));
+    this._devUuid.CopyTo(data.AsSpan(64));
     return data;
   }
 
@@ -1213,8 +1227,8 @@ public sealed class BtrfsWriter {
   //   88  owner (u64)
   //   96  nritems (u32)
   //   100 level (u8)           — total header = 101 bytes
-  private static void WriteLeafNode(byte[] image, int nodeOff, long ownerObjectId, List<(long objId, byte type, long offset, byte[] data)> items) {
-    FsUuid.CopyTo(image.AsSpan(nodeOff + 32));
+  private void WriteLeafNode(byte[] image, int nodeOff, long ownerObjectId, List<(long objId, byte type, long offset, byte[] data)> items) {
+    this._fsUuid.CopyTo(image.AsSpan(nodeOff + 32));
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 48), nodeOff); // bytenr
     // flags: bit0 = WRITTEN, top 8 bits (56..63) = backref_rev.
     // backref_rev MUST be 1 (MIXED_BACKREF_REV). If it is 0 (OLD_BACKREF_REV)
@@ -1224,7 +1238,7 @@ public sealed class BtrfsWriter {
     const long WrittenFlag = 1L;
     const long MixedBackrefRev = 1L << 56;
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 56), WrittenFlag | MixedBackrefRev);
-    FsUuid.CopyTo(image.AsSpan(nodeOff + 64));                                    // chunk_tree_uuid
+    this._fsUuid.CopyTo(image.AsSpan(nodeOff + 64));                                    // chunk_tree_uuid
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 80), 1);       // generation
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 88), ownerObjectId); // owner
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(nodeOff + 96), (uint)items.Count);
@@ -1257,14 +1271,14 @@ public sealed class BtrfsWriter {
   //   generation: child generation                     = 8   → 33 bytes total
   // Children must appear in ascending key order; each key is the lowest key
   // present in the referenced child node.
-  private static void WriteInternalNode(byte[] image, int nodeOff, long ownerObjectId,
+  private void WriteInternalNode(byte[] image, int nodeOff, long ownerObjectId,
       byte level, List<(long objId, byte type, long offset, long blockPtr)> keyPtrs) {
-    FsUuid.CopyTo(image.AsSpan(nodeOff + 32));
+    this._fsUuid.CopyTo(image.AsSpan(nodeOff + 32));
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 48), nodeOff); // bytenr
     const long WrittenFlag = 1L;
     const long MixedBackrefRev = 1L << 56;
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 56), WrittenFlag | MixedBackrefRev);
-    FsUuid.CopyTo(image.AsSpan(nodeOff + 64));                                    // chunk_tree_uuid
+    this._fsUuid.CopyTo(image.AsSpan(nodeOff + 64));                                    // chunk_tree_uuid
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 80), 1);       // generation
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 88), ownerObjectId);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(nodeOff + 96), (uint)keyPtrs.Count);

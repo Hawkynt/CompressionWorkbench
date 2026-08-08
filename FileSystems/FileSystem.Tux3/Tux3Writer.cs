@@ -53,7 +53,11 @@ namespace FileSystem.Tux3;
 public sealed class Tux3Writer {
   private readonly List<Item> _files = [];
 
-  public ulong Birthday { get; init; } = 0x_5455_5833_4253_4831UL; // "TUX3BSH1" — deterministic placeholder
+  /// <summary>
+  /// When the volume claims it was made. Taken from the clock unless set, because
+  /// a birthday that reads the same on every volume is a maker's mark.
+  /// </summary>
+  public ulong Birthday { get; init; } = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
   public ulong Flags { get; init; }
   public ulong BlockBits { get; init; } = 12; // 4 KiB blocks (matches Tux3 prototype default)
 

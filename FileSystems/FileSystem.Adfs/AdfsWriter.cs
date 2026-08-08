@@ -64,7 +64,7 @@ public sealed class AdfsWriter {
   public byte BootOption { get; set; } = 0;
 
   /// <summary>Disc title — 19-byte ASCII string stored in the root directory tail.</summary>
-  public string DiscTitle { get; set; } = "CWB-ADFS";
+  public string DiscTitle { get; set; } = "";
 
   /// <summary>Target disc size — defaults to ADFS-L (640 KiB).</summary>
   public int DiscSize { get; set; } = DiskSizeL;

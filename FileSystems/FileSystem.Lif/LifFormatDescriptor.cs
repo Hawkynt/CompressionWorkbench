@@ -115,7 +115,7 @@ public sealed class LifFormatDescriptor :
       .ToList();
 
     var label = options?.GetOption("VolumeLabel", "") ?? "";
-    if (string.IsNullOrEmpty(label)) label = "CWB";
+    if (label == null) label = "";
     var dirSectors = Math.Max(1, options?.GetOptionInt("DirectorySectors", 1) ?? 1);
     var fileType = (options?.GetOption("DefaultFileType", "BIN (0xE020)") ?? "BIN (0xE020)") switch {
       "BPGM (0xE204)" => (ushort)0xE204,

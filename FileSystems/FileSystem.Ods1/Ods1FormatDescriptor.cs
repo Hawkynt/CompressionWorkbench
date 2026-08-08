@@ -27,7 +27,7 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Sole tunable the Files-11 L1 writer honours: the 12-character home-block
   /// volume name (hm1$t_volname). The rest of the Stage-1 geometry is fixed.
-  /// An empty label falls back to the writer default ("CWBVOL").
+  /// An empty label falls back to the writer default ("SCRATCH").
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
@@ -94,7 +94,7 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
             new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath))));
     }
     var volumeName = options?.GetOption("VolumeLabel", "") ?? "";
-    if (string.IsNullOrEmpty(volumeName)) volumeName = "CWBVOL";
+    if (string.IsNullOrEmpty(volumeName)) volumeName = "SCRATCH";
     Ods1Writer.WriteTo(output, files, volumeName);
   }
 

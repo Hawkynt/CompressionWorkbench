@@ -18,7 +18,7 @@ public sealed class NssWriter {
   private readonly List<(string Name, byte[] Data)> _files = [];
 
   /// <summary>The volume name written next to the volume anchor.</summary>
-  public string VolumeName { get; init; } = "CWBPOOL";
+  public string VolumeName { get; init; } = "POOL1";
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);

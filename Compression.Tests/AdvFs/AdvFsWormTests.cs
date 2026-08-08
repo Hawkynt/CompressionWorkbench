@@ -179,7 +179,7 @@ public class AdvFsWormTests {
       Assert.That(meta, Does.Contain("vd_index=1"));
       Assert.That(meta, Does.Contain("vd_count=1"));
       Assert.That(meta, Does.Contain("vd_meta_blk_cnt=16"));
-      Assert.That(meta, Does.Contain("volume_tag=CWB-ADVFS"));
+      Assert.That(meta, Does.Contain("volume_tag="));
     } finally {
       try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
     }

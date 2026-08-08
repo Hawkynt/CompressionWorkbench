@@ -62,6 +62,25 @@ public sealed class NtfsWriter {
   // Per-build geometry — set by Build() before any record is emitted. These
   // replace the former compile-time constants so cluster + MFT-record size are
   // tunable. Defaults keep the parameterless Build() byte-identical to before.
+  // The volume serial, drawn once per writer. format.com's is random, so a serial
+  // with a shape to it — a clock reading, a fixed mask — tells one apart.
+  private long _volumeSerial = NewVolumeSerial();
+
+  /// <summary>Fixes the volume serial, for a build that has to come out the same twice.</summary>
+  /// <param name="serial">The serial to use; must not be zero.</param>
+  public void SetVolumeSerial(long serial) {
+    if (serial == 0) throw new ArgumentOutOfRangeException(nameof(serial), "An NTFS volume serial is never zero.");
+
+    this._volumeSerial = serial;
+  }
+
+  private static long NewVolumeSerial() {
+    Span<byte> bytes = stackalloc byte[8];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
+    var serial = BinaryPrimitives.ReadInt64LittleEndian(bytes);
+    return serial == 0 ? 1L : serial;
+  }
+
   private int _sectorsPerCluster = DefaultSectorsPerCluster;
   private int _clusterSize = DefaultClusterSize;
   private int _mftRecordSize = DefaultMftRecordSize;
@@ -438,9 +457,9 @@ public sealed class NtfsWriter {
     var totalSectors = totalSize / BytesPerSector;
     var totalClusters = totalSize / this._clusterSize;
 
-    // Deterministic volume serial (high 32 bits derived from time, low from
-    // magic) so Windows recognises the volume as distinct. Must be non-zero.
-    var volumeSerial = DateTime.UtcNow.ToFileTimeUtc() ^ 0x4E544653_4E544653L;
+    // The volume serial. format.com draws it at random and it must not be zero;
+    // one folded out of the clock and a fixed mask has a recognisable shape.
+    var volumeSerial = this._volumeSerial;
 
     // --- Cluster layout ------------------------------------------------------
     //   cluster 0                : boot sector (VBR)

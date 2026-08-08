@@ -221,7 +221,7 @@ public sealed class ErofsWriter {
 
     // 3. Superblock at offset 1024.
     WriteSuperblock(image, rootNid: this._root.Nid, inodeCount: allNodes.Count,
-      totalBlocks: totalBlocks, metaBlkAddr: metaBlkAddr, volumeName: this.VolumeName);
+      totalBlocks: totalBlocks, metaBlkAddr: metaBlkAddr, volumeName: this.VolumeName, uuid: this._uuid);
 
     // 4. Inodes + inline tails. Placement must reproduce pass A exactly so that each
     //    inode lands at the byte its nid encodes.
@@ -337,7 +337,7 @@ public sealed class ErofsWriter {
     return body;
   }
 
-  private static void WriteSuperblock(byte[] image, uint rootNid, int inodeCount, uint totalBlocks, uint metaBlkAddr, string volumeName) {
+  private static void WriteSuperblock(byte[] image, uint rootNid, int inodeCount, uint totalBlocks, uint metaBlkAddr, string volumeName, ReadOnlySpan<byte> uuid) {
     var sb = image.AsSpan(1024);
     BinaryPrimitives.WriteUInt32LittleEndian(sb, ErofsReader.Magic);            // magic @0
     // checksum @4 left 0 — sb_csum feature bit is NOT advertised, so fsck skips it.
@@ -351,14 +351,36 @@ public sealed class ErofsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], totalBlocks);            // blocks @36
     BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], metaBlkAddr);            // meta_blkaddr @40
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 0);                      // xattr_blkaddr @44
-    // uuid @48[16] — a fixed, deterministic non-zero UUID.
-    for (var i = 0; i < 16; ++i) sb[48 + i] = (byte)(0x10 + i);
+    // uuid @48[16] — the image's identity, freshly drawn. mkfs.erofs draws one per
+    // image, so an identity that comes out the same every time names its writer.
+    uuid.CopyTo(sb[48..]);
     // volume_name @64[16] — NUL-padded ASCII label (zero when unset).
     if (!string.IsNullOrEmpty(volumeName)) {
       var nameBytes = Encoding.ASCII.GetBytes(volumeName);
       nameBytes.AsSpan(0, Math.Min(nameBytes.Length, 16)).CopyTo(sb[64..]);
     }
     // feature_incompat @80 left 0.
+  }
+
+  // The image's identity. mkfs.erofs draws one per image; --all-fragments and
+  // reproducible builds pass one in, which SetUuid is for.
+  private byte[] _uuid = NewUuid();
+
+  /// <summary>Fixes the image's identity, for a build that has to come out the same twice.</summary>
+  /// <param name="uuid">The identity to use, sixteen bytes.</param>
+  public void SetUuid(ReadOnlySpan<byte> uuid) {
+    if (uuid.Length != 16)
+      throw new ArgumentException("An EROFS image identity is sixteen bytes.", nameof(uuid));
+
+    this._uuid = uuid.ToArray();
+  }
+
+  private static byte[] NewUuid() {
+    var uuid = new byte[16];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(uuid);
+    uuid[6] = (byte)((uuid[6] & 0x0F) | 0x40);
+    uuid[8] = (byte)((uuid[8] & 0x3F) | 0x80);
+    return uuid;
   }
 
   private static void WriteInode(byte[] image, long offset, Node node) {

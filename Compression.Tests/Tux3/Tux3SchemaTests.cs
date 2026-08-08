@@ -37,11 +37,15 @@ public class Tux3SchemaTests {
   }
 
   [Test, Category("Equivalence")]
-  public void Create_DefaultBirthday_MatchesWriterPlaceholder() {
+  public void Create_WithoutBirthday_StampsTheMomentOfCreation() {
+    var before = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     var d = new Tux3FormatDescriptor();
     using var ms = new MemoryStream();
     d.Create(ms, [ArchiveInputInfo.InMemory("a.txt", "x"u8.ToArray())], new FormatCreateOptions());
     ms.Position = 0;
-    Assert.That(new Tux3Reader(ms).Birthday, Is.EqualTo(0x_5455_5833_4253_4831UL));
+    var birthday = new Tux3Reader(ms).Birthday;
+    var after = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    Assert.That(birthday, Is.InRange(before, after),
+      "Asked for no birthday, the volume takes one from the clock rather than a constant that would name its writer.");
   }
 }

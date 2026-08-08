@@ -46,7 +46,7 @@ public sealed class Os9RbfWriter {
   /// <param name="volumeName">Volume label (max 31 ASCII chars).</param>
   public static byte[] Build(
     IReadOnlyList<(string Name, byte[] Data)> files,
-    string volumeName = "CWBOS9") {
+    string volumeName = "OS9") {
 
     var root = BuildTree(files);
 

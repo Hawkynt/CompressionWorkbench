@@ -69,7 +69,7 @@ Round-trips through `Tux3Reader`. Real linux-tux3 prototype dumps that use the i
 
 | Key | Kind | Default | Allowed | Meaning |
 |---|---|---|---|---|
-| `Birthday` | String | `5455583342534831` | any | 64-bit creation stamp written to the superblock at offset 0x08 (hexadecimal). |
+| `Birthday` | String | `` | any | 64-bit creation stamp written to the superblock at offset 0x08 (hexadecimal). |
 
 ## Storage methods
 

@@ -52,13 +52,13 @@ public static class Ods1Writer {
   /// <param name="files">Files to store; each entry's name is split on the
   /// last dot into a stem (≤ 9 ASCII chars) and extension (≤ 3 ASCII chars).</param>
   /// <param name="volumeName">Volume label (≤ 12 ASCII chars, space-padded).</param>
-  public static byte[] Build(IReadOnlyList<(string Name, byte[] Data)> files, string volumeName = "CWBVOL") {
+  public static byte[] Build(IReadOnlyList<(string Name, byte[] Data)> files, string volumeName = "SCRATCH") {
     ArgumentNullException.ThrowIfNull(files);
     return Build(files.Select(f => (f.Name, FilePayload.FromBytes(f.Data))).ToList(), volumeName);
   }
 
   /// <summary>Materialises an image from payloads that may be streamed.</summary>
-  public static byte[] Build(IReadOnlyList<(string Name, FilePayload Payload)> files, string volumeName = "CWBVOL") {
+  public static byte[] Build(IReadOnlyList<(string Name, FilePayload Payload)> files, string volumeName = "SCRATCH") {
     var image = BuildCore(files, volumeName, out var payloads, out var totalBytes);
     if (totalBytes > Array.MaxLength)
       throw new InvalidOperationException(
@@ -76,7 +76,7 @@ public static class Ods1Writer {
   /// resident, so a volume past what a byte[] can address is producible.
   /// </summary>
   public static void WriteTo(Stream output, IReadOnlyList<(string Name, FilePayload Payload)> files,
-                             string volumeName = "CWBVOL") {
+                             string volumeName = "SCRATCH") {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek) {
       var full = Build(files, volumeName);

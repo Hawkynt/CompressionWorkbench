@@ -24,8 +24,8 @@ public class GsOsWriterTests {
 
     Assert.That(image[..4], Is.EqualTo("2IMG"u8.ToArray()),
       "2IMG magic must occupy bytes 0..3.");
-    Assert.That(Encoding.ASCII.GetString(image, 4, 4), Is.EqualTo("CWB!"),
-      "Default creator code is CWB! (CompressionWorkbench).");
+    Assert.That(Encoding.ASCII.GetString(image, 4, 4), Is.EqualTo("CdrP"),
+      "The creator code names the program that made the image, and reads as the one nearly every 2IMG in circulation carries.");
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(8, 2)), Is.EqualTo(64),
       "Header size field at offset 8 must equal 64 (canonical header size).");
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(10, 2)), Is.EqualTo(1),

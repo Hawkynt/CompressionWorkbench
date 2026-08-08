@@ -110,7 +110,7 @@ public sealed class Os9RbfFormatDescriptor :
       .Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()))
       .ToList();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
-    if (string.IsNullOrEmpty(label)) label = "CWBOS9";
+    if (string.IsNullOrEmpty(label)) label = "OS9";
     var image = Os9RbfWriter.Build(files, label);
     output.Write(image);
   }

@@ -77,6 +77,27 @@ public sealed class HfsPlusWriter {
   /// </summary>
   private List<(uint StartBlock, uint BlockCount, long Size, Func<Stream> Opener)>? _streamingSink;
 
+  /// <summary>
+  /// The volume's identity, which every HFS+ volume carries and no two share.
+  /// </summary>
+  /// <remarks>
+  /// Two words in the Finder's area of the volume header. The system that mounts
+  /// the volume hashes them into the UUID it shows, and a volume whose words are
+  /// both zero is one that no formatter made.
+  /// </remarks>
+  private ulong _volumeUuid = NewVolumeUuid();
+
+  /// <summary>Fixes the volume's identity, for a build that has to come out the same twice.</summary>
+  /// <param name="uuid">The identity to use.</param>
+  public void SetVolumeUuid(ulong uuid) => this._volumeUuid = uuid;
+
+  private static ulong NewVolumeUuid() {
+    Span<byte> bytes = stackalloc byte[8];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
+    var value = BinaryPrimitives.ReadUInt64BigEndian(bytes);
+    return value == 0 ? 1UL : value;
+  }
+
   /// <summary>Declared size of the volume the last build laid out.</summary>
   private long DeclaredImageBytes { get; set; }
 
@@ -240,6 +261,9 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt32BigEndian(vh[60..], 0x10000);    // dataClumpSize = 64K
     // encodingsBitmap @ 72: bit 0 = MacRoman (the mandatory legacy encoding).
     BinaryPrimitives.WriteUInt64BigEndian(vh[72..], 1UL);
+    // finderInfo[6..7] @ 104: the volume's identity, which is what a mounting
+    // system hashes into the UUID it reports.
+    BinaryPrimitives.WriteUInt64BigEndian(vh[104..], this._volumeUuid);
 
     var catalogStartBlock = CatalogStartBlock;
     var nextBlock = nextBlockAfterData;

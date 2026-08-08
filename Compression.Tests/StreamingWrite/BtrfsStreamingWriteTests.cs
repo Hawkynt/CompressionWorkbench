@@ -12,10 +12,11 @@ namespace Compression.Tests.StreamingWrite;
 /// (inline) and a large (regular-extent) file coexist, and produces output
 /// byte-identical to the classic <c>WriteTo</c> for the same inputs.
 /// <para>
-/// Byte-identity is asserted as full-image equality: the Btrfs writer embeds a
-/// fixed FS-UUID and uses hard-coded generations/transids with no wall-clock
-/// timestamps, so its output is fully deterministic and a literal comparison
-/// holds. Files smaller than one sector (<c>MaxInlineDataSize</c> = 4096) are
+/// Byte-identity is asserted as full-image equality on everything but the two
+/// UUIDs a volume is entitled to draw fresh: the writer uses hard-coded
+/// generations/transids and no wall-clock timestamps, so once the baseline is
+/// given the identities the streamed image drew, a literal comparison holds.
+/// Files smaller than one sector (<c>MaxInlineDataSize</c> = 4096) are
 /// stored inline in the FS-tree metadata leaf; files at or above the threshold
 /// are streamed into their DATA-chunk extent (which carries no checksum — the
 /// inode is NODATASUM), so streaming cannot diverge from the classic bytes.
@@ -45,6 +46,26 @@ public class BtrfsStreamingWriteTests {
     w.WriteTo(ms);
     return ms.ToArray();
   }
+
+  // The same, but wearing the identities another volume already drew — which is
+  // what it takes to compare two volumes byte for byte, since no two volumes are
+  // meant to share them.
+  private static byte[] CreateClassicAs(byte[] identityOf, params (string Name, byte[] Data)[] files) {
+    var w = new BtrfsWriter();
+    w.SetUuids(FsUuidOf(identityOf), DevUuidOf(identityOf));
+    foreach (var (name, data) in files) w.AddFile(name, data);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    return ms.ToArray();
+  }
+
+  // btrfs_super_block: fsid at 0x20, dev_item at 0xC9, and the device's own uuid
+  // 66 bytes into that.
+  private const int SbOffset = 0x10000;
+
+  private static Guid FsUuidOf(byte[] image) => new(image.AsSpan(SbOffset + 0x20, 16), bigEndian: true);
+
+  private static Guid DevUuidOf(byte[] image) => new(image.AsSpan(SbOffset + 0xC9 + 66, 16), bigEndian: true);
 
   private static byte[] ExtractOne(byte[] image, string name) {
     var d = new BtrfsFormatDescriptor();
@@ -102,13 +123,14 @@ public class BtrfsStreamingWriteTests {
 
   [Test, Category("RoundTrip")]
   public void StreamingOutput_EqualsClassicCreate() {
-    // Mix an inline file with a multi-MB streamed extent. Btrfs output is fully
-    // deterministic (fixed UUID, no timestamps), so the streamed image must be
-    // byte-for-byte identical to the classic WriteTo image.
+    // Mix an inline file with a multi-MB streamed extent. Nothing else in a btrfs
+    // image varies between builds — no timestamps, fixed generations — so given
+    // the streamed image's own two UUIDs the classic WriteTo image must come out
+    // byte for byte the same.
     var inline = Pattern(200, 1);
     var extent = Pattern(3 * 1024 * 1024, 2);
     var streamed = CreateFromStreams(File("a.txt", inline), File("b.bin", extent));
-    var classic = CreateClassic(("a.txt", inline), ("b.bin", extent));
+    var classic = CreateClassicAs(streamed, ("a.txt", inline), ("b.bin", extent));
 
     Assert.That(streamed, Is.EqualTo(classic));
   }

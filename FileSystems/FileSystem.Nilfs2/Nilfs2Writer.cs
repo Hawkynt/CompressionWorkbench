@@ -100,7 +100,6 @@ public sealed class Nilfs2Writer {
   private const int SegUsageSize = 16;
   private const int DatEntrySize = 32;
   private const int SuperRootBytes = 16 + InodeSize * 3; // sr header + 3 inodes = 400.
-  private const ulong CtimeFixed = 1_700_000_000ul;  // byte-reproducible.
   private const ulong LiveEnd = 0xffffffffffffffffUL; // de_end == -1 -> entry is live.
 
   // Segment summary flags (NILFS_SS_*).
@@ -113,14 +112,37 @@ public sealed class Nilfs2Writer {
 
   private readonly List<(string Name, FilePayload Payload)> _files = [];
 
-  /// <summary>
-  /// Deterministic UUID / CRC-seed source so output is byte-reproducible.
-  /// </summary>
-  private static readonly byte[] FixedUuid = [
-    0xC0, 0x4F, 0x5B, 0x21, 0x77, 0xE5, 0x4A, 0x12,
-    0x9D, 0xC1, 0xF1, 0x80, 0x03, 0xBE, 0x8C, 0xD2,
-  ];
-  private const uint FixedCrcSeed = 0x5A4C3A80u;
+  // The volume's identity, the seed its checksums are salted with, and when it was
+  // made. mkfs.nilfs2 draws the first two fresh and takes the third from the clock;
+  // a volume that reports the same three every time says who wrote it.
+  private byte[] _uuid = NewUuid();
+  private uint _crcSeed = NewCrcSeed();
+  private ulong _ctime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+  /// <summary>Fixes the volume's identity and creation time, for a build that has to come out the same twice.</summary>
+  /// <param name="uuid">The volume's identity, sixteen bytes.</param>
+  /// <param name="crcSeed">The seed the volume's checksums are salted with.</param>
+  /// <param name="createdAt">When the volume claims it was made.</param>
+  public void SetIdentity(ReadOnlySpan<byte> uuid, uint crcSeed, DateTimeOffset createdAt) {
+    if (uuid.Length != 16)
+      throw new ArgumentException("A NILFS2 volume identity is sixteen bytes.", nameof(uuid));
+
+    this._uuid = uuid.ToArray();
+    this._crcSeed = crcSeed;
+    this._ctime = (ulong)createdAt.ToUnixTimeSeconds();
+  }
+
+  private static byte[] NewUuid() {
+    var uuid = new byte[16];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(uuid);
+    return uuid;
+  }
+
+  private static uint NewCrcSeed() {
+    Span<byte> bytes = stackalloc byte[4];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
+    return BinaryPrimitives.ReadUInt32LittleEndian(bytes);
+  }
 
   /// <summary>Adds a file to the image.</summary>
   public void AddFile(string name, byte[] data) {
@@ -218,8 +240,8 @@ public sealed class Nilfs2Writer {
       head.At(Nilfs2Superblock.PrimaryOffset, Nilfs2Superblock.Size),
       logBlockSize, nSegments, (ulong)imageBytes, SegBlocks,
       lastCno: 1, lastPseg: (ulong)psegStart, lastSeq: 0, freeBlocks: freeBlocks,
-      ctime: CtimeFixed, state: Nilfs2Superblock.StateValid,
-      crcSeed: FixedCrcSeed, uuid: FixedUuid, volumeLabel: volumeLabel);
+      ctime: this._ctime, state: Nilfs2Superblock.StateValid,
+      crcSeed: this._crcSeed, uuid: this._uuid, volumeLabel: volumeLabel);
 
     var basePosition = output.Position;
     head.WriteTo(output);
@@ -243,8 +265,8 @@ public sealed class Nilfs2Writer {
         secondary,
         logBlockSize, nSegments, (ulong)imageBytes, SegBlocks,
         lastCno: 1, lastPseg: (ulong)psegStart, lastSeq: 0, freeBlocks: freeBlocks,
-        ctime: CtimeFixed, state: Nilfs2Superblock.StateValid,
-        crcSeed: FixedCrcSeed, uuid: FixedUuid, volumeLabel: volumeLabel);
+        ctime: this._ctime, state: Nilfs2Superblock.StateValid,
+        crcSeed: this._crcSeed, uuid: this._uuid, volumeLabel: volumeLabel);
       output.Position = basePosition + secondaryOffset;
       output.Write(secondary);
     }
@@ -453,7 +475,7 @@ public sealed class Nilfs2Writer {
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(0), 1); // ch_ncheckpoints
     var cpoff = ((48 + CheckpointSize - 1) / CheckpointSize) * CheckpointSize; // first cp slot.
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 24), 1);                 // cp_cno
-    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 32), CtimeFixed);        // cp_create
+    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 32), this._ctime);        // cp_create
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 40), (ulong)p.NBlocks);  // cp_nblk_inc
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 48), (ulong)p.NInoUsed); // cp_inodes_count
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 56), (ulong)p.NBlocks);  // cp_blocks_count
@@ -475,7 +497,7 @@ public sealed class Nilfs2Writer {
       throw new InvalidOperationException(
         $"Nilfs2: the log landed in segment {segOfPseg}, past the {blockSize / SegUsageSize} " +
         "segments one sufile block can describe.");
-    BinaryPrimitives.WriteUInt64LittleEndian(su.AsSpan(suSlot), CtimeFixed);       // su_lastmod
+    BinaryPrimitives.WriteUInt64LittleEndian(su.AsSpan(suSlot), this._ctime);       // su_lastmod
     BinaryPrimitives.WriteUInt32LittleEndian(su.AsSpan(suSlot + 8), (uint)p.NBlocks);// su_nblocks
     BinaryPrimitives.WriteUInt32LittleEndian(su.AsSpan(suSlot + 12), 0x1);         // su_flags = DIRTY
     WriteBlock(img, p.PSufile, blockSize, su);
@@ -483,12 +505,12 @@ public sealed class Nilfs2Writer {
     // ── super root (last block of the pseg) ─────────────────────────────────
     var sr = Block(blockSize);
     BinaryPrimitives.WriteUInt16LittleEndian(sr.AsSpan(4), SuperRootBytes); // sr_bytes
-    BinaryPrimitives.WriteUInt64LittleEndian(sr.AsSpan(8), CtimeFixed);     // sr_nongc_ctime
+    BinaryPrimitives.WriteUInt64LittleEndian(sr.AsSpan(8), this._ctime);     // sr_nongc_ctime
     WriteInode(sr.AsSpan(16), 3, 0, SIfreg, 1,
       [(ulong)p.PDatGd, (ulong)p.PDatBm, (ulong)p.PDatEntry]); // DAT: physical ptrs.
     WriteInode(sr.AsSpan(16 + InodeSize), 1, 0, SIfreg, 1, [p.VCpfile]); // cpfile: virtual.
     WriteInode(sr.AsSpan(16 + InodeSize * 2), 1, 0, SIfreg, 1, [p.VSufile]); // sufile: virtual.
-    var srSum = Nilfs2Superblock.Crc32Le(FixedCrcSeed, sr.AsSpan(4, SuperRootBytes - 4));
+    var srSum = Nilfs2Superblock.Crc32Le(this._crcSeed, sr.AsSpan(4, SuperRootBytes - 4));
     BinaryPrimitives.WriteUInt32LittleEndian(sr.AsSpan(0), srSum); // sr_sum over [4..sr_bytes].
     WriteBlock(img, p.PSr, blockSize, sr);
 
@@ -540,7 +562,7 @@ public sealed class Nilfs2Writer {
     BinaryPrimitives.WriteUInt16LittleEndian(ss.AsSpan(12), SegsumHeaderBytes); // ss_bytes
     BinaryPrimitives.WriteUInt16LittleEndian(ss.AsSpan(14), (ushort)(SsLogBgn | SsLogEnd | SsSr));
     BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(16), 0);                 // ss_seq
-    BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(24), CtimeFixed);        // ss_create
+    BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(24), this._ctime);        // ss_create
     BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(32), (ulong)((segOfPseg + 1) * SegBlocks)); // ss_next
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(40), (uint)p.NBlocks);   // ss_nblocks
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(44), (uint)nfinfo);      // ss_nfinfo
@@ -549,13 +571,13 @@ public sealed class Nilfs2Writer {
     summary.CopyTo(ss.AsSpan(SegsumHeaderBytes));
 
     // ss_sumsum = crc32_le over [8 .. sumbytes].
-    var sumsum = Nilfs2Superblock.Crc32Le(FixedCrcSeed, ss.AsSpan(8, sumbytes - 8));
+    var sumsum = Nilfs2Superblock.Crc32Le(this._crcSeed, ss.AsSpan(8, sumbytes - 8));
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(4), sumsum);
     WriteBlock(img, p.PsegStart, blockSize, ss);
 
     // ss_datasum = crc32_le over [pseg+4 .. pseg + nblocks*blockSize].
     var logBytes = img.Read((long)p.PsegStart * blockSize + 4, p.NBlocks * blockSize - 4);
-    var datasum = Nilfs2Superblock.Crc32Le(FixedCrcSeed, logBytes);
+    var datasum = Nilfs2Superblock.Crc32Le(this._crcSeed, logBytes);
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(0), datasum);
     WriteBlock(img, p.PsegStart, blockSize, ss);
   }
@@ -570,13 +592,13 @@ public sealed class Nilfs2Writer {
     img.Write((long)blk * blockSize, data.AsSpan(0, blockSize));
 
   /// <summary>Writes a <c>nilfs_inode</c> with a direct block map.</summary>
-  private static void WriteInode(Span<byte> dst, ulong blocks, ulong size, ushort mode,
+  private void WriteInode(Span<byte> dst, ulong blocks, ulong size, ushort mode,
       ushort links, ReadOnlySpan<ulong> bmapPtrs) {
     dst[..InodeSize].Clear();
     BinaryPrimitives.WriteUInt64LittleEndian(dst, blocks);          // i_blocks
     BinaryPrimitives.WriteUInt64LittleEndian(dst[8..], size);       // i_size
-    BinaryPrimitives.WriteUInt64LittleEndian(dst[16..], CtimeFixed);// i_ctime
-    BinaryPrimitives.WriteUInt64LittleEndian(dst[24..], CtimeFixed);// i_mtime
+    BinaryPrimitives.WriteUInt64LittleEndian(dst[16..], this._ctime);// i_ctime
+    BinaryPrimitives.WriteUInt64LittleEndian(dst[24..], this._ctime);// i_mtime
     BinaryPrimitives.WriteUInt16LittleEndian(dst[48..], mode);      // i_mode
     BinaryPrimitives.WriteUInt16LittleEndian(dst[50..], links);     // i_links_count
     // i_bmap[7] at +56: a direct map has bmap[0] = 0 (NILFS_BMAP_LARGE clear),

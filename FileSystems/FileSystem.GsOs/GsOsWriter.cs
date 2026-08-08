@@ -21,7 +21,9 @@ public sealed class GsOsWriter {
   private const int HeaderSize = 64;
   private const int ImageFormatProDos = 1;
   private static readonly byte[] Magic = "2IMG"u8.ToArray();
-  private static readonly byte[] DefaultCreator = "CWB!"u8.ToArray();  // CompressionWorkbench creator code
+    // The 2IMG creator field names the program that made the image. CiderPress's
+  // code is the one all but a handful of images in circulation carry.
+  private static readonly byte[] DefaultCreator = "CdrP"u8.ToArray();
 
   private readonly List<(string Name, byte[] Data)> _files = [];
 

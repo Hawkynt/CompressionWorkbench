@@ -43,6 +43,7 @@ public class AdvFsSchemaTests {
     using var ms = new MemoryStream();
     d.Create(ms, [ArchiveInputInfo.InMemory("a.txt", "x"u8.ToArray())], new FormatCreateOptions());
     ms.Position = 0;
-    Assert.That(new AdvFsReader(ms).VolumeTag, Is.EqualTo("CWB-ADVFS"));
+    Assert.That(new AdvFsReader(ms).VolumeTag, Is.Empty,
+      "An unasked-for domain carries no tag, the way mkfdmn leaves one it was given no name for.");
   }
 }

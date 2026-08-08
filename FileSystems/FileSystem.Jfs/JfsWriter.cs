@@ -243,8 +243,8 @@ public sealed class JfsWriter {
   /// </summary>
   public void SetVolumeLabel(string label) => this._volumeLabel = label ?? "";
 
-  private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray();
-  private readonly byte[] _logUuid = Guid.NewGuid().ToByteArray();
+  private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray(bigEndian: true);
+  private readonly byte[] _logUuid = Guid.NewGuid().ToByteArray(bigEndian: true);
   private uint _writeTimestamp;                                                           // captured at WriteTo() start so primary/secondary copies match byte-for-byte
 
   public void AddFile(string name, byte[] data) {

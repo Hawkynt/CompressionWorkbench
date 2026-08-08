@@ -46,7 +46,7 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Sole tunable the ODS-2 writer honours: the 12-character home-block volume
   /// label (HM2$T_VOLNAME). Everything else in the CWB-OVMS-WB geometry is
-  /// fixed. An empty label falls back to the writer default ("CWBVOL").
+  /// fixed. An empty label falls back to the writer default ("SCRATCH").
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
@@ -244,8 +244,8 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var label = options?.GetOption("VolumeLabel", "CWBVOL") ?? "CWBVOL";
-    if (string.IsNullOrEmpty(label)) label = "CWBVOL";
+    var label = options?.GetOption("VolumeLabel", "SCRATCH") ?? "SCRATCH";
+    if (string.IsNullOrEmpty(label)) label = "SCRATCH";
     var files = new List<(string Name, FilePayload Payload)>();
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;

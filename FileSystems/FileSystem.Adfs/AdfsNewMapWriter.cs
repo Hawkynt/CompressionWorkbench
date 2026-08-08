@@ -78,7 +78,7 @@ public sealed class AdfsNewMapWriter {
   private readonly List<(string Name, byte[] Data)> _files = [];
 
   /// <summary>Disc title, kept in the root directory's tail (19 bytes).</summary>
-  public string DiscTitle { get; set; } = "CWB-ADFS";
+  public string DiscTitle { get; set; } = "";
 
   /// <summary>Disc identifier, stored in the disc record.</summary>
   public ushort DiscId { get; set; } = 0x1234;

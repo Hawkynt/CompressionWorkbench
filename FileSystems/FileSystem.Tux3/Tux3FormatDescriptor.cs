@@ -45,12 +45,12 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <see cref="Tux3Writer.Birthday"/> is written verbatim and
   /// <see cref="Tux3Reader.Birthday"/> reads it back, so the knob round-trips.
   /// Supplied as a hexadecimal string (with or without a leading <c>0x</c>);
-  /// the default matches the writer's deterministic placeholder.
+  /// left blank the writer takes the moment of creation from the clock.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "Birthday", DisplayName: "Birthday (hex)", Kind: FormatOptionKind.String,
-      Default: "5455583342534831",
+      Default: "",
       Description: "64-bit creation stamp written to the superblock at offset 0x08 (hexadecimal)."),
   ];
 
@@ -97,19 +97,20 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// records. Round-trips through <see cref="Tux3Reader"/>.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new Tux3Writer { Birthday = ParseBirthday(options.GetOption("Birthday", "5455583342534831")) };
+    var birthday = ParseBirthday(options.GetOption("Birthday", ""));
+    var w = birthday is { } stamp ? new Tux3Writer { Birthday = stamp } : new Tux3Writer();
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
   }
 
-  /// <summary>Parses the hex <c>Birthday</c> knob; unparsable input falls back to the writer default.</summary>
-  private static ulong ParseBirthday(string value) {
+  /// <summary>Parses the hex <c>Birthday</c> knob; blank or unreadable leaves it to the writer.</summary>
+  private static ulong? ParseBirthday(string value) {
     var s = value.Trim();
     if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
       s = s[2..];
     return ulong.TryParse(s, System.Globalization.NumberStyles.HexNumber,
-      System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0x_5455_5833_4253_4831UL;
+      System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
   }
 
   public void Defragment(Stream archive)

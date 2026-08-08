@@ -53,7 +53,8 @@ public sealed class Rt11Writer {
     var volIdBytes = Encoding.ASCII.GetBytes(SanitizeAscii(volumeId, 12));
     volIdBytes.CopyTo(image.AsSpan(homeOff + 0x1D8));
     // Owner name (12 ASCII, space-padded) at 0x1E4.
-    Encoding.ASCII.GetBytes(SanitizeAscii("CWB         ", 12)).CopyTo(image.AsSpan(homeOff + 0x1E4));
+    // Blank: INIT leaves the owner unnamed unless told one.
+    Encoding.ASCII.GetBytes(SanitizeAscii("", 12)).CopyTo(image.AsSpan(homeOff + 0x1E4));
     // System ident "DECRT11A    " at 0x1F0.
     Encoding.ASCII.GetBytes(Rt11Layout.HomeBlockSignature).CopyTo(image.AsSpan(homeOff + Rt11Layout.HomeBlockSignatureOffset));
 

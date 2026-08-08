@@ -57,7 +57,7 @@ public sealed class AdvFsWriter : IDisposable {
   private readonly Stream _output;
   private readonly bool _leaveOpen;
   private readonly List<(string Name, FilePayload Payload)> _files = [];
-  private string _volumeTag = "CWB-ADVFS";
+  private string _volumeTag = "";
 
   public AdvFsWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);

@@ -224,7 +224,7 @@ public sealed class Reiser4Writer {
     var blocks = Math.Max(this.BlockCount, MinBlockCount);
     var totalBytes = checked((long)blocks * BlockSize);
 
-    var uuid = this.Uuid ?? Guid.NewGuid().ToByteArray();
+    var uuid = this.Uuid ?? Guid.NewGuid().ToByteArray(bigEndian: true);
     if (uuid.Length != 16)
       throw new ArgumentException("UUID must be exactly 16 bytes.", nameof(this.Uuid));
     var mkfsId = this.MkfsId ?? unchecked((uint)Random.Shared.Next(int.MinValue, int.MaxValue));

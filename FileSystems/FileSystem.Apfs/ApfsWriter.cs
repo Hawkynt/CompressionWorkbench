@@ -394,7 +394,7 @@ public sealed class ApfsWriter {
     // nx_incompatible_features at 64 — MUST be NX_INCOMPAT_VERSION2.
     BinaryPrimitives.WriteUInt64LittleEndian(block[64..], NX_INCOMPAT_VERSION2);
     // nx_uuid[16] at 72 — random nonzero.
-    var uuid = Guid.NewGuid().ToByteArray();
+    var uuid = Guid.NewGuid().ToByteArray(bigEndian: true);
     uuid.CopyTo(block[72..]);
     // nx_next_oid at 88.
     BinaryPrimitives.WriteUInt64LittleEndian(block[88..], 0x1000);
@@ -487,7 +487,7 @@ public sealed class ApfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_NUM_DIRECTORIES..], dirCount);
     // Symlink, other-object and snapshot counts, and the allocated/freed totals,
     // all follow and are all zero here.
-    Guid.NewGuid().ToByteArray().CopyTo(block[APSB_VOL_UUID..]);
+    Guid.NewGuid().ToByteArray(bigEndian: true).CopyTo(block[APSB_VOL_UUID..]);
     BinaryPrimitives.WriteUInt64LittleEndian(block[APSB_LAST_MOD_TIME..],
       (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL);
     // Saying nothing here reads as "encrypted", which is not what this volume is.

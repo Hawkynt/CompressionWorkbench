@@ -20,12 +20,12 @@ public sealed class LifWriter {
   /// truncated/padded to 6 ASCII characters; non-ASCII bytes are replaced with '?'.
   /// </summary>
   /// <param name="files">Files to embed; names are truncated/padded to 10 characters.</param>
-  /// <param name="volumeLabel">Volume label; defaults to "CWB   ".</param>
+  /// <param name="volumeLabel">Volume label; blank by default.</param>
   /// <param name="defaultFileType">LIF file type assigned to each file; default 0xE020 (BIN program).</param>
   /// <param name="dirSectors">Number of 256-byte sectors reserved for the directory; defaults to 1.</param>
   public static byte[] Build(
     IReadOnlyList<(string Name, byte[] Data)> files,
-    string volumeLabel = "CWB",
+    string volumeLabel = "",
     ushort defaultFileType = 0xE020,
     int dirSectors = 1) {
 

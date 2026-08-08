@@ -31,7 +31,7 @@ namespace FileSystem.OpenVms;
 public sealed class OpenVmsWriter {
 
   /// <summary>Builds the volume image in memory. Throws <see cref="IOException"/> when inputs don't fit.</summary>
-  public byte[] Build(IReadOnlyList<(string Name, byte[] Data)> files, string volumeLabel = "CWBVOL") {
+  public byte[] Build(IReadOnlyList<(string Name, byte[] Data)> files, string volumeLabel = "SCRATCH") {
     ArgumentNullException.ThrowIfNull(files);
     var payloads = new List<(string Name, FilePayload Payload)>(files.Count);
     foreach (var (name, data) in files)
@@ -55,7 +55,7 @@ public sealed class OpenVmsWriter {
   /// prefix and one copy buffer are ever resident, so the volume is bounded by
   /// the target's capacity rather than by <see cref="Array.MaxLength"/>.
   /// </summary>
-  public void BuildTo(Stream output, IReadOnlyList<(string Name, FilePayload Payload)> files, string volumeLabel = "CWBVOL") {
+  public void BuildTo(Stream output, IReadOnlyList<(string Name, FilePayload Payload)> files, string volumeLabel = "SCRATCH") {
     ArgumentNullException.ThrowIfNull(output);
     var plan = PlanVolume(files, volumeLabel);
     var basePosition = output.CanSeek ? output.Position : 0;

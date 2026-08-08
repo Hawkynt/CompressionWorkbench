@@ -246,6 +246,14 @@ public sealed class ExtWriter {
     const uint FeatureIncompatFiletype = 0x0002;
     const uint FeatureIncompatExtents = 0x0040;
     const uint FeatureCompatHasJournal = 0x0004;
+    const uint FeatureCompatExtAttr = 0x0008;
+    const uint FeatureCompatDirIndex = 0x0020;
+    const uint FeatureRoCompatLargeFile = 0x0002;
+    const uint FeatureRoCompatHugeFile = 0x0008;
+    const uint FeatureRoCompatDirNlink = 0x0020;
+    const byte HashVersionHalfMd4 = 1;
+    const byte JournalBackupBlocks = 1;
+    const uint FlagSignedHash = 0x0001;
     // Dynamic revision — required so s_inode_size / s_first_ino / feature
     // flags are honoured by the kernel and fsck.
     const uint RevLevelDynamic = 1;
@@ -638,7 +646,9 @@ public sealed class ExtWriter {
     var sb = img.At(1024, 1024);
     BinaryPrimitives.WriteUInt32LittleEndian(sb, (uint)((long)inodesPerGroup * groupCount)); // s_inodes_count
     BinaryPrimitives.WriteUInt32LittleEndian(sb[4..], (uint)totalBlocks);          // s_blocks_count
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[8..], 0);                          // s_r_blocks_count
+    // Five per cent held back for root, which is what mke2fs reserves unless told
+    // otherwise; a volume reserving nothing is one nobody's mkfs made.
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[8..], (uint)(totalBlocks / 20));   // s_r_blocks_count
     BinaryPrimitives.WriteUInt32LittleEndian(sb[12..], (uint)totalFreeBlocks);     // s_free_blocks_count
     BinaryPrimitives.WriteUInt32LittleEndian(sb[16..], (uint)totalFreeInodes);     // s_free_inodes_count
     BinaryPrimitives.WriteUInt32LittleEndian(sb[20..], (uint)firstDataBlock);      // s_first_data_block
@@ -652,10 +662,16 @@ public sealed class ExtWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)blocksPerGroup);      // s_blocks_per_group
     BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], (uint)blocksPerGroup);      // s_frags_per_group (matches blocks_per_group)
     BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], (uint)inodesPerGroup);      // s_inodes_per_group
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], now);                       // s_mtime
+    // Never mounted, so no time it last was — dumpe2fs reads a zero here as "n/a",
+    // and a volume claiming a mount time with a mount count of nought is a
+    // contradiction no mkfs writes.
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 0);                         // s_mtime
     BinaryPrimitives.WriteUInt32LittleEndian(sb[48..], now);                       // s_wtime
     BinaryPrimitives.WriteUInt16LittleEndian(sb[52..], 0);                         // s_mnt_count
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[54..], 20);                        // s_max_mnt_count
+    // Minus one: no mount-count check. mkfs.ext4 has written that for twenty years,
+    // and a volume asking to be checked every twenty mounts is one no current tool
+    // produces.
+    BinaryPrimitives.WriteInt16LittleEndian(sb[54..], -1);                         // s_max_mnt_count
     BinaryPrimitives.WriteUInt16LittleEndian(sb[56..], ExtMagic);                  // s_magic
     BinaryPrimitives.WriteUInt16LittleEndian(sb[58..], 1);                         // s_state = CLEAN
     BinaryPrimitives.WriteUInt16LittleEndian(sb[60..], 1);                         // s_errors = CONTINUE
@@ -666,6 +682,19 @@ public sealed class ExtWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[76..], RevLevelDynamic);           // s_rev_level = DYNAMIC_REV
     BinaryPrimitives.WriteUInt16LittleEndian(sb[80..], 0);                         // s_def_resuid
     BinaryPrimitives.WriteUInt16LittleEndian(sb[82..], 0);                         // s_def_resgid
+    // The mount options a volume asks for by default, and when it was made. Every
+    // ext volume mkfs makes asks for extended attributes and access lists, and
+    // records the moment of its own creation; dumpe2fs prints both back, and a
+    // volume that says "(none)" and has no creation date is one mkfs.ext4 did not
+    // make.
+    const uint defaultMountUserXattr = 0x0004;
+    const uint defaultMountAcl = 0x0008;
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[256..], defaultMountUserXattr | defaultMountAcl);
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[264..], now);                      // s_mkfs_time
+    // What making the volume cost in writes. mke2fs starts the tally at what it
+    // laid down, and dumpe2fs reports it as the volume's lifetime writes.
+    var kilobytesWritten = ((long)totalBlocks - totalFreeBlocks) * blockSize / 1024;
+    BinaryPrimitives.WriteUInt64LittleEndian(sb[376..], (ulong)kilobytesWritten);  // s_kbytes_written
     // Dynamic-rev extension fields start at offset 84. s_first_ino tells
     // fsck which inode number user files may start at — without this set
     // (default 11 for GOOD_OLD_REV), any dirent pointing at inodes 3..10
@@ -685,8 +714,12 @@ public sealed class ExtWriter {
     //   advertising 64BIT makes dumpe2fs/e2fsck reject the volume with
     //   "block group descriptor size invalid". 64BIT is only needed past 16 TiB;
     //   an ext4 volume with extents + a journal (and no 64BIT) is fully standard.
-    uint compatFlags = 0;
+    //   The read-only-compatible set below says what the volume may come to
+    //   contain, not what it does: mke2fs turns all four on for every volume it
+    //   makes, and a volume with none of them on is one no mke2fs made.
+    uint compatFlags = FeatureCompatExtAttr | FeatureCompatDirIndex;
     var incompatFlags = FeatureIncompatFiletype;
+    var roCompatFlags = FeatureRoCompatLargeFile | FeatureRoCompatHugeFile | FeatureRoCompatDirNlink;
     if (version == ExtVersion.Ext3 || version == ExtVersion.Ext4) {
       if (journal) compatFlags |= FeatureCompatHasJournal;
     }
@@ -695,11 +728,21 @@ public sealed class ExtWriter {
     }
     BinaryPrimitives.WriteUInt32LittleEndian(sb[92..], compatFlags);               // s_feature_compat
     BinaryPrimitives.WriteUInt32LittleEndian(sb[96..], incompatFlags);             // s_feature_incompat
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[100..], roCompatFlags);            // s_feature_ro_compat
+
+    // Directories may be indexed, so the volume carries what an index would be
+    // hashed with: the scheme, and the seed no two volumes share. dumpe2fs prints
+    // both back, and a volume that has neither is one mke2fs did not make.
+    // mke2fs draws the seed the same way it draws the volume's identity, so it
+    // reads back as a well-formed one; sixteen loose random bytes do not.
+    Guid.NewGuid().ToByteArray(bigEndian: true).CopyTo(sb.Slice(236, 16));         // s_hash_seed
+    sb[252] = HashVersionHalfMd4;                                                 // s_def_hash_version
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[352..], FlagSignedHash);          // s_flags
 
     // UUID at offset 104 (16 bytes) — blkid/dumpe2fs rely on this to identify
     // the filesystem. The kernel accepts any non-zero UUID at rev 0 (it becomes
     // mandatory at rev 1, which is harmless to set unconditionally).
-    var uuid = Guid.NewGuid().ToByteArray();
+    var uuid = Guid.NewGuid().ToByteArray(bigEndian: true);
     uuid.CopyTo(sb.Slice(104, 16));
 
     // Volume label at offset 120 (16 bytes). ASCII, NUL-padded; values longer
@@ -714,8 +757,19 @@ public sealed class ExtWriter {
     // Last-mount path at offset 136 (64 bytes) — optional.
 
     // Journal inode (offset 224) when HAS_JOURNAL is set.
-    if ((compatFlags & FeatureCompatHasJournal) != 0)
+    if ((compatFlags & FeatureCompatHasJournal) != 0) {
       BinaryPrimitives.WriteUInt32LittleEndian(sb[224..], JournalInode);             // s_journal_inum
+
+      // A copy of where the journal is, kept in the superblock so a volume whose
+      // inode table is lost can still be replayed. mke2fs writes it for every
+      // journalled volume, and dumpe2fs reports its absence as plainly as its
+      // presence.
+      var journalInode = img.At(InodeOffset(JournalInode), inodeSize);
+      journalInode.Slice(40, 60).CopyTo(sb.Slice(268, 60));                          // s_jnl_blocks[0..14] = i_block[0..14]
+      journalInode.Slice(108, 4).CopyTo(sb.Slice(328, 4));                           // s_jnl_blocks[15] = i_size_high
+      journalInode.Slice(4, 4).CopyTo(sb.Slice(332, 4));                             // s_jnl_blocks[16] = i_size
+      sb[253] = JournalBackupBlocks;                                                 // s_jnl_backup_type
+    }
 
     // --- Superblock and group-descriptor backups ---
     // Without SPARSE_SUPER every group opens with a copy of the superblock (at

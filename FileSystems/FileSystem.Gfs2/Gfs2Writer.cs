@@ -224,7 +224,7 @@ public sealed class Gfs2Writer {
     // The image is sparse: only blocks actually written are materialised, so a
     // multi-gigabyte volume costs its metadata rather than its full extent.
     this._img = new SparseBlockImage(BlockSize, this._totalBlocks * BlockSize);
-    this._uuid = uuid ?? Guid.NewGuid().ToByteArray();
+    this._uuid = uuid ?? Guid.NewGuid().ToByteArray(bigEndian: true);
     if (this._uuid.Length != 16)
       throw new ArgumentException("UUID must be 16 bytes.", nameof(uuid));
     this._baseTime = (ulong)new DateTimeOffset(timestamp ?? DateTime.UtcNow)

@@ -77,8 +77,8 @@ public sealed class SysVWriter : IDisposable {
   private readonly List<(string Name, byte[] Data)> _files = [];
 
   // Optional volume name written into s_fname[6] at superblock offset 440.
-  // Defaults to the canonical "CWBSV"; ASCII, space/NUL-padded, max 6 bytes.
-  private string _volumeLabel = "CWBSV";
+  // Blank unless asked for, as mkfs leaves it; ASCII, space/NUL-padded, max 6 bytes.
+  private string _volumeLabel = "";
 
   /// <summary>
   /// Sets the 6-byte volume name written into the superblock <c>s_fname[6]</c>
