@@ -54,12 +54,13 @@ namespace FileSystem.Nilfs2;
 /// of a few blocks is mapped by pointers written into its inode; a longer one by
 /// a b-tree of one level, whose leaves the log carries and the address table
 /// translates like any other block of the file. What bounds a volume now is the
-/// height of that tree: one level over the data reads back under the kernel
-/// driver, and a taller one does not, so a file is bounded at what one level maps
-/// — about three megabytes at 4 KiB blocks — and past it the writer refuses
-/// rather than emitting a volume that will not mount. The address table and the
-/// inode file each map themselves the same way, which is what lets a volume hold
-/// thousands of files rather than a hundred. A name with a path in it makes the directories it implies, each
+/// height of that tree, which grows as the file does — sixty-four megabytes at
+/// 4 KiB blocks has been read back under the kernel driver. What bounds a volume
+/// now is the address table, which is mapped by a root over a single node like
+/// everything else and would need a taller tree of its own past a hundred-odd
+/// megabytes; there the writer refuses rather than emitting a volume that will not
+/// mount. The inode file maps itself the same way, which is what lets a volume
+/// hold thousands of files rather than a hundred. A name with a path in it makes the directories it implies, each
 /// holding as many entries as fit one block. The writer-private directory carries
 /// every file in full for the reader either way. Snapshots and multi-checkpoint
 /// chains are out of scope.</para>
@@ -102,11 +103,34 @@ public sealed class Nilfs2Writer {
   /// <summary>Largest user file (in blocks) embedded into the kernel root dir.</summary>
   internal const int MaxKernelFileBlocks = 6; // pointers that fit in the inode itself.
 
-  /// <summary>Children the b-tree root holds, the root living in the inode's 64 bytes.</summary>
+  /// <summary>Children the b-tree root holds, the root living in the inode's map area.</summary>
   private const int BtreeRootChildren = (BmapBytes - BtreeNodeHeaderBytes) / 16;
 
-  private const int BmapBytes = 64;
-  private const int BtreeNodeHeaderBytes = 8;
+  /// <summary>How many of those a tree is built to use.</summary>
+  /// <remarks>
+  /// One, though the root has room for two. A root naming two children reads back
+  /// wrong under the kernel driver where a root naming one — over a node that names
+  /// as many as it likes — reads back exactly; measured across files from a block
+  /// to sixty-four megabytes. Growing a level instead costs one block and is what
+  /// the driver's own trees do.
+  /// </remarks>
+  private const int BtreeRootUsableChildren = 1;
+
+  /// <summary>Bytes of an inode given over to its map.</summary>
+  /// <remarks>Seven pointers' worth, which is where the root of a tree lives.</remarks>
+  private const int BmapBytes = 56;
+
+  /// <summary>
+  /// Bytes a b-tree node spends on itself before its keys begin.
+  /// </summary>
+  /// <remarks>
+  /// The fields come to eight — a flag byte, a level, a count and a pad — and the
+  /// keys begin eight bytes after that. Measured against a tree the kernel driver
+  /// wrote into one of our own volumes: with the keys read eight bytes early every
+  /// key but the first comes out shifted, which is a tree that reads back wrong
+  /// rather than one that fails outright.
+  /// </remarks>
+  private const int BtreeNodeHeaderBytes = 16;
   private const byte BtreeNodeRootFlag = 0x01;
   private const byte BtreeLevelLeaf = 1;   // a node whose pointers are data blocks
   private const byte BtreeLevelRoot = 2;   // a node whose pointers are leaves
@@ -114,13 +138,14 @@ public sealed class Nilfs2Writer {
   /// <summary>Children one b-tree node in a block of its own holds.</summary>
   private static int BtreeNodeChildren(int blockSize) => (blockSize - BtreeNodeHeaderBytes) / 16;
 
-  /// <summary>How many entries a leaf is filled to.</summary>
+  /// <summary>How many entries a node is filled to.</summary>
   /// <remarks>
-  /// One short of what the node has room for. A leaf packed to the last slot is
-  /// rejected on read — measured against the kernel driver, which keeps the slot
-  /// free the way a b-tree keeps room to split into.
+  /// All of them. The earlier belief that the last slot had to stay free came from
+  /// keys written eight bytes early, which made a full node overrun its own pointer
+  /// array; with the header measured properly a node fills to its capacity, which
+  /// is what the driver's own trees do.
   /// </remarks>
-  private static int BtreeLeafFill(int blockSize) => BtreeNodeChildren(blockSize) - 1;
+  private static int BtreeLeafFill(int blockSize) => BtreeNodeChildren(blockSize);
 
   // NILFS2 on-disk constants (cross-checked against fs/nilfs2/nilfs2_ondisk.h).
   private const int MinSegBlocks = 16;               // NILFS_SEG_MIN_BLOCKS.
@@ -469,7 +494,7 @@ public sealed class Nilfs2Writer {
         nodes.Add((taken * span, (int)Math.Min(fill, below - taken)));
 
       levels.Add(nodes);
-      if (nodes.Count <= BtreeRootChildren) return levels;
+      if (nodes.Count <= BtreeRootUsableChildren) return levels;
 
       below = nodes.Count;
       span *= fill;
@@ -577,15 +602,6 @@ public sealed class Nilfs2Writer {
       dir.Entries.Add((file.Ino, leaf, FtReg));
       if (nblk > MaxKernelFileBlocks) {
         file.Levels = PlanBtree(nblk, BtreeLeafFill(blockSize));
-        // A tree of one level over the data reads back under the kernel driver; a
-        // taller one does not, and why is not yet known — the blocks all resolve
-        // when the tree is walked on disk. Rather than write a volume that will not
-        // mount, the writer stops here.
-        if (file.Levels.Count > 1)
-          throw new InvalidOperationException(
-            $"Nilfs2: '{name}' needs {nblk:N0} blocks, more than the "
-            + $"{(long)BtreeRootChildren * BtreeLeafFill(blockSize):N0} a tree of one level maps "
-            + $"at {blockSize}-byte blocks.");
 
 
         var total = 0;
@@ -666,7 +682,10 @@ public sealed class Nilfs2Writer {
       for (var i = 0; i < p.PDatLeafPhys.Length; ++i) p.PDatLeafPhys[i] = cur++;
     }
 
-    if (p.PIfileLeafPhys.Length > BtreeRootChildren || p.PDatLeafPhys.Length > BtreeRootChildren)
+    // The two palloc files are mapped by a root over a single node, like everything
+    // else; past that they would need a taller tree of their own, which this writer
+    // does not build for them.
+    if (p.PIfileLeafPhys.Length > BtreeRootUsableChildren || p.PDatLeafPhys.Length > BtreeRootUsableChildren)
       throw new InvalidOperationException(
         $"Nilfs2: the volume needs {p.PDatEntry.Length} block(s) of address table and "
         + $"{p.PIfileIt.Length} of inode table, more than a tree of one level maps.");
@@ -1000,6 +1019,10 @@ public sealed class Nilfs2Writer {
     root[0] = BtreeNodeRootFlag;
     root[1] = level;
     BinaryPrimitives.WriteUInt16LittleEndian(root[2..], (ushort)leafPtrs.Length);
+
+    if (leafPtrs.Length > BtreeRootChildren)
+      throw new InvalidOperationException(
+        $"Nilfs2: a b-tree root holds {BtreeRootChildren} children, not {leafPtrs.Length}.");
 
     for (var i = 0; i < leafPtrs.Length; ++i) {
       BinaryPrimitives.WriteUInt64LittleEndian(root[(BtreeNodeHeaderBytes + i * 8)..], leafKeys[i]);
