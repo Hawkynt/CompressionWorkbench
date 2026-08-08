@@ -150,11 +150,27 @@ public sealed class Reiser4Writer {
   //
   //   fsck.reiser4 --check -a -f volume.img     → exits 0, the volume is well formed
   //   debugfs.reiser4 -k / volume.img           → the root holds "." and ".." alone
+  //   debugfs.reiser4 -t volume.img             → the same two nodes a native volume
+  //                                               has, item for item
   //
-  // So a volume this writer makes is a valid and empty reiser4 filesystem, whatever
-  // it was given to store. Closing that means real items in the tree — statdata,
-  // cde40 directory units, extent40 bodies — inserted under their proper keys, with
-  // fsck as the gate and debugfs to read back what was written.
+  // So what this writes is not a volume a reader can tell from an empty one that
+  // mkfs.reiser4 made — it is one. What it is not is a volume holding the files it
+  // was given, and that is the whole of the gap.
+  //
+  // What closing it takes, from the plugin sources rather than from memory. A leaf
+  // node is a 28-byte header — plugin id, item count, free space, free-space start,
+  // the magic 0x52344653, the mkfs id, a flush id, flags, level — then item bodies
+  // upward from 28 and an array of item headers growing downward from the node's
+  // end, each header a key, an offset, flags and a plugin id. A file needs three
+  // things put in that: a stat40 item carrying the light-weight, unix and
+  // plugin-set extensions the root's own already shows; an entry added to the
+  // root's cde40 item, keyed by the r5 hash of the name; and extent40 items keyed
+  // by offset for its blocks. The block allocator bitmap and the superblock's free
+  // count already move with the payload area and would move with these instead.
+  //
+  // fsck.reiser4 gates it and debugfs.reiser4 -t reads back what was written, which
+  // is the same pair of tools that turned four supposed kernel limits in NILFS2
+  // into four bugs of this project's own.
 
   /// <summary>Marker written at <see cref="MasterPayloadMarkerOff" /> of the master superblock.</summary>
   /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
