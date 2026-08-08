@@ -56,10 +56,10 @@ namespace FileSystem.Nilfs2;
 /// translates like any other block of the file. What bounds a volume now is the
 /// height of that tree: one level over the data reads back under the kernel
 /// driver, and a taller one does not, so a file is bounded at what one level maps
-/// — about three megabytes at 4 KiB blocks. The address table has a tree of its
-/// own; the inode file does not, which bounds a volume at a hundred-odd files.
-/// Past either bound the writer refuses rather than emitting a volume that will
-/// not mount. A name with a path in it makes the directories it implies, each
+/// — about three megabytes at 4 KiB blocks — and past it the writer refuses
+/// rather than emitting a volume that will not mount. The address table and the
+/// inode file each map themselves the same way, which is what lets a volume hold
+/// thousands of files rather than a hundred. A name with a path in it makes the directories it implies, each
 /// holding as many entries as fit one block. The writer-private directory carries
 /// every file in full for the reader either way. Snapshots and multi-checkpoint
 /// chains are out of scope.</para>
@@ -577,15 +577,16 @@ public sealed class Nilfs2Writer {
       dir.Entries.Add((file.Ino, leaf, FtReg));
       if (nblk > MaxKernelFileBlocks) {
         file.Levels = PlanBtree(nblk, BtreeLeafFill(blockSize));
-        // Only a tree of one level over the data has been shown to read back under
-        // the kernel driver. A taller one is built correctly as far as the format
-        // goes — every block verifies when the tree is walked on disk — and the
-        // driver still refuses it, so it is not written until that is understood.
+        // A tree of one level over the data reads back under the kernel driver; a
+        // taller one does not, and why is not yet known — the blocks all resolve
+        // when the tree is walked on disk. Rather than write a volume that will not
+        // mount, the writer stops here.
         if (file.Levels.Count > 1)
           throw new InvalidOperationException(
             $"Nilfs2: '{name}' needs {nblk:N0} blocks, more than the "
             + $"{(long)BtreeRootChildren * BtreeLeafFill(blockSize):N0} a tree of one level maps "
             + $"at {blockSize}-byte blocks.");
+
 
         var total = 0;
         file.LevelStart = new int[file.Levels.Count];
@@ -654,13 +655,10 @@ public sealed class Nilfs2Writer {
     // more than a couple of megabytes in it, or more than a hundred-odd files.
     var perLeafHere = BtreeLeafFill(blockSize);
     var ifileMapped = 2 + p.PIfileIt.Length;
-    // The address table reads back through a tree of its own; the inode file does
-    // not, and a volume whose inode file needs one will not mount. Until that is
-    // understood it is refused rather than written.
-    if (ifileMapped > MaxKernelFileBlocks)
-      throw new InvalidOperationException(
-        $"Nilfs2: {p.NInoUsed} inodes need {p.PIfileIt.Length} blocks of inode table, more than the "
-        + $"{MaxKernelFileBlocks - 2} this writer maps from the inode file's own inode.");
+    if (ifileMapped > MaxKernelFileBlocks) {
+      p.PIfileLeafPhys = new int[(ifileMapped + perLeafHere - 1) / perLeafHere];
+      for (var i = 0; i < p.PIfileLeafPhys.Length; ++i) p.PIfileLeafPhys[i] = cur++;
+    }
 
     var datMapped = 2 + p.PDatEntry.Length;
     if (datMapped > MaxKernelFileBlocks) {
@@ -826,7 +824,8 @@ public sealed class Nilfs2Writer {
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 56), (ulong)p.NBlocks);  // cp_blocks_count
     var ifileMap = new List<ulong> { p.VIfileGd, p.VIfileBm };
     ifileMap.AddRange(p.VIfileIt);
-    this.WriteMetadataMap(cp.AsSpan(cpoff + 64), blockSize, img, ifileMap.ToArray(), p.PIfileLeafPhys);
+    this.WriteMetadataMap(cp.AsSpan(cpoff + 64), blockSize, img, ifileMap.ToArray(),
+      p.PIfileLeafPhys, p.VIfileLeafVblk);
     // The inode file knows its own length even when a tree maps it.
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 64 + 8), (ulong)(ifileMap.Count * blockSize));
     WriteBlock(img, p.PCpfile, blockSize, cp);
@@ -857,7 +856,9 @@ public sealed class Nilfs2Writer {
     var datMap = new List<ulong> { (ulong)p.PDatGd, (ulong)p.PDatBm };
     foreach (var b in p.PDatEntry) datMap.Add((ulong)b);
     // The address table's pointers are physical, and so are the leaves of its map.
-    this.WriteMetadataMap(sr.AsSpan(16), blockSize, img, datMap.ToArray(), p.PDatLeafPhys);
+    var datLeafPointers = new ulong[p.PDatLeafPhys.Length];
+    for (var i = 0; i < datLeafPointers.Length; ++i) datLeafPointers[i] = (ulong)p.PDatLeafPhys[i];
+    this.WriteMetadataMap(sr.AsSpan(16), blockSize, img, datMap.ToArray(), p.PDatLeafPhys, datLeafPointers);
     WriteInode(sr.AsSpan(16 + InodeSize), 1, 0, SIfreg, 1, [p.VCpfile]); // cpfile: virtual.
     WriteInode(sr.AsSpan(16 + InodeSize * 2), 1, 0, SIfreg, 1, [p.VSufile]); // sufile: virtual.
     var srSum = Nilfs2Superblock.Crc32Le(this._crcSeed, sr.AsSpan(4, SuperRootBytes - 4));
@@ -1017,8 +1018,17 @@ public sealed class Nilfs2Writer {
   /// through itself. Everything else, the inode file included, is mapped by
   /// virtual blocks like any ordinary file.
   /// </remarks>
+  /// <param name="blocks">What the file is made of, as its own map names them.</param>
+  /// <param name="leafPhys">Where each leaf of the map goes on the disk.</param>
+  /// <param name="leafPointers">
+  /// How the root names those leaves — which is not where they are unless the
+  /// file's pointers are physical. The address table's are; the inode file's are
+  /// virtual, so its root names its leaves by virtual block, and naming them by
+  /// their place on the disk instead makes a volume that will not mount.
+  /// </param>
   private void WriteMetadataMap(Span<byte> inode, int blockSize, SparseBlockImage img,
-                                       ReadOnlySpan<ulong> blocks, ReadOnlySpan<int> leafPhys) {
+                                ReadOnlySpan<ulong> blocks, ReadOnlySpan<int> leafPhys,
+                                ReadOnlySpan<ulong> leafPointers) {
     if (leafPhys.Length == 0) {
       WriteInode(inode, (ulong)blocks.Length, 0, SIfreg, 1, blocks);
       return;
@@ -1028,16 +1038,14 @@ public sealed class Nilfs2Writer {
 
     var perLeaf = BtreeLeafFill(blockSize);
     var keys = new ulong[leafPhys.Length];
-    var pointers = new ulong[leafPhys.Length];
     for (var i = 0; i < leafPhys.Length; ++i) {
       var from = i * perLeaf;
       var count = Math.Min(perLeaf, blocks.Length - from);
       WriteBlock(img, leafPhys[i], blockSize, BuildBtreeLeaf(blockSize, blocks.Slice(from, count), from));
       keys[i] = (ulong)from;
-      pointers[i] = (ulong)leafPhys[i];
     }
 
-    WriteBtreeRoot(inode, pointers, keys);
+    WriteBtreeRoot(inode, leafPointers, keys);
   }
 
   /// <summary>
