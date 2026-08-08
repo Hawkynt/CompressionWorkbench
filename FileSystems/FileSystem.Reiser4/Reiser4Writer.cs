@@ -142,8 +142,19 @@ public sealed class Reiser4Writer {
   // is marked allocated in the block-allocator bitmap and subtracted from
   // sb_free_blocks, so an allocator walking the volume never hands the same block
   // out twice. What this layout is NOT is a reiser4 storage tree, so the payload
-  // is invisible to the kernel driver — the same honest scope the workbench's
-  // OpenVMS and AmigaPFS writers declare.
+  // is invisible to any reader of the format — the same honest scope the
+  // workbench's OpenVMS and AmigaPFS writers declare.
+  //
+  // Measured, not assumed. reiser4progs builds from source without root, and its
+  // tools read an image on their own — no kernel driver exists to mount against:
+  //
+  //   fsck.reiser4 --check -a -f volume.img     → exits 0, the volume is well formed
+  //   debugfs.reiser4 -k / volume.img           → the root holds "." and ".." alone
+  //
+  // So a volume this writer makes is a valid and empty reiser4 filesystem, whatever
+  // it was given to store. Closing that means real items in the tree — statdata,
+  // cde40 directory units, extent40 bodies — inserted under their proper keys, with
+  // fsck as the gate and debugfs to read back what was written.
 
   /// <summary>Marker written at <see cref="MasterPayloadMarkerOff" /> of the master superblock.</summary>
   /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>

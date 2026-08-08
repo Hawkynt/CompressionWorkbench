@@ -89,6 +89,11 @@ internal static class ThirdPartyFsCheck {
     ["Ntfs"] = new("ntfs3", "", true, null, "", []),
     ["Qnx4"] = new("qnx4", "", false, null, "", []),
     ["Qnx6"] = new("qnx6", "", false, null, "", []),
+    // No reiser4 driver ships with mainline, so there is nothing to mount against;
+    // fsck.reiser4 reads an image on its own, which is oracle enough to say whether
+    // what we wrote is a well-formed volume. It only runs where reiser4progs is
+    // installed, and the tools build from source without root when it is not.
+    ["Reiser4"] = new(null, "", false, "fsck.reiser4", "--check -a -f {0}", [0]),
     ["ReiserFs"] = new("reiserfs", "", false, "reiserfsck", "--check -y -q {0}", [0]),
     ["RomFs"] = new("romfs", "", true, null, "", []),
     ["SquashFs"] = new("squashfs", "", true, null, "", []),
