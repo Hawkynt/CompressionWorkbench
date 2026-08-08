@@ -101,6 +101,9 @@ public static class OpenVmsLayout {
   public const int FhAllocSize = 88;     // allocation in LBNs (writer-internal, 4 bytes)
   public const int FhChecksum = 510;     // FH2$W_CHECKSUM (LE u16)
 
+  /// <summary>Words of the map area that hold retrieval pointers.</summary>
+  public const int FhMapInUse = 58;      // FH2$B_MAP_INUSE
+
   // Ident area starts at byte 128 (= 64 words); fits 20-char file name + meta.
   public const int FhIdentAreaOffset = 128;
   public const int FhFileNameLength = 20;
@@ -116,12 +119,34 @@ public static class OpenVmsLayout {
   public const int HbStrucLev = 0x00C;       // HM2$W_STRUCLEV
   public const int HbCluster = 0x00E;        // HM2$W_CLUSTER
   public const int HbHomeVbn = 0x010;        // HM2$W_HOMEVBN
-  public const int HbIbMapLbn = 0x028;       // HM2$L_IBMAPLBN
-  public const int HbMaxFiles = 0x02C;       // HM2$L_MAXFILES
-  public const int HbIbMapSize = 0x030;      // HM2$W_IBMAPSIZE
-  public const int HbOwnerUic = 0x036;       // HM2$L_OWNUIC
-  public const int HbFormatString = 0x1E8;   // "DECFILE11A " or "DECFILE11B "
-  public const int HbVolumeName = 0x1F4;     // 12-char ASCII volume label
+  public const int HbIbMapLbn = 0x018;       // HM2$L_IBMAPLBN
+  public const int HbMaxFiles = 0x01C;       // HM2$L_MAXFILES
+  public const int HbIbMapSize = 0x020;      // HM2$W_IBMAPSIZE
+  public const int HbOwnerUic = 0x02C;       // HM2$W_VOLOWNER
+  public const int HbFormatString = 0x1F0;   // "DECFILE11B  " for Files-11 Level 2
+
+  /// <summary>Where the home block keeps the sum of the 255 words ahead of it.</summary>
+  /// <remarks>
+  /// These offsets are the Files-11 home block as an ODS-2 reader lays it out, not
+  /// as this writer once guessed: the volume name at 0x1D8, the structure name at
+  /// 0x1CC and the format at 0x1F0, with the two sums at 0x3A and 0x1FE. Written
+  /// eight bytes early, the format string simply is not where a reader looks and
+  /// the volume is turned away before anything else is read.
+  /// </remarks>
+  public const int HbChecksum2 = 0x1FE;      // HM2$W_CHECKSUM2
+
+  /// <summary>Sum of the first twenty-nine words, which a reader also checks.</summary>
+  public const int HbChecksum1 = 0x03A;      // HM2$W_CHECKSUM1
+
+  /// <summary>Where the volume's serial number sits.</summary>
+  public const int HbSerialNumber = 0x1C8;   // HM2$L_SERIALNUM
+
+  /// <summary>The structure name, twelve characters.</summary>
+  public const int HbStructureName = 0x1CC;  // HM2$T_STRUCNAME
+
+  /// <summary>The owner's name, twelve characters.</summary>
+  public const int HbOwnerName = 0x1E4;      // HM2$T_OWNERNAME
+  public const int HbVolumeName = 0x1D8;     // 12-char ASCII volume label
 
   /// <summary>
   /// Number of LBNs the fixed metadata occupies: boot block, home block,

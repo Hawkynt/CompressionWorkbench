@@ -213,11 +213,25 @@ public sealed class OpenVmsWriter {
     // Layout marker at byte 132 so our reader recognises this as a workbench-layout volume.
     OpenVmsLayout.LayoutMarker.CopyTo(hb.Slice(OpenVmsLayout.LayoutMarkerOffset));
 
-    // Format string + volume label.
-    var fmt = Encoding.ASCII.GetBytes("DECFILE11A ");
-    fmt.CopyTo(hb.Slice(OpenVmsLayout.HbFormatString));
+    // Format string + volume label. The structure level this writer sets is
+    // Files-11 Level 2, and a reader checks the name against that: "DECFILE11B",
+    // padded to twelve. "DECFILE11A" is Level 1, and naming it that made every
+    // ODS-2 reader turn the volume away before looking at anything else.
+    Encoding.ASCII.GetBytes("DECFILE11B  ").CopyTo(hb.Slice(OpenVmsLayout.HbFormatString));
     var label = volumeLabel.Length > 12 ? volumeLabel[..12] : volumeLabel.PadRight(12, ' ');
     Encoding.ASCII.GetBytes(label).CopyTo(hb.Slice(OpenVmsLayout.HbVolumeName));
+
+    // The home block's own sum, over the 255 words ahead of it. It has to be last:
+    // anything written into the block afterwards changes it.
+    var first = 0;
+    for (var word = 0; word < 29; ++word)
+      first += BinaryPrimitives.ReadUInt16LittleEndian(hb.Slice(word * 2, 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbChecksum1, 2), (ushort)first);
+
+    var second = 0;
+    for (var word = 0; word < 255; ++word)
+      second += BinaryPrimitives.ReadUInt16LittleEndian(hb.Slice(word * 2, 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbChecksum2, 2), (ushort)second);
 
     return new VolumePlan(image, volumeBytes, deferred);
   }

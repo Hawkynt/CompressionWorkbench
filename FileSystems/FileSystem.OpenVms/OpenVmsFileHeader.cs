@@ -91,6 +91,11 @@ public sealed class OpenVmsFileHeader {
     }
     // Zero-sentinel: a (0, 0) tuple. Already zero from the cleared block.
 
+    // How much of the map area actually holds pointers, counted in words. A reader
+    // takes this as the extent of the retrieval map: left at nought, every file on
+    // the volume reads as having no blocks at all, whatever the map says.
+    block[OpenVmsLayout.FhMapInUse] = (byte)((mapPos - OpenVmsLayout.FhMapAreaOffset) / 2);
+
     // Checksum is computed over words 0..254 (the first 510 bytes) and stored at byte 510.
     var checksum = OpenVmsChecksum.Compute(block, 255);
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(OpenVmsLayout.FhChecksum, 2), checksum);
