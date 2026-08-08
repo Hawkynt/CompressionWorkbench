@@ -358,10 +358,9 @@ public sealed class Reiser4Writer {
       }
 
       entries.Add((name, first, payload.Size));
-      if (name.Length <= Reiser4Tree.MaxInlineNameLength)
-        treeFiles.Add(new Reiser4Tree.Entry {
-          Name = name, ObjectId = nextObjectId++, Size = payload.Size, Runs = runs,
-        });
+      treeFiles.Add(new Reiser4Tree.Entry {
+        Name = name, ObjectId = nextObjectId++, Size = payload.Size, Runs = runs,
+      });
     }
 
     // ── The tree itself ──────────────────────────────────────────────────

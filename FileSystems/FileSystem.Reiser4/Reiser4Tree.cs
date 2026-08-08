@@ -45,8 +45,11 @@ internal static class Reiser4Tree {
   /// <summary>And the object id after it.</summary>
   private const int ObjectIdChars = 8;
 
-  /// <summary>Past this many a name is hashed instead, which this does not write.</summary>
+  /// <summary>Past this many a name no longer fits its key and is hashed into it.</summary>
   internal const int MaxInlineNameLength = OrderingChars + ObjectIdChars + 8;
+
+  /// <summary>The bit in the ordering that says the name was hashed, not held.</summary>
+  private const ulong HashedNameBit = 0x0100000000000000;
 
   /// <summary>One run of blocks holding part of a file.</summary>
   internal readonly record struct Run(ulong Start, ulong Width);
@@ -81,16 +84,45 @@ internal static class Reiser4Tree {
     BinaryPrimitives.WriteUInt64LittleEndian(at[24..], offset);
   }
 
-  /// <summary>The three words a directory entry's key carries a name in.</summary>
-  private static (ulong Ordering, ulong ObjectId, ulong Offset) NameKey(string name) {
-    if (name == ".") return (0, 0, 0);
+  /// <summary>
+  /// The r5 hash, which a name too long to be held in its key is reduced to.
+  /// </summary>
+  private static ulong R5Hash(string name, int from) {
+    ulong a = 0;
+    for (var i = from; i < name.Length; ++i) {
+      var b = (byte)name[i];
+      a += (ulong)(b << 4);
+      a += (ulong)(b >> 4);
+      a *= 11;
+    }
 
-    var ordering = PackName(name, 0, 1) | (ulong)Fibre(name) << 57;
+    return a;
+  }
+
+  /// <summary>The three words a directory entry's key carries a name in.</summary>
+  /// <remarks>
+  /// A name of twenty-three characters or fewer fits whole; past that only its
+  /// first fifteen are held and the rest becomes a hash, with a bit set in the
+  /// ordering to say so — and the name itself is then stored beside the entry.
+  /// </remarks>
+  private static (ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed) NameKey(string name) {
+    if (name == ".") return (0, 0, 0, false);
+
+    var ordering = PackName(name, 0, 1);
     var objectId = name.Length > OrderingChars ? PackName(name, OrderingChars, 0) : 0;
-    var offset = name.Length > OrderingChars + ObjectIdChars
-      ? PackName(name, OrderingChars + ObjectIdChars, 0)
-      : 0;
-    return (ordering, objectId, offset);
+
+    ulong offset;
+    var hashed = name.Length > MaxInlineNameLength;
+    if (hashed) {
+      ordering |= HashedNameBit;
+      offset = R5Hash(name, OrderingChars + ObjectIdChars);
+    } else {
+      offset = name.Length > OrderingChars + ObjectIdChars
+        ? PackName(name, OrderingChars + ObjectIdChars, 0)
+        : 0;
+    }
+
+    return (ordering | (ulong)Fibre(name) << 57, objectId, offset, hashed);
   }
 
   /// <summary>A stat data saying what a file is and how long.</summary>
@@ -118,10 +150,11 @@ internal static class Reiser4Tree {
     };
     foreach (var file in files) names.Add((file.Name, rootObjectId, file.ObjectId));
 
-    var keyed = new List<(ulong Ordering, ulong ObjectId, ulong Offset, ulong Locality, ulong Target)>();
+    var keyed = new List<(ulong Ordering, ulong ObjectId, ulong Offset, bool Hashed,
+                          string Name, ulong Locality, ulong Target)>();
     foreach (var (name, locality, target) in names) {
-      var (ordering, objectId, offset) = NameKey(name);
-      keyed.Add((ordering, objectId, offset, locality, target));
+      var (ordering, objectId, offset, hashed) = NameKey(name);
+      keyed.Add((ordering, objectId, offset, hashed, name, locality, target));
     }
 
     keyed.Sort((a, b) => a.Ordering != b.Ordering ? a.Ordering.CompareTo(b.Ordering)
@@ -130,24 +163,35 @@ internal static class Reiser4Tree {
 
     const int unitHeaderBytes = 26;
     const int targetKeyBytes = 24;
-    var body = new byte[2 + keyed.Count * unitHeaderBytes + keyed.Count * targetKeyBytes];
+
+    // A hashed name is kept beside the key it did not fit into, NUL-terminated.
+    var unitBytes = 0;
+    foreach (var entry in keyed)
+      unitBytes += targetKeyBytes + (entry.Hashed ? Encoding.ASCII.GetByteCount(entry.Name) + 1 : 0);
+
+    var body = new byte[2 + keyed.Count * unitHeaderBytes + unitBytes];
     BinaryPrimitives.WriteUInt16LittleEndian(body, (ushort)keyed.Count);
 
-    var unitsAt = 2 + keyed.Count * unitHeaderBytes;
+    var unit = 2 + keyed.Count * unitHeaderBytes;
     for (var i = 0; i < keyed.Count; ++i) {
-      var (ordering, objectId, offset, locality, target) = keyed[i];
+      var (ordering, objectId, offset, hashed, name, locality, target) = keyed[i];
       var header = 2 + i * unitHeaderBytes;
       BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(header), ordering);
       BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(header + 8), objectId);
       BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(header + 16), offset);
-      BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(header + 24),
-        (ushort)(unitsAt + i * targetKeyBytes));
+      BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(header + 24), (ushort)unit);
 
       // What the entry points at: the first three words of its target's stat-data key.
-      var unit = unitsAt + i * targetKeyBytes;
       BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(unit), locality << 4 | MinorStatData);
       BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(unit + 8), 0);
       BinaryPrimitives.WriteUInt64LittleEndian(body.AsSpan(unit + 16), target);
+      unit += targetKeyBytes;
+
+      if (!hashed) continue;
+
+      var nameBytes = Encoding.ASCII.GetBytes(name);
+      nameBytes.CopyTo(body.AsSpan(unit));
+      unit += nameBytes.Length + 1;
     }
 
     return body;
