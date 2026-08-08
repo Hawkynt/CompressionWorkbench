@@ -89,7 +89,17 @@ public sealed class OpenVmsFileHeader {
     var blocks = 0;
     foreach (var ext in this.Extents) blocks += ext.Count;
     WriteSwappedLong(block.AsSpan(OpenVmsLayout.FhRecattrHighBlock), (uint)blocks);
-    WriteSwappedLong(block.AsSpan(OpenVmsLayout.FhRecattrEndBlock), (uint)(blocks + 1));
+
+    // Where the file ends: the block holding the first free byte, and how far into
+    // it that byte is. A reader takes the length from the pair — with the second
+    // left at nought it reads whole blocks and hands back the padding too.
+    var bytes = this.Size > 0 && this.Size <= (long)blocks * OpenVmsLayout.BlockSize
+      ? this.Size
+      : (long)blocks * OpenVmsLayout.BlockSize;
+    WriteSwappedLong(block.AsSpan(OpenVmsLayout.FhRecattrEndBlock),
+      (uint)(bytes / OpenVmsLayout.BlockSize + 1));
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(OpenVmsLayout.FhRecattrFirstFree, 2),
+      (ushort)(bytes % OpenVmsLayout.BlockSize));
 
     // Internal: file size + allocation. These slots are reserved-for-RECATTR-and-up in the
     // real spec; we reuse them as scratch so reader/writer agree without a real RECATTR.

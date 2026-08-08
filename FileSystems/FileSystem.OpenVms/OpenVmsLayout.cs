@@ -117,6 +117,7 @@ public static class OpenVmsLayout {
   public const int FhRecattr = 20;       // FH2$W_RECATTR
   public const int FhRecattrHighBlock = FhRecattr + 4;   // FAT$L_HIBLK, allocated
   public const int FhRecattrEndBlock = FhRecattr + 8;    // FAT$L_EFBLK, one past the last used
+  public const int FhRecattrFirstFree = FhRecattr + 12;  // FAT$W_FFBYTE, within that block
 
   public const int FhUsedSize = 80;      // size in bytes (writer-internal, 8 bytes)
   public const int FhAllocSize = 88;     // allocation in LBNs (writer-internal, 4 bytes)

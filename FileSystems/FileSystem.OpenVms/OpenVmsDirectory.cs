@@ -5,124 +5,156 @@ using System.Text;
 namespace FileSystem.OpenVms;
 
 /// <summary>
-/// Root-directory block layout for the workbench-layout Files-11 ODS-2 image.
-/// <para>
-/// A real ODS-2 directory is a chain of 512-byte blocks holding
-/// variable-length name records, each followed by one or more
-/// version-number / File-ID tuples. Implementing the full variable-length
-/// record walker is multi-week work (out of scope per the descriptor's
-/// honest-scope notice). Our writer / reader / in-place modifier instead
-/// share a fixed 64-byte directory-entry slot layout inside the same
-/// directory blocks at the spec-mandated LBN (root directory at
-/// <see cref="OpenVmsLayout.RootDirectoryLbn"/>):
-/// </para>
-/// <list type="bullet">
-///   <item>+0  (u16 LE) — File-ID number low 16 bits. 0 marks the slot free.</item>
-///   <item>+2  (u16 LE) — File-ID sequence.</item>
-///   <item>+4  (u16 LE) — File-ID number high 16 bits.</item>
-///   <item>+6  (u16 LE) — reserved (zero).</item>
-///   <item>+8  (24 bytes ASCII) — file name (NUL-padded).</item>
-///   <item>+32 (u32 LE) — file size in bytes (low 32).</item>
-///   <item>+36 (u32 LE) — file size in bytes (high 32, for &gt;4 GB headroom — always 0 today).</item>
-///   <item>+40 .. +63 — reserved (zero).</item>
-/// </list>
-/// <para>
-/// 8 slots per 512-byte LBN (8 × 64 = 512). Directory grows by linking
-/// additional blocks via the chain field at the start of each directory
-/// block (next-LBN u32 LE at offset 0 of each block — overlapping the
-/// first slot's FID-low field; we therefore reserve slot 0 of each
-/// directory block exclusively for chain linkage and start file entries
-/// at slot 1, giving 7 entries per block).
-/// </para>
+/// Directory blocks for a Files-11 ODS-2 volume: a run of variable-length name
+/// records, each carrying one or more version-and-file-id pairs.
 /// </summary>
 /// <remarks>
-/// <para><b>What a real ODS-2 directory holds, and what this does not.</b> A
-/// Files-11 directory is a run of variable-length records: a size word holding
-/// the record's length less two, a version limit, flags, a name length, the name
-/// padded to an even boundary, and then one eight-byte entry per version — a
-/// version number and a file id. A record whose size word reads 0xFFFF ends the
-/// block. What follows here is fixed-width slots of this writer's own instead,
-/// which is why an ODS-2 reader mounts one of these volumes and reads its label
-/// but will not list it.</para>
+/// <para>A record is a size word holding its own length less two, a version
+/// limit, a flags byte, the length of the name, the name padded to an even
+/// boundary, and then eight bytes per version — the version number and the six
+/// bytes of a file id. A size word of 0xFFFF ends the records in a block. That is
+/// what a reader of the format walks, and what this writes.</para>
 ///
-/// <para>Worth knowing before that is written: the reader used to check this work
-/// computes a record's entry bytes as <c>size + 2 - ((namecount + 8) &amp; ~1)</c>,
-/// taking eight from the size of its own record struct where the name actually
-/// begins at six. The two cancel for a name of odd length and are two out for an
-/// even one, so that reader agrees with a correct directory only for odd-length
-/// names. Build to the format, not to the reader.</para>
+/// <para><b>The chain link.</b> A real directory grows by gaining blocks in its
+/// own header's map. This writer instead chains blocks by a link, which it keeps
+/// in the last four bytes of each block — past the word that ends the records,
+/// where a reader stops and never looks. So the records read as a proper
+/// directory and the chain stays available to whatever walks it here.</para>
+///
+/// <para><b>A reader's quirk, worth knowing and not worth building to.</b> The
+/// ODS-2 reader used to check this work computes a record's entry bytes as
+/// <c>size + 2 - ((namecount + 8) &amp; ~1)</c>, taking eight from the size of its
+/// own record struct where the name in fact begins at six. The two cancel for a
+/// name of odd length and are two out for an even one, so that reader agrees with
+/// a correct directory only for odd-length names. What is written here follows the
+/// format.</para>
 /// </remarks>
 public static class OpenVmsDirectory {
-  public const int EntrySize = 64;
-  public const int EntriesPerBlock = OpenVmsLayout.BlockSize / EntrySize;        // 8
-  public const int FileEntryStartSlot = 1;                                       // slot 0 is the chain link
-  public const int FileEntriesPerBlock = EntriesPerBlock - FileEntryStartSlot;   // 7
+
+  /// <summary>Bytes a record spends before its name.</summary>
+  public const int RecordHeaderBytes = 6;
+
+  /// <summary>Bytes one version-and-file-id pair takes.</summary>
+  public const int VersionEntryBytes = 8;
+
+  /// <summary>The size word that says a block holds no more records.</summary>
+  public const ushort EndOfRecords = 0xFFFF;
+
+  /// <summary>Where the link to the next block of the directory sits.</summary>
+  public const int ChainLinkOffset = OpenVmsLayout.BlockSize - 4;
+
+  /// <summary>How much of a block records may use, the link being at its end.</summary>
+  public const int UsableBytes = ChainLinkOffset;
+
+  /// <summary>The longest name a record here carries.</summary>
   public const int FileNameLength = 24;
 
-  // Offsets inside a 64-byte entry.
-  public const int EntryFidLow = 0;
-  public const int EntryFidSeq = 2;
-  public const int EntryFidHigh = 4;
-  public const int EntryNameOffset = 8;
-  public const int EntrySizeLowOffset = 32;
-  public const int EntrySizeHighOffset = 36;
+  /// <summary>
+  /// What the master file directory calls itself, which every Files-11 volume's
+  /// root holds so a reader asked for [000000] finds something to open.
+  /// </summary>
+  public const string SelfName = "000000.DIR";
 
-  // The next-block chain link sits in the first 4 bytes of the directory block
-  // (which is slot 0's FID-low slot — slot 0 is reserved exclusively for this).
-  public const int ChainLinkOffset = 0;
+  /// <summary>Whether an entry is the directory's own, rather than anything put there.</summary>
+  public static bool IsSelfEntry(Entry entry)
+    => string.Equals(entry.Name, SelfName, StringComparison.OrdinalIgnoreCase);
 
-  /// <summary>One parsed directory entry.</summary>
+  /// <summary>One entry of a directory: a name, and the file it names.</summary>
   public sealed record class Entry(int FileId, ushort Sequence, string Name, long Size) {
     public bool IsFree => this.FileId == 0;
   }
 
-  /// <summary>Writes <paramref name="entry"/> into the directory block at <paramref name="slot"/>.</summary>
-  public static void WriteEntry(Span<byte> dirBlock, int slot, Entry entry) {
-    if (slot < FileEntryStartSlot || slot >= EntriesPerBlock)
-      throw new ArgumentOutOfRangeException(nameof(slot));
-    var off = slot * EntrySize;
-    BinaryPrimitives.WriteUInt16LittleEndian(dirBlock.Slice(off + EntryFidLow, 2), (ushort)(entry.FileId & 0xFFFF));
-    BinaryPrimitives.WriteUInt16LittleEndian(dirBlock.Slice(off + EntryFidSeq, 2), entry.Sequence);
-    BinaryPrimitives.WriteUInt16LittleEndian(dirBlock.Slice(off + EntryFidHigh, 2), (ushort)((entry.FileId >> 16) & 0xFFFF));
-    BinaryPrimitives.WriteUInt16LittleEndian(dirBlock.Slice(off + 6, 2), 0);
+  /// <summary>Bytes the record for <paramref name="name" /> takes, one version of it.</summary>
+  public static int RecordBytes(string name)
+    => RecordHeaderBytes + (Encoding.ASCII.GetByteCount(name) + 1 & ~1) + VersionEntryBytes;
 
-    // Clear the name area first so prior content doesn't leak.
-    dirBlock.Slice(off + EntryNameOffset, FileNameLength).Clear();
-    var nameBytes = Encoding.ASCII.GetBytes(entry.Name);
-    var nameLen = Math.Min(nameBytes.Length, FileNameLength);
-    nameBytes.AsSpan(0, nameLen).CopyTo(dirBlock.Slice(off + EntryNameOffset));
+  /// <summary>Every entry the block holds, in the order they were written.</summary>
+  public static List<Entry> Enumerate(ReadOnlySpan<byte> block) {
+    var found = new List<Entry>();
+    var offset = 0;
+    while (offset + RecordHeaderBytes <= UsableBytes) {
+      var size = BinaryPrimitives.ReadUInt16LittleEndian(block[offset..]);
+      if (size == EndOfRecords) break;
 
-    BinaryPrimitives.WriteUInt32LittleEndian(dirBlock.Slice(off + EntrySizeLowOffset, 4), (uint)(entry.Size & 0xFFFFFFFF));
-    BinaryPrimitives.WriteUInt32LittleEndian(dirBlock.Slice(off + EntrySizeHighOffset, 4), (uint)((entry.Size >> 32) & 0xFFFFFFFF));
+      var length = size + 2;
+      if (length < RecordHeaderBytes || offset + length > UsableBytes) break;
 
-    // Trailing reserved bytes stay zero.
-    dirBlock.Slice(off + 40, EntrySize - 40).Clear();
+      var nameLength = block[offset + 5];
+      var namePadded = nameLength + 1 & ~1;
+      if (RecordHeaderBytes + namePadded > length) break;
+
+      var name = Encoding.ASCII.GetString(block.Slice(offset + RecordHeaderBytes, nameLength));
+      for (var at = offset + RecordHeaderBytes + namePadded; at + VersionEntryBytes <= offset + length;
+           at += VersionEntryBytes) {
+        var number = BinaryPrimitives.ReadUInt16LittleEndian(block[(at + 2)..]);
+        var sequence = BinaryPrimitives.ReadUInt16LittleEndian(block[(at + 4)..]);
+        var high = block[at + 7];
+        found.Add(new Entry(high << 16 | number, sequence, name, 0));
+      }
+
+      offset += length;
+    }
+
+    return found;
   }
 
-  /// <summary>Zeros the directory slot — the entry becomes free.</summary>
-  public static void ClearEntry(Span<byte> dirBlock, int slot) {
-    if (slot < FileEntryStartSlot || slot >= EntriesPerBlock)
-      throw new ArgumentOutOfRangeException(nameof(slot));
-    dirBlock.Slice(slot * EntrySize, EntrySize).Clear();
+  /// <summary>
+  /// Writes <paramref name="entries" /> into <paramref name="block" />, one record
+  /// each, and ends them. The chain link is left as it was.
+  /// </summary>
+  /// <returns>False when they do not fit, the block then being left as it was.</returns>
+  public static bool TryWrite(Span<byte> block, IReadOnlyList<Entry> entries) {
+    var needed = 2;   // the word that ends the records
+    foreach (var entry in entries) needed += RecordBytes(entry.Name);
+    if (needed > UsableBytes) return false;
+
+    block[..UsableBytes].Clear();
+    var offset = 0;
+    foreach (var entry in entries) {
+      var nameBytes = Encoding.ASCII.GetBytes(entry.Name);
+      var namePadded = nameBytes.Length + 1 & ~1;
+      var length = RecordHeaderBytes + namePadded + VersionEntryBytes;
+
+      BinaryPrimitives.WriteUInt16LittleEndian(block[offset..], (ushort)(length - 2));
+      BinaryPrimitives.WriteUInt16LittleEndian(block[(offset + 2)..], 0);   // no version limit
+      block[offset + 4] = 0;                                               // no flags
+      block[offset + 5] = (byte)nameBytes.Length;
+      nameBytes.CopyTo(block[(offset + RecordHeaderBytes)..]);
+
+      var at = offset + RecordHeaderBytes + namePadded;
+      BinaryPrimitives.WriteUInt16LittleEndian(block[at..], 1);            // version one
+      BinaryPrimitives.WriteUInt16LittleEndian(block[(at + 2)..], (ushort)(entry.FileId & 0xFFFF));
+      BinaryPrimitives.WriteUInt16LittleEndian(block[(at + 4)..], entry.Sequence);
+      block[at + 6] = 0;                                                   // this volume
+      block[at + 7] = (byte)(entry.FileId >> 16 & 0xFF);
+      offset += length;
+    }
+
+    BinaryPrimitives.WriteUInt16LittleEndian(block[offset..], EndOfRecords);
+    return true;
   }
 
-  /// <summary>Reads the entry at <paramref name="slot"/> in <paramref name="dirBlock"/>.</summary>
-  public static Entry ReadEntry(ReadOnlySpan<byte> dirBlock, int slot) {
-    if (slot < FileEntryStartSlot || slot >= EntriesPerBlock)
-      throw new ArgumentOutOfRangeException(nameof(slot));
-    var off = slot * EntrySize;
-    var fidLow = BinaryPrimitives.ReadUInt16LittleEndian(dirBlock.Slice(off + EntryFidLow, 2));
-    var seq = BinaryPrimitives.ReadUInt16LittleEndian(dirBlock.Slice(off + EntryFidSeq, 2));
-    var fidHigh = BinaryPrimitives.ReadUInt16LittleEndian(dirBlock.Slice(off + EntryFidHigh, 2));
-    var nameRaw = dirBlock.Slice(off + EntryNameOffset, FileNameLength).ToArray();
-    var end = Array.IndexOf(nameRaw, (byte)0);
-    if (end < 0) end = nameRaw.Length;
-    var name = Encoding.ASCII.GetString(nameRaw, 0, end);
-    var sizeLow = BinaryPrimitives.ReadUInt32LittleEndian(dirBlock.Slice(off + EntrySizeLowOffset, 4));
-    var sizeHigh = BinaryPrimitives.ReadUInt32LittleEndian(dirBlock.Slice(off + EntrySizeHighOffset, 4));
-    var size = ((long)sizeHigh << 32) | sizeLow;
-    return new Entry((fidHigh << 16) | fidLow, seq, name, size);
+  /// <summary>Adds one entry to what the block already holds.</summary>
+  /// <returns>False when it does not fit.</returns>
+  public static bool TryAppend(Span<byte> block, Entry entry) {
+    var entries = Enumerate(block);
+    entries.Add(entry);
+    return TryWrite(block, entries);
   }
+
+  /// <summary>Takes out every entry naming <paramref name="name" />.</summary>
+  /// <returns>False when there was none.</returns>
+  public static bool TryRemove(Span<byte> block, string name) {
+    var entries = Enumerate(block);
+    var kept = entries.FindAll(e => !string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+    if (kept.Count == entries.Count) return false;
+
+    TryWrite(block, kept);
+    return true;
+  }
+
+  /// <summary>Empties a block of records, leaving the chain link alone.</summary>
+  public static void Clear(Span<byte> block) => TryWrite(block, []);
 
   /// <summary>Reads the chain link (next directory LBN, 0 if last) from <paramref name="dirBlock"/>.</summary>
   public static int ReadChainLink(ReadOnlySpan<byte> dirBlock)

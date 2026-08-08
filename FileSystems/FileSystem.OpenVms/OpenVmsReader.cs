@@ -99,9 +99,12 @@ public sealed class OpenVmsReader {
       var off = (int)OpenVmsLayout.LbnToByteOffset(lbn);
       if (off + OpenVmsLayout.BlockSize > image.Length) break;
       var blk = image.AsSpan(off, OpenVmsLayout.BlockSize);
-      for (var slot = OpenVmsDirectory.FileEntryStartSlot; slot < OpenVmsDirectory.EntriesPerBlock; slot++) {
-        var de = OpenVmsDirectory.ReadEntry(blk, slot);
-        if (de.IsFree) continue;
+      foreach (var de in OpenVmsDirectory.Enumerate(blk)) {
+        // The directory's entry for itself belongs to the volume, not to whoever
+        // filled it, and listing it would put a name nobody added into every
+        // listing.
+        if (de.IsFree || OpenVmsDirectory.IsSelfEntry(de)) continue;
+
         entries.Add(new Entry(de.FileId, de.Sequence, de.Name, de.Size));
       }
       lbn = OpenVmsDirectory.ReadChainLink(blk);

@@ -119,7 +119,10 @@ public sealed class OpenVmsWriter {
       Sequence = OpenVmsLayout.IndexFileId,
       InUse = true,
       Name = "INDEXF.SYS",
-      Size = OpenVmsLayout.IndexFileBlockCount * (long)OpenVmsLayout.BlockSize,
+      // Everything it maps, the front of the volume included — a reader will not
+      // look at a header past where the index file says it ends.
+      Size = (OpenVmsLayout.IndexFileStartLbn + OpenVmsLayout.IndexFileBlockCount)
+        * (long)OpenVmsLayout.BlockSize,
     };
     // The index file owns the front of the volume, not just the headers: the boot
     // block, the home block and the storage bitmap are its first virtual blocks,
@@ -151,7 +154,12 @@ public sealed class OpenVmsWriter {
       new OpenVmsFileHeader.RetrievalPointer(OpenVmsLayout.RootDirectoryLbn, 1));
 
     // ── Caller files ──
-    var directoryEntries = new List<OpenVmsDirectory.Entry>();
+    // The master file directory holds itself: a reader asked for [000000] looks
+    // that name up in the directory it is already reading, and finds nothing to
+    // open if it is not there.
+    var directoryEntries = new List<OpenVmsDirectory.Entry> {
+      new(OpenVmsLayout.RootDirectoryFileId, OpenVmsLayout.RootDirectoryFileId, "000000.DIR", 0),
+    };
     var nextFid = OpenVmsLayout.FirstUserFileId;
     var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -195,12 +203,11 @@ public sealed class OpenVmsWriter {
     // ── Serialize 000000.DIR ──
     var rootDir = new byte[OpenVmsLayout.BlockSize];
     OpenVmsDirectory.WriteChainLink(rootDir, 0);
-    var slot = OpenVmsDirectory.FileEntryStartSlot;
-    foreach (var entry in directoryEntries) {
-      if (slot >= OpenVmsDirectory.EntriesPerBlock)
-        throw new IOException($"Root directory full ({OpenVmsDirectory.FileEntriesPerBlock} entries per block; directory growth requires the chain extension which the writer leaves unallocated).");
-      OpenVmsDirectory.WriteEntry(rootDir, slot++, entry);
-    }
+    if (!OpenVmsDirectory.TryWrite(rootDir, directoryEntries))
+      throw new IOException(
+        $"Root directory full: {directoryEntries.Count} names need more than the "
+        + $"{OpenVmsDirectory.UsableBytes} bytes one block holds, and directory growth requires the "
+        + "chain extension which the writer leaves unallocated.");
     rootDir.CopyTo(image.AsSpan((int)OpenVmsLayout.LbnToByteOffset(OpenVmsLayout.RootDirectoryLbn)));
 
     // ── Serialize BITMAP.SYS ──

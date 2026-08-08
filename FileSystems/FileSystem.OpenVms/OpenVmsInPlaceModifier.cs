@@ -119,9 +119,9 @@ public static class OpenVmsInPlaceModifier {
     fh.Sequence = (ushort)((seq + 1) & 0xFFFF);
     WriteFileHeader(archive, fh);
 
-    // 3. Zero the directory slot.
+    // 3. Take the name out of the directory.
     var dirBlock = ReadBlock(archive, locator.DirectoryLbn);
-    OpenVmsDirectory.ClearEntry(dirBlock, locator.SlotIndex);
+    OpenVmsDirectory.TryRemove(dirBlock, locator.Entry!.Name);
     WriteBlock(archive, locator.DirectoryLbn, dirBlock);
     return true;
   }
@@ -224,14 +224,11 @@ public static class OpenVmsInPlaceModifier {
     var visited = new HashSet<int>();
     while (visited.Add(lbn)) {
       var dirBlock = ReadBlock(archive, lbn);
-      for (var slot = OpenVmsDirectory.FileEntryStartSlot; slot < OpenVmsDirectory.EntriesPerBlock; slot++) {
-        var existing = OpenVmsDirectory.ReadEntry(dirBlock, slot);
-        if (existing.IsFree) {
-          OpenVmsDirectory.WriteEntry(dirBlock, slot, entry);
-          WriteBlock(archive, lbn, dirBlock);
-          return;
-        }
+      if (OpenVmsDirectory.TryAppend(dirBlock, entry)) {
+        WriteBlock(archive, lbn, dirBlock);
+        return;
       }
+
       var next = OpenVmsDirectory.ReadChainLink(dirBlock);
       if (next == 0) {
         // Allocate a new directory block and link it.
@@ -243,7 +240,9 @@ public static class OpenVmsInPlaceModifier {
 
         var newBlock = new byte[OpenVmsLayout.BlockSize];
         OpenVmsDirectory.WriteChainLink(newBlock, 0);
-        OpenVmsDirectory.WriteEntry(newBlock, OpenVmsDirectory.FileEntryStartSlot, entry);
+        if (!OpenVmsDirectory.TryAppend(newBlock, entry))
+          throw new IOException($"The name '{entry.Name}' does not fit an empty directory block.");
+
         WriteBlock(archive, newLbn, newBlock);
 
         OpenVmsDirectory.WriteChainLink(dirBlock, newLbn);
@@ -266,12 +265,14 @@ public static class OpenVmsInPlaceModifier {
     var visited = new HashSet<int>();
     while (lbn > 0 && visited.Add(lbn)) {
       var dirBlock = ReadBlock(archive, lbn);
-      for (var slot = OpenVmsDirectory.FileEntryStartSlot; slot < OpenVmsDirectory.EntriesPerBlock; slot++) {
-        var entry = OpenVmsDirectory.ReadEntry(dirBlock, slot);
-        if (entry.IsFree) continue;
-        if (string.Equals(entry.Name, targetName, StringComparison.OrdinalIgnoreCase))
-          return new DirectoryEntryLocator(true, lbn, slot, entry);
+      var index = 0;
+      foreach (var entry in OpenVmsDirectory.Enumerate(dirBlock)) {
+        if (!entry.IsFree && string.Equals(entry.Name, targetName, StringComparison.OrdinalIgnoreCase))
+          return new DirectoryEntryLocator(true, lbn, index, entry);
+
+        ++index;
       }
+
       lbn = OpenVmsDirectory.ReadChainLink(dirBlock);
     }
     return DirectoryEntryLocator.NotFound;
