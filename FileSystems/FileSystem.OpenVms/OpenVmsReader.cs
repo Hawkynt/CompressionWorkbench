@@ -2,9 +2,9 @@
 namespace FileSystem.OpenVms;
 
 /// <summary>
-/// Walks a CWB-OVMS-WB OpenVMS Files-11 ODS-2 volume and surfaces the user
+/// Walks a workbench-layout OpenVMS Files-11 ODS-2 volume and surfaces the user
 /// files held in 000000.DIR. Confirms the volume by checking the
-/// "CWB-OVMS-WB" layout marker at byte 132 of the home block — when the
+/// "workbench-layout" layout marker at byte 132 of the home block — when the
 /// marker is absent the reader returns no entries (the descriptor's
 /// generic header-surface path takes over).
 /// <para>
@@ -15,7 +15,7 @@ namespace FileSystem.OpenVms;
 /// </summary>
 public sealed class OpenVmsReader {
 
-  /// <summary>Records that the volume's home block carries the CWB-OVMS-WB layout marker.</summary>
+  /// <summary>Records that the volume's home block carries the workbench-layout layout marker.</summary>
   public bool IsCwbVolume { get; }
 
   /// <summary>User entries surfaced from 000000.DIR (skips reserved FIDs 1, 2, 4).</summary>

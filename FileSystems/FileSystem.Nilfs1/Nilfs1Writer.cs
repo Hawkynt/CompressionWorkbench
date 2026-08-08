@@ -23,7 +23,7 @@ namespace FileSystem.Nilfs1;
 ///   <item><description>0x400..0x7FF — NILFS v1 superblock with magic 0x3434 at +6
 ///   and <c>s_rev_level == 1</c> at +0.</description></item>
 ///   <item><description>0x800..ZSTART — first segment header marker + our compact
-///   directory + payload area. Marker = "NILFS1WB" + payload length at +8.</description></item>
+///   directory + payload area. Marker = the writer magic + payload length at +8.</description></item>
 /// </list>
 /// </summary>
 public sealed class Nilfs1Writer {
@@ -32,7 +32,9 @@ public sealed class Nilfs1Writer {
   /// Lets our reader skip the surface-only path and enumerate real files,
   /// while external readers see a plain (valid-superblock) image with an
   /// opaque segment region.</summary>
-  internal static readonly byte[] WriterMagic = "NILFS1WB"u8.ToArray();
+  /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
+  internal static readonly byte[] WriterMagic =
+    [0x93, 0x1C, 0xE0, 0xB7, 0x08, 0xDA, 0x86, 0x11];
 
   /// <summary>
   /// Magic that prefixes each appended log-segment block written by
@@ -41,7 +43,8 @@ public sealed class Nilfs1Writer {
   /// highest-cno-per-name, dropping tombstoned entries. This is the
   /// log-structured continuous-snapshot append NILFS v1 shares with NILFS2.
   /// </summary>
-  internal static readonly byte[] SegmentMagic = "NILFS1SG"u8.ToArray();
+  internal static readonly byte[] SegmentMagic =
+    [0xC2, 0x19, 0x8D, 0xFB, 0x03, 0xA4, 0x97, 0x1E];
 
   /// <summary>Where the segment begins on disk (right after the 1024 + 1024
   /// boot / superblock region).</summary>

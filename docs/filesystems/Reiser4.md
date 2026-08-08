@@ -55,7 +55,7 @@ Read-only descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 â€
 
 ### Reiser4Reader
 
-Reads a Reiser4 image: the master superblock's label, UUID and block size, and the files a `Reiser4Writer` placed in the CWB-R4-WB payload area.
+Reads a Reiser4 image: the master superblock's label, UUID and block size, and the files a `Reiser4Writer` placed in the workbench-layout payload area.
 
 The reserved blocks of a workbench-written image are byte-exact mkfs.reiser4 captures describing an empty storage tree, so there is no reiser4 tree here to walk. Files live past those blocks, announced by a marker in the master superblock's spare region and described by a chained directory â€” the layout `Reiser4Writer` documents. An image from a real mkfs.reiser4 carries no marker and surfaces no entries; its storage tree (extent40 bodies keyed by file offset, cde40 directory units) is out of scope.
 

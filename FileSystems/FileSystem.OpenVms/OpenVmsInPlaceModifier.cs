@@ -2,7 +2,7 @@
 namespace FileSystem.OpenVms;
 
 /// <summary>
-/// True in-place R/W modifier for the CWB-OVMS-WB OpenVMS Files-11 ODS-2
+/// True in-place R/W modifier for the workbench-layout OpenVMS Files-11 ODS-2
 /// volume. Honours the ODS-2 semantics described at <see cref="OpenVmsLayout"/>:
 /// <list type="bullet">
 ///   <item><b>Add</b> — scan BITMAP.SYS for the first free File-ID slot
@@ -32,7 +32,7 @@ public static class OpenVmsInPlaceModifier {
   /// Adds <paramref name="data"/> as a new file named <paramref name="name"/>.
   /// Throws <see cref="IOException"/> when the volume is full, or
   /// <see cref="InvalidDataException"/> when <paramref name="archive"/> is
-  /// not a CWB-OVMS-WB volume.
+  /// not a workbench-layout volume.
   /// </summary>
   public static int AddFile(Stream archive, string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -169,14 +169,14 @@ public static class OpenVmsInPlaceModifier {
     archive.Flush();
   }
 
-  /// <summary>Throws when <paramref name="archive"/> does not carry the CWB-OVMS-WB layout marker.</summary>
+  /// <summary>Throws when <paramref name="archive"/> does not carry the workbench-layout layout marker.</summary>
   private static void EnsureCwbVolume(Stream archive) {
     if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
       throw new ArgumentException("archive must be read/write/seekable for in-place modification", nameof(archive));
     var hb = ReadBlock(archive, OpenVmsLayout.HomeBlockLbn);
     if (!hb.AsSpan(OpenVmsLayout.LayoutMarkerOffset, OpenVmsLayout.LayoutMarker.Length)
         .SequenceEqual(OpenVmsLayout.LayoutMarker.AsSpan()))
-      throw new InvalidDataException("archive is not a CWB-OVMS-WB Files-11 volume (missing CWB-OVMS-WB marker at home-block byte 132).");
+      throw new InvalidDataException("archive is not a Files-11 volume this writer laid out (no layout marker at home-block byte 132).");
   }
 
   /// <summary>Reads BITMAP.SYS into an <see cref="OpenVmsBitmap"/>.</summary>

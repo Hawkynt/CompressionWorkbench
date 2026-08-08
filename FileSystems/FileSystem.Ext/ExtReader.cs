@@ -81,8 +81,12 @@ public sealed class ExtReader : IDisposable {
     var groupCount = (_blocksCount + _blocksPerGroup - 1) / _blocksPerGroup;
     _bgInodeTableBlock = new uint[groupCount];
 
+    // A 64BIT volume writes wider group descriptors and says how wide in the
+    // superblock; stepping through the table 32 bytes at a time then lands in the
+    // middle of the second one.
+    var descriptorSize = ExtBlockGroupGeometry.DescriptorSize(sb);
     for (uint g = 0; g < groupCount; g++) {
-      var bgOffset = bgdtOffset + g * 32;
+      var bgOffset = bgdtOffset + (long)g * descriptorSize;
       if (bgOffset + 32 > _data.Length) break;
       _bgInodeTableBlock[g] = BinaryPrimitives.ReadUInt32LittleEndian(
         _data.Read(bgOffset + 8, 8).AsSpan());

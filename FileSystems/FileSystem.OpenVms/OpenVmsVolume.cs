@@ -4,7 +4,7 @@ using Compression.Core.DiskImage;
 namespace FileSystem.OpenVms;
 
 /// <summary>
-/// Random-access view of a CWB-OVMS-WB volume. Everything the reader needs to
+/// Random-access view of a workbench-layout volume. Everything the reader needs to
 /// enumerate files — the home block, BITMAP.SYS, INDEXF.SYS and the root
 /// directory — lives in the fixed metadata prefix, so the volume is recognised
 /// and listed from a few hundred kilobytes however large it is. File contents
@@ -22,7 +22,7 @@ public sealed class OpenVmsVolume : IDisposable {
   /// <summary>The fixed metadata prefix, or as much of it as the image holds.</summary>
   public byte[] Metadata { get; }
 
-  /// <summary>Records that the volume's home block carries the CWB-OVMS-WB layout marker.</summary>
+  /// <summary>Records that the volume's home block carries the workbench-layout layout marker.</summary>
   public bool IsCwbVolume { get; }
 
   /// <summary>User entries surfaced from 000000.DIR.</summary>

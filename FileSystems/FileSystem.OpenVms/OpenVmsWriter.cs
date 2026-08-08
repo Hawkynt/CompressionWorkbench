@@ -12,7 +12,7 @@ namespace FileSystem.OpenVms;
 ///   <item>A real Files-11 home block at LBN 1 with "DECFILE11A " at byte
 ///         0x1E8, structure level 0x0202, cluster size 1, owner UIC
 ///         [1,1], BITMAP.SYS LBN field set, max-files field set, plus the
-///         CWB-OVMS-WB layout marker at byte 132 so our reader / modifier
+///         workbench-layout layout marker at byte 132 so our reader / modifier
 ///         recognise the geometry.</item>
 ///   <item>BITMAP.SYS at LBN 2..17 with metadata LBNs pre-marked allocated.</item>
 ///   <item>INDEXF.SYS at LBN 18..273 (256 reserved File-IDs); File-IDs 1
@@ -210,7 +210,7 @@ public sealed class OpenVmsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbIbMapSize, 2), OpenVmsLayout.BitmapBlockCount);
     BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbOwnerUic, 4), 0x00010001);  // [1,1]
 
-    // Layout marker at byte 132 so our reader recognises this as a CWB-OVMS-WB volume.
+    // Layout marker at byte 132 so our reader recognises this as a workbench-layout volume.
     OpenVmsLayout.LayoutMarker.CopyTo(hb.Slice(OpenVmsLayout.LayoutMarkerOffset));
 
     // Format string + volume label.

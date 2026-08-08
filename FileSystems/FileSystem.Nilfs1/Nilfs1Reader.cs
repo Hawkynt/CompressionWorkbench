@@ -93,7 +93,7 @@ public sealed class Nilfs1Reader : IDisposable {
 
     // Detect our writer's compact-directory index. When present we enumerate
     // real file entries — folding the base directory (cno=1) and every appended
-    // log segment ("NILFS1SG") together, highest-cno-per-name wins and tombstones
+    // log segment together, highest-cno-per-name wins and tombstones
     // drop the entry. Otherwise we fall back to the metadata-surface behaviour
     // and the image's directory tree is N/A.
     var versions = new Dictionary<string, Record>(StringComparer.Ordinal);
@@ -163,7 +163,7 @@ public sealed class Nilfs1Reader : IDisposable {
   }
 
   /// <summary>
-  /// Walks every appended "NILFS1SG" log segment past <paramref name="from"/> and
+  /// Walks every appended an appended-segment magic log segment past <paramref name="from"/> and
   /// folds its entries into <paramref name="versions"/>. Higher-cno records
   /// supersede lower-cno ones; tombstone records mark the entry deleted (the
   /// caller drops tombstones from the final listing). This is the

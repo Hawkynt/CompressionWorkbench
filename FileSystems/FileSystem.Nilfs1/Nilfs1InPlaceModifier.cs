@@ -8,7 +8,7 @@ namespace FileSystem.Nilfs1;
 /// <summary>
 /// True in-place modifier for NILFS v1 images emitted by <see cref="Nilfs1Writer"/>.
 /// Implements the log-structured continuous-snapshot semantic NILFS v1 shares with
-/// NILFS2: every mutation appends a fresh logical segment ("NILFS1SG") at the tail
+/// NILFS2: every mutation appends a fresh logical segment (an appended-segment magic) at the tail
 /// of the volume and bumps the superblock's <c>s_last_cno</c>, leaving every byte of
 /// the prior image byte-identical at its original offset — the single 8-byte
 /// <c>s_last_cno</c> field is the only in-place edit. Old segments stay recoverable
@@ -24,7 +24,7 @@ namespace FileSystem.Nilfs1;
 /// segment is appended, never a whole-image re-lay.</para>
 ///
 /// <para>Each appended segment block carries:
-/// <c>SegmentMagic ("NILFS1SG") | u64 cno | i64 entryCount | i64 dirSize | dir | payload</c>.
+/// <c>SegmentMagic (an appended-segment magic) | u64 cno | i64 entryCount | i64 dirSize | dir | payload</c>.
 /// Per directory entry: u32 nameLen, name bytes, u8 tombstone-flag (0=live,
 /// 1=removed), i64 payload-offset (relative to this segment's payload region),
 /// i64 size. The reader folds all segments by highest-cno-per-name and drops

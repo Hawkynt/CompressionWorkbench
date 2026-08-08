@@ -96,7 +96,7 @@ public class OpenVmsTests {
   }
 
   /// <summary>
-  /// Locks the OpenVMS Files-11 capability surface at the CWB-OVMS-WB R/W
+  /// Locks the OpenVMS Files-11 capability surface at the workbench-layout R/W
   /// scope: <see cref="IArchiveCreatable"/> + <see cref="IArchiveModifiable"/>
   /// on the descriptor, <see cref="FormatCapabilities.CanCreate"/> +
   /// <see cref="FormatCapabilities.CanModify"/> on the capability flag.

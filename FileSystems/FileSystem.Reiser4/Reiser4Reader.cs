@@ -7,7 +7,7 @@ namespace FileSystem.Reiser4;
 
 /// <summary>
 /// Reads a Reiser4 image: the master superblock's label, UUID and block size, and
-/// the files a <see cref="Reiser4Writer" /> placed in the CWB-R4-WB payload area.
+/// the files a <see cref="Reiser4Writer" /> placed in the workbench-layout payload area.
 /// <para>
 /// The reserved blocks of a workbench-written image are byte-exact
 /// <c>mkfs.reiser4</c> captures describing an empty storage tree, so there is no

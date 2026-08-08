@@ -15,7 +15,7 @@ namespace FileSystem.OpenVms;
 /// </para>
 /// <list type="bullet">
 ///   <item><c>LBN 0</c>            — boot block (zeros)</item>
-///   <item><c>LBN 1</c>            — home block ("DECFILE11A " at byte 0x1E8 inside; "CWB-OVMS-WB" marker at byte 132)</item>
+///   <item><c>LBN 1</c>            — home block ("DECFILE11A " at byte 0x1E8 inside; "workbench-layout" marker at byte 132)</item>
 ///   <item><c>LBN 2 .. 17</c>     — BITMAP.SYS (16 LBNs = 65 536 bits coverage; one bit per LBN)</item>
 ///   <item><c>LBN 18 .. 273</c>   — INDEXF.SYS (256 file headers × 512 bytes; FH N at LBN 18 + N − 1)</item>
 ///   <item><c>LBN 274</c>          — 000000.DIR (root directory, single block initially; chains forward if it grows)</item>
@@ -59,8 +59,10 @@ public static class OpenVmsLayout {
   /// <summary>First LBN of the user-data area (after metadata + root dir).</summary>
   public const int DataAreaStartLbn = RootDirectoryLbn + 1;
 
-  /// <summary>CWB-OVMS-WB layout marker inside the home block at byte offset 132.</summary>
-  public static readonly byte[] LayoutMarker = "CWB-OVMS-WB"u8.ToArray();
+  /// <summary>workbench-layout layout marker inside the home block at byte offset 132.</summary>
+  /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
+  public static readonly byte[] LayoutMarker =
+    [0x9B, 0xF2, 0x19, 0x8C, 0x05, 0xAD, 0x14, 0xE0, 0x1B, 0xC6, 0x92];
 
   /// <summary>Byte offset inside the home block where the layout marker lives.</summary>
   public const int LayoutMarkerOffset = 132;

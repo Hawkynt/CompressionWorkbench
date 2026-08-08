@@ -6,6 +6,25 @@ namespace Compression.Core.DiskImage;
 /// </summary>
 public static class ExtBlockGroupGeometry {
 
+  /// <summary>
+  /// How wide one group descriptor is on the volume whose superblock this is.
+  /// </summary>
+  /// <remarks>
+  /// The classic thirty-two bytes, unless the volume declares 64BIT, in which case
+  /// it says so itself. Stepping through the table at the wrong stride lands in
+  /// the middle of the next descriptor and reads nonsense out of it.
+  /// </remarks>
+  public static int DescriptorSize(ReadOnlySpan<byte> superblock) {
+    const uint feature64Bit = 0x0080;
+    if (superblock.Length < 256) return 32;
+
+    var incompat = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(superblock[96..]);
+    if ((incompat & feature64Bit) == 0) return 32;
+
+    var declared = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(superblock[254..]);
+    return declared < 32 ? 32 : declared;
+  }
+
   /// <summary>Block-group geometry derived from the block size and the volume size.</summary>
   public readonly record struct ExtGeometry(
     int TotalBlocks, int FirstDataBlock, int BlocksPerGroup, int GroupCount,
@@ -18,7 +37,11 @@ public static class ExtBlockGroupGeometry {
   /// shared evenly across them, so a one-group volume ends up with exactly the
   /// geometry this writer produced before groups existed.
   /// </summary>
-  public static ExtGeometry Compute(int blockSize, int totalBlocks, int inodeSize, int neededInodes) {
+  /// <param name="descriptorSize">
+  /// Bytes per group descriptor: the classic 32, or the 64 a 64BIT volume uses.
+  /// </param>
+  public static ExtGeometry Compute(int blockSize, int totalBlocks, int inodeSize, int neededInodes,
+                                    int descriptorSize = 32) {
     var firstDataBlock = blockSize == 1024 ? 1 : 0;
     var blocksPerGroup = 8 * blockSize;
     var inodesPerBlock = blockSize / inodeSize;
@@ -27,10 +50,18 @@ public static class ExtBlockGroupGeometry {
     int groupCount = 1, inodesPerGroup = 0, inodeTableBlocks = 0, gdtBlocks = 1, perGroupMeta = 0;
     for (var pass = 0; pass < 8; ++pass) {
       groupCount = Math.Max(1, (int)(((long)totalBlocks - firstDataBlock + blocksPerGroup - 1) / blocksPerGroup));
-      inodesPerGroup = ChooseInodeCount((neededInodes + groupCount - 1) / groupCount);
+      // How many inodes the volume gets is a matter of policy, not need: mke2fs
+      // hands out one per so many bytes of capacity and takes the count from
+      // there. Sizing the table to the files actually being written leaves a
+      // volume with a hundred-odd inodes where every other tool would put
+      // thousands, which is as plain a tell as any label.
+      var volumeBytes = (long)totalBlocks * blockSize;
+      var byRatio = volumeBytes / BytesPerInode(volumeBytes);
+      var wanted = Math.Max(ChooseInodeCount(neededInodes), (int)Math.Min(int.MaxValue, byRatio));
+      inodesPerGroup = (wanted + groupCount - 1) / groupCount + 7 & ~7;
       inodesPerGroup = Math.Min(8 * blockSize, (inodesPerGroup + inodesPerBlock - 1) / inodesPerBlock * inodesPerBlock);
       inodeTableBlocks = inodesPerGroup * inodeSize / blockSize;
-      gdtBlocks = (groupCount * 32 + blockSize - 1) / blockSize;
+      gdtBlocks = (groupCount * descriptorSize + blockSize - 1) / blockSize;
       // superblock + descriptor table + block bitmap + inode bitmap + inode table
       perGroupMeta = 1 + gdtBlocks + 2 + inodeTableBlocks;
   
@@ -51,6 +82,21 @@ public static class ExtBlockGroupGeometry {
   /// reserved/dir/file inode with headroom, never below the classic 128, and a
   /// multiple of 8 so the inode bitmap's byte boundaries stay tidy.
   /// </summary>
+  /// <summary>
+  /// Bytes of capacity mke2fs allows per inode, by how large the volume is.
+  /// </summary>
+  /// <remarks>
+  /// These are the ratios in mke2fs.conf's size types — floppy, small, default,
+  /// big, huge — which is where a volume's inode count actually comes from.
+  /// </remarks>
+  public static int BytesPerInode(long volumeBytes) => volumeBytes switch {
+    < 3L * 1024 * 1024 => 8192,
+    < 512L * 1024 * 1024 => 4096,
+    < 4L * 1024 * 1024 * 1024 * 1024 => 16384,
+    < 16L * 1024 * 1024 * 1024 * 1024 => 32768,
+    _ => 65536,
+  };
+
   public static int ChooseInodeCount(int needed) {
     var withHeadroom = Math.Max(128, needed + needed / 10 + 16);
     return withHeadroom + 7 & ~7;

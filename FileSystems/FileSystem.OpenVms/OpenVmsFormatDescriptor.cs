@@ -17,7 +17,7 @@ namespace FileSystem.OpenVms;
 ///   <item><see cref="FormatCapabilities.CanList"/> + <see cref="FormatCapabilities.CanExtract"/>
 ///         — driven by <see cref="OpenVmsReader"/> walking 000000.DIR.</item>
 ///   <item><see cref="FormatCapabilities.CanCreate"/> — driven by <see cref="OpenVmsWriter"/>.
-///         The fresh volume carries a real ODS-2 home block at LBN 1 plus a CWB-OVMS-WB
+///         The fresh volume carries a real ODS-2 home block at LBN 1 plus a workbench-layout
 ///         layout marker at byte 132 of the home block.</item>
 ///   <item><see cref="FormatCapabilities.CanModify"/> — driven by
 ///         <see cref="OpenVmsInPlaceModifier"/>. Add / Remove / Replace
@@ -45,7 +45,7 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   /// <summary>
   /// Sole tunable the ODS-2 writer honours: the 12-character home-block volume
-  /// label (HM2$T_VOLNAME). Everything else in the CWB-OVMS-WB geometry is
+  /// label (HM2$T_VOLNAME). Everything else in the workbench-layout geometry is
   /// fixed. An empty label falls back to the writer default ("SCRATCH").
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
@@ -78,7 +78,7 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "DEC/VMS Files-11 (ODS-2) — clean-room writer + reader + in-place Add/Remove/Replace " +
-    "modifier sharing the CWB-OVMS-WB geometry (BITMAP.SYS, INDEXF.SYS, 000000.DIR at fixed " +
+    "modifier sharing the workbench-layout geometry (BITMAP.SYS, INDEXF.SYS, 000000.DIR at fixed " +
     "LBNs). Honest scope: emitted volumes are not OpenVMS-mountable — home-block " +
     "HM2$W_CHECKSUM1/CHECKSUM2, FH FILECHAR/RECATTR bundles, and ODS-2 variable-length " +
     "directory records remain deferred.";

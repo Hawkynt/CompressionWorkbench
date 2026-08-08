@@ -130,7 +130,7 @@ public sealed class Reiser4Writer {
   /// <see cref="MinBlockCount"/>.</summary>
   public ulong BlockCount { get; set; } = MinBlockCount;
 
-  // ── Payload area (CWB-R4-WB) ────────────────────────────────────────────
+  // ── Payload area (workbench-layout) ────────────────────────────────────────────
   //
   // The reserved blocks above are byte-exact mkfs.reiser4 captures describing an
   // empty tree, and the tree's own item plugins (extent40 bodies keyed by file
@@ -146,7 +146,9 @@ public sealed class Reiser4Writer {
   // OpenVMS and AmigaPFS writers declare.
 
   /// <summary>Marker written at <see cref="MasterPayloadMarkerOff" /> of the master superblock.</summary>
-  internal static readonly byte[] PayloadMarker = "CWB-R4-WB"u8.ToArray();
+  /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
+  internal static readonly byte[] PayloadMarker =
+    [0x8D, 0x17, 0x0C, 0xE1, 0x93, 0x1A, 0x0F, 0xB6, 0x81];
 
   /// <summary>Offset in the master superblock of the marker, past uuid and label.</summary>
   internal const int MasterPayloadMarkerOff = 52;
@@ -155,7 +157,8 @@ public sealed class Reiser4Writer {
   internal const int MasterPayloadDirOff = MasterPayloadMarkerOff + 12;
 
   /// <summary>Magic at the head of every payload directory block.</summary>
-  internal static readonly byte[] DirMagic = "CWBR4DIR"u8.ToArray();
+  internal static readonly byte[] DirMagic =
+    [0x9E, 0x0B, 0x14, 0xA7, 0x02, 0xDB, 0x18, 0x8F];
 
   /// <summary>Directory block head: magic, next-block link, entry count.</summary>
   internal const int DirHeadSize = 8 + 8 + 4;

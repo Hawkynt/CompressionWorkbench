@@ -22,7 +22,7 @@ public class OpenVmsInPlaceModifyTests {
   private static byte[] Bytes(string s) => Encoding.ASCII.GetBytes(s);
 
   /// <summary>
-  /// Given a fresh CWB-OVMS-WB volume with two files,
+  /// Given a fresh workbench-layout volume with two files,
   /// when a third file is added in-place,
   /// then the pre-existing files' data LBNs and FH bytes are byte-identical.
   /// </summary>
@@ -76,7 +76,7 @@ public class OpenVmsInPlaceModifyTests {
   }
 
   /// <summary>
-  /// Given a fresh CWB-OVMS-WB volume with three files,
+  /// Given a fresh workbench-layout volume with three files,
   /// when the middle file is removed in-place,
   /// then the remaining files' data LBNs and FH bytes are byte-identical
   /// AND the removed file's data LBNs are zero-wiped AND BITMAP.SYS is updated.

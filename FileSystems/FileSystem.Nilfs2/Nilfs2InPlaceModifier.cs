@@ -24,7 +24,7 @@ namespace FileSystem.Nilfs2;
 ///
 /// <para><b>What lives in each appended segment block:</b></para>
 /// <list type="bullet">
-///   <item><description>8-byte <see cref="Nilfs2Writer.SegmentMagic"/> ("NILFS2SG").</description></item>
+///   <item><description>8-byte <see cref="Nilfs2Writer.SegmentMagic"/> (an appended-segment magic).</description></item>
 ///   <item><description>u64 cno — the checkpoint number this segment commits.</description></item>
 ///   <item><description>i64 entry-count + i64 directory-byte-size.</description></item>
 ///   <item><description>Per entry: u32 nameLen, name bytes, u8 tombstone-flag

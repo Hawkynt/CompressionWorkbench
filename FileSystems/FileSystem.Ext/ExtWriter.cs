@@ -245,9 +245,15 @@ public sealed class ExtWriter {
     // EXT4 feature flags (fs/ext4/ext4.h).
     const uint FeatureIncompatFiletype = 0x0002;
     const uint FeatureIncompatExtents = 0x0040;
+    const uint FeatureIncompat64Bit = 0x0080;
     const uint FeatureCompatHasJournal = 0x0004;
     const uint FeatureCompatExtAttr = 0x0008;
     const uint FeatureCompatDirIndex = 0x0020;
+    const uint FeatureCompatResizeInode = 0x0010;
+    const uint FeatureRoCompatSparseSuper = 0x0001;
+    const uint FeatureRoCompatExtraIsize = 0x0040;
+    const int MinimumInodeSize = 128;
+    const int ExtraIsizeBytes = 32;
     const uint FeatureRoCompatLargeFile = 0x0002;
     const uint FeatureRoCompatHugeFile = 0x0008;
     const uint FeatureRoCompatDirNlink = 0x0020;
@@ -261,31 +267,49 @@ public sealed class ExtWriter {
     // boot/reserved range). When HAS_JOURNAL is set the SB advertises this
     // inode as the journal device.
     const uint JournalInode = 8;
+    const uint ResizeInode = 7;
 
     if (inodeSize != 128 && inodeSize != 256)
       throw new ArgumentException($"Invalid inodeSize {inodeSize}; must be 128 or 256.", nameof(inodeSize));
 
     var neededInodes = (int)FirstUserInode + CountDirectories() + _files.Count;
-    var geo = ExtBlockGroupGeometry.Compute(blockSize, totalBlocks, inodeSize, neededInodes);
+    // A 64BIT volume writes 64-byte group descriptors: the classic fields, then a
+    // high half for each. Ours are all small enough that the high halves are zero,
+    // but the width is declared and the table is sized for it either way.
+    var descriptorSize = version == ExtVersion.Ext4 ? WideGroupDescriptorSize : GroupDescriptorSize;
+    var geo = ExtBlockGroupGeometry.Compute(blockSize, totalBlocks, inodeSize, neededInodes, descriptorSize);
     totalBlocks = geo.TotalBlocks;
     var firstDataBlock = geo.FirstDataBlock;
     var blocksPerGroup = geo.BlocksPerGroup;
     var groupCount = geo.GroupCount;
     var gdtBlocks = geo.GdtBlocks;
     var inodesPerGroup = geo.InodesPerGroup;
-    var perGroupMeta = geo.PerGroupMetaBlocks;
+    var inodeTableBlocks = geo.InodeTableBlocks;
 
     var img = new SparseBlockImage(blockSize, (long)totalBlocks * blockSize);
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     var sectorsPerBlock = blockSize / 512;
 
     // Group g owns blocks [GroupStart(g), GroupStart(g) + blocksPerGroup) and
-    // opens with its own superblock backup, group-descriptor copy, block bitmap,
-    // inode bitmap and inode table. A one-group volume therefore keeps exactly
-    // the layout this writer has always produced.
+    // opens with its block bitmap, inode bitmap and inode table, behind a spare
+    // superblock and descriptor table in the groups that keep one.
     int GroupStart(int g) => firstDataBlock + g * blocksPerGroup;
     int GroupBlocks(int g) => (int)Math.Min(blocksPerGroup, (long)totalBlocks - GroupStart(g));
-    int BlockBitmapBlock(int g) => GroupStart(g) + 1 + gdtBlocks;
+
+    // Only some groups keep a spare superblock and descriptor table: the first
+    // two, and every group whose number is a power of three, five or seven. That
+    // is what SPARSE_SUPER means, and mke2fs has laid volumes out that way since
+    // before ext3 — a volume with a spare in every group is one nobody makes.
+    // Blank descriptor-table blocks kept behind the real ones so the volume can be
+    // grown later without moving anything. mke2fs reserves enough for a thousand-
+    // fold growth, capped by what one indirect block can address.
+    var addressesPerBlock = blockSize / 4;
+    var reservedGdtBlocks = ReservedGdtBlocks(totalBlocks, firstDataBlock, blocksPerGroup,
+                                              blockSize, gdtBlocks, addressesPerBlock, descriptorSize);
+
+    int SuperblockBlocks(int g) => HasSuperblock(g) ? 1 + gdtBlocks + reservedGdtBlocks : 0;
+    int GroupOverhead(int g) => SuperblockBlocks(g) + 2 + inodeTableBlocks;
+    int BlockBitmapBlock(int g) => GroupStart(g) + SuperblockBlocks(g);
     int InodeBitmapBlock(int g) => BlockBitmapBlock(g) + 1;
     int InodeTableBlock(int g) => BlockBitmapBlock(g) + 2;
 
@@ -310,11 +334,11 @@ public sealed class ExtWriter {
     // Blocks are handed out in ascending order, stepping over each group's own
     // metadata. A file's blocks are therefore contiguous except where they cross
     // a group boundary, which the block map expresses without difficulty.
-    var nextBlock = firstDataBlock + perGroupMeta;
+    var nextBlock = firstDataBlock + GroupOverhead(0);
     int AllocBlock() {
       while (nextBlock < totalBlocks) {
         var g = (nextBlock - firstDataBlock) / blocksPerGroup;
-        var dataStart = GroupStart(g) + perGroupMeta;
+        var dataStart = GroupStart(g) + GroupOverhead(g);
         if (nextBlock < dataStart) { nextBlock = dataStart; continue; }
         var block = nextBlock++;
         MarkBlockUsed(block);
@@ -328,7 +352,7 @@ public sealed class ExtWriter {
     //     block bitmap refers to block GroupStart(g) + N, so the boot-area slot
     //     on 1 KiB filesystems is implicit and not tracked by any bit. ---
     for (var g = 0; g < groupCount; ++g)
-      for (var b = GroupStart(g); b < GroupStart(g) + perGroupMeta && b < totalBlocks; ++b)
+      for (var b = GroupStart(g); b < GroupStart(g) + GroupOverhead(g) && b < totalBlocks; ++b)
         MarkBlockUsed(b);
 
     // --- Inodes 1..(FirstUserInode-1) are all reserved; inode 2 (root) is
@@ -336,6 +360,50 @@ public sealed class ExtWriter {
     // inode in use but empty", which is the default mkfs.ext4 behaviour. ---
     for (var ino = 1u; ino < FirstUserInode; ++ino)
       MarkInodeUsed(ino);
+
+    // --- Inode 7 owns the reserved descriptor-table blocks ---
+    // A file with nothing but a double-indirect block, whose slots name the
+    // reserved blocks in this group, and each of those in turn names its own
+    // copies in the groups that keep a spare superblock. e2fsck checks the whole
+    // shape and calls a volume whose seventh inode does not have it invalid.
+    if (reservedGdtBlocks > 0) {
+      var dind = AllocBlock();
+      var reservedFirst = firstDataBlock + 1 + gdtBlocks;
+      var backupGroups = new List<int>();
+      for (var g = 1; g < groupCount; ++g)
+        if (HasSuperblock(g)) backupGroups.Add(g);
+
+      var highestSlot = 0;
+      for (var reserved = 0; reserved < reservedGdtBlocks; ++reserved) {
+        var gdtBlock = reservedFirst + reserved;
+        var slot = (reserved + 1) % addressesPerBlock;
+        highestSlot = Math.Max(highestSlot, slot);
+        BinaryPrimitives.WriteUInt32LittleEndian(img.At((long)dind * blockSize + slot * 4, 4), (uint)gdtBlock);
+
+        // Where the same reserved block sits in every group that mirrors it.
+        var withinGroup = gdtBlock - firstDataBlock;
+        var copies = img.Block(gdtBlock);
+        for (var i = 0; i < backupGroups.Count; ++i)
+          BinaryPrimitives.WriteUInt32LittleEndian(copies.Slice(i * 4, 4),
+            (uint)(GroupStart(backupGroups[i]) + withinGroup));
+      }
+
+      var resizeInode = img.At(InodeOffset(ResizeInode), inodeSize);
+      BinaryPrimitives.WriteUInt16LittleEndian(resizeInode, 0x8000 | 0x0180);   // i_mode = S_IFREG | 0600
+      BinaryPrimitives.WriteUInt16LittleEndian(resizeInode[26..], 1);           // i_links_count
+      BinaryPrimitives.WriteUInt32LittleEndian(resizeInode[8..], now);          // i_atime
+      BinaryPrimitives.WriteUInt32LittleEndian(resizeInode[12..], now);         // i_ctime
+      BinaryPrimitives.WriteUInt32LittleEndian(resizeInode[16..], now);         // i_mtime
+      BinaryPrimitives.WriteUInt32LittleEndian(resizeInode[92..], (uint)dind);  // i_block[13], the double-indirect block
+
+      // The file reaches as far as the last slot the double-indirect block uses.
+      var logicalBlocks = 12L + addressesPerBlock + (long)(highestSlot + 1) * addressesPerBlock;
+      BinaryPrimitives.WriteUInt32LittleEndian(resizeInode[4..], (uint)(logicalBlocks * blockSize)); // i_size
+      // Every block it holds: the double-indirect block, this group's reserved
+      // blocks, and the copies of those in each group that mirrors them.
+      var heldBlocks = 1L + (long)reservedGdtBlocks * (1 + backupGroups.Count);
+      BinaryPrimitives.WriteUInt32LittleEndian(resizeInode[28..], (uint)(heldBlocks * sectorsPerBlock)); // i_blocks
+    }
 
     var nextInode = FirstUserInode;
 
@@ -602,6 +670,21 @@ public sealed class ExtWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(jino[28..], (uint)((journalBlocks + metaBlocks) * sectorsPerBlock)); // i_blocks
     }
 
+    // --- How much of each inode past the classic 128 bytes it actually uses ---
+    // An inode wider than the original 128 bytes says so in its own first extra
+    // field, and the volume declares the smallest and the preferred width. Every
+    // inode mke2fs writes into a 256-byte table carries it; one that leaves it
+    // zero is read as a 128-byte inode sitting in a 256-byte slot.
+    var extraIsize = inodeSize > MinimumInodeSize ? (ushort)ExtraIsizeBytes : (ushort)0;
+    if (extraIsize > 0)
+      for (var ino = 1u; ino <= (uint)inodesPerGroup * groupCount; ++ino) {
+        var g = (int)((ino - 1) / (uint)inodesPerGroup);
+        var idx = (int)((ino - 1) % (uint)inodesPerGroup);
+        if ((img.Block(InodeBitmapBlock(g))[idx / 8] & (1 << (idx % 8))) == 0) continue;
+
+        BinaryPrimitives.WriteUInt16LittleEndian(img.At(InodeOffset(ino) + MinimumInodeSize, 2), extraIsize);
+      }
+
     // --- Per-group bitmap padding, free counts and group descriptors ---
     // Padding at the tail of each bitmap block must be set to 1 per mkfs
     // convention; fsck flags unset padding as a corruption hint.
@@ -633,7 +716,7 @@ public sealed class ExtWriter {
       totalFreeInodes += freeInodesInGroup;
 
       // Group descriptor: 32 bytes, reserved area zeroed.
-      var bgd = img.At(gdtBase + (long)g * 32, 32);
+      var bgd = img.At(gdtBase + (long)g * descriptorSize, descriptorSize);
       BinaryPrimitives.WriteUInt32LittleEndian(bgd, (uint)BlockBitmapBlock(g));      // bg_block_bitmap
       BinaryPrimitives.WriteUInt32LittleEndian(bgd[4..], (uint)InodeBitmapBlock(g)); // bg_inode_bitmap
       BinaryPrimitives.WriteUInt32LittleEndian(bgd[8..], (uint)InodeTableBlock(g));  // bg_inode_table
@@ -706,29 +789,26 @@ public sealed class ExtWriter {
     //   ext2 — FILETYPE only (compat/incompat clear of everything else).
     //   ext3 — FILETYPE + HAS_JOURNAL (compat).
     //   ext4 — FILETYPE + HAS_JOURNAL (compat) + EXTENTS (incompat).
-    //   SPARSE_SUPER is intentionally NOT set: this writer places a superblock
-    //   and group-descriptor backup in *every* group, which is what a volume
-    //   without that feature must look like.
-    //   64BIT is intentionally NOT set: it mandates 64-byte block group
-    //   descriptors and s_desc_size=64, but we emit 32-byte descriptors, so
-    //   advertising 64BIT makes dumpe2fs/e2fsck reject the volume with
-    //   "block group descriptor size invalid". 64BIT is only needed past 16 TiB;
-    //   an ext4 volume with extents + a journal (and no 64BIT) is fully standard.
     //   The read-only-compatible set below says what the volume may come to
     //   contain, not what it does: mke2fs turns all four on for every volume it
     //   makes, and a volume with none of them on is one no mke2fs made.
     uint compatFlags = FeatureCompatExtAttr | FeatureCompatDirIndex;
+    if (reservedGdtBlocks > 0) compatFlags |= FeatureCompatResizeInode;
     var incompatFlags = FeatureIncompatFiletype;
-    var roCompatFlags = FeatureRoCompatLargeFile | FeatureRoCompatHugeFile | FeatureRoCompatDirNlink;
+    var roCompatFlags = FeatureRoCompatSparseSuper | FeatureRoCompatLargeFile
+      | FeatureRoCompatHugeFile | FeatureRoCompatDirNlink;
+    if (inodeSize > MinimumInodeSize) roCompatFlags |= FeatureRoCompatExtraIsize;
     if (version == ExtVersion.Ext3 || version == ExtVersion.Ext4) {
       if (journal) compatFlags |= FeatureCompatHasJournal;
     }
     if (version == ExtVersion.Ext4) {
-      incompatFlags |= FeatureIncompatExtents;
+      incompatFlags |= FeatureIncompatExtents | FeatureIncompat64Bit;
+      BinaryPrimitives.WriteUInt16LittleEndian(sb[254..], (ushort)descriptorSize);  // s_desc_size
     }
     BinaryPrimitives.WriteUInt32LittleEndian(sb[92..], compatFlags);               // s_feature_compat
     BinaryPrimitives.WriteUInt32LittleEndian(sb[96..], incompatFlags);             // s_feature_incompat
     BinaryPrimitives.WriteUInt32LittleEndian(sb[100..], roCompatFlags);            // s_feature_ro_compat
+    BinaryPrimitives.WriteUInt16LittleEndian(sb[206..], (ushort)reservedGdtBlocks); // s_reserved_gdt_blocks
 
     // Directories may be indexed, so the volume carries what an index would be
     // hashed with: the scheme, and the seed no two volumes share. dumpe2fs prints
@@ -737,6 +817,11 @@ public sealed class ExtWriter {
     // reads back as a well-formed one; sixteen loose random bytes do not.
     Guid.NewGuid().ToByteArray(bigEndian: true).CopyTo(sb.Slice(236, 16));         // s_hash_seed
     sb[252] = HashVersionHalfMd4;                                                 // s_def_hash_version
+    if (inodeSize > MinimumInodeSize) {
+      BinaryPrimitives.WriteUInt16LittleEndian(sb[348..], ExtraIsizeBytes);        // s_min_extra_isize
+      BinaryPrimitives.WriteUInt16LittleEndian(sb[350..], ExtraIsizeBytes);        // s_want_extra_isize
+    }
+
     BinaryPrimitives.WriteUInt32LittleEndian(sb[352..], FlagSignedHash);          // s_flags
 
     // UUID at offset 104 (16 bytes) — blkid/dumpe2fs rely on this to identify
@@ -772,13 +857,15 @@ public sealed class ExtWriter {
     }
 
     // --- Superblock and group-descriptor backups ---
-    // Without SPARSE_SUPER every group opens with a copy of the superblock (at
-    // the group's first block, offset 0) followed by a copy of the descriptor
-    // table. e2fsck needs them to be able to repair a volume whose primary
-    // superblock is gone, and flags their absence outright.
+    // A spare superblock and descriptor table in each of the groups SPARSE_SUPER
+    // nominates. e2fsck needs them to be able to repair a volume whose primary
+    // superblock is gone, and flags a missing one — or one in a group that should
+    // not have it — outright.
     if (groupCount > 1) {
       var primarySuperblock = sb.ToArray();
       for (var g = 1; g < groupCount; ++g) {
+        if (!HasSuperblock(g)) continue;
+
         var start = GroupStart(g);
         primarySuperblock.CopyTo(img.Block(start));
         BinaryPrimitives.WriteUInt16LittleEndian(img.At((long)start * blockSize + 90, 2), (ushort)g); // s_block_group_nr
@@ -788,6 +875,56 @@ public sealed class ExtWriter {
     }
 
     return img;
+  }
+
+  /// <summary>
+  /// How many blank descriptor-table blocks to keep behind the real ones, so the
+  /// volume can be grown in place later.
+  /// </summary>
+  /// <remarks>
+  /// Enough to describe a volume a thousand times this one, less what the real
+  /// table already covers, and never more than one indirect block can address —
+  /// which is the arithmetic mke2fs does, and it stops well short of a group.
+  /// </remarks>
+  private static int ReservedGdtBlocks(int totalBlocks, int firstDataBlock, int blocksPerGroup,
+                                       int blockSize, int gdtBlocks, int addressesPerBlock,
+                                       int descriptorSize) {
+    var groupsPerGdtBlock = blockSize / descriptorSize;
+    var grownBlocks = (long)totalBlocks * 1024;
+    var grownGroups = (grownBlocks - firstDataBlock + blocksPerGroup - 1) / blocksPerGroup;
+    var reserved = (grownGroups + groupsPerGdtBlock - 1) / groupsPerGdtBlock - gdtBlocks;
+    reserved = Math.Min(reserved, addressesPerBlock);
+    // A group has to have room left for its bitmaps and inode table after them.
+    reserved = Math.Min(reserved, blocksPerGroup / 4);
+    return (int)Math.Max(0, reserved);
+  }
+
+  private const int GroupDescriptorSize = 32;
+  private const int WideGroupDescriptorSize = 64;
+
+  /// <summary>
+  /// Whether block group <paramref name="group" /> keeps a spare superblock and
+  /// descriptor table.
+  /// </summary>
+  /// <remarks>
+  /// The first two groups do, and after those only the groups whose number is a
+  /// power of three, five or seven — which thins the spares out to a handful
+  /// however large the volume grows. This is what the SPARSE_SUPER feature names,
+  /// and e2fsck checks the placement both ways: a group that should have a spare
+  /// and hasn't is an error, and so is a group that has one and shouldn't.
+  /// </remarks>
+  private static bool HasSuperblock(int group) {
+    if (group <= 1) return true;
+    if ((group & 1) == 0) return false;   // every power of 3, 5 or 7 past 1 is odd
+
+    return IsPowerOf(group, 3) || IsPowerOf(group, 5) || IsPowerOf(group, 7);
+  }
+
+  private static bool IsPowerOf(int value, int radix) {
+    for (var power = radix; power <= value; power *= radix)
+      if (power == value) return true;
+
+    return false;
   }
 
   // Rounds the required inode count up to a sensible group size. The minimal

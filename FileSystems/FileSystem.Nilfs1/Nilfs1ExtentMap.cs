@@ -106,7 +106,7 @@ public static class Nilfs1ExtentMap {
       basePayloadEnd = Math.Max(basePayloadEnd, basePayloadStart + off + size);
     }
 
-    // Appended "NILFS1SG" segments supersede with higher cno; tombstones mark dead.
+    // Appended segments supersede with higher cno; tombstones mark dead.
     // They can only live past the base payload, which is where the scan starts.
     var magic = Nilfs1Writer.SegmentMagic;
     var p = basePayloadEnd;

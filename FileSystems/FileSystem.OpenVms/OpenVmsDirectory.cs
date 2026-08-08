@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.OpenVms;
 
 /// <summary>
-/// Root-directory block layout for the CWB-OVMS-WB Files-11 ODS-2 image.
+/// Root-directory block layout for the workbench-layout Files-11 ODS-2 image.
 /// <para>
 /// A real ODS-2 directory is a chain of 512-byte blocks holding
 /// variable-length name records, each followed by one or more

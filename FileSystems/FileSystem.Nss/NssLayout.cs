@@ -44,7 +44,9 @@ internal static class NssLayout {
   /// What marks the container as one of ours, written just past the pool
   /// anchor so a real NSS pool is never mistaken for one.
   /// </summary>
-  internal static readonly byte[] ContainerMagic = "CWBNSS\0\0"u8.ToArray();
+  /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
+  internal static readonly byte[] ContainerMagic =
+    [0xD4, 0x0A, 0x17, 0xBE, 0x1F, 0x91, 0x13, 0xCC];
   internal const long ContainerMagicOffset = 16;
 
   /// <summary>Where the file count sits.</summary>

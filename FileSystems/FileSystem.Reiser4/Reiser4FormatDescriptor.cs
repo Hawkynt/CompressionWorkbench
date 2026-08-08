@@ -108,7 +108,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return entries;
   }
 
-  /// <summary>Files the CWB-R4-WB payload area holds. Never throws — empty when there are none.</summary>
+  /// <summary>Files the workbench-layout payload area holds. Never throws — empty when there are none.</summary>
   private static IReadOnlyList<Reiser4Reader.Entry> ReadPayload(Stream stream) {
     try {
       if (stream.CanSeek) stream.Position = 0;
@@ -190,7 +190,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // ── IArchiveCreatable ────────────────────────────────────────────────
   // The reserved blocks are byte-exact mkfs.reiser4 captures describing an empty
   // storage tree; growing that tree (extent40 item bodies keyed by file offset,
-  // cde40 directory units) is not reproduced here. Files go in the CWB-R4-WB
+  // cde40 directory units) is not reproduced here. Files go in the workbench-layout
   // payload area past those blocks, with the block-allocator bitmap and
   // sb_free_blocks kept consistent so the volume stays internally coherent.
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -356,7 +356,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => Reiser4Writer.BlockSize * (long)Reiser4Writer.MinBlockCount; // 16 MB
   public string AcceptedInputsDescription =>
-    "Reiser4 image; files are stored in the CWB-R4-WB payload area past the reserved blocks.";
+    "Reiser4 image; files are stored in the workbench-layout payload area past the reserved blocks.";
 
   // Bounded read — must NOT pull multi-GB images into memory when the carver
   // runs us speculatively. Master SB is at 65536, format40 SB at 65536+blocksize

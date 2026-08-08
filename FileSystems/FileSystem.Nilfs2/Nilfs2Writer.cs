@@ -28,7 +28,7 @@ namespace FileSystem.Nilfs2;
 ///   +6, <c>s_rev_level == 2</c>, crc32_le-sealed <c>s_sum</c>, label at +0xA8).
 ///   <c>s_last_pseg</c> points at the committed log.</description></item>
 ///   <item><description>0x800.. — writer-private compact directory guarded by
-///   <see cref="WriterMagic"/> ("NILFS2WB") + i64 directory length + i64 payload
+///   <see cref="WriterMagic"/> (the writer magic) + i64 directory length + i64 payload
 ///   base + i64 payload length + (u32 name_len, name, u64 payload_offset,
 ///   u64 size) entries. This is read by <see cref="Nilfs2Reader"/> and mutated by
 ///   the in-place modifier; the kernel never looks here (it jumps straight to
@@ -62,7 +62,9 @@ public sealed class Nilfs2Writer {
   /// pick up files without disturbing the kernel mount path (the kernel reads the
   /// superblock's <c>s_last_pseg</c> and never scans for this magic).
   /// </summary>
-  internal static readonly byte[] WriterMagic = "NILFS2WB"u8.ToArray();
+  /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
+  internal static readonly byte[] WriterMagic =
+    [0x8F, 0xD3, 0x1A, 0xE7, 0x05, 0xBC, 0x92, 0x14];
 
   /// <summary>
   /// Magic that prefixes each appended log-segment block written by
@@ -70,7 +72,8 @@ public sealed class Nilfs2Writer {
   /// the kernel log). Each segment carries a u64 checkpoint number + a directory
   /// + a payload region; the reader merges all segments by highest-cno-per-name.
   /// </summary>
-  internal static readonly byte[] SegmentMagic = "NILFS2SG"u8.ToArray();
+  internal static readonly byte[] SegmentMagic =
+    [0xA6, 0x0E, 0xF1, 0x83, 0x1D, 0xC5, 0x7F, 0x9B];
 
   /// <summary>Where the writer-private directory begins.</summary>
   internal const int SegmentStart = 2048;

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 using Compression.Core.Layout;
 using Compression.Registry;
 
@@ -69,9 +70,13 @@ public static class ExtExtentMap {
     var bgInodeTable = new uint[groupCount];
     var bgBlockBitmap = new uint[groupCount];
     var bgInodeBitmap = new uint[groupCount];
+    // A 64BIT volume writes wider group descriptors and says how wide in the
+    // superblock; stepping through the table 32 bytes at a time then lands in the
+    // middle of the second one.
+    var descriptorSize = ExtBlockGroupGeometry.DescriptorSize(sb);
     var bgdEntry = new byte[32];
     for (uint g = 0; g < groupCount; g++) {
-      var bgOffset = bgdtOffset + g * 32;
+      var bgOffset = bgdtOffset + (long)g * descriptorSize;
       if (bgOffset + 32 > image.Length) yield break;
       cache.Read(bgOffset, bgdEntry);
       bgBlockBitmap[g] = BinaryPrimitives.ReadUInt32LittleEndian(bgdEntry);

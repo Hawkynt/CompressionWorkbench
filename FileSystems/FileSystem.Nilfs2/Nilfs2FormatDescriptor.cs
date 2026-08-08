@@ -10,7 +10,7 @@ namespace FileSystem.Nilfs2;
 ///
 /// <para><b>R/W scope.</b> Create emits a spec-compliant superblock plus a
 /// writer-private compact directory at offset 2048 (the base checkpoint at
-/// cno=1). Add / Replace / Remove append a fresh log segment ("NILFS2SG"
+/// cno=1). Add / Replace / Remove append a fresh log segment (an appended-segment magic
 /// header + cno + dirents + payload) at the tail of the volume and bump
 /// <c>s_last_cno</c> in the superblock — the only in-place edit, sanctioned by
 /// the NILFS2 spec for advancing the checkpoint pointer. Every byte of every

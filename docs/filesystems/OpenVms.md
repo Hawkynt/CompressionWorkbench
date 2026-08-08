@@ -1,6 +1,6 @@
 # OpenVMS Files-11 (`OpenVms`)
 
-DEC/VMS Files-11 (ODS-2) — clean-room writer + reader + in-place Add/Remove/Replace modifier sharing the CWB-OVMS-WB geometry (BITMAP.SYS, INDEXF.SYS, 000000.DIR at fixed LBNs). Honest scope: emitted volumes are not OpenVMS-mountable — home-block HM2$W_CHECKSUM1/CHECKSUM2, FH FILECHAR/RECATTR bundles, and ODS-2 variable-length directory records remain deferred.
+DEC/VMS Files-11 (ODS-2) — clean-room writer + reader + in-place Add/Remove/Replace modifier sharing the workbench-layout geometry (BITMAP.SYS, INDEXF.SYS, 000000.DIR at fixed LBNs). Honest scope: emitted volumes are not OpenVMS-mountable — home-block HM2$W_CHECKSUM1/CHECKSUM2, FH FILECHAR/RECATTR bundles, and ODS-2 variable-length directory records remain deferred.
 
 > Generated from the implementation. Edit the doc comments on the descriptor,
 > reader or writer rather than this file; a test regenerates it and fails on drift.
@@ -60,7 +60,7 @@ References:
 
 ### OpenVmsReader
 
-Walks a CWB-OVMS-WB OpenVMS Files-11 ODS-2 volume and surfaces the user files held in 000000.DIR. Confirms the volume by checking the "CWB-OVMS-WB" layout marker at byte 132 of the home block — when the marker is absent the reader returns no entries (the descriptor's generic header-surface path takes over).
+Walks a workbench-layout OpenVMS Files-11 ODS-2 volume and surfaces the user files held in 000000.DIR. Confirms the volume by checking the "workbench-layout" layout marker at byte 132 of the home block — when the marker is absent the reader returns no entries (the descriptor's generic header-surface path takes over).
 
 For each file the reader produces an `Entry` bundle containing the File-ID, name, logical size, and the in-memory file bytes (assembled by walking the File Header's retrieval pointers).
 
@@ -89,7 +89,7 @@ Layout (512-byte LBNs):
 ## Further reading
 
 - `CanList` + `CanExtract` — driven by `OpenVmsReader` walking 000000.DIR.
-- `CanCreate` — driven by `OpenVmsWriter`. The fresh volume carries a real ODS-2 home block at LBN 1 plus a CWB-OVMS-WB layout marker at byte 132 of the home block.
+- `CanCreate` — driven by `OpenVmsWriter`. The fresh volume carries a real ODS-2 home block at LBN 1 plus a workbench-layout layout marker at byte 132 of the home block.
 - `CanModify` — driven by `OpenVmsInPlaceModifier`. Add / Remove / Replace touch only the BITMAP.SYS sector, the file's INDEXF.SYS slot, the directory block, and the affected data LBNs.
 - DEC "Files-11 On-Disk Structure Specification" — the canonical ODS-2 spec (archived at Bitsavers)
 - Kirby McCoy, "VMS File System Internals" (Digital Press, 1990)

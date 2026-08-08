@@ -40,7 +40,6 @@ public static class ExtRemover {
 
     const int SuperblockOffset = 1024;
     const ushort ExtMagic = 0xEF53;
-    const int InodeSize = 128;
     // Root inode number is 2 — inlined below as the "index 1" in the inode table.
 
     if (image.Length < SuperblockOffset + 264)
@@ -56,14 +55,24 @@ public static class ExtRemover {
     var blockSize = 1024 << (int)logBlockSize;
     var firstDataBlock = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(20));
 
-    // --- Metadata block offsets (single-group layout produced by ExtWriter) ---
+    // --- Metadata block offsets, read from the first group's descriptor ---
+    // Where a group keeps its bitmaps and inode table is the descriptor's to say:
+    // reserved descriptor blocks push them along, and a wide descriptor changes
+    // the stride, so neither can be assumed from the superblock alone.
+    var inodeSize = (int)BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(88));
+    if (inodeSize == 0) inodeSize = 128;
+
     var bgdOffset = (int)(firstDataBlock + 1) * blockSize;
-    var blockBitmapOffset = (int)(firstDataBlock + 2) * blockSize;
-    var inodeBitmapOffset = (int)(firstDataBlock + 3) * blockSize;
-    var inodeTableOffset = (int)(firstDataBlock + 4) * blockSize;
+    if (bgdOffset + 32 > image.Length)
+      throw new InvalidDataException("ext: group descriptor table out of range.");
+
+    var groupZero = image.AsSpan(bgdOffset, 32);
+    var blockBitmapOffset = (int)(BinaryPrimitives.ReadUInt32LittleEndian(groupZero) * (uint)blockSize);
+    var inodeBitmapOffset = (int)(BinaryPrimitives.ReadUInt32LittleEndian(groupZero.Slice(4)) * (uint)blockSize);
+    var inodeTableOffset = (int)(BinaryPrimitives.ReadUInt32LittleEndian(groupZero.Slice(8)) * (uint)blockSize);
 
     // --- Read root inode and its first direct block (the root-dir contents) ---
-    var rootInodeOffset = inodeTableOffset + 1 * InodeSize; // inode 2 = index 1
+    var rootInodeOffset = inodeTableOffset + 1 * inodeSize; // inode 2 = index 1
     var rootDirBlock = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(rootInodeOffset + 40));
     if (rootDirBlock == 0)
       throw new InvalidDataException("ext: root directory has no data block.");
@@ -79,11 +88,11 @@ public static class ExtRemover {
       throw new FileNotFoundException($"File '{fileName}' not found in ext2 root directory.");
 
     // --- Read the file's inode, collect direct block pointers ---
-    var fileInodeOffset = inodeTableOffset + (int)(victimInode - 1) * InodeSize;
-    if (fileInodeOffset + InodeSize > image.Length)
+    var fileInodeOffset = inodeTableOffset + (int)(victimInode - 1) * inodeSize;
+    if (fileInodeOffset + inodeSize > image.Length)
       throw new InvalidDataException("ext: file inode out of range.");
 
-    var fileInode = image.AsSpan(fileInodeOffset, InodeSize);
+    var fileInode = image.AsSpan(fileInodeOffset, inodeSize);
     var fileSize = BinaryPrimitives.ReadUInt32LittleEndian(fileInode.Slice(4));
 
     // Guard against indirect-block files we don't support.

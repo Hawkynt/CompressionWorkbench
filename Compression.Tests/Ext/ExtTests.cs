@@ -150,8 +150,12 @@ public class ExtTests {
     var bgdFreeInodes = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(bgd[14..]);
     var usedDirs = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(bgd[16..]);
 
+    // One group, so the group's counts are the volume's. How many inodes there are
+    // in the first place is a matter of the volume's size, not of what was written
+    // into it, so the expectation comes from the superblock.
+    var inodesPerGroup = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(1024 + 40));
     Assert.That(bgdFreeBlocks, Is.GreaterThan(0));
-    Assert.That(bgdFreeInodes, Is.EqualTo(117)); // 128 - 10 reserved - 1 file
+    Assert.That(bgdFreeInodes, Is.EqualTo(inodesPerGroup - 10 - 1)); // less the reserved ones and the file
     Assert.That(usedDirs, Is.EqualTo(1));         // root
   }
 
@@ -162,8 +166,10 @@ public class ExtTests {
     w.AddFile("multi.bin", content);
     var img = w.Build();
 
-    // Inode table starts at block firstDataBlock+4 = 5 (1K blocks).
-    var inodeTable = img.AsSpan(5 * 1024);
+    // Where the inode table starts is the group descriptor's to say — the reserved
+    // descriptor blocks a growable volume keeps push it along.
+    var inodeTableBlock = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(2 * 1024 + 8));
+    var inodeTable = img.AsSpan((int)inodeTableBlock * 1024);
     // Root inode (#2) = index 1, first file inode (#11) = index 10.
     // Inodes 3..10 are reserved per EXT2_GOOD_OLD_FIRST_INO.
     var root = inodeTable.Slice(1 * 128, 128);

@@ -151,7 +151,7 @@ public sealed class Nilfs2Reader : IDisposable {
 
     // Collect every (cno, name, payload-or-tombstone) record across the
     // writer-private directory (cno = 1 by construction) and every appended
-    // log segment ("NILFS2SG" blocks). Highest cno per name wins; tombstones
+    // log segment. Highest cno per name wins; tombstones
     // drop the entry from the listing — matches the NILFS2 spec semantic of
     // walking the segment chain and surfacing the latest checkpoint state.
     var versions = new Dictionary<string, Record>(StringComparer.Ordinal);
@@ -233,7 +233,7 @@ public sealed class Nilfs2Reader : IDisposable {
   }
 
   /// <summary>
-  /// Walks every appended "NILFS2SG" log segment past <paramref name="from"/> and
+  /// Walks every appended an appended-segment magic log segment past <paramref name="from"/> and
   /// folds its entries into <paramref name="versions"/>. Higher-cno records
   /// supersede lower-cno ones; tombstone records mark the entry as deleted (the
   /// caller drops tombstones from the final listing). This is the spec-canonical

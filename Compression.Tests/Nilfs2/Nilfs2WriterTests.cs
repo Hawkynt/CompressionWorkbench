@@ -37,8 +37,12 @@ public class Nilfs2WriterTests {
     w.AddFile("x", new byte[] { 1, 2, 3 });
     var img = w.Build();
 
-    // Writer magic at SegmentStart = 2048.
-    Assert.That(img.AsSpan(2048, 8).ToArray(), Is.EqualTo("NILFS2WB"u8.ToArray()));
+    // Writer magic at SegmentStart = 2048, and nothing readable as text: a marker
+    // that spells something names whoever chose the letters.
+    var magic = img.AsSpan(2048, 8).ToArray();
+    Assert.That(magic, Is.EqualTo(new byte[] { 0x8F, 0xD3, 0x1A, 0xE7, 0x05, 0xBC, 0x92, 0x14 }));
+    Assert.That(magic, Has.None.InRange((byte)0x20, (byte)0x7E),
+      "A marker made of printable characters is one a third party can read off the volume.");
   }
 
   [Test, Category("HappyPath")]
