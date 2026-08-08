@@ -43,7 +43,9 @@ internal static class ThirdPartyFsCheck {
     string? Fsck, string FsckArgs, int[] FsckOkExitCodes);
 
   private static readonly Dictionary<string, Strategy> Strategies = new(StringComparer.OrdinalIgnoreCase) {
-    ["Adfs"] = new("adfs", "", false, null, "", []),
+    // The adfs driver hands the root out as root-owned 0511, so a test running as
+    // anyone else cannot list what is in it; the masks open what is already there.
+    ["Adfs"] = new("adfs", "ownmask=0777,othmask=0777", false, null, "", []),
     ["Apfs"] = new("apfs", "", false, null, "", []),
     // A bcachefs volume written whole carries no allocation information — the trees
     // a running filesystem keeps so it can decide where to write next — and says so
