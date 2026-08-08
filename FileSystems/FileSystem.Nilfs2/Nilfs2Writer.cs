@@ -49,11 +49,15 @@ namespace FileSystem.Nilfs2;
 /// address. Keeping the log at the front bounds the sufile slot for every volume
 /// size, and lets the payload be streamed rather than held in memory.</para>
 ///
-/// <para><b>Scope.</b> Single checkpoint (cno=1), single partial segment. Each
-/// embedded user file uses a NILFS direct block map, so files in the mountable
-/// root directory are capped at <see cref="MaxKernelFileBlocks"/> blocks; the
-/// writer-private directory always carries every file in full for the reader.
-/// Snapshots / multi-checkpoint chains are out of scope.</para>
+/// <para><b>Scope.</b> Single checkpoint (cno=1), single partial segment. A file
+/// of a few blocks is mapped by pointers written into its inode; a longer one by
+/// a b-tree of one level, whose leaves the log carries and the address table
+/// translates like any other block of the file. What bounds a volume now is the
+/// address table itself, which this writer maps from its inode without a tree of
+/// its own — about two megabytes of file at 4 KiB blocks. Files with a path in
+/// their name are still absent from the mountable tree, and the writer-private
+/// directory carries every file in full for the reader either way. Snapshots and
+/// multi-checkpoint chains are out of scope.</para>
 /// </remarks>
 public sealed class Nilfs2Writer {
 
@@ -91,10 +95,44 @@ public sealed class Nilfs2Writer {
   internal const int LastCnoFieldOffset = 0x38;
 
   /// <summary>Largest user file (in blocks) embedded into the kernel root dir.</summary>
-  internal const int MaxKernelFileBlocks = 6; // NILFS direct bmap capacity.
+  internal const int MaxKernelFileBlocks = 6; // pointers that fit in the inode itself.
+
+  /// <summary>Children the b-tree root holds, the root living in the inode's 64 bytes.</summary>
+  private const int BtreeRootChildren = (BmapBytes - BtreeNodeHeaderBytes) / 16;
+
+  private const int BmapBytes = 64;
+  private const int BtreeNodeHeaderBytes = 8;
+  private const byte BtreeNodeRootFlag = 0x01;
+  private const byte BtreeLevelLeaf = 1;   // a node whose pointers are data blocks
+  private const byte BtreeLevelRoot = 2;   // a node whose pointers are leaves
+
+  /// <summary>Children one b-tree node in a block of its own holds.</summary>
+  private static int BtreeNodeChildren(int blockSize) => (blockSize - BtreeNodeHeaderBytes) / 16;
+
+  /// <summary>How many entries a leaf is filled to.</summary>
+  /// <remarks>
+  /// One short of what the node has room for. A leaf packed to the last slot is
+  /// rejected on read — measured against the kernel driver, which keeps the slot
+  /// free the way a b-tree keeps room to split into.
+  /// </remarks>
+  private static int BtreeLeafFill(int blockSize) => BtreeNodeChildren(blockSize) - 1;
+
+  /// <summary>The most blocks a file can have and still be mapped at this block size.</summary>
+  private static long MaxMappableBlocks(int blockSize)
+    => (long)BtreeRootChildren * BtreeLeafFill(blockSize);
 
   // NILFS2 on-disk constants (cross-checked against fs/nilfs2/nilfs2_ondisk.h).
-  private const int SegBlocks = 16;                  // NILFS_SEG_MIN_BLOCKS / blocks per segment.
+  private const int MinSegBlocks = 16;               // NILFS_SEG_MIN_BLOCKS.
+
+  /// <summary>
+  /// The largest block size a volume can use and still be mounted.
+  /// </summary>
+  /// <remarks>
+  /// Linux sets a block device's block size to the filesystem's, and refuses any
+  /// larger than a page. A NILFS2 volume with 8 KiB blocks is legal on paper and
+  /// unmountable everywhere this writer runs, so it is never written.
+  /// </remarks>
+  private const int MaxMountableBlockSize = 4096;
   private const int MinSegments = 128;               // spare segments for the cleaner / new checkpoints.
   private const uint SegsumMagic = 0x1eaffa11;       // NILFS_SEGSUM_MAGIC.
   private const int SegsumHeaderBytes = 64;
@@ -206,13 +244,18 @@ public sealed class Nilfs2Writer {
     var payloadBytes = 0L;
     foreach (var (_, payload) in this._files) payloadBytes += payload.Size;
 
+    // A partial segment has to fit inside one segment, and this writer commits the
+    // whole volume as a single one — so how large a segment is follows from how
+    // much the log holds, not the other way round.
+    var segBlocks = Math.Max(MinSegBlocks, RoundUpToPowerOfTwo(this.PlanLog(0, blockSize).NBlocks));
+
     // The kernel log starts at the first segment boundary past the directory;
     // the payload follows the log, so the log's segment index — and with it the
     // sufile slot it needs — stays small however large the payload is.
-    var segBytes = (long)SegBlocks * blockSize;
+    var segBytes = (long)segBlocks * blockSize;
     var dirEnd = SegmentStart + PrivateHeaderBytes + dirSize;
-    var psegStart = (int)(((dirEnd + segBytes - 1) / segBytes) * SegBlocks);
-    if (psegStart < SegBlocks) psegStart = SegBlocks;
+    var psegStart = (int)(((dirEnd + segBytes - 1) / segBytes) * segBlocks);
+    if (psegStart < segBlocks) psegStart = segBlocks;
 
     // Plan the kernel log blocks (counts) so we can size the image up front.
     var plan = this.PlanLog(psegStart, blockSize);
@@ -231,17 +274,17 @@ public sealed class Nilfs2Writer {
     // describes the device exactly.
     var imageBytes = ((minImageBytes + segBytes - 1) / segBytes) * segBytes;
     var totalBlocks = (ulong)(imageBytes / blockSize);
-    var nSegments = Math.Max(1ul, totalBlocks / SegBlocks);
+    var nSegments = Math.Max(1ul, totalBlocks / (ulong)segBlocks);
 
     // ── metadata prefix: private directory + kernel log + primary superblock ──
     var head = new SparseBlockImage(blockSize, payloadBase);
     this.WritePrivateDirectory(head, dirSize, payloadBase, payloadBytes);
-    this.WriteKernelLog(head, plan, blockSize, nSegments);
+    this.WriteKernelLog(head, plan, blockSize, nSegments, segBlocks);
 
-    var freeBlocks = (nSegments - 1) * SegBlocks; // one segment consumed by the log.
+    var freeBlocks = (nSegments - 1) * (ulong)segBlocks; // one segment consumed by the log.
     Nilfs2Superblock.Encode(
       head.At(Nilfs2Superblock.PrimaryOffset, Nilfs2Superblock.Size),
-      logBlockSize, nSegments, (ulong)imageBytes, SegBlocks,
+      logBlockSize, nSegments, (ulong)imageBytes, (uint)segBlocks,
       lastCno: 1, lastPseg: (ulong)psegStart, lastSeq: 0, freeBlocks: freeBlocks,
       ctime: this._ctime, state: Nilfs2Superblock.StateValid,
       crcSeed: this._crcSeed, uuid: this._uuid, volumeLabel: volumeLabel);
@@ -266,7 +309,7 @@ public sealed class Nilfs2Writer {
       var secondary = new byte[Nilfs2Superblock.Size];
       Nilfs2Superblock.Encode(
         secondary,
-        logBlockSize, nSegments, (ulong)imageBytes, SegBlocks,
+        logBlockSize, nSegments, (ulong)imageBytes, (uint)segBlocks,
         lastCno: 1, lastPseg: (ulong)psegStart, lastSeq: 0, freeBlocks: freeBlocks,
         ctime: this._ctime, state: Nilfs2Superblock.StateValid,
         crcSeed: this._crcSeed, uuid: this._uuid, volumeLabel: volumeLabel);
@@ -297,26 +340,52 @@ public sealed class Nilfs2Writer {
   /// directory. Files too large for a direct bmap are excluded (they live only
   /// in the writer-private directory).
   /// </summary>
+  private static int RoundUpToPowerOfTwo(int value) {
+    var result = 1;
+    while (result < value) result <<= 1;
+    return result;
+  }
+
   private int MinBlockSizeForLog() {
     var nFiles = 0;
     var rootDirBytes = 16 + 16; // "." + ".." minimum.
+    var largest = 0L;
     foreach (var (name, payload) in this._files) {
-      // Match the embed rule in PlanLog (assume 4 KiB to bound the block count).
       if (name.Contains('/')) continue;
-      var nblk = Math.Max(1L, (payload.Size + 4095) / 4096);
-      if (nblk > MaxKernelFileBlocks) continue;
+
       ++nFiles;
+      largest = Math.Max(largest, payload.Size);
       rootDirBytes += DirRecLen(Encoding.UTF8.GetByteCount(name));
     }
-    var inodeTableBytes = (UserIno + nFiles) * InodeSize;
-    // DAT entries are indexed by virtual block number; max vblk = number of
-    // DAT-translated blocks (root dir + file blocks + 3 ifile + cpfile + sufile).
-    var nVblk = 1 + nFiles * MaxKernelFileBlocks + 3 + 2 + 1;
-    var datEntryBytes = nVblk * DatEntrySize;
 
-    var need = Math.Max(Math.Max(inodeTableBytes, datEntryBytes), rootDirBytes);
     var bs = 1024;
-    while (bs < need && bs < 65536) bs <<= 1;
+    while (bs < MaxMountableBlockSize) {
+      var blocks = 0L;
+      var leaves = 0L;
+      foreach (var (name, payload) in this._files) {
+        if (name.Contains('/')) continue;
+
+        var nblk = Math.Max(1L, (payload.Size + bs - 1) / bs);
+        blocks += nblk;
+        if (nblk > MaxKernelFileBlocks)
+          leaves += (nblk + BtreeNodeChildren(bs) - 1) / BtreeNodeChildren(bs);
+      }
+
+      var inodeTableBytes = (UserIno + nFiles) * InodeSize;
+      // DAT entries are indexed by virtual block number, and every block the log
+      // translates gets one: the root directory, each file's data and each leaf of
+      // its map, three for the ifile, then the cpfile and the sufile.
+      var datEntryBytes = (1 + blocks + leaves + 3 + 2 + 1) * DatEntrySize;
+      var need = Math.Max(Math.Max(inodeTableBytes, datEntryBytes), rootDirBytes);
+
+      // A block size also has to be large enough that a b-tree of one level
+      // reaches the end of the longest file.
+      var biggest = Math.Max(1L, (largest + bs - 1) / bs);
+      if (need <= bs && biggest <= MaxMappableBlocks(bs)) break;
+
+      bs <<= 1;
+    }
+
     return bs;
   }
 
@@ -363,14 +432,31 @@ public sealed class Nilfs2Writer {
     public int NBlocks;
     public int[] Phys = [];   // physical block numbers of the data blocks.
     public ulong[] Vblk = []; // virtual block numbers (DAT-translated).
+
+    // A file of more than a handful of blocks is mapped by a b-tree rather than
+    // by pointers written straight into the inode. Its leaves are blocks of the
+    // file too — the log carries them, the DAT translates them, and the segment
+    // summary counts them past the data blocks.
+    public int[] LeafPhys = [];
+    public ulong[] LeafVblk = [];
+    public bool UsesBtree => this.LeafPhys.Length > 0;
   }
 
   private sealed class LogPlan {
     public int PsegStart;
     public int NBlocks;
+    public int NSummaryBlocks = 1;
     public List<KFile> Files = [];
-    public int PRootDir, PIfileGd, PIfileBm, PIfileIt, PDatGd, PDatBm, PDatEntry, PCpfile, PSufile, PSr;
-    public ulong VRootDir, VIfileGd, VIfileBm, VIfileIt, VCpfile, VSufile;
+    public int PRootDir, PIfileGd, PIfileBm, PDatGd, PDatBm, PCpfile, PSufile, PSr;
+
+    // Both the disk-address table and the inode file are palloc files: a block of
+    // group descriptors, a block of bitmap, then as many blocks of entries as the
+    // volume needs. Only the counts were ever one before.
+    public int[] PIfileIt = [];
+    public int[] PDatEntry = [];
+    public ulong[] VIfileIt = [];
+
+    public ulong VRootDir, VIfileGd, VIfileBm, VCpfile, VSufile;
     public int NInoUsed;
     public Dictionary<ulong, int> DatMap = [];
   }
@@ -392,22 +478,78 @@ public sealed class Nilfs2Writer {
       // directory. Files too large for a direct bmap are likewise skipped.
       if (name.Contains('/')) continue;
       var nblk = Math.Max(1L, (payload.Size + blockSize - 1) / blockSize);
-      if (nblk > MaxKernelFileBlocks) continue;
-      // Small enough to embed, so reading it back for the log costs at most
-      // MaxKernelFileBlocks blocks.
-      p.Files.Add(new KFile { Name = name, Data = payload.ToArray(), Ino = ino, NBlocks = (int)nblk });
+      if (nblk > MaxMappableBlocks(blockSize))
+        throw new InvalidOperationException(
+          $"Nilfs2: '{name}' needs {nblk:N0} blocks, more than the {MaxMappableBlocks(blockSize):N0} "
+          + $"a b-tree of one level maps at {blockSize}-byte blocks.");
+
+      var file = new KFile { Name = name, Data = payload.ToArray(), Ino = ino, NBlocks = (int)nblk };
+      if (nblk > MaxKernelFileBlocks) {
+        var perLeaf = BtreeLeafFill(blockSize);
+        file.LeafPhys = new int[(nblk + perLeaf - 1) / perLeaf];
+        file.LeafVblk = new ulong[file.LeafPhys.Length];
+      }
+
+      p.Files.Add(file);
       ++ino;
     }
     p.NInoUsed = (int)ino;
 
-    var cur = psegStart + 1; // block 0 of the pseg is the segment summary.
+    // How much the segment summary itself takes. It describes every block of the
+    // log — one record per file, then one per block — and when that outgrows a
+    // single block it simply runs on into the next, which is what ss_sumbytes is
+    // for. The payload starts after it.
+    var files = p.Files.Count;
+    var fileBlocks = 0;
+    foreach (var f in p.Files) fileBlocks += f.NBlocks + f.LeafPhys.Length;
+    var inodesPerBlockForSummary = blockSize / InodeSize;
+    var itBlocksGuess = (p.NInoUsed + inodesPerBlockForSummary - 1) / inodesPerBlockForSummary;
+    var datEntriesPerBlockForSummary = blockSize / DatEntrySize;
+    var datBlocksGuess = 1;
+    for (var pass = 0; pass < 4; ++pass) {
+      var vblocks = 1 + fileBlocks + 2 + itBlocksGuess + 2 + 1;
+      datBlocksGuess = Math.Max(1,
+        (vblocks + datEntriesPerBlockForSummary - 1) / datEntriesPerBlockForSummary);
+    }
+
+    var finfoCount = 1 + files + 4;
+    var binfoCount = 1 + fileBlocks + (2 + itBlocksGuess) + (2 + datBlocksGuess) + 1 + 1;
+    var summaryBytes = SegsumHeaderBytes + finfoCount * 24 + binfoCount * 16;
+    p.NSummaryBlocks = (summaryBytes + blockSize - 1) / blockSize;
+
+    var cur = psegStart + p.NSummaryBlocks; // the summary opens the pseg.
     p.PRootDir = cur++;
     foreach (var f in p.Files) {
       f.Phys = new int[f.NBlocks];
       for (var i = 0; i < f.NBlocks; ++i) f.Phys[i] = cur++;
+      for (var i = 0; i < f.LeafPhys.Length; ++i) f.LeafPhys[i] = cur++;
     }
-    p.PIfileGd = cur++; p.PIfileBm = cur++; p.PIfileIt = cur++;
-    p.PDatGd = cur++; p.PDatBm = cur++; p.PDatEntry = cur++;
+    // How many blocks of entries each palloc file needs. The disk-address table is
+    // indexed by virtual block number, so it has one entry per block the log
+    // translates — the root directory, every file block and every b-tree leaf, and
+    // the metadata files' own blocks.
+    var datBlocks = 0;
+    foreach (var f in p.Files) datBlocks += f.NBlocks + f.LeafPhys.Length;
+    var vblocksNeeded = 1 + datBlocks + 3 + 2 + 1;
+    var datEntriesPerBlock = blockSize / DatEntrySize;
+    var inodesPerBlock = blockSize / InodeSize;
+
+    p.PIfileGd = cur++; p.PIfileBm = cur++;
+    p.PIfileIt = new int[(p.NInoUsed + inodesPerBlock - 1) / inodesPerBlock];
+    for (var i = 0; i < p.PIfileIt.Length; ++i) p.PIfileIt[i] = cur++;
+
+    p.PDatGd = cur++; p.PDatBm = cur++;
+    // One more entry block than the count suggests, since the entry blocks
+    // themselves add virtual blocks to translate.
+    p.PDatEntry = new int[(vblocksNeeded + p.PIfileIt.Length + datEntriesPerBlock - 1) / datEntriesPerBlock];
+    for (var i = 0; i < p.PDatEntry.Length; ++i) p.PDatEntry[i] = cur++;
+
+    // Each palloc file is mapped from its inode, which holds six pointers before
+    // it needs a tree of its own — which this writer does not build for them.
+    if (2 + p.PIfileIt.Length > MaxKernelFileBlocks || 2 + p.PDatEntry.Length > MaxKernelFileBlocks)
+      throw new InvalidOperationException(
+        $"Nilfs2: the volume needs {p.PDatEntry.Length} block(s) of address table and "
+        + $"{p.PIfileIt.Length} of inode table, more than the six an inode maps without a tree.");
     p.PCpfile = cur++; p.PSufile = cur++;
     p.PSr = cur++;
     p.NBlocks = cur - psegStart;
@@ -419,38 +561,65 @@ public sealed class Nilfs2Writer {
     foreach (var f in p.Files) {
       f.Vblk = new ulong[f.NBlocks];
       for (var i = 0; i < f.NBlocks; ++i) f.Vblk[i] = VAlloc(f.Phys[i]);
+      for (var i = 0; i < f.LeafPhys.Length; ++i) f.LeafVblk[i] = VAlloc(f.LeafPhys[i]);
     }
-    p.VIfileGd = VAlloc(p.PIfileGd); p.VIfileBm = VAlloc(p.PIfileBm); p.VIfileIt = VAlloc(p.PIfileIt);
+    p.VIfileGd = VAlloc(p.PIfileGd); p.VIfileBm = VAlloc(p.PIfileBm);
+    p.VIfileIt = new ulong[p.PIfileIt.Length];
+    for (var i = 0; i < p.PIfileIt.Length; ++i) p.VIfileIt[i] = VAlloc(p.PIfileIt[i]);
     p.VCpfile = VAlloc(p.PCpfile); p.VSufile = VAlloc(p.PSufile);
     return p;
   }
 
-  private void WriteKernelLog(SparseBlockImage img, LogPlan p, int blockSize, ulong nSegments) {
+  private void WriteKernelLog(SparseBlockImage img, LogPlan p, int blockSize, ulong nSegments, int segBlocks) {
     // ── DAT (physical pointers) ───────────────────────────────────────────
-    var datEntry = Block(blockSize);
+    var perDatBlock = blockSize / DatEntrySize;
+    var datEntry = new byte[p.PDatEntry.Length][];
+    for (var i = 0; i < datEntry.Length; ++i) datEntry[i] = Block(blockSize);
     foreach (var (vblk, phys) in p.DatMap) {
-      var o = (int)vblk * DatEntrySize;
-      BinaryPrimitives.WriteUInt64LittleEndian(datEntry.AsSpan(o), (ulong)phys); // de_blocknr
-      BinaryPrimitives.WriteUInt64LittleEndian(datEntry.AsSpan(o + 8), 1);       // de_start (cno)
-      BinaryPrimitives.WriteUInt64LittleEndian(datEntry.AsSpan(o + 16), LiveEnd);// de_end (-1 = live)
+      var which = (int)vblk / perDatBlock;
+      var o = (int)vblk % perDatBlock * DatEntrySize;
+      if (which >= datEntry.Length)
+        throw new InvalidOperationException("Nilfs2: a virtual block fell past the address table.");
+
+      BinaryPrimitives.WriteUInt64LittleEndian(datEntry[which].AsSpan(o), (ulong)phys); // de_blocknr
+      BinaryPrimitives.WriteUInt64LittleEndian(datEntry[which].AsSpan(o + 8), 1);       // de_start (cno)
+      BinaryPrimitives.WriteUInt64LittleEndian(datEntry[which].AsSpan(o + 16), LiveEnd);// de_end (-1 = live)
     }
-    WriteBlock(img, p.PDatEntry, blockSize, datEntry);
+
+    for (var i = 0; i < datEntry.Length; ++i) WriteBlock(img, p.PDatEntry[i], blockSize, datEntry[i]);
     var nDatUsed = p.DatMap.Count == 0 ? 1 : ((int)p.DatMap.Keys.Max() + 1);
     WritePallocMeta(img, p.PDatGd, p.PDatBm, blockSize, nDatUsed);
 
     // ── ifile (palloc: group desc, bitmap, inode table) ────────────────────
-    var it = Block(blockSize);
+    var perInodeBlock = blockSize / InodeSize;
+    var itBlocks = new byte[p.PIfileIt.Length][];
+    for (var i = 0; i < itBlocks.Length; ++i) itBlocks[i] = Block(blockSize);
+    Span<byte> InodeAt(int index) =>
+      itBlocks[index / perInodeBlock].AsSpan(index % perInodeBlock * InodeSize, InodeSize);
+
     for (var i = 0; i < p.NInoUsed; ++i) {
-      var io = i * InodeSize;
       if (i == (int)RootIno)
-        WriteInode(it.AsSpan(io), 1, (ulong)blockSize, (ushort)(SIfdir | 0x1ED), 2, [p.VRootDir]);
+        WriteInode(InodeAt(i), 1, (ulong)blockSize, (ushort)(SIfdir | 0x1ED), 2, [p.VRootDir]);
       else
-        WriteInode(it.AsSpan(io), 0, 0, SIfreg, 1, []);
+        WriteInode(InodeAt(i), 0, 0, SIfreg, 1, []);
     }
-    foreach (var f in p.Files)
-      WriteInode(it.AsSpan((int)f.Ino * InodeSize), (ulong)f.NBlocks, (ulong)f.Data.Length,
-        (ushort)(SIfreg | 0x1A4), 1, f.Vblk);
-    WriteBlock(img, p.PIfileIt, blockSize, it);
+    foreach (var f in p.Files) {
+      var inode = InodeAt((int)f.Ino);
+      // A file's block tally counts what holds it: its data, and the leaves that
+      // say where the data is.
+      var held = (ulong)(f.NBlocks + f.LeafPhys.Length);
+      if (!f.UsesBtree) {
+        WriteInode(inode, held, (ulong)f.Data.Length, (ushort)(SIfreg | 0x1A4), 1, f.Vblk);
+        continue;
+      }
+
+      WriteInode(inode, held, (ulong)f.Data.Length, (ushort)(SIfreg | 0x1A4), 1, []);
+      var keys = new ulong[f.LeafVblk.Length];
+      var perLeaf = BtreeLeafFill(blockSize);
+      for (var i = 0; i < f.LeafVblk.Length; ++i) keys[i] = (ulong)(i * perLeaf);
+      WriteBtreeRoot(inode, f.LeafVblk, keys);
+    }
+    for (var i = 0; i < itBlocks.Length; ++i) WriteBlock(img, p.PIfileIt[i], blockSize, itBlocks[i]);
     WritePallocMeta(img, p.PIfileGd, p.PIfileBm, blockSize, p.NInoUsed);
 
     // ── root directory ─────────────────────────────────────────────────────
@@ -467,11 +636,20 @@ public sealed class Nilfs2Writer {
       off += last ? rec : DirRecLen(Encoding.UTF8.GetByteCount(f.Name));
     }
     WriteBlock(img, p.PRootDir, blockSize, rd);
-    foreach (var f in p.Files)
+    foreach (var f in p.Files) {
       for (var bi = 0; bi < f.NBlocks; ++bi) {
         var chunk = f.Data.AsSpan(bi * blockSize, Math.Min(blockSize, f.Data.Length - bi * blockSize));
         img.Write((long)f.Phys[bi] * blockSize, chunk);
       }
+
+      var perLeaf = BtreeLeafFill(blockSize);
+      for (var i = 0; i < f.LeafPhys.Length; ++i) {
+        var from = i * perLeaf;
+        var count = Math.Min(perLeaf, f.NBlocks - from);
+        WriteBlock(img, f.LeafPhys[i], blockSize,
+          BuildBtreeLeaf(blockSize, f.Vblk.AsSpan(from, count), from));
+      }
+    }
 
     // ── cpfile ──────────────────────────────────────────────────────────────
     var cp = Block(blockSize);
@@ -482,14 +660,16 @@ public sealed class Nilfs2Writer {
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 40), (ulong)p.NBlocks);  // cp_nblk_inc
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 48), (ulong)p.NInoUsed); // cp_inodes_count
     BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(cpoff + 56), (ulong)p.NBlocks);  // cp_blocks_count
-    WriteInode(cp.AsSpan(cpoff + 64), 3, (ulong)(3 * blockSize), SIfreg, 1,
-      [p.VIfileGd, p.VIfileBm, p.VIfileIt]); // cp_ifile_inode
+    var ifileMap = new List<ulong> { p.VIfileGd, p.VIfileBm };
+    ifileMap.AddRange(p.VIfileIt);
+    WriteInode(cp.AsSpan(cpoff + 64), (ulong)ifileMap.Count, (ulong)(ifileMap.Count * blockSize),
+      SIfreg, 1, ifileMap.ToArray()); // cp_ifile_inode
     WriteBlock(img, p.PCpfile, blockSize, cp);
 
     // ── sufile ──────────────────────────────────────────────────────────────
     // One block of segment usage entries. The log sits in one of the first
     // segments by construction, so its slot is always inside this block.
-    var segOfPseg = p.PsegStart / SegBlocks;
+    var segOfPseg = p.PsegStart / segBlocks;
     var su = Block(blockSize);
     BinaryPrimitives.WriteUInt64LittleEndian(su.AsSpan(0), nSegments - 1);     // sh_ncleansegs
     BinaryPrimitives.WriteUInt64LittleEndian(su.AsSpan(8), 1);                 // sh_ndirtysegs
@@ -509,8 +689,9 @@ public sealed class Nilfs2Writer {
     var sr = Block(blockSize);
     BinaryPrimitives.WriteUInt16LittleEndian(sr.AsSpan(4), SuperRootBytes); // sr_bytes
     BinaryPrimitives.WriteUInt64LittleEndian(sr.AsSpan(8), this._ctime);     // sr_nongc_ctime
-    WriteInode(sr.AsSpan(16), 3, 0, SIfreg, 1,
-      [(ulong)p.PDatGd, (ulong)p.PDatBm, (ulong)p.PDatEntry]); // DAT: physical ptrs.
+    var datMap = new List<ulong> { (ulong)p.PDatGd, (ulong)p.PDatBm };
+    foreach (var b in p.PDatEntry) datMap.Add((ulong)b);
+    WriteInode(sr.AsSpan(16), (ulong)datMap.Count, 0, SIfreg, 1, datMap.ToArray()); // DAT: physical ptrs.
     WriteInode(sr.AsSpan(16 + InodeSize), 1, 0, SIfreg, 1, [p.VCpfile]); // cpfile: virtual.
     WriteInode(sr.AsSpan(16 + InodeSize * 2), 1, 0, SIfreg, 1, [p.VSufile]); // sufile: virtual.
     var srSum = Nilfs2Superblock.Crc32Le(this._crcSeed, sr.AsSpan(4, SuperRootBytes - 4));
@@ -518,10 +699,10 @@ public sealed class Nilfs2Writer {
     WriteBlock(img, p.PSr, blockSize, sr);
 
     // ── segment summary (block 0 of the pseg) ───────────────────────────────
-    WriteSegmentSummary(img, p, blockSize, segOfPseg);
+    WriteSegmentSummary(img, p, blockSize, segOfPseg, segBlocks);
   }
 
-  private void WriteSegmentSummary(SparseBlockImage img, LogPlan p, int blockSize, int segOfPseg) {
+  private void WriteSegmentSummary(SparseBlockImage img, LogPlan p, int blockSize, int segOfPseg, int segBlocks) {
     using var ms = new MemoryStream();
     void Finfo(ulong ino, int nblk, int ndatablk) {
       Span<byte> b = stackalloc byte[24];
@@ -548,25 +729,42 @@ public sealed class Nilfs2Writer {
     // Order MUST match the physical payload order in PlanLog.
     Finfo(RootIno, 1, 1); BinfoV(p.VRootDir, 0); ++nfinfo;
     foreach (var f in p.Files) {
-      Finfo(f.Ino, f.NBlocks, f.NBlocks);
+      Finfo(f.Ino, f.NBlocks + f.LeafPhys.Length, f.NBlocks);
       for (var bi = 0; bi < f.NBlocks; ++bi) BinfoV(f.Vblk[bi], (ulong)bi);
+      // What follows the data blocks is read as the tree's own blocks, each named
+      // by the first key it covers.
+      var perLeaf = BtreeLeafFill(blockSize);
+      for (var i = 0; i < f.LeafVblk.Length; ++i) BinfoV(f.LeafVblk[i], (ulong)(i * perLeaf));
       ++nfinfo;
     }
-    Finfo(IfileIno, 3, 3); BinfoV(p.VIfileGd, 0); BinfoV(p.VIfileBm, 1); BinfoV(p.VIfileIt, 2); ++nfinfo;
-    Finfo(DatIno, 3, 3); BinfoDat(0, 0); BinfoDat(1, 0); BinfoDat(2, 0); ++nfinfo;
+    var ifileBlocks = 2 + p.VIfileIt.Length;
+    Finfo(IfileIno, ifileBlocks, ifileBlocks);
+    BinfoV(p.VIfileGd, 0); BinfoV(p.VIfileBm, 1);
+    for (var i = 0; i < p.VIfileIt.Length; ++i) BinfoV(p.VIfileIt[i], (ulong)(2 + i));
+    ++nfinfo;
+
+    var datBlocks2 = 2 + p.PDatEntry.Length;
+    Finfo(DatIno, datBlocks2, datBlocks2);
+    for (var i = 0; i < datBlocks2; ++i) BinfoDat((ulong)i, 0);
+    ++nfinfo;
     Finfo(CpfileIno, 1, 1); BinfoV(p.VCpfile, 0); ++nfinfo;
     Finfo(SufileIno, 1, 1); BinfoV(p.VSufile, 0); ++nfinfo;
 
     var summary = ms.ToArray();
     var sumbytes = SegsumHeaderBytes + summary.Length;
 
-    var ss = Block(blockSize);
+    var ss = new byte[p.NSummaryBlocks * blockSize];
+    if (sumbytes > ss.Length)
+      throw new InvalidOperationException(
+        $"Nilfs2: the segment summary needs {sumbytes:N0} bytes but only "
+        + $"{ss.Length:N0} were reserved for it.");
+
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(8), SegsumMagic);
     BinaryPrimitives.WriteUInt16LittleEndian(ss.AsSpan(12), SegsumHeaderBytes); // ss_bytes
     BinaryPrimitives.WriteUInt16LittleEndian(ss.AsSpan(14), (ushort)(SsLogBgn | SsLogEnd | SsSr));
     BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(16), 0);                 // ss_seq
     BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(24), this._ctime);        // ss_create
-    BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(32), (ulong)((segOfPseg + 1) * SegBlocks)); // ss_next
+    BinaryPrimitives.WriteUInt64LittleEndian(ss.AsSpan(32), (ulong)((segOfPseg + 1) * segBlocks)); // ss_next
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(40), (uint)p.NBlocks);   // ss_nblocks
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(44), (uint)nfinfo);      // ss_nfinfo
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(48), (uint)sumbytes);    // ss_sumbytes
@@ -576,13 +774,15 @@ public sealed class Nilfs2Writer {
     // ss_sumsum = crc32_le over [8 .. sumbytes].
     var sumsum = Nilfs2Superblock.Crc32Le(this._crcSeed, ss.AsSpan(8, sumbytes - 8));
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(4), sumsum);
-    WriteBlock(img, p.PsegStart, blockSize, ss);
+    for (var i = 0; i < p.NSummaryBlocks; ++i)
+      WriteBlock(img, p.PsegStart + i, blockSize, ss.AsSpan(i * blockSize, blockSize).ToArray());
 
     // ss_datasum = crc32_le over [pseg+4 .. pseg + nblocks*blockSize].
     var logBytes = img.Read((long)p.PsegStart * blockSize + 4, p.NBlocks * blockSize - 4);
     var datasum = Nilfs2Superblock.Crc32Le(this._crcSeed, logBytes);
     BinaryPrimitives.WriteUInt32LittleEndian(ss.AsSpan(0), datasum);
-    WriteBlock(img, p.PsegStart, blockSize, ss);
+    for (var i = 0; i < p.NSummaryBlocks; ++i)
+      WriteBlock(img, p.PsegStart + i, blockSize, ss.AsSpan(i * blockSize, blockSize).ToArray());
   }
 
   // ── helpers ─────────────────────────────────────────────────────────────
@@ -608,6 +808,50 @@ public sealed class Nilfs2Writer {
     // bmap[1+key] = pointer for that key.
     for (var k = 0; k < bmapPtrs.Length && k < 6; ++k)
       BinaryPrimitives.WriteUInt64LittleEndian(dst[(56 + (k + 1) * 8)..], bmapPtrs[k]);
+  }
+
+  /// <summary>
+  /// Writes a b-tree root into the inode's map area: the header, then a key and a
+  /// pointer for each leaf.
+  /// </summary>
+  /// <remarks>
+  /// The root is what tells the two kinds of map apart. A map whose first word is
+  /// zero reads as pointers written straight into the inode; one that sets the root
+  /// flag and a level of at least one reads as a tree, and the kernel rejects any
+  /// root that claims neither.
+  /// </remarks>
+  private static void WriteBtreeRoot(Span<byte> inode, ReadOnlySpan<ulong> leafPtrs, ReadOnlySpan<ulong> leafKeys) {
+    var root = inode[56..];
+    root[..BmapBytes].Clear();
+    root[0] = BtreeNodeRootFlag;
+    root[1] = BtreeLevelRoot;
+    BinaryPrimitives.WriteUInt16LittleEndian(root[2..], (ushort)leafPtrs.Length);
+
+    for (var i = 0; i < leafPtrs.Length; ++i) {
+      BinaryPrimitives.WriteUInt64LittleEndian(root[(BtreeNodeHeaderBytes + i * 8)..], leafKeys[i]);
+      BinaryPrimitives.WriteUInt64LittleEndian(
+        root[(BtreeNodeHeaderBytes + BtreeRootChildren * 8 + i * 8)..], leafPtrs[i]);
+    }
+  }
+
+  /// <summary>
+  /// Writes one b-tree leaf: the blocks of the file it covers, by key and by the
+  /// virtual block each key stands for.
+  /// </summary>
+  private static byte[] BuildBtreeLeaf(int blockSize, ReadOnlySpan<ulong> vblocks, long firstKey) {
+    var children = BtreeNodeChildren(blockSize);
+    var node = Block(blockSize);
+    node[0] = 0;                                    // not the root
+    node[1] = BtreeLevelLeaf;
+    BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(2), (ushort)vblocks.Length);
+
+    for (var i = 0; i < vblocks.Length; ++i) {
+      BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(BtreeNodeHeaderBytes + i * 8), (ulong)(firstKey + i));
+      BinaryPrimitives.WriteUInt64LittleEndian(
+        node.AsSpan(BtreeNodeHeaderBytes + children * 8 + i * 8), vblocks[i]);
+    }
+
+    return node;
   }
 
   /// <summary>Writes a palloc group-descriptor block + bitmap block for group 0.</summary>

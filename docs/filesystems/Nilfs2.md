@@ -73,7 +73,7 @@ On-disk layout (4 KiB blocks shown; any legal block size works).
 
 Why the log comes first. The sufile is a single block, so it can only describe block_size / 16 segments. With the payload ahead of the log, a volume of any size pushed the log into a segment the sufile could not address. Keeping the log at the front bounds the sufile slot for every volume size, and lets the payload be streamed rather than held in memory.
 
-Scope. Single checkpoint (cno=1), single partial segment. Each embedded user file uses a NILFS direct block map, so files in the mountable root directory are capped at `MaxKernelFileBlocks` blocks; the writer-private directory always carries every file in full for the reader. Snapshots / multi-checkpoint chains are out of scope.
+Scope. Single checkpoint (cno=1), single partial segment. A file of a few blocks is mapped by pointers written into its inode; a longer one by a b-tree of one level, whose leaves the log carries and the address table translates like any other block of the file. What bounds a volume now is the address table itself, which this writer maps from its inode without a tree of its own — about two megabytes of file at 4 KiB blocks. Files with a path in their name are still absent from the mountable tree, and the writer-private directory carries every file in full for the reader either way. Snapshots and multi-checkpoint chains are out of scope.
 
 ### Nilfs2Layout
 
