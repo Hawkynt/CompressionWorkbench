@@ -106,22 +106,32 @@ public sealed class OpenVmsWriter {
     bitmap.MarkMetadataAllocated();
 
     // ── INDEXF.SYS — pre-populate the reserved FIDs (1, 2, 4) so a real ODS-2 walker
-    //    would at least find the metadata files even though we don't expose them as user entries.
+    //    finds the metadata files even though we don't expose them as user entries.
+    //
+    // Each reserved file's sequence number is its file number: the index file is
+    // (1,1), the bitmap (2,2), the root directory (4,4). A reader asks for the root
+    // by that pair and will not take a header whose sequence says otherwise, so
+    // giving them all a sequence of one hides the root from it.
     var indexFile = new OpenVmsFileHeader[OpenVmsLayout.MaxFiles + 1];
 
     indexFile[OpenVmsLayout.IndexFileId] = new OpenVmsFileHeader {
       FileId = OpenVmsLayout.IndexFileId,
-      Sequence = 1,
+      Sequence = OpenVmsLayout.IndexFileId,
       InUse = true,
       Name = "INDEXF.SYS",
       Size = OpenVmsLayout.IndexFileBlockCount * (long)OpenVmsLayout.BlockSize,
     };
+    // The index file owns the front of the volume, not just the headers: the boot
+    // block, the home block and the storage bitmap are its first virtual blocks,
+    // and the headers follow. A reader finds a file's header by counting virtual
+    // blocks from where the bitmap ends, so a map that starts at the headers puts
+    // every header at the wrong place and it finds the wrong file.
     indexFile[OpenVmsLayout.IndexFileId].Extents.Add(
-      new OpenVmsFileHeader.RetrievalPointer(OpenVmsLayout.IndexFileStartLbn, OpenVmsLayout.IndexFileBlockCount));
+      new OpenVmsFileHeader.RetrievalPointer(0, OpenVmsLayout.IndexFileStartLbn + OpenVmsLayout.IndexFileBlockCount));
 
     indexFile[OpenVmsLayout.BitmapFileId] = new OpenVmsFileHeader {
       FileId = OpenVmsLayout.BitmapFileId,
-      Sequence = 1,
+      Sequence = OpenVmsLayout.BitmapFileId,
       InUse = true,
       Name = "BITMAP.SYS",
       Size = OpenVmsLayout.BitmapBlockCount * (long)OpenVmsLayout.BlockSize,
@@ -131,7 +141,7 @@ public sealed class OpenVmsWriter {
 
     indexFile[OpenVmsLayout.RootDirectoryFileId] = new OpenVmsFileHeader {
       FileId = OpenVmsLayout.RootDirectoryFileId,
-      Sequence = 1,
+      Sequence = OpenVmsLayout.RootDirectoryFileId,
       InUse = true,
       Name = "000000.DIR",
       Size = OpenVmsLayout.BlockSize,
@@ -206,6 +216,11 @@ public sealed class OpenVmsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbCluster, 2), (ushort)clusterBlocks);          // 1 LBN per cluster
     BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbHomeVbn, 2), 1);
     BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbIbMapLbn, 4), OpenVmsLayout.BitmapStartLbn);
+    // Where the storage bitmap begins counting in the index file's own blocks, the
+    // boot and home blocks being the two before it. A reader adds the bitmap's size
+    // to this to know where the headers start.
+    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbIbMapVbn, 2),
+      (ushort)(OpenVmsLayout.BitmapStartLbn + 1));
     BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbMaxFiles, 4), OpenVmsLayout.MaxFiles);
     BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbIbMapSize, 2), OpenVmsLayout.BitmapBlockCount);
     BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbOwnerUic, 4), 0x00010001);  // [1,1]

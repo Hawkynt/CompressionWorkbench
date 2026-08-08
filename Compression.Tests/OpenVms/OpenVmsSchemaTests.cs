@@ -25,9 +25,11 @@ public class OpenVmsSchemaTests {
       });
 
     var image = ms.ToArray();
-    // Home block at LBN 1 (offset 512); HM2$T_VOLNAME is 12 ASCII bytes at +0x1F4.
+    // Home block at LBN 1 (offset 512); HM2$T_VOLNAME is 12 ASCII bytes at +0x1D8,
+    // which is where the Files-11 home block puts it and where an ODS-2 reader
+    // looks — 0x1F4 was this writer's own guess and landed inside the format string.
     const int homeBlockOffset = 512;
-    const int volNameOffset = 0x1F4;
+    const int volNameOffset = 0x1D8;
     var label = System.Text.Encoding.ASCII
       .GetString(image, homeBlockOffset + volNameOffset, 12)
       .TrimEnd('\0', ' ');

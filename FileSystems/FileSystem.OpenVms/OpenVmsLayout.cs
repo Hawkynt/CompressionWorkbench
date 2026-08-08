@@ -97,12 +97,32 @@ public static class OpenVmsLayout {
   public const int FhExtFid = 14;        // FH2$W_EXT_FID
   public const int FhFileChar = 40;      // FH2$L_FILECHAR
   public const int FhRecAttr = 44;       // FH2$W_RECATTR (32 bytes)
+  /// <summary>The record-attributes area, which says how long the file is.</summary>
+  /// <remarks>
+  /// A reader takes the end-of-file block from here, and refuses to look at any
+  /// header past it — so a file whose attributes are blank has no headers a reader
+  /// will open, however well formed they are. Both block counts are longwords
+  /// stored high word first, which is how VMS wrote them.
+  /// </remarks>
+  public const int FhRecattr = 20;       // FH2$W_RECATTR
+  public const int FhRecattrHighBlock = FhRecattr + 4;   // FAT$L_HIBLK, allocated
+  public const int FhRecattrEndBlock = FhRecattr + 8;    // FAT$L_EFBLK, one past the last used
+
   public const int FhUsedSize = 80;      // size in bytes (writer-internal, 8 bytes)
   public const int FhAllocSize = 88;     // allocation in LBNs (writer-internal, 4 bytes)
   public const int FhChecksum = 510;     // FH2$W_CHECKSUM (LE u16)
 
   /// <summary>Words of the map area that hold retrieval pointers.</summary>
   public const int FhMapInUse = 58;      // FH2$B_MAP_INUSE
+
+  /// <summary>The retrieval-pointer format this writer emits: count then a long block number.</summary>
+  public const int RetrievalFormat2 = 2;
+
+  /// <summary>Bytes one of those takes: three words.</summary>
+  public const int RetrievalPointerBytes = 6;
+
+  /// <summary>Blocks one can describe, its count being one less than the blocks in fourteen bits.</summary>
+  public const int MaxBlocksPerPointer = 1 << 14;
 
   // Ident area starts at byte 128 (= 64 words); fits 20-char file name + meta.
   public const int FhIdentAreaOffset = 128;
@@ -119,6 +139,7 @@ public static class OpenVmsLayout {
   public const int HbStrucLev = 0x00C;       // HM2$W_STRUCLEV
   public const int HbCluster = 0x00E;        // HM2$W_CLUSTER
   public const int HbHomeVbn = 0x010;        // HM2$W_HOMEVBN
+  public const int HbIbMapVbn = 0x016;       // HM2$W_IBMAPVBN
   public const int HbIbMapLbn = 0x018;       // HM2$L_IBMAPLBN
   public const int HbMaxFiles = 0x01C;       // HM2$L_MAXFILES
   public const int HbIbMapSize = 0x020;      // HM2$W_IBMAPSIZE

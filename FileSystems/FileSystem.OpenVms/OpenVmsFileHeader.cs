@@ -52,6 +52,12 @@ public sealed class OpenVmsFileHeader {
   /// <summary>Returns the sum of <c>Count</c> across every retrieval pointer.</summary>
   public int AllocatedBlocks => this.Extents.Sum(e => e.Count);
 
+  /// <summary>Writes a longword the way VMS did, its high half first.</summary>
+  private static void WriteSwappedLong(Span<byte> destination, uint value) {
+    BinaryPrimitives.WriteUInt16LittleEndian(destination, (ushort)(value >> 16));
+    BinaryPrimitives.WriteUInt16LittleEndian(destination[2..], (ushort)(value & 0xFFFF));
+  }
+
   /// <summary>Serializes the file header into a fresh 512-byte block ready to be written into INDEXF.SYS.</summary>
   public byte[] Serialize() {
     var block = new byte[OpenVmsLayout.BlockSize];
@@ -71,6 +77,13 @@ public sealed class OpenVmsFileHeader {
       (ushort)((this.FileId >> 16) & 0xFFFF));
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(OpenVmsLayout.FhExtFid, 2), 0);
 
+    // Record attributes: how many blocks the file has, and one past the last it
+    // uses. Both are longwords written high word first, the way VMS stored them.
+    var blocks = 0;
+    foreach (var ext in this.Extents) blocks += ext.Count;
+    WriteSwappedLong(block.AsSpan(OpenVmsLayout.FhRecattrHighBlock), (uint)blocks);
+    WriteSwappedLong(block.AsSpan(OpenVmsLayout.FhRecattrEndBlock), (uint)(blocks + 1));
+
     // Internal: file size + allocation. These slots are reserved-for-RECATTR-and-up in the
     // real spec; we reuse them as scratch so reader/writer agree without a real RECATTR.
     BinaryPrimitives.WriteInt64LittleEndian(block.AsSpan(OpenVmsLayout.FhUsedSize, 8), this.Size);
@@ -81,13 +94,28 @@ public sealed class OpenVmsFileHeader {
     var nameLen = Math.Min(nameBytes.Length, OpenVmsLayout.FhFileNameLength);
     nameBytes.AsSpan(0, nameLen).CopyTo(block.AsSpan(OpenVmsLayout.FhIdentAreaOffset));
 
-    // Map area — sequence of (LBN, count) tuples zero-terminated.
+    // Map area — retrieval pointers, which are not pairs of longwords but a format
+    // of their own: two bits at the top of the first word say which, and the rest
+    // of that word carries the count. Format two is the one that covers any extent
+    // this writer produces — a count one less than the blocks, in fourteen bits,
+    // then the block number in two words, low half first.
     var mapPos = OpenVmsLayout.FhMapAreaOffset;
     foreach (var ext in this.Extents) {
-      if (mapPos + 8 > OpenVmsLayout.FhChecksum) break;
-      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(mapPos, 4), (uint)ext.StartLbn);
-      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(mapPos + 4, 4), (uint)ext.Count);
-      mapPos += 8;
+      if (ext.Count <= 0) continue;
+      if (mapPos + OpenVmsLayout.RetrievalPointerBytes > OpenVmsLayout.FhChecksum) break;
+
+      var remaining = ext.Count;
+      var lbn = ext.StartLbn;
+      while (remaining > 0 && mapPos + OpenVmsLayout.RetrievalPointerBytes <= OpenVmsLayout.FhChecksum) {
+        var take = Math.Min(remaining, OpenVmsLayout.MaxBlocksPerPointer);
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(mapPos, 2),
+          (ushort)(OpenVmsLayout.RetrievalFormat2 << 14 | take - 1));
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(mapPos + 2, 2), (ushort)(lbn & 0xFFFF));
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(mapPos + 4, 2), (ushort)(lbn >> 16 & 0xFFFF));
+        mapPos += OpenVmsLayout.RetrievalPointerBytes;
+        lbn += take;
+        remaining -= take;
+      }
     }
     // Zero-sentinel: a (0, 0) tuple. Already zero from the cleared block.
 
@@ -124,14 +152,43 @@ public sealed class OpenVmsFileHeader {
     if (nameEnd < 0) nameEnd = nameRaw.Length;
     fh.Name = Encoding.ASCII.GetString(nameRaw, 0, nameEnd).TrimEnd();
 
-    // Map area — read until (0, 0) sentinel.
+    // Map area — as many retrieval pointers as the header says it uses, read the
+    // way any Files-11 reader reads them.
     var mapPos = OpenVmsLayout.FhMapAreaOffset;
-    while (mapPos + 8 <= OpenVmsLayout.FhChecksum) {
-      var lbn = BinaryPrimitives.ReadUInt32LittleEndian(block.Slice(mapPos, 4));
-      var count = BinaryPrimitives.ReadUInt32LittleEndian(block.Slice(mapPos + 4, 4));
-      if (lbn == 0 && count == 0) break;
-      fh.Extents.Add(new RetrievalPointer((int)lbn, (int)count));
-      mapPos += 8;
+    var mapEnd = mapPos + block[OpenVmsLayout.FhMapInUse] * 2;
+    while (mapPos + 2 <= mapEnd && mapPos + 2 <= OpenVmsLayout.FhChecksum) {
+      var first = BinaryPrimitives.ReadUInt16LittleEndian(block.Slice(mapPos, 2));
+      switch (first >> 14) {
+        case 0:
+          mapPos += 2;
+          continue;
+        case 1:
+          if (mapPos + 4 > mapEnd) return fh;
+
+          fh.Extents.Add(new RetrievalPointer(
+            ((first & 0x3F00) << 8) | BinaryPrimitives.ReadUInt16LittleEndian(block.Slice(mapPos + 2, 2)),
+            (first & 0xFF) + 1));
+          mapPos += 4;
+          continue;
+        case 2:
+          if (mapPos + 6 > mapEnd) return fh;
+
+          fh.Extents.Add(new RetrievalPointer(
+            BinaryPrimitives.ReadUInt16LittleEndian(block.Slice(mapPos + 2, 2))
+              | BinaryPrimitives.ReadUInt16LittleEndian(block.Slice(mapPos + 4, 2)) << 16,
+            (first & 0x3FFF) + 1));
+          mapPos += 6;
+          continue;
+        default:
+          if (mapPos + 8 > mapEnd) return fh;
+
+          fh.Extents.Add(new RetrievalPointer(
+            BinaryPrimitives.ReadUInt16LittleEndian(block.Slice(mapPos + 4, 2))
+              | BinaryPrimitives.ReadUInt16LittleEndian(block.Slice(mapPos + 6, 2)) << 16,
+            ((first & 0x3FFF) << 16) + BinaryPrimitives.ReadUInt16LittleEndian(block.Slice(mapPos + 2, 2)) + 1));
+          mapPos += 8;
+          continue;
+      }
     }
     return fh;
   }
