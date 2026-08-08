@@ -35,6 +35,23 @@ namespace FileSystem.OpenVms;
 /// at slot 1, giving 7 entries per block).
 /// </para>
 /// </summary>
+/// <remarks>
+/// <para><b>What a real ODS-2 directory holds, and what this does not.</b> A
+/// Files-11 directory is a run of variable-length records: a size word holding
+/// the record's length less two, a version limit, flags, a name length, the name
+/// padded to an even boundary, and then one eight-byte entry per version — a
+/// version number and a file id. A record whose size word reads 0xFFFF ends the
+/// block. What follows here is fixed-width slots of this writer's own instead,
+/// which is why an ODS-2 reader mounts one of these volumes and reads its label
+/// but will not list it.</para>
+///
+/// <para>Worth knowing before that is written: the reader used to check this work
+/// computes a record's entry bytes as <c>size + 2 - ((namecount + 8) &amp; ~1)</c>,
+/// taking eight from the size of its own record struct where the name actually
+/// begins at six. The two cancel for a name of odd length and are two out for an
+/// even one, so that reader agrees with a correct directory only for odd-length
+/// names. Build to the format, not to the reader.</para>
+/// </remarks>
 public static class OpenVmsDirectory {
   public const int EntrySize = 64;
   public const int EntriesPerBlock = OpenVmsLayout.BlockSize / EntrySize;        // 8

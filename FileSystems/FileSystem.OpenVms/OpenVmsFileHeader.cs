@@ -58,6 +58,9 @@ public sealed class OpenVmsFileHeader {
     BinaryPrimitives.WriteUInt16LittleEndian(destination[2..], (ushort)(value & 0xFFFF));
   }
 
+  /// <summary>Whether this header describes a directory rather than an ordinary file.</summary>
+  public bool IsDirectory { get; set; }
+
   /// <summary>Serializes the file header into a fresh 512-byte block ready to be written into INDEXF.SYS.</summary>
   public byte[] Serialize() {
     var block = new byte[OpenVmsLayout.BlockSize];
@@ -76,6 +79,10 @@ public sealed class OpenVmsFileHeader {
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(OpenVmsLayout.FhFidRvnNmx, 2),
       (ushort)((this.FileId >> 16) & 0xFFFF));
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(OpenVmsLayout.FhExtFid, 2), 0);
+
+    if (this.IsDirectory)
+      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OpenVmsLayout.FhFileChar, 4),
+        OpenVmsLayout.FileCharDirectory);
 
     // Record attributes: how many blocks the file has, and one past the last it
     // uses. Both are longwords written high word first, the way VMS stored them.
@@ -145,6 +152,8 @@ public sealed class OpenVmsFileHeader {
     fh.FileId = (fidHigh << 16) | fidLow;
 
     fh.Size = BinaryPrimitives.ReadInt64LittleEndian(block.Slice(OpenVmsLayout.FhUsedSize, 8));
+    fh.IsDirectory = (BinaryPrimitives.ReadUInt32LittleEndian(block.Slice(OpenVmsLayout.FhFileChar, 4))
+      & OpenVmsLayout.FileCharDirectory) != 0;
 
     // Ident area — read 20 bytes, strip trailing NULs/spaces.
     var nameRaw = block.Slice(OpenVmsLayout.FhIdentAreaOffset, OpenVmsLayout.FhFileNameLength).ToArray();

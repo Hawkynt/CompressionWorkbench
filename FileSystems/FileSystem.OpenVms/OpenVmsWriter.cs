@@ -143,6 +143,7 @@ public sealed class OpenVmsWriter {
       FileId = OpenVmsLayout.RootDirectoryFileId,
       Sequence = OpenVmsLayout.RootDirectoryFileId,
       InUse = true,
+      IsDirectory = true,
       Name = "000000.DIR",
       Size = OpenVmsLayout.BlockSize,
     };

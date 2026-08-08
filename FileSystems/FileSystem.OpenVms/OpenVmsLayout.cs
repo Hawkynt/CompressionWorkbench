@@ -95,8 +95,18 @@ public static class OpenVmsLayout {
   public const int FhFidSeq = 10;        // FH2$W_FID_SEQ (LE u16)
   public const int FhFidRvnNmx = 12;     // FH2$W_FID_RVN + NMX
   public const int FhExtFid = 14;        // FH2$W_EXT_FID
-  public const int FhFileChar = 40;      // FH2$L_FILECHAR
   public const int FhRecAttr = 44;       // FH2$W_RECATTR (32 bytes)
+  /// <summary>What kind of file this is, and how it may be used.</summary>
+  /// <remarks>
+  /// A reader asked to list a directory checks the directory bit here first and
+  /// calls the file a bad directory if it is clear, whatever the records inside
+  /// say.
+  /// </remarks>
+  public const int FhFileChar = 52;      // FH2$L_FILECHAR
+
+  /// <summary>The bit in that which says the file is a directory.</summary>
+  public const uint FileCharDirectory = 0x2000;   // FH2$M_DIRECTORY
+
   /// <summary>The record-attributes area, which says how long the file is.</summary>
   /// <remarks>
   /// A reader takes the end-of-file block from here, and refuses to look at any
