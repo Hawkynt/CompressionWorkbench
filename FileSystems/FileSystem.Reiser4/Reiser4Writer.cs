@@ -110,6 +110,11 @@ public sealed class Reiser4Writer {
   // Tree-node header offsets — same for twig (block 23) and leaf (block 24).
   private const int NodeMkfsIdOff = 12;     // d32
 
+  /// <summary>The root directory's own object id, and the locality above it.</summary>
+  /// <remarks>Fixed: the tree this writer starts from is a byte-exact mkfs capture.</remarks>
+  private const ulong RootLocality = 0x29;
+  private const ulong RootObjectId = 0x2a;
+
   // Bitmap (block 18)
   private const int BitmapAdlerOff = 0;     // d32 adler32 over bytes 4..4095
   private const int BitmapDataOff = 4;
@@ -326,11 +331,16 @@ public sealed class Reiser4Writer {
 
     var payloads = new DeferredPayloads();
     var entries = new List<(string Name, ulong Block, long Size)>(this._files.Count);
+    // The same runs the payload area is made of become the extents of the file in
+    // the tree — one file's bytes, described twice, sitting in one place.
+    var treeFiles = new List<Reiser4Tree.Entry>(this._files.Count);
+    var nextObjectId = RootObjectId + 1;
     foreach (var (name, payload) in this._files) {
       var need = (payload.Size + BlockSize - 1) / BlockSize;
       var first = need > 0 ? Alloc() : 0UL;
       // A file's blocks are consecutive apart from any bitmap they straddle, so
       // the body is recorded as one payload per contiguous stretch.
+      var runs = new List<Reiser4Tree.Run>();
       var runStart = first;
       var runBlocks = need > 0 ? 1L : 0L;
       var written = 0L;
@@ -338,12 +348,28 @@ public sealed class Reiser4Writer {
         var next = Alloc();
         if (next == runStart + (ulong)runBlocks) { ++runBlocks; continue; }
         AddRun(payloads, payload, runStart, runBlocks, ref written);
+        runs.Add(new Reiser4Tree.Run(runStart, (ulong)runBlocks));
         runStart = next;
         runBlocks = 1;
       }
-      if (runBlocks > 0) AddRun(payloads, payload, runStart, runBlocks, ref written);
+      if (runBlocks > 0) {
+        AddRun(payloads, payload, runStart, runBlocks, ref written);
+        runs.Add(new Reiser4Tree.Run(runStart, (ulong)runBlocks));
+      }
+
       entries.Add((name, first, payload.Size));
+      if (name.Length <= Reiser4Tree.MaxInlineNameLength)
+        treeFiles.Add(new Reiser4Tree.Entry {
+          Name = name, ObjectId = nextObjectId++, Size = payload.Size, Runs = runs,
+        });
     }
+
+    // ── The tree itself ──────────────────────────────────────────────────
+    // Every file gets a stat data and its extents, and the root directory an entry
+    // naming it — so what the volume holds is what a reader of the format finds,
+    // not only what our own reader knows to look for.
+    Reiser4Tree.Build(blk24, BlockSize, mkfsId, (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+      RootLocality, RootObjectId, treeFiles);
 
     var usedBlocks = cursor;   // every block below the cursor is reserved or payload
 
