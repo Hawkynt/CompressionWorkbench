@@ -129,10 +129,10 @@ public class ExtTests {
     var freeBlocks = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sb[12..]);
     var freeInodes = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sb[16..]);
 
-    // 10 reserved (inodes 1..10 per EXT2_GOOD_OLD_FIRST_INO) + 2 files = 12 used
-    // → 116 free (for the default 128 inodes-per-group). Reserving 1..10
-    // matches what mkfs.ext4 emits; without it fsck rejects user inodes at 3..10.
-    Assert.That(freeInodes, Is.EqualTo(inodesCount - 12));
+    // 10 reserved (inodes 1..10 per EXT2_GOOD_OLD_FIRST_INO), then lost+found and
+    // the two files. Reserving 1..10 matches what mkfs.ext4 emits; without it fsck
+    // rejects user inodes at 3..10.
+    Assert.That(freeInodes, Is.EqualTo(inodesCount - 13));
     // freeBlocks must be strictly between 0 and totalBlocks, never zero for a mostly-empty disk.
     Assert.That(freeBlocks, Is.GreaterThan(0));
     Assert.That(freeBlocks, Is.LessThan(blocksCount));
@@ -155,8 +155,33 @@ public class ExtTests {
     // into it, so the expectation comes from the superblock.
     var inodesPerGroup = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(1024 + 40));
     Assert.That(bgdFreeBlocks, Is.GreaterThan(0));
-    Assert.That(bgdFreeInodes, Is.EqualTo(inodesPerGroup - 10 - 1)); // less the reserved ones and the file
-    Assert.That(usedDirs, Is.EqualTo(1));         // root
+    // One group, so the group's free count is the volume's.
+    var superblockFreeInodes = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(1024 + 16));
+    Assert.That(bgdFreeInodes, Is.EqualTo(superblockFreeInodes));
+    Assert.That(usedDirs, Is.EqualTo(2));         // root and lost+found
+  }
+
+  // The inode a named entry in the root directory points at.
+  private static uint RootEntryInode(byte[] image, string name) {
+    var inodeSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(1024 + 88));
+    var inodeTableBlock = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(2 * 1024 + 8));
+    var rootInode = (int)inodeTableBlock * 1024 + inodeSize;
+    var dirBlock = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(rootInode + 40));
+    var wanted = System.Text.Encoding.UTF8.GetBytes(name);
+
+    for (var offset = dirBlock * 1024; offset < (dirBlock + 1) * 1024 - 8;) {
+      var inode = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(offset));
+      var recLen = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(offset + 4));
+      if (recLen == 0) break;
+
+      var nameLen = image[offset + 6];
+      if (inode != 0 && nameLen == wanted.Length && image.AsSpan(offset + 8, nameLen).SequenceEqual(wanted))
+        return inode;
+
+      offset += recLen;
+    }
+
+    throw new AssertionException($"'{name}' is not in the root directory.");
   }
 
   [Test, Category("RealWorld")]
@@ -172,11 +197,15 @@ public class ExtTests {
     var inodeTable = img.AsSpan((int)inodeTableBlock * 1024);
     // Root inode (#2) = index 1, first file inode (#11) = index 10.
     // Inodes 3..10 are reserved per EXT2_GOOD_OLD_FIRST_INO.
-    var root = inodeTable.Slice(1 * 128, 128);
-    var file = inodeTable.Slice(10 * 128, 128);
+    var root = inodeTable.Slice(1 * System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(1024 + 88)), 128);
+    // Which inode a file got depends on what the volume reserved ahead of it —
+    // lost+found always, the orphan file on an ext4 — so it is looked up by name.
+    var inodeSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(1024 + 88));
+    var fileInode = RootEntryInode(img, "multi.bin");
+    var file = inodeTable.Slice((int)(fileInode - 1) * inodeSize, inodeSize);
 
     Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(root[26..]),
-      Is.EqualTo(2), "root dir i_links_count should be 2");
+      Is.EqualTo(3), "root dir i_links_count is 2 for itself plus one for lost+found's '..'");
     Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(file[26..]),
       Is.EqualTo(1), "regular file i_links_count should be 1");
     Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(file[28..]),

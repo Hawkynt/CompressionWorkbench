@@ -263,6 +263,9 @@ public sealed class ExtReader : IDisposable {
     }
   }
 
+  /// <summary>The directory e2fsck reconnects orphaned files into, which mkfs makes.</summary>
+  private const string LostAndFoundName = "lost+found";
+
   private void ReadDirectoryEntries(byte[] dirData, string path) {
     var offset = 0;
     var seen = new HashSet<uint>();
@@ -279,8 +282,10 @@ public sealed class ExtReader : IDisposable {
       if (inodeNum != 0 && nameLen > 0) {
         var name = Encoding.UTF8.GetString(dirData, offset + 8, nameLen);
 
-        // Skip . and ..
-        if (name is not ("." or "..")) {
+        // Skip . and .., and the lost+found every ext volume is made with — it
+        // belongs to the volume rather than to whoever filled it, and surfacing it
+        // would put a directory nobody added into every listing.
+        if (name is not ("." or "..") && !(path.Length == 0 && name == LostAndFoundName)) {
           var fullPath = string.IsNullOrEmpty(path) ? name : $"{path}/{name}";
           var isDir = fileType == 2;
 

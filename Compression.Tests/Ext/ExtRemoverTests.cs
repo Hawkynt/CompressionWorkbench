@@ -28,6 +28,29 @@ public class ExtRemoverTests {
 
   private static uint ReadDescriptor(byte[] image, int field)
     => System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(2 * 1024 + field));
+
+  // Which inode a named entry in the root directory points at — lost+found takes
+  // the first usable one, so a file's number is not the first user inode.
+  private static uint RootEntryInode(byte[] image, string name) {
+    var inodeSize = InodeSize(image);
+    var rootInode = InodeTableOffset(image) + inodeSize;
+    var dirBlock = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(rootInode + 40));
+    var wanted = System.Text.Encoding.UTF8.GetBytes(name);
+
+    for (var offset = dirBlock * 1024; offset < (dirBlock + 1) * 1024 - 8;) {
+      var inode = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(offset));
+      var recLen = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(offset + 4));
+      if (recLen == 0) break;
+
+      var nameLen = image[offset + 6];
+      if (inode != 0 && nameLen == wanted.Length && image.AsSpan(offset + 8, nameLen).SequenceEqual(wanted))
+        return inode;
+
+      offset += recLen;
+    }
+
+    throw new AssertionException($"'{name}' is not in the root directory.");
+  }
   [Test]
   public void RemovedFileContentIsZeroedFromImage() {
     // Marker bytes distinctive enough to not collide with metadata.
@@ -100,10 +123,8 @@ public class ExtRemoverTests {
   public void InodeBytesAreZeroedAfterRemove() {
     var image = BuildImageWith(("only.bin", new byte[500]));
 
-    // First user file inode = #11 (inodes 1..10 reserved per EXT2_GOOD_OLD_FIRST_INO),
-    // so index 10 in the inode table.
     var inodeSize = InodeSize(image);
-    var fileInodeOffset = InodeTableOffset(image) + 10 * inodeSize;
+    var fileInodeOffset = InodeTableOffset(image) + (int)(RootEntryInode(image, "only.bin") - 1) * inodeSize;
     var fileInodeBefore = image.AsSpan(fileInodeOffset, inodeSize).ToArray();
     Assert.That(fileInodeBefore.Any(b => b != 0), Is.True, "precondition: inode has content");
 
@@ -119,8 +140,8 @@ public class ExtRemoverTests {
     var image = BuildImageWith(("chunky.bin", new byte[3000])); // 3 blocks @ 1K
 
     // Find which blocks the file used — direct pointers at inode offsets 40..84.
-    // First user inode is #11, table index 10.
-    var fileInodeOffset = InodeTableOffset(image) + 10 * InodeSize(image);
+    var fileInodeOffset = InodeTableOffset(image)
+      + (int)(RootEntryInode(image, "chunky.bin") - 1) * InodeSize(image);
     var directBlocks = new List<uint>();
     for (var i = 0; i < 12; i++) {
       var bn = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
@@ -152,14 +173,14 @@ public class ExtRemoverTests {
   public void InodeBitmapBitClearedAfterRemove() {
     var image = BuildImageWith(("solo.txt", new byte[50]));
 
-    // First user inode = #11 = bit index 10.
     var inodeBitmapOffset = InodeBitmapOffset(image);
-    var bitBefore = (image[inodeBitmapOffset + 1] >> 2) & 1; // bit 10 = byte 1 bit 2
+    var bit = (int)RootEntryInode(image, "solo.txt") - 1;
+    var bitBefore = (image[inodeBitmapOffset + bit / 8] >> (bit % 8)) & 1;
     Assert.That(bitBefore, Is.EqualTo(1), "precondition: inode 11 marked used");
 
     ExtRemover.Remove(image, "solo.txt");
 
-    var bitAfter = (image[inodeBitmapOffset + 1] >> 2) & 1;
+    var bitAfter = (image[inodeBitmapOffset + bit / 8] >> (bit % 8)) & 1;
     Assert.That(bitAfter, Is.EqualTo(0), "inode 11 bit must be cleared after remove");
   }
 
