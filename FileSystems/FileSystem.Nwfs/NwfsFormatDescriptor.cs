@@ -12,12 +12,16 @@ namespace FileSystem.Nwfs;
 /// 5.x/6.x. NSS (Novell Storage Services) replaced it for new volumes from
 /// 1998 but NWFS images still surface in archaeology / migration workflows.
 ///
-/// **HONEST DISCLAIMER**: this is best-effort detection from public
-/// reverse-engineering (notably the zhmu/nwfs project). The on-disk format
-/// was never released by Novell. We can identify NWFS partitions by the
-/// HOTFIX/MIRROR/Volume signatures but cannot validate contents — directory
-/// entries, FAT, suballocation, Turbo FAT etc. are out of scope without an
-/// authoritative spec.
+/// **PROVENANCE**: Novell never released the on-disk format. What is read and
+/// written here follows the public reverse-engineering of it (notably the
+/// zhmu/nwfs project, whose documentation and reader were both checked
+/// against). Volumes written by <see cref="NwfsWriter" /> are read back by that
+/// project's own <c>transfer</c> tool — directory tree, sizes and file bytes
+/// all agreeing — so contents are no longer merely detected.
+///
+/// Still out of scope: suballocation, Turbo FAT, compression, mirrored
+/// partitions, volumes spanning several partitions, and the salvage area.
+/// A volume using any of those reads only as far as its plain structures go.
 ///
 /// Magic: <c>HOTFIX00</c> — 8 ASCII bytes at byte offset <c>0x4000</c> (16384,
 /// = sector 32 at 512 B sectors). Confidence 0.85: 8 bytes of ASCII at a
@@ -47,6 +51,9 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // 0.9+) because the layout is derived from public reverse engineering
     // rather than a vendor-published spec.
     new(NwfsHeaders.HotfixMagic, Offset: (int)NwfsHeaders.HotfixOffset, Confidence: 0.85),
+    // The same header on a whole disk rather than an image of the partition
+    // alone: a partition starting at sector 32 puts it 0x4000 further on.
+    new(NwfsHeaders.HotfixMagic, Offset: 0x8000, Confidence: 0.80),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
@@ -79,6 +86,14 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (hdr.AnyValid)
       entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
+
+    // When the headers lead to a volume, the files on it are listed as well.
+    var volume = TryReadVolume(stream);
+    if (volume != null)
+      foreach (var item in volume.List())
+        entries.Add(new ArchiveEntryInfo(idx++, item.Path, item.Length, item.Length, "stored",
+                                         item.IsDirectory, false, null));
+
     return entries;
   }
 
@@ -100,10 +115,18 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       return;
     }
 
+    var volume = TryReadVolume(stream);
     WriteIfMatch(outputDir, "FULL.nwfs", image, files);
-    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr, image.LongLength), files);
+    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr, image.LongLength, volume), files);
     if (hdr.AnyValid)
       WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
+
+    if (volume == null) return;
+
+    foreach (var item in volume.List()) {
+      if (item.IsDirectory) continue;
+      WriteIfMatch(outputDir, item.Path, volume.Read(item), files);
+    }
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -111,13 +134,12 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     WriteFile(outputDir, name, data);
   }
 
-  private static byte[] BuildMetadata(NwfsHeaders h, long imageSize) {
+  private static byte[] BuildMetadata(NwfsHeaders h, long imageSize, NwfsReader? volume) {
     var b = new StringBuilder();
     var ic = CultureInfo.InvariantCulture;
-    // Always "partial" — we never claim "ok" for NWFS because contents can't
-    // be validated against an authoritative spec, even when the magic bytes
-    // are all present.
-    b.Append("parse_status=partial\n");
+    // "ok" only when the headers led all the way to a volume and its directory
+    // was walked. Magic bytes alone say where to look, not that anything is there.
+    b.Append(ic, $"parse_status={(volume != null ? "ok" : "partial")}\n");
     b.Append("detection_basis=reverse_engineered\n");
     b.Append(ic, $"hotfix_found={h.HotfixFound}\n");
     if (h.HotfixFound)
@@ -137,6 +159,15 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     b.Append(ic, $"detected_magic={(detected.Length > 0 ? detected : "none")}\n");
     if (imageSize >= 0)
       b.Append(ic, $"volume_size_if_visible={imageSize}\n");
+
+    if (volume != null) {
+      var items = volume.List();
+      b.Append(ic, $"volume_name={volume.VolumeName}\n");
+      b.Append(ic, $"block_size={volume.BlockSize}\n");
+      b.Append(ic, $"file_count={items.Count(i => !i.IsDirectory)}\n");
+      b.Append(ic, $"directory_count={items.Count(i => i.IsDirectory)}\n");
+    }
+
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
@@ -146,6 +177,33 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // first ~96 KB. 64 KB covers HOTFIX/MIRROR comfortably and lets the
   // free-form scan find Volumes too.
   private const int HeaderReadCap = 64 * 1024;
+
+  /// <summary>
+  /// How much of an image is taken in to read a volume's files. The headers are
+  /// read from the first 64 KB and cost nothing; the whole image is only taken
+  /// once those headers say there is a NetWare volume here to read.
+  /// </summary>
+  private const long VolumeReadCap = 512L * 1024 * 1024;
+
+  /// <summary>
+  /// The volume in <paramref name="stream" />, or null when there is none or it
+  /// cannot be reached — a stream that will not seek back, or an image past the
+  /// size worth taking in.
+  /// </summary>
+  private static NwfsReader? TryReadVolume(Stream stream) {
+    if (!stream.CanSeek) return null;
+
+    try {
+      if (stream.Length > VolumeReadCap) return null;
+
+      stream.Position = 0;
+      using var ms = new MemoryStream();
+      stream.CopyTo(ms);
+      return NwfsReader.TryOpen(ms.ToArray());
+    } catch {
+      return null;
+    }
+  }
 
   private static byte[] ReadAllBounded(Stream stream) {
     using var ms = new MemoryStream();
