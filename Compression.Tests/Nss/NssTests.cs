@@ -37,10 +37,13 @@ public class NssTests {
     Assert.That(d.Category, Is.EqualTo(FormatCategory.Archive));
     Assert.That(d.Family, Is.EqualTo(AlgorithmFamily.Archive));
     Assert.That(d.Extensions, Does.Contain(".nss"));
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
+    // Two: the anchor a real pool is found by, and the magic of the container
+    // written here — which carries no anchor, so that the two never overlap.
+    Assert.That(d.MagicSignatures, Has.Count.EqualTo(2));
     Assert.That(d.MagicSignatures[0].Bytes,
       Is.EqualTo(Encoding.ASCII.GetBytes("NSS Pool")));
     Assert.That(d.MagicSignatures[0].Confidence, Is.EqualTo(0.70).Within(0.01));
+    Assert.That(d.MagicSignatures[1].Offset, Is.EqualTo(16));
   }
 
   [Test, Category("HappyPath")]

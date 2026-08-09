@@ -19,6 +19,7 @@ NSS (Novell Storage Services) — best-effort anchor detection from publicly ava
 | Bytes | At offset | Confidence |
 |---|---|---|
 | `4E 53 53 20 50 6F 6F 6C` | 0 | 0.70 |
+| `D4 0A 17 BE 1F 91 13 CC` | 16 | 0.95 |
 
 ## Verbs
 
@@ -65,7 +66,9 @@ Best-effort NSS image reader. Parses no object tree — only surfaces the anchor
 
 Writes the NSS container described in `NssLayout`.
 
-The anchors go where a real pool carries them, so an image this writes is detected as NSS by the same scan that detects a real one. Everything behind them is this project's own, because Novell never published what a real image puts there.
+What this writes carries its own magic and no NSS anchor. It did carry them once, on the reasoning that an image of ours should be detected by the same scan that detects a real pool — which had it announce itself as an NSS pool while being unable to act as one. Anything that knows NSS would have identified it and then failed to read it, and a format that misleads a reader is worse than one that says nothing.
+
+So the anchors are gone from what is written here. Reading them is untouched: a real pool is still found by them and still surfaced as one whose object tree has no public spec.
 
 ### NssLayout
 
@@ -73,7 +76,7 @@ The container this project writes for NSS, and the anchors that make it recognis
 
 NSS's object tree was never documented by Novell, and the only public structural facts about it are the ASCII anchors its pool, volume and superblock descriptors carry. `NssHeaders` finds those, and that is all anyone here can honestly claim to read of a real NSS image.
 
-So what is written is a container of this project's own shaping, carrying those anchors where a real image carries them and a directory of its own behind them. That is the same bargain struck for TUX2 and TUX3, whose formats never stabilised either: an image we wrote round-trips through the reader that wrote it, and an image from a real NSS pool is still detected exactly as it was before — as a pool with anchors and no files this can name.
+So what is written is a container of this project's own shaping, under its own magic and carrying no anchor of a real pool. It carried them once, so that one scan would find both; that had it announce itself as a pool it could not act as, which anything that knows NSS would identify and then fail to read. Saying nothing is better than saying something false. An image from a real NSS pool is still detected exactly as it was — as a pool with anchors and no files this can name.
 
 The layout is deliberately flat. A file is one run of blocks, and its position is a field in the directory rather than anything implied, which is what lets a layout pass move it by rewriting eight bytes.
 

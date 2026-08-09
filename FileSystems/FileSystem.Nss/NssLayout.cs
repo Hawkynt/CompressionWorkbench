@@ -11,13 +11,13 @@ namespace FileSystem.Nss;
 /// superblock descriptors carry. <see cref="NssHeaders" /> finds those, and
 /// that is all anyone here can honestly claim to read of a real NSS image.</para>
 ///
-/// <para>So what is written is a container of this project's own shaping,
-/// carrying those anchors where a real image carries them and a directory of
-/// its own behind them. That is the same bargain struck for TUX2 and TUX3,
-/// whose formats never stabilised either: an image we wrote round-trips through
-/// the reader that wrote it, and an image from a real NSS pool is still
-/// detected exactly as it was before — as a pool with anchors and no files this
-/// can name.</para>
+/// <para>So what is written is a container of this project's own shaping, under
+/// its own magic and carrying no anchor of a real pool. It carried them once,
+/// so that one scan would find both; that had it announce itself as a pool it
+/// could not act as, which anything that knows NSS would identify and then fail
+/// to read. Saying nothing is better than saying something false. An image from
+/// a real NSS pool is still detected exactly as it was — as a pool with anchors
+/// and no files this can name.</para>
 ///
 /// <para>The layout is deliberately flat. A file is one run of blocks, and its
 /// position is a field in the directory rather than anything implied, which is
@@ -28,7 +28,11 @@ internal static class NssLayout {
   /// <summary>NSS's own block size, which this keeps.</summary>
   internal const int BlockSize = 4096;
 
-  /// <summary>Where the pool, volume and superblock anchors go.</summary>
+  /// <summary>
+  /// Where a real pool carries its anchors, which is where they are looked for
+  /// when reading one. Nothing written here puts anything at the first or the
+  /// third; the second holds this container's volume name and no anchor.
+  /// </summary>
   internal const long PoolAnchor = 0;
   internal const long VolumeAnchor = BlockSize;
   internal const long SuperblockAnchor = 2 * BlockSize;

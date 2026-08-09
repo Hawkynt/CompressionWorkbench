@@ -8,10 +8,16 @@ namespace FileSystem.Nss;
 /// Writes the NSS container described in <see cref="NssLayout" />.
 /// </summary>
 /// <remarks>
-/// The anchors go where a real pool carries them, so an image this writes is
-/// detected as NSS by the same scan that detects a real one. Everything behind
-/// them is this project's own, because Novell never published what a real image
-/// puts there.
+/// <para>What this writes carries its own magic and no NSS anchor. It did carry
+/// them once, on the reasoning that an image of ours should be detected by the
+/// same scan that detects a real pool — which had it announce itself as an NSS
+/// pool while being unable to act as one. Anything that knows NSS would have
+/// identified it and then failed to read it, and a format that misleads a
+/// reader is worse than one that says nothing.</para>
+///
+/// <para>So the anchors are gone from what is written here. Reading them is
+/// untouched: a real pool is still found by them and still surfaced as one
+/// whose object tree has no public spec.</para>
 /// </remarks>
 public sealed class NssWriter {
 
@@ -42,18 +48,12 @@ public sealed class NssWriter {
     var total = NssLayout.FirstDataBlock + counts.Sum();
     var image = new byte[total * bs];
 
-    NssHeaders.NssPoolMagic.CopyTo(image, NssLayout.PoolAnchor);
     NssLayout.ContainerMagic.CopyTo(image, NssLayout.ContainerMagicOffset);
     BinaryPrimitives.WriteInt64LittleEndian(
       image.AsSpan((int)NssLayout.FileCountOffset), this._files.Count);
 
-    NssHeaders.NssVolumeMagic.CopyTo(image, NssLayout.VolumeAnchor);
     var name = Encoding.ASCII.GetBytes(this.VolumeName);
-    name.CopyTo(image, NssLayout.VolumeAnchor + NssHeaders.NssVolumeMagic.Length + 1);
-
-    NssHeaders.NssSuperblockMagic.CopyTo(image, NssLayout.SuperblockAnchor);
-    NssHeaders.NovellMagic.CopyTo(image, NssLayout.SuperblockAnchor + 16);
-    NssHeaders.NetWareMagic.CopyTo(image, NssLayout.SuperblockAnchor + 32);
+    name.CopyTo(image, NssLayout.VolumeAnchor);
 
     directory.CopyTo(image, NssLayout.DirectoryOffset);
 

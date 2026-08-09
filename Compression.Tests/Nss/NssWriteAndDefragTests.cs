@@ -77,16 +77,49 @@ public class NssWriteAndDefragTests {
 
   private const long NssDirectoryStart = 3 * 4096;
 
+  /// <summary>
+  /// A container this writes must not pass itself off as an NSS pool. NSS's
+  /// object tree has no public spec, so nothing here can act as a pool; an
+  /// image carrying a pool's anchors would be identified by anything that knows
+  /// NSS and would then fail to read, which is worse than carrying none.
+  /// </summary>
   [Test, Category("HappyPath")]
-  public void AContainerWeWrite_CarriesTheAnchorsARealPoolCarries() {
+  public void AContainerWeWrite_CarriesNoAnchorOfARealPool() {
     var image = Volume(Contents());
     using var ms = new MemoryStream(image, writable: false);
     var reader = new NssReader(ms);
 
-    Assert.That(reader.AnyValid, Is.True, "the detector must still see a pool");
-    Assert.That(reader.Headers.PoolFound, Is.True, "the pool anchor must be where one is");
-    Assert.That(reader.Headers.VolumeFound, Is.True, "the volume anchor must be too");
-    Assert.That(reader.Headers.SuperblockFound, Is.True, "and the superblock anchor");
+    Assert.Multiple(() => {
+      Assert.That(reader.Headers.PoolFound, Is.False, "it must not claim to be a pool");
+      Assert.That(reader.Headers.VolumeFound, Is.False, "nor carry a volume anchor");
+      Assert.That(reader.Headers.SuperblockFound, Is.False, "nor a superblock anchor");
+      Assert.That(reader.AnyValid, Is.False, "nothing here is a real NSS structure");
+    });
+  }
+
+  /// <summary>
+  /// None of the strings a scanner keys on may appear anywhere in what is
+  /// written, not merely at the offsets a pool carries them.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void AContainerWeWrite_HasNoNovellMarkingAnywhereInIt() {
+    var image = Volume(Contents());
+
+    foreach (var marking in new[] {
+               NssHeaders.NssPoolMagic, NssHeaders.NssVolumeMagic, NssHeaders.NssSuperblockMagic,
+               NssHeaders.NovellMagic, NssHeaders.NetWareMagic,
+             })
+      Assert.That(image.AsSpan().IndexOf(marking), Is.LessThan(0),
+                  $"'{System.Text.Encoding.ASCII.GetString(marking)}' must not appear");
+  }
+
+  /// <summary>Its own magic is what says whose container it is.</summary>
+  [Test, Category("HappyPath")]
+  public void AContainerWeWrite_IsFoundByItsOwnMagic() {
+    var image = Volume(Contents());
+
+    using var ms = new MemoryStream(image, writable: false);
+    Assert.That(new NssVolume(ms).Valid, Is.True);
   }
 
   [Test, Category("HappyPath")]
@@ -167,9 +200,9 @@ public class NssWriteAndDefragTests {
     }
   }
 
-  /// <summary>The anchors and the directory stay where the detector looks for them.</summary>
+  /// <summary>The container's own header and its directory survive a defragment.</summary>
   [Test]
-  public void Defragment_LeavesTheAnchorsAlone() {
+  public void Defragment_LeavesTheHeaderAndDirectoryAlone() {
     var files = Contents();
     var holed = WithAHole(Volume(files), "FILE1.DAT");
 
@@ -179,10 +212,8 @@ public class NssWriteAndDefragTests {
     new NssFormatDescriptor().Defragment(
       image, new DefragOptions { Mode = DefragMode.ConsolidateAtEnd });
 
-    var result = image.ToArray();
-    Assert.That(result.AsSpan(0, 8).SequenceEqual(NssHeaders.NssPoolMagic), Is.True);
-    Assert.That(result.AsSpan(4096, 9).SequenceEqual(NssHeaders.NssVolumeMagic), Is.True);
-    Assert.That(result.AsSpan(8192, 8).SequenceEqual(NssHeaders.NssSuperblockMagic), Is.True);
+    image.Position = 0;
+    Assert.That(new NssVolume(image).Valid, Is.True, "the container header must survive");
 
     image.Position = 0;
     var volume = new NssVolume(image);

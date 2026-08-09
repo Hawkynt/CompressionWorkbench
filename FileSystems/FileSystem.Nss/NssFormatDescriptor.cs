@@ -58,8 +58,12 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "NSS Pool" — 8 ASCII bytes; offset 0 with a free-form-scan tolerance.
-    // Confidence 0.70 reflects the RE-derived layout caveat.
+    // Confidence 0.70 reflects the RE-derived layout caveat. This finds a real
+    // pool, which is read for its anchors and nothing more.
     new(NssHeaders.NssPoolMagic, Offset: 0, Confidence: 0.70),
+    // The container written here, which carries no NSS anchor precisely so that
+    // it is never taken for a pool. Its own magic is what identifies it.
+    new(NssLayout.ContainerMagic, Offset: (int)NssLayout.ContainerMagicOffset, Confidence: 0.95),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
