@@ -82,7 +82,10 @@ public sealed class Component {
 /// </list>
 /// <para>
 /// The VM also manages an array of context-mixing components (CM, ICM, MATCH, etc.)
-/// whose predictions are combined by an arithmetic coder to encode/decode data.
+/// and combines their predictions into a single probability for the next bit. Coding
+/// that bit against the probability is the job of <see cref="ZpaqRangeEncoder"/> and
+/// <see cref="ZpaqRangeDecoder"/>, which are deliberately separate: the VM decides
+/// what the odds are, the coder turns them into bytes.
 /// </para>
 /// </remarks>
 public sealed class ZpaqlVm {
@@ -111,11 +114,6 @@ public sealed class ZpaqlVm {
   // ── Context-mixing components ──────────────────────────────────────────────
 
   private readonly Component[] _components;
-
-  // ── Arithmetic coder state ─────────────────────────────────────────────────
-
-  private uint _x1; // lower bound of range
-  private uint _x2; // upper bound of range
 
   // ── Squash / stretch tables for probability mapping ────────────────────────
 
@@ -147,9 +145,6 @@ public sealed class ZpaqlVm {
     _m = new byte[mSize];
     _hMask = hSize - 1;
     _mMask = mSize - 1;
-
-    _x1 = 0;
-    _x2 = 0xFFFFFFFF;
 
     InitComponents();
   }
@@ -227,9 +222,6 @@ public sealed class ZpaqlVm {
     _hMask = hSize - 1;
     _mMask = mSize - 1;
 
-    _x1 = 0;
-    _x2 = 0xFFFFFFFF;
-
     InitComponents();
   }
 
@@ -297,10 +289,15 @@ public sealed class ZpaqlVm {
 
   /// <summary>
   /// Computes a combined prediction from all components.
-  /// Returns a probability in the range 0..65535, where 65535 means
-  /// the next bit is certainly 1, and 0 means certainly 0.
   /// </summary>
-  /// <returns>Combined prediction (0..65535).</returns>
+  /// <remarks>
+  /// The components are averaged with equal weight, in ascending component order,
+  /// and the sum is divided with truncation towards zero. Both the order and the
+  /// rounding are part of the coded stream, so neither may be left to a container's
+  /// enumeration order. The result is clamped into the range the range coder accepts,
+  /// so that both of its subranges stay non-empty; see <see cref="ZpaqRangeCoder"/>.
+  /// </remarks>
+  /// <returns>Probability that the next bit is 1, in the range 1..65535.</returns>
   public int Predict() {
     if (_components.Length == 0)
       return 32768; // 50% if no components
@@ -309,16 +306,17 @@ public sealed class ZpaqlVm {
     // A full implementation would use the mixer components (MIX, MIX2)
     // from the COMP section for weighted mixing.
     long sum = 0;
-    var count = 0;
 
     for (var i = 0; i < _components.Length; i++) {
       var comp = _components[i];
       UpdateComponentPrediction(comp, i);
       sum += comp.Prediction;
-      count++;
     }
 
-    return count > 0 ? (int)Math.Clamp(sum / count, 0, 65535) : 32768;
+    return (int)Math.Clamp(
+      sum / _components.Length,
+      ZpaqRangeCoder.MinimumProbability,
+      ZpaqRangeCoder.MaximumProbability);
   }
 
   /// <summary>
@@ -331,8 +329,8 @@ public sealed class ZpaqlVm {
   }
 
   /// <summary>
-  /// Resets the VM state (registers, arrays, arithmetic coder) without
-  /// changing the program or component configuration.
+  /// Resets the VM state (registers, arrays, components) without changing the
+  /// program or component configuration.
   /// </summary>
   public void Reset() {
     _a = _b = _c = _d = 0;
@@ -340,99 +338,8 @@ public sealed class ZpaqlVm {
     Array.Clear(_r);
     Array.Clear(_h);
     Array.Clear(_m);
-    _x1 = 0;
-    _x2 = 0xFFFFFFFF;
 
     InitComponents();
-  }
-
-  // ── Arithmetic coder ───────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Gets the current arithmetic coder lower bound.
-  /// </summary>
-  public uint ArithLow => _x1;
-
-  /// <summary>
-  /// Gets the current arithmetic coder upper bound.
-  /// </summary>
-  public uint ArithHigh => _x2;
-
-  /// <summary>
-  /// Scales a 16-bit probability of 1 down to the 15-bit weight the split point
-  /// is computed from, keeping it strictly inside the open interval.
-  /// </summary>
-  /// <remarks>
-  /// Clamping the incoming prediction to 1..65534 is not by itself enough: the
-  /// halving takes 1 down to 0, which puts the split exactly on x1, so coding a
-  /// 1 bit would set x2 = x1 and leave an interval of zero width that can no
-  /// longer distinguish anything. Keeping the weight in 1..32767 makes both
-  /// subranges non-empty. No prediction the shipped models produce reaches that
-  /// value - a 64-case fuzz over the block round-trips cleanly either way - so
-  /// this closes a degenerate state rather than a reproduced failure.
-  /// </remarks>
-  /// <param name="prediction">Probability of 1, nominally 1..65534.</param>
-  /// <returns>A weight in 1..32767.</returns>
-  private static uint ScaleProbability(int prediction)
-    => (uint)Math.Clamp(Math.Clamp(prediction, 1, 65534) >> 1, 1, 32767);
-
-  /// <summary>
-  /// Encodes a single bit using the arithmetic coder with the given prediction.
-  /// </summary>
-  /// <param name="bit">The bit to encode (0 or 1).</param>
-  /// <param name="prediction">Probability of 1, in range 1..65534.</param>
-  /// <param name="output">Action called with each output byte.</param>
-  public void ArithEncode(int bit, int prediction, Action<byte> output) {
-    var range = _x2 - _x1;
-    var split = _x1 + (uint)(((ulong)range * ScaleProbability(prediction)) / 32768);
-
-    // The subrange below the split is proportional to the prediction, so it is
-    // the one a 1 bit must take: the likelier a 1 is, the fewer bits coding it
-    // costs. Assigning it the other way round would make every confident
-    // prediction expensive and the coder would inflate rather than compress.
-    if (bit != 0)
-      _x2 = split;
-    else
-      _x1 = split + 1;
-
-    // Normalize: emit matching high bytes.
-    while ((_x1 ^ _x2) < 0x01000000U) {
-      output((byte)(_x1 >> 24));
-      _x1 <<= 8;
-      _x2 = (_x2 << 8) | 0xFF;
-    }
-  }
-
-  /// <summary>
-  /// Decodes a single bit using the arithmetic coder with the given prediction.
-  /// </summary>
-  /// <param name="prediction">Probability of 1, in range 1..65534.</param>
-  /// <param name="code">Current 32-bit code value from the compressed stream.</param>
-  /// <param name="readByte">Function to read the next byte from the compressed stream (-1 on EOF).</param>
-  /// <returns>The decoded bit (0 or 1) and the updated code value.</returns>
-  public (int Bit, uint Code) ArithDecode(int prediction, uint code, Func<int> readByte) {
-    var range = _x2 - _x1;
-    var split = _x1 + (uint)(((ulong)range * ScaleProbability(prediction)) / 32768);
-
-    // Mirror of ArithEncode: the subrange below the split belongs to a 1 bit.
-    int bit;
-    if (code <= split) {
-      bit = 1;
-      _x2 = split;
-    } else {
-      bit = 0;
-      _x1 = split + 1;
-    }
-
-    // Normalize: shift out matching high bytes.
-    while ((_x1 ^ _x2) < 0x01000000U) {
-      _x1 <<= 8;
-      _x2 = (_x2 << 8) | 0xFF;
-      var b = readByte();
-      code = (code << 8) | (uint)(b < 0 ? 0 : b);
-    }
-
-    return (bit, code);
   }
 
   // ── Bytecode execution ─────────────────────────────────────────────────────
@@ -940,7 +847,12 @@ public sealed class ZpaqlVm {
         if (comp.Memory.Length > 0) {
           var ctx = comp.Context % comp.Memory.Length;
           var p = comp.Memory[ctx];
-          // Adapt towards the observed bit.
+          // Adapt towards the observed bit by a fixed fraction of the remaining
+          // error. The shift is arithmetic, so the step is the error divided by
+          // 2^rate rounded towards negative infinity — that asymmetry is what
+          // lets a counter reach 0 exactly while it only approaches 65535, and
+          // it is part of the coded stream, so it must be reproduced as a floor
+          // division rather than a truncating one.
           var target = bit != 0 ? 65535 : 0;
           var rate = Math.Max(comp.Param2, 2); // learning rate
           comp.Memory[ctx] = p + ((target - p) >> rate);
