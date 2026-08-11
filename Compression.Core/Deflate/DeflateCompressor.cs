@@ -157,9 +157,14 @@ public sealed class DeflateCompressor {
 
     litLenFreqs[DeflateConstants.EndOfBlock] = 1; // EOB
 
-    // Estimate uncompressed block cost: 3 header bits + 5-byte per sub-block header + raw bytes
+    // Estimate uncompressed block cost: 3 header bits + 5-byte per sub-block header + raw bytes.
+    // Taken in 64-bit. A 32-bit product would wrap for a 2^28-byte block, and the
+    // wrapped negative estimate would make an uncompressed block look cheaper than
+    // any Huffman-coded one. Write and Finish never hand this method more than
+    // DefaultBlockSize (32768, or 131072 at Maximum level) bytes, so the wrap is
+    // not reachable today; the width keeps it that way if the block size changes.
     var numSubBlocks = Math.Max(1, (dataArray.Length + DeflateCompressor.MaxBlockSize - 1) / DeflateCompressor.MaxBlockSize);
-    var uncompressedBits = 3 + numSubBlocks * 5 * 8 + dataArray.Length * 8;
+    var uncompressedBits = 3L + (long)numSubBlocks * 5 * 8 + (long)dataArray.Length * 8;
 
     if (this._level == DeflateCompressionLevel.Fast) {
       // Compare static Huffman vs uncompressed
