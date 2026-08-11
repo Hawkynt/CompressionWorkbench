@@ -1,9 +1,24 @@
+using System.Text;
 using Compression.Core.Dictionary.Lzma;
 
 namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class Lzma2Tests {
+  /// <summary>
+  /// An LZMA2 stream (4 KiB dictionary) of 33 chunks: the first resets everything
+  /// (control byte reset level 3), every following one continues the probability model,
+  /// the state machine and the rep distances (reset level 0). Decoding it needs the whole
+  /// coder state — not just the dictionary — to survive the chunk boundaries.
+  /// </summary>
+  private const string ContinuedStateChunks =
+    "4AA/ADldADYaSh8IoCZWTg1sfgZaDoMuBpJ2Bq4THYZrHCMn5R9myhAg1a6v1mS97jwhjaJdlLSAva9PnewAAIAAPwAIANyJBpe6+8AAgAA/AA" +
+    "gA2m48iecRYECAAD8ACADYErFu39YBAIAAPwAJAM9cBxIayEHYAIAAPwAHANYMzSmMJgCAAD8ABwDT3POLt5UVgAA/AAcA0OyYYYOYFoAAPwAJ" +
+    "AMlj8nW5smEAAIAAPwALANEvj1WPOQ30zP7ggAA/AAkA2Z8qEPXsf9esgAA/AAkA1yJT2k0zQyaggAA/AAkA1GH9SxGf8HnAgAA/AAgAzRo6sG" +
+    "xmsVqAAD8ACgAfWk/fUwKwUt/AgAA/AAkA1JTXvnYs5LkAgAA/AAcA0ZcnGX/P8YAAPwAHAMqrLcyMdJKAAD8ACAC9487sdNPPAIAAPwAHANs0" +
+    "BYlhToaAAD8ABwDLPTzX6pkggAA/AAcAxoIwDWFFAIAAPwAHAMBkSAj6twCAAD8ACACu5UDcXhQAAIAAPwAGAMtXHPLsLoAAPwAHAMXu1K5jXA" +
+    "CAAD8ABgC/CjuJws+AAD8ABgC00llpaSCAAD8ACACf6s8e/yBsAIAAPwAGAMdHy6l2lIAAPwAGAL9VExZWOYAAPwAGALWmynx6YIAAPQAGAKay" +
+    "CNvOPAA=";
   [Category("EdgeCase")]
   [Category("RoundTrip")]
   [Test]
@@ -207,6 +222,51 @@ public class Lzma2Tests {
     var data = new byte[8192];
     var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
+  }
+
+  [Category("Boundary")]
+  [Category("HappyPath")]
+  [Test]
+  public void Decode_ChunksContinuingCoderState() {
+    var text = new StringBuilder();
+    for (var i = 0; i < 40; ++i)
+      text.Append($"line {i}: the quick brown fox jumps over the lazy dog\n");
+
+    var expected = Encoding.ASCII.GetBytes(text.ToString());
+    var stream = Convert.FromBase64String(Lzma2Tests.ContinuedStateChunks);
+
+    // Given: a stream whose chunks ask for no reset at all
+    var continuedChunks = CountChunksByResetLevel(stream);
+    Assert.That(continuedChunks[0], Is.GreaterThan(8), "vector must exercise reset level 0");
+    Assert.That(continuedChunks[3], Is.EqualTo(1), "vector must start with a full reset");
+
+    // When/Then: it decodes to the original bytes
+    using var ms = new MemoryStream(stream);
+    var result = new Lzma2Decoder(ms, 4096).Decode();
+    Assert.That(result, Is.EqualTo(expected));
+  }
+
+  /// <summary>Counts the LZMA chunks of an LZMA2 stream per control-byte reset level.</summary>
+  private static int[] CountChunksByResetLevel(byte[] stream) {
+    var counts = new int[4];
+    var pos = 0;
+    while (pos < stream.Length) {
+      var control = stream[pos++];
+      if (control == 0x00)
+        break;
+
+      if (control <= 0x02) {
+        pos += 2 + ((stream[pos] << 8) | stream[pos + 1]) + 1;
+        continue;
+      }
+
+      var level = (control >> 5) & 0x03;
+      ++counts[level];
+      var packedSize = ((stream[pos + 2] << 8) | stream[pos + 3]) + 1;
+      pos += 4 + (level >= 2 ? 1 : 0) + packedSize;
+    }
+
+    return counts;
   }
 
   [Category("Exception")]
