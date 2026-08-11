@@ -862,8 +862,13 @@ public static class XfsInPlaceAdder {
     if (format == 2)
       FreeDirInodeBlocks(image, geo, ioff, crc);
 
-    // Sort children deterministically (directories before files, then by name).
-    entries.Sort((a, b) => a.Name.CompareTo(b.Name));
+    // Sort children by name, ordinally. string.CompareTo compares under the current culture,
+    // which makes the on-disk entry order depend on the machine's locale and ICU version, and
+    // which can rank two different names equal when they differ only in characters the culture
+    // ignores - and List.Sort, being an unstable introsort, would then place those two entries in
+    // whichever order it happened to leave them. Ordinal comparison ranks distinct names
+    // distinctly, so the directory image is a function of the entry set alone.
+    entries.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
 
     if (FitsShortForm(geo, entries) && AllInos32Bit(parentIno, entries)) {
       WriteShortFormDir(image, geo, ioff, parentIno, entries);
