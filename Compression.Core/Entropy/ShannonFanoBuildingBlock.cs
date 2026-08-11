@@ -54,9 +54,19 @@ public sealed class ShannonFanoBuildingBlock : IBuildingBlock {
     if (data.Length == 0)
       return ms.ToArray();
 
-    // Build codes from original (unscaled) frequencies for encoding.
+    // Build the codes from the table that was actually written, never from the
+    // raw counts. Once the largest count exceeds ushort.MaxValue the table is
+    // rescaled, and the rescaled values are all the decoder will ever see;
+    // deriving the encoder's codes from the raw counts gives the two sides
+    // different split points, so the stream decodes to garbage of exactly the
+    // right length without anything throwing. Below the scaling point the two
+    // tables are equal, so this leaves existing output byte-for-byte unchanged.
+    var tableFreq = new int[256];
+    for (var i = 0; i < 256; i++)
+      tableFreq[i] = scaledFreq[i];
+
     var codes = new (uint code, int length)[256];
-    BuildCodes(freq, codes);
+    BuildCodes(tableFreq, codes);
 
     // Write packed bitstream.
     var writer = new BitWriter(ms);
