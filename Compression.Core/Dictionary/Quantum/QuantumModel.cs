@@ -1,15 +1,18 @@
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Adaptive symbol frequency model for the Quantum compression format.
-/// Tracks per-symbol counts and maintains cumulative frequency tables that
-/// update as symbols are processed, with periodic rescaling when the total
-/// frequency exceeds <see cref="QuantumConstants.RescaleThreshold"/>.
+/// Adaptive symbol frequency model driving the Quantum arithmetic coder.
 /// </summary>
+/// <remarks>
+/// Every symbol starts with frequency 1. Observing a symbol adds
+/// <see cref="QuantumConstants.ModelIncrement"/> to its frequency; once the total
+/// exceeds the configured maximum every frequency is halved (never below 1), which
+/// both bounds the total and lets the model track changing statistics.
+/// </remarks>
 internal sealed class QuantumModel {
   private readonly int[] _freq;
-  private readonly int[] _cumFreq;
-  private readonly int _rescaleThreshold;
+  private readonly int _increment;
+  private readonly int _maxTotal;
 
   /// <summary>Gets the number of symbols in this model.</summary>
   public int NumSymbols { get; }
@@ -21,85 +24,86 @@ internal sealed class QuantumModel {
   /// Initializes a new <see cref="QuantumModel"/> with uniform initial frequencies.
   /// </summary>
   /// <param name="numSymbols">The number of symbols in the alphabet.</param>
-  /// <param name="rescaleThreshold">
-  /// The total frequency at which the model rescales. Defaults to
-  /// <see cref="QuantumConstants.RescaleThreshold"/> (3800) for decoding
-  /// real Quantum data. Use a lower value (e.g. 256) when the range coder's
-  /// minimum range is smaller than the threshold to prevent zero-width symbols.
-  /// </param>
-  public QuantumModel(int numSymbols, int rescaleThreshold = QuantumConstants.RescaleThreshold) {
+  /// <param name="maxTotal">The total frequency at which all counts are halved.</param>
+  /// <param name="increment">The amount added to a symbol's frequency when observed.</param>
+  public QuantumModel(
+    int numSymbols,
+    int maxTotal = QuantumConstants.ModelMaxTotal,
+    int increment = QuantumConstants.ModelIncrement) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(numSymbols, 1, nameof(numSymbols));
+    ArgumentOutOfRangeException.ThrowIfLessThan(maxTotal, numSymbols, nameof(maxTotal));
+    ArgumentOutOfRangeException.ThrowIfLessThan(increment, 1, nameof(increment));
+
     this.NumSymbols = numSymbols;
-    this._rescaleThreshold = rescaleThreshold;
+    this._increment = increment;
+    this._maxTotal = maxTotal;
     this._freq = new int[numSymbols];
-    this._cumFreq = new int[numSymbols + 1];
-
-    for (var i = 0; i < numSymbols; ++i)
-      this._freq[i] = 1;
-
+    Array.Fill(this._freq, 1);
     this.TotalFrequency = numSymbols;
-    this.RebuildCumulative();
   }
 
-  /// <summary>
-  /// Gets the cumulative frequency for a symbol (lower bound of its range).
-  /// </summary>
-  /// <param name="symbol">The symbol index.</param>
-  /// <returns>The cumulative frequency.</returns>
-  public int GetCumulativeFrequency(int symbol) => this._cumFreq[symbol];
-
-  /// <summary>
-  /// Gets the frequency of a symbol.
-  /// </summary>
+  /// <summary>Gets the frequency of a symbol.</summary>
   /// <param name="symbol">The symbol index.</param>
   /// <returns>The symbol frequency.</returns>
   public int GetFrequency(int symbol) => this._freq[symbol];
 
   /// <summary>
-  /// Looks up a symbol from a scaled cumulative count.
+  /// Gets the sum of the frequencies of all symbols below <paramref name="symbol"/>,
+  /// which is the lower bound of that symbol's coding sub-range.
   /// </summary>
-  /// <param name="count">The scaled count (0 &lt;= count &lt; TotalFrequency).</param>
-  /// <returns>The symbol index.</returns>
-  public int FindSymbol(int count) {
-    // Binary search for the symbol whose cumulative range contains count
-    int lo = 0, hi = this.NumSymbols - 1;
-    while (lo < hi) {
-      var mid = (lo + hi) >> 1;
-      if (this._cumFreq[mid + 1] <= count)
-        lo = mid + 1;
-      else
-        hi = mid;
-    }
-    return lo;
+  /// <param name="symbol">The symbol index.</param>
+  /// <returns>The cumulative frequency below the symbol.</returns>
+  public int CumulativeBelow(int symbol) {
+    var sum = 0;
+    for (var i = 0; i < symbol; ++i)
+      sum += this._freq[i];
+
+    return sum;
   }
 
   /// <summary>
-  /// Updates the model after decoding a symbol, incrementing its frequency
-  /// and rescaling if the total exceeds the threshold.
+  /// Finds the symbol whose sub-range contains a scaled cumulative count, by scanning
+  /// upwards from symbol 0 so that the result is fully determined by the frequencies.
   /// </summary>
-  /// <param name="symbol">The decoded symbol.</param>
-  public void Update(int symbol) {
-    ++this._freq[symbol];
-    ++this.TotalFrequency;
+  /// <param name="scaled">The scaled count (0 &lt;= scaled &lt; TotalFrequency).</param>
+  /// <param name="cumulativeBelow">Receives the cumulative frequency below the symbol.</param>
+  /// <returns>The symbol index.</returns>
+  /// <exception cref="InvalidDataException">The count lies outside the model's range.</exception>
+  public int FindSymbol(int scaled, out int cumulativeBelow) {
+    var cumulative = 0;
+    for (var symbol = 0; symbol < this.NumSymbols; ++symbol) {
+      var frequency = this._freq[symbol];
+      if (cumulative + frequency > scaled) {
+        cumulativeBelow = cumulative;
+        return symbol;
+      }
 
-    if (this.TotalFrequency >= this._rescaleThreshold)
-      this.Rescale();
-    else
-      this.RebuildCumulative();
-  }
-
-  private void Rescale() {
-    this.TotalFrequency = 0;
-    for (var i = 0; i < this.NumSymbols; ++i) {
-      this._freq[i] = (this._freq[i] + 1) >> 1; // halve, minimum 1
-      this.TotalFrequency += this._freq[i];
+      cumulative += frequency;
     }
 
-    this.RebuildCumulative();
+    throw new InvalidDataException(
+      $"Scaled count {scaled} is outside the model's total frequency {this.TotalFrequency}.");
   }
 
-  private void RebuildCumulative() {
-    this._cumFreq[0] = 0;
-    for (var i = 0; i < this.NumSymbols; ++i)
-      this._cumFreq[i + 1] = this._cumFreq[i] + this._freq[i];
+  /// <summary>
+  /// Updates the model after coding a symbol, incrementing its frequency and halving
+  /// all frequencies once the total exceeds the configured maximum.
+  /// </summary>
+  /// <param name="symbol">The coded symbol.</param>
+  public void Update(int symbol) {
+    this._freq[symbol] += this._increment;
+    this.TotalFrequency += this._increment;
+
+    if (this.TotalFrequency <= this._maxTotal)
+      return;
+
+    var total = 0;
+    for (var i = 0; i < this.NumSymbols; ++i) {
+      var halved = this._freq[i] / 2;
+      this._freq[i] = halved == 0 ? 1 : halved;
+      total += this._freq[i];
+    }
+
+    this.TotalFrequency = total;
   }
 }

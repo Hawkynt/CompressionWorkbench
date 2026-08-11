@@ -1,52 +1,39 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
-
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Decompresses data encoded with the Quantum algorithm (used in Microsoft CAB files).
+/// Decompresses data produced by <see cref="QuantumCompressor"/>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Quantum is an LZ77-based format that uses a 16-bit byte-aligned range coder
-/// with adaptive frequency models. It supports window sizes from 1 KB to 2 MB
-/// (levels 1–7).
-/// </para>
-/// <para>Key structures:</para>
-/// <list type="bullet">
-///   <item>A <b>selector model</b> (7 symbols) determines the next action:
-///     literal (0), match with base length 4–7 (selectors 1–4),
-///     match with base length 12 (selector 5), or match with base length 24 (selector 6).</item>
-///   <item>A <b>literal model</b> (256 symbols) decodes byte values.</item>
-///   <item>Five <b>length models</b> (27 symbols each) provide extra length
-///     values added to the base length for each match type.</item>
-///   <item>Match offsets are read as raw bits (log2 of window size).</item>
-/// </list>
+/// The stream carries no end marker, so the caller supplies the uncompressed size and
+/// decoding stops once that many bytes have been produced.
 /// </remarks>
 public static class QuantumDecompressor {
   /// <summary>
   /// Decompresses a single Quantum-compressed block.
   /// </summary>
-  /// <param name="compressed">The compressed input data.</param>
+  /// <param name="compressed">The compressed input data, without any length header.</param>
   /// <param name="uncompressedSize">The expected uncompressed output size in bytes.</param>
   /// <param name="windowLevel">
-  /// Window level (1–7). The window size is 1024 &lt;&lt; (level - 1).
+  /// Window level (1–7); must match the level used to compress. The window size is
+  /// 1024 &lt;&lt; (level − 1).
+  /// </param>
+  /// <param name="modelMaxTotal">
+  /// The total frequency at which the adaptive models halve their counts; must match
+  /// the value used to compress.
   /// </param>
   /// <returns>The decompressed data.</returns>
   /// <exception cref="ArgumentOutOfRangeException">
   /// Thrown when <paramref name="windowLevel"/> is outside the valid range [1, 7],
   /// or when <paramref name="uncompressedSize"/> is negative.
   /// </exception>
-  /// <param name="rescaleThreshold">
-  /// The adaptive model rescale threshold. Use <see cref="QuantumConstants.RescaleThreshold"/>
-  /// (default) for standard Quantum data, or <see cref="QuantumConstants.CompressorRescaleThreshold"/>
-  /// for data produced by <see cref="QuantumCompressor"/>.
-  /// </param>
   /// <exception cref="InvalidDataException">
   /// Thrown when the compressed data is malformed.
   /// </exception>
-  public static byte[] Decompress(ReadOnlySpan<byte> compressed, int uncompressedSize, int windowLevel,
-    int rescaleThreshold = QuantumConstants.RescaleThreshold) {
+  public static byte[] Decompress(
+    ReadOnlyMemory<byte> compressed,
+    int uncompressedSize,
+    int windowLevel,
+    int modelMaxTotal = QuantumConstants.ModelMaxTotal) {
     ArgumentOutOfRangeException.ThrowIfNegative(uncompressedSize);
     ArgumentOutOfRangeException.ThrowIfLessThan(windowLevel, QuantumConstants.MinWindowLevel, nameof(windowLevel));
     ArgumentOutOfRangeException.ThrowIfGreaterThan(windowLevel, QuantumConstants.MaxWindowLevel, nameof(windowLevel));
@@ -54,97 +41,46 @@ public static class QuantumDecompressor {
     if (uncompressedSize == 0)
       return [];
 
-    var windowSize = QuantumConstants.WindowSize(windowLevel);
-    var window = new byte[windowSize];
-    var windowMask = windowSize - 1;
-    var windowPos = 0;
+    var decoder = new QuantumRangeDecoder(compressed);
+
+    var literalModels = new QuantumModel[QuantumConstants.StateCount];
+    var matchFlagModels = new QuantumModel[QuantumConstants.StateCount];
+    for (var state = 0; state < QuantumConstants.StateCount; ++state) {
+      literalModels[state] = new QuantumModel(QuantumConstants.LiteralSymbols, modelMaxTotal);
+      matchFlagModels[state] = new QuantumModel(2, modelMaxTotal);
+    }
+
+    var lengthSlotModel = new QuantumModel(QuantumConstants.SlotSymbols, modelMaxTotal);
+    var distanceSlotModel = new QuantumModel(QuantumConstants.SlotSymbols, modelMaxTotal);
 
     var output = new byte[uncompressedSize];
-    var outputPos = 0;
+    var produced = 0;
+    var currentState = 0;
 
-    // Calculate offset bit count from window size
-    var offsetBits = 0;
-    for (var ws = windowSize; ws > 1; ws >>= 1)
-      ++offsetBits;
-
-    // Initialize range decoder
-    var decoder = new QuantumRangeDecoder(compressed.ToArray());
-
-    // Create adaptive models
-    var selectorModel = new QuantumModel(QuantumConstants.SelectorSymbols, rescaleThreshold);
-    var literalModel = new QuantumModel(QuantumConstants.LiteralSymbols, rescaleThreshold);
-    var lenModel4 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
-    var lenModel5 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
-    var lenModel6 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
-    var lenModel7 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
-    var lenModelLong = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
-
-    while (outputPos < uncompressedSize) {
-      var selector = decoder.DecodeSymbol(selectorModel);
-
-      switch (selector) {
-        case 0: {
-          // Literal byte
-          var lit = decoder.DecodeSymbol(literalModel);
-          var b = (byte)lit;
-          output[outputPos] = b;
-          window[windowPos & windowMask] = b;
-          ++windowPos;
-          ++outputPos;
-          break;
-        }
-
-        case >= 1 and <= 6: {
-          // Match: pick the length model based on selector
-          var lenModel = selector switch {
-            1 => lenModel4,
-            2 => lenModel5,
-            3 => lenModel6,
-            4 => lenModel7,
-            _ => lenModelLong
-          };
-
-          var extraLen = decoder.DecodeSymbol(lenModel);
-          var baseLen = QuantumConstants.BaseMatchLength(selector);
-          var matchLen = baseLen + extraLen;
-
-          // Read offset as raw bits
-          var offset = decoder.ReadRawBits(offsetBits);
-          if (offset == 0)
-            ThrowInvalidOffset();
-
-          // Validate offset does not exceed available history
-          if (offset > windowPos)
-            ThrowInvalidOffset();
-
-          // Copy from window
-          for (var i = 0; i < matchLen; ++i) {
-            if (outputPos >= uncompressedSize)
-              break;
-            var b = window[(windowPos - offset) & windowMask];
-            output[outputPos] = b;
-            window[windowPos & windowMask] = b;
-            ++windowPos;
-            ++outputPos;
-          }
-
-          break;
-        }
-
-        default:
-          ThrowInvalidSelector();
-          break;
+    while (produced < uncompressedSize) {
+      if (decoder.DecodeSymbol(matchFlagModels[currentState]) == 0) {
+        output[produced++] = (byte)decoder.DecodeSymbol(literalModels[currentState]);
+        currentState = QuantumConstants.LiteralNextState[currentState];
+        continue;
       }
+
+      var matchLength = QuantumSlotCoding.Decode(decoder, lengthSlotModel) + QuantumConstants.MinMatch - 1;
+      var distance = QuantumSlotCoding.Decode(decoder, distanceSlotModel);
+
+      if (distance > produced)
+        throw new InvalidDataException(
+          $"Quantum match distance {distance} exceeds the {produced} bytes decoded so far.");
+      if (matchLength > uncompressedSize - produced)
+        throw new InvalidDataException(
+          $"Quantum match of {matchLength} bytes overruns the declared size {uncompressedSize}.");
+
+      // Byte by byte, because a match may overlap itself — that is how runs are coded.
+      for (var source = produced - (int)distance; matchLength > 0; --matchLength)
+        output[produced++] = output[source++];
+
+      currentState = QuantumConstants.MatchNextState[currentState];
     }
 
     return output;
   }
-
-  [DoesNotReturn, MethodImpl(MethodImplOptions.NoInlining)]
-  private static void ThrowInvalidOffset() =>
-    throw new InvalidDataException("Quantum: invalid match offset.");
-
-  [DoesNotReturn, MethodImpl(MethodImplOptions.NoInlining)]
-  private static void ThrowInvalidSelector() =>
-    throw new InvalidDataException("Quantum: invalid selector symbol.");
 }

@@ -1,14 +1,18 @@
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Constants for the Quantum compression format (used in Microsoft CAB files).
+/// Constants shared by the Quantum compressor and decompressor.
 /// </summary>
+/// <remarks>
+/// Every value here is part of the wire format: encoder and decoder must agree on
+/// all of them, and so must any other implementation that wants to read the output.
+/// </remarks>
 internal static class QuantumConstants {
-  /// <summary>Maximum window level (1 through 7).</summary>
-  public const int MaxWindowLevel = 7;
-
   /// <summary>Minimum window level.</summary>
   public const int MinWindowLevel = 1;
+
+  /// <summary>Maximum window level (1 through 7).</summary>
+  public const int MaxWindowLevel = 7;
 
   /// <summary>
   /// Returns the window size in bytes for a given level (1-based).
@@ -21,40 +25,35 @@ internal static class QuantumConstants {
   /// <summary>Number of literal symbols (0–255).</summary>
   public const int LiteralSymbols = 256;
 
-  /// <summary>
-  /// Number of selector symbols.
-  /// 0 = literal, 1–4 = match with base length 4–7, 5 = match base 12, 6 = match base 24.
-  /// </summary>
-  public const int SelectorSymbols = 7;
+  /// <summary>Number of coding states in the literal/match context selector.</summary>
+  public const int StateCount = 7;
 
-  /// <summary>Number of length symbols for each match length model.</summary>
-  public const int MatchLengthSymbols = 27;
+  /// <summary>State transition after coding a literal, indexed by the current state.</summary>
+  public static readonly int[] LiteralNextState = [0, 0, 0, 1, 2, 3, 4];
 
-  /// <summary>Maximum match length (base 24 + 26 extra = 50, or higher for other selectors).</summary>
-  public const int MaxMatchLength = 50;
+  /// <summary>State transition after coding a match, indexed by the current state.</summary>
+  public static readonly int[] MatchNextState = [4, 5, 6, 6, 6, 6, 6];
 
-  /// <summary>
-  /// Returns the minimum (base) match length for a selector value (1–6).
-  /// </summary>
-  /// <param name="selector">The selector symbol (1–6).</param>
-  /// <returns>The base match length.</returns>
-  public static int BaseMatchLength(int selector) => selector switch {
-    1 => 4,
-    2 => 5,
-    3 => 6,
-    4 => 7,
-    5 => 12,
-    6 => 24,
-    _ => throw new ArgumentOutOfRangeException(nameof(selector))
-  };
+  /// <summary>Shortest run of bytes the match finder will encode as a match.</summary>
+  public const int MinMatch = 3;
 
-  /// <summary>Rescale threshold for adaptive frequency models (standard Quantum format).</summary>
-  public const int RescaleThreshold = 3800;
+  /// <summary>Maximum number of hash-chain candidates examined per position.</summary>
+  public const int MaxMatchChain = 64;
 
   /// <summary>
-  /// Rescale threshold used by the compressor. Must be ≤ 256 (the minimum range
-  /// after normalization in the 16-bit range coder) to prevent zero-width symbol
-  /// ranges that cause encoder/decoder desynchronization.
+  /// Number of symbols in the magnitude-slot alphabet shared by the match length and
+  /// match distance models. A slot is the bit length of the value being coded, so 40
+  /// slots cover magnitudes far beyond any representable input.
   /// </summary>
-  internal const int CompressorRescaleThreshold = 256;
+  public const int SlotSymbols = 40;
+
+  /// <summary>Amount added to a symbol's frequency each time the model observes it.</summary>
+  public const int ModelIncrement = 24;
+
+  /// <summary>
+  /// Total frequency at which an adaptive model halves all counts. Chosen so that the
+  /// 32-bit arithmetic coder's range always stays far larger than the total frequency,
+  /// which is what keeps every symbol's sub-range non-empty.
+  /// </summary>
+  public const int ModelMaxTotal = 1 << 14;
 }

@@ -5,15 +5,15 @@ namespace FileFormat.Rzip;
 /// <summary>
 /// Exposes rzip as a benchmarkable building block.
 /// Produces a complete rzip stream — "RZIP" signature, version, the big-endian
-/// original size and the bzip2-compressed token chunks — so the payload is
-/// self-terminating and no extra uncompressed-size header is prepended.
+/// original size and the token stream — so the payload carries its own length and
+/// no extra uncompressed-size header is prepended.
 /// </summary>
 /// <remarks>
 /// Two-stage design after Andrew Tridgell, "Efficient Algorithms for Sorting and
 /// Synchronization" (PhD thesis, 1999), chapter 3: a rolling checksum indexes the
-/// whole input so LZ77-style matches can reach arbitrarily far back, well past a
-/// classic 32K/64K window, and the residual literal/match token stream is then
-/// handed to bzip2. The concrete on-disk layout is documented on
+/// whole input so matches can reach arbitrarily far back, well past a classic
+/// 32K/64K window, and the residual literals are then entropy coded. The concrete
+/// layout, and how it differs from upstream rzip, is documented on
 /// <see cref="RzipStream"/>.
 /// </remarks>
 public sealed class RzipBuildingBlock : IBuildingBlock {
@@ -22,7 +22,7 @@ public sealed class RzipBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "rzip";
   /// <inheritdoc/>
-  public string Description => "Long-range rolling-hash match elimination over the whole input, followed by bzip2";
+  public string Description => "Long-range rolling-hash match elimination over the whole input, with order-0 coded literals";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 

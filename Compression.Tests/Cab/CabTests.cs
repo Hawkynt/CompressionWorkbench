@@ -261,7 +261,7 @@ public sealed class CabTests {
 
   private static CabReader OpenCabQuantum(byte[] data) =>
     new(new MemoryStream(data), leaveOpen: false,
-      quantumRescaleThreshold: QuantumConstants.CompressorRescaleThreshold);
+      quantumModelMaxTotal: QuantumConstants.ModelMaxTotal);
 
   [Category("HappyPath")]
   [Category("RoundTrip")]

@@ -9,18 +9,6 @@ public class QuantumTests {
   // -------------------------------------------------------------------------
 
   [Category("ThemVsUs")]
-  [Test]
-  public void WindowSize_Level1_Returns1024() {
-    Assert.That(QuantumConstants.WindowSize(1), Is.EqualTo(1024));
-  }
-
-  [Category("ThemVsUs")]
-  [Test]
-  public void WindowSize_Level7_Returns64KB() {
-    Assert.That(QuantumConstants.WindowSize(7), Is.EqualTo(65536));
-  }
-
-  [Category("ThemVsUs")]
   [TestCase(1, 1024)]
   [TestCase(2, 2048)]
   [TestCase(3, 4096)]
@@ -32,22 +20,15 @@ public class QuantumTests {
     Assert.That(QuantumConstants.WindowSize(level), Is.EqualTo(expected));
   }
 
-  [Category("ThemVsUs")]
-  [TestCase(1, 4)]
-  [TestCase(2, 5)]
-  [TestCase(3, 6)]
-  [TestCase(4, 7)]
-  [TestCase(5, 12)]
-  [TestCase(6, 24)]
-  public void BaseMatchLength_ValidSelectors(int selector, int expected) {
-    Assert.That(QuantumConstants.BaseMatchLength(selector), Is.EqualTo(expected));
-  }
-
-  [Category("Exception")]
+  [Category("EdgeCase")]
   [Test]
-  public void BaseMatchLength_InvalidSelector_Throws() {
-    Assert.Throws<ArgumentOutOfRangeException>(() => QuantumConstants.BaseMatchLength(0));
-    Assert.Throws<ArgumentOutOfRangeException>(() => QuantumConstants.BaseMatchLength(7));
+  public void StateTables_CoverEveryState() {
+    Assert.Multiple(() => {
+      Assert.That(QuantumConstants.LiteralNextState, Has.Length.EqualTo(QuantumConstants.StateCount));
+      Assert.That(QuantumConstants.MatchNextState, Has.Length.EqualTo(QuantumConstants.StateCount));
+      Assert.That(QuantumConstants.LiteralNextState, Is.All.InRange(0, QuantumConstants.StateCount - 1));
+      Assert.That(QuantumConstants.MatchNextState, Is.All.InRange(0, QuantumConstants.StateCount - 1));
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -58,241 +39,257 @@ public class QuantumTests {
   [Test]
   public void Model_InitialState_UniformFrequencies() {
     var model = new QuantumModel(4);
-    Assert.That(model.NumSymbols, Is.EqualTo(4));
-    Assert.That(model.TotalFrequency, Is.EqualTo(4));
-    Assert.That(model.GetFrequency(0), Is.EqualTo(1));
-    Assert.That(model.GetFrequency(1), Is.EqualTo(1));
-    Assert.That(model.GetFrequency(2), Is.EqualTo(1));
-    Assert.That(model.GetFrequency(3), Is.EqualTo(1));
+    Assert.Multiple(() => {
+      Assert.That(model.NumSymbols, Is.EqualTo(4));
+      Assert.That(model.TotalFrequency, Is.EqualTo(4));
+      for (var symbol = 0; symbol < 4; ++symbol)
+        Assert.That(model.GetFrequency(symbol), Is.EqualTo(1));
+    });
   }
 
   [Category("HappyPath")]
   [Test]
-  public void Model_CumulativeFrequencies_AreCorrect() {
+  public void Model_CumulativeBelow_IsRunningSum() {
     var model = new QuantumModel(4);
-    Assert.That(model.GetCumulativeFrequency(0), Is.EqualTo(0));
-    Assert.That(model.GetCumulativeFrequency(1), Is.EqualTo(1));
-    Assert.That(model.GetCumulativeFrequency(2), Is.EqualTo(2));
-    Assert.That(model.GetCumulativeFrequency(3), Is.EqualTo(3));
+    Assert.Multiple(() => {
+      Assert.That(model.CumulativeBelow(0), Is.EqualTo(0));
+      Assert.That(model.CumulativeBelow(1), Is.EqualTo(1));
+      Assert.That(model.CumulativeBelow(2), Is.EqualTo(2));
+      Assert.That(model.CumulativeBelow(3), Is.EqualTo(3));
+    });
   }
 
   [Category("HappyPath")]
   [Test]
-  public void Model_Update_IncrementsFrequency() {
+  public void Model_Update_AddsTheIncrement() {
     var model = new QuantumModel(4);
     model.Update(2);
-    Assert.That(model.GetFrequency(2), Is.EqualTo(2));
-    Assert.That(model.TotalFrequency, Is.EqualTo(5));
+    Assert.Multiple(() => {
+      Assert.That(model.GetFrequency(2), Is.EqualTo(1 + QuantumConstants.ModelIncrement));
+      Assert.That(model.TotalFrequency, Is.EqualTo(4 + QuantumConstants.ModelIncrement));
+    });
   }
 
   [Category("HappyPath")]
   [Test]
-  public void Model_FindSymbol_ReturnsCorrectSymbol() {
+  public void Model_FindSymbol_ReturnsCorrectSymbolAndCumulative() {
     var model = new QuantumModel(4);
-    // Uniform: cumFreq = [0, 1, 2, 3, 4]
-    Assert.That(model.FindSymbol(0), Is.EqualTo(0));
-    Assert.That(model.FindSymbol(1), Is.EqualTo(1));
-    Assert.That(model.FindSymbol(2), Is.EqualTo(2));
-    Assert.That(model.FindSymbol(3), Is.EqualTo(3));
+    for (var scaled = 0; scaled < 4; ++scaled) {
+      var symbol = model.FindSymbol(scaled, out var cumulative);
+      Assert.Multiple(() => {
+        Assert.That(symbol, Is.EqualTo(scaled));
+        Assert.That(cumulative, Is.EqualTo(scaled));
+      });
+    }
   }
 
   [Category("HappyPath")]
   [Test]
-  public void Model_FindSymbol_AfterUpdate_ReturnsCorrectSymbol() {
+  public void Model_FindSymbol_AfterUpdate_SpansTheWiderSubRange() {
     var model = new QuantumModel(4);
-    model.Update(1); // freq = [1, 2, 1, 1], cumFreq = [0, 1, 3, 4, 5]
-    Assert.That(model.FindSymbol(0), Is.EqualTo(0));
-    Assert.That(model.FindSymbol(1), Is.EqualTo(1));
-    Assert.That(model.FindSymbol(2), Is.EqualTo(1));
-    Assert.That(model.FindSymbol(3), Is.EqualTo(2));
-    Assert.That(model.FindSymbol(4), Is.EqualTo(3));
+    model.Update(1); // freq = [1, 25, 1, 1]
+    Assert.Multiple(() => {
+      Assert.That(model.FindSymbol(0, out _), Is.EqualTo(0));
+      Assert.That(model.FindSymbol(1, out _), Is.EqualTo(1));
+      Assert.That(model.FindSymbol(25, out _), Is.EqualTo(1));
+      Assert.That(model.FindSymbol(26, out var cumulative), Is.EqualTo(2));
+      Assert.That(cumulative, Is.EqualTo(26));
+    });
+  }
+
+  [Category("Exception")]
+  [Test]
+  public void Model_FindSymbol_BeyondTotal_Throws() {
+    var model = new QuantumModel(4);
+    Assert.Throws<InvalidDataException>(() => model.FindSymbol(4, out _));
   }
 
   [Category("Boundary")]
   [Test]
-  public void Model_Rescale_OccursAtThreshold() {
+  public void Model_Rescale_KeepsTotalBoundedAndOrderingIntact() {
     var model = new QuantumModel(4);
-    // Each update adds 1 to total. Start at 4, threshold at 3800.
-    // Need 3796 updates to reach threshold.
-    for (var i = 0; i < 3796; ++i)
+    for (var i = 0; i < 5000; ++i)
       model.Update(0);
 
-    // After rescale, frequencies should be roughly halved
-    // Before rescale: freq[0] = 3797, freq[1..3] = 1 each, total = 3800
-    // After rescale: freq[0] = (3797+1)/2 = 1899, freq[1..3] = (1+1)/2 = 1 each
-    // total = 1899 + 3 = 1902
-    Assert.That(model.TotalFrequency, Is.LessThan(QuantumConstants.RescaleThreshold));
-    Assert.That(model.GetFrequency(0), Is.GreaterThan(model.GetFrequency(1)));
+    Assert.Multiple(() => {
+      Assert.That(model.TotalFrequency, Is.LessThanOrEqualTo(QuantumConstants.ModelMaxTotal));
+      Assert.That(model.GetFrequency(0), Is.GreaterThan(model.GetFrequency(1)));
+    });
   }
 
   [Category("Boundary")]
   [Test]
-  public void Model_Rescale_MinimumFrequencyIsOne() {
+  public void Model_Rescale_NeverDropsASymbolToZero() {
     var model = new QuantumModel(4);
-    // Update only symbol 0 until rescale
-    for (var i = 0; i < 3796; ++i)
+    for (var i = 0; i < 5000; ++i)
       model.Update(0);
 
-    // All symbols that were at freq 1 should still be at freq 1 after rescale
-    Assert.That(model.GetFrequency(1), Is.GreaterThanOrEqualTo(1));
-    Assert.That(model.GetFrequency(2), Is.GreaterThanOrEqualTo(1));
-    Assert.That(model.GetFrequency(3), Is.GreaterThanOrEqualTo(1));
+    Assert.Multiple(() => {
+      for (var symbol = 1; symbol < 4; ++symbol)
+        Assert.That(model.GetFrequency(symbol), Is.GreaterThanOrEqualTo(1));
+    });
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Model_LiteralAlphabet_Adapts() {
+    // The literal alphabet is the largest in the format; a rescale threshold that is
+    // too close to it would fire on every update and pin the model to uniform, which
+    // silently costs a full 8 bits for every literal.
+    var model = new QuantumModel(QuantumConstants.LiteralSymbols);
+    for (var i = 0; i < 5000; ++i)
+      model.Update('A');
+
+    Assert.That(model.GetFrequency('A'), Is.GreaterThan(model.GetFrequency('B')));
   }
 
   // -------------------------------------------------------------------------
-  // QuantumRangeDecoder
+  // QuantumRangeEncoder / QuantumRangeDecoder
   // -------------------------------------------------------------------------
 
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
-  public void RangeDecoder_DecodeSymbol_RoundTripsWithEncoder() {
-    // Encode a known sequence of symbols, then decode them
-    var symbols = new[] { 0, 1, 2, 0, 0, 1, 3 };
-    var encoded = QuantumRangeEncode(symbols, 4);
+  public void RangeCoder_Symbols_RoundTrip() {
+    int[] symbols = [0, 1, 2, 0, 0, 1, 3];
+    var encoded = EncodeSymbols(symbols, 4);
+
     var decoder = new QuantumRangeDecoder(encoded);
     var model = new QuantumModel(4);
-
-    foreach (var expected in symbols) {
-      var decoded = decoder.DecodeSymbol(model);
-      Assert.That(decoded, Is.EqualTo(expected));
-    }
+    Assert.Multiple(() => {
+      foreach (var expected in symbols)
+        Assert.That(decoder.DecodeSymbol(model), Is.EqualTo(expected));
+    });
   }
 
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
-  public void RangeDecoder_DecodeSymbol_LargerAlphabet() {
-    // Test with 256-symbol alphabet (like literal model)
-    var symbols = new[] { 0, 255, 128, 64, 32, 16, 8, 4, 2, 1 };
-    var encoded = QuantumRangeEncode(symbols, 256);
-    var decoder = new QuantumRangeDecoder(encoded);
-    var model = new QuantumModel(256);
+  public void RangeCoder_LargeAlphabet_RoundTrips() {
+    var random = new Random(456);
+    var symbols = new int[1000];
+    for (var i = 0; i < symbols.Length; ++i)
+      symbols[i] = random.Next(QuantumConstants.LiteralSymbols);
 
-    foreach (var expected in symbols) {
-      var decoded = decoder.DecodeSymbol(model);
-      Assert.That(decoded, Is.EqualTo(expected));
-    }
+    var encoded = EncodeSymbols(symbols, QuantumConstants.LiteralSymbols);
+    var decoder = new QuantumRangeDecoder(encoded);
+    var model = new QuantumModel(QuantumConstants.LiteralSymbols);
+    for (var i = 0; i < symbols.Length; ++i)
+      Assert.That(decoder.DecodeSymbol(model), Is.EqualTo(symbols[i]), $"Mismatch at symbol {i}");
   }
 
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
-  public void RangeDecoder_ReadRawBits_DecodesCorrectly() {
-    // Encode a series of raw bit values, then decode
-    // Use a model-based encode to set up state, then decode raw bits
-    // For simplicity, just encode a few symbols then read raw bits
-    var symbols = new[] { 0, 1 };
-    var rawValue = 42; // 6 bits: 101010
-    var numBits = 6;
-    var encoded = QuantumRangeEncodeWithRawBits(symbols, 4, rawValue, numBits);
-    var decoder = new QuantumRangeDecoder(encoded);
-    var model = new QuantumModel(4);
+  public void RangeCoder_EqualProbabilityBits_RoundTrip() {
+    var random = new Random(0x0B17);
+    var bits = new int[500];
+    for (var i = 0; i < bits.Length; ++i)
+      bits[i] = random.Next(2);
 
-    // Decode symbols first
-    foreach (var expected in symbols) {
-      var decoded = decoder.DecodeSymbol(model);
-      Assert.That(decoded, Is.EqualTo(expected));
-    }
+    using var buffer = new MemoryStream();
+    var encoder = new QuantumRangeEncoder(buffer);
+    foreach (var bit in bits)
+      encoder.EncodeEqualProbabilityBit(bit);
+    encoder.Finish();
 
-    // Then decode raw bits
-    var decodedRaw = decoder.ReadRawBits(numBits);
-    Assert.That(decodedRaw, Is.EqualTo(rawValue));
+    var decoder = new QuantumRangeDecoder(buffer.ToArray());
+    for (var i = 0; i < bits.Length; ++i)
+      Assert.That(decoder.DecodeEqualProbabilityBit(), Is.EqualTo(bits[i]), $"Mismatch at bit {i}");
   }
 
-  [Category("EdgeCase")]
-  [Category("RoundTrip")]
+  [Category("HappyPath")]
   [Test]
-  public void RangeDecoder_ReadRawBits_SingleBit() {
-    var rawValue = 1;
-    var encoded = QuantumRangeEncodeWithRawBits([], 4, rawValue, 1);
-    var decoder = new QuantumRangeDecoder(encoded);
-    var decoded = decoder.ReadRawBits(1);
-    Assert.That(decoded, Is.EqualTo(rawValue));
+  public void RangeCoder_SkewedSymbols_CostFarLessThanEightBitsEach() {
+    // A model that adapts must spend well under one byte on a symbol it sees
+    // constantly. Pinning the coder at a fixed uniform model would fail this.
+    var symbols = new int[4000];
+    var encoded = EncodeSymbols(symbols, QuantumConstants.LiteralSymbols);
+    Assert.That(encoded, Has.Length.LessThan(symbols.Length / 8));
   }
 
   // -------------------------------------------------------------------------
-  // QuantumDecompressor
+  // QuantumSlotCoding
+  // -------------------------------------------------------------------------
+
+  [Category("Boundary")]
+  [TestCase(0, 0)]
+  [TestCase(1, 1)]
+  [TestCase(2, 2)]
+  [TestCase(3, 2)]
+  [TestCase(255, 8)]
+  [TestCase(256, 9)]
+  [TestCase(65536, 17)]
+  public void SlotCoding_BitLength(long value, int expected) {
+    Assert.That(QuantumSlotCoding.BitLength(value), Is.EqualTo(expected));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void SlotCoding_RoundTripsAcrossMagnitudes() {
+    long[] values = [1, 2, 3, 4, 7, 8, 100, 255, 256, 4095, 65535, 65536, 1 << 20];
+
+    using var buffer = new MemoryStream();
+    var encoder = new QuantumRangeEncoder(buffer);
+    var encodeModel = new QuantumModel(QuantumConstants.SlotSymbols);
+    foreach (var value in values)
+      QuantumSlotCoding.Encode(encoder, encodeModel, value);
+    encoder.Finish();
+
+    var decoder = new QuantumRangeDecoder(buffer.ToArray());
+    var decodeModel = new QuantumModel(QuantumConstants.SlotSymbols);
+    Assert.Multiple(() => {
+      foreach (var expected in values)
+        Assert.That(QuantumSlotCoding.Decode(decoder, decodeModel), Is.EqualTo(expected));
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // QuantumDecompressor argument handling
   // -------------------------------------------------------------------------
 
   [Category("Exception")]
   [Test]
   public void Decompress_InvalidWindowLevel_Throws() {
-    Assert.Throws<ArgumentOutOfRangeException>(
-      () => QuantumDecompressor.Decompress([], 0, 0));
-    Assert.Throws<ArgumentOutOfRangeException>(
-      () => QuantumDecompressor.Decompress([], 0, 8));
+    Assert.Multiple(() => {
+      Assert.Throws<ArgumentOutOfRangeException>(() => QuantumDecompressor.Decompress(default, 0, 0));
+      Assert.Throws<ArgumentOutOfRangeException>(() => QuantumDecompressor.Decompress(default, 0, 8));
+    });
   }
 
   [Category("Exception")]
   [Test]
   public void Decompress_NegativeSize_Throws() {
-    Assert.Throws<ArgumentOutOfRangeException>(
-      () => QuantumDecompressor.Decompress([], -1, 1));
+    Assert.Throws<ArgumentOutOfRangeException>(() => QuantumDecompressor.Decompress(default, -1, 1));
   }
 
   [Category("EdgeCase")]
   [Test]
   public void Decompress_ZeroSize_ReturnsEmpty() {
-    var result = QuantumDecompressor.Decompress([], 0, 1);
-    Assert.That(result, Is.Empty);
+    Assert.That(QuantumDecompressor.Decompress(default, 0, 1), Is.Empty);
+  }
+
+  [Category("Exception")]
+  [Test]
+  public void Decompress_MatchBeforeAnyOutput_Throws() {
+    // An all-ones stream decodes a match as the very first token, so its distance
+    // necessarily points before the start of the output and must be rejected.
+    var garbage = new byte[64];
+    Array.Fill(garbage, (byte)0xFF);
+    Assert.Throws<InvalidDataException>(() => QuantumDecompressor.Decompress(garbage, 100, 7));
   }
 
   [Category("EdgeCase")]
-  [Category("RoundTrip")]
   [Test]
-  public void Decompress_SingleLiteral_RoundTrip() {
-    // Encode a single literal byte (0x42) through the Quantum format
-    byte[] original = [0x42];
-    var compressed = QuantumCompress(original, 1);
-    var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 1);
-    Assert.That(decompressed, Is.EqualTo(original));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Decompress_MultipleLiterals_RoundTrip() {
-    byte[] original = [0x48, 0x65, 0x6C, 0x6C, 0x6F]; // "Hello"
-    var compressed = QuantumCompress(original, 1);
-    var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 1);
-    Assert.That(decompressed, Is.EqualTo(original));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Decompress_WithMatch_RoundTrip() {
-    // Data with a repeated pattern that can use match references
-    var original = new byte[20];
-    for (var i = 0; i < 20; ++i)
-      original[i] = (byte)(i % 4 + 0x41); // ABCDABCDABCD...
-    var compressed = QuantumCompress(original, 1);
-    var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 1);
-    Assert.That(decompressed, Is.EqualTo(original));
-  }
-
-  [Category("EdgeCase")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Decompress_AllSameBytes_RoundTrip() {
-    var original = new byte[32];
-    Array.Fill(original, (byte)0xAA);
-    var compressed = QuantumCompress(original, 1);
-    var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 1);
-    Assert.That(decompressed, Is.EqualTo(original));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Decompress_LargerWindow_RoundTrip() {
-    var original = new byte[100];
-    for (var i = 0; i < original.Length; ++i)
-      original[i] = (byte)(i * 7 + 3);
-    var compressed = QuantumCompress(original, 3);
-    var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 3);
-    Assert.That(decompressed, Is.EqualTo(original));
+  public void Decompress_TruncatedStream_DoesNotReturnTheOriginal() {
+    // The format carries no integrity check and pads a short stream with zero bits,
+    // so truncation yields wrong data rather than an error. Callers that need
+    // detection must supply their own checksum.
+    var data = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var compressed = QuantumCompressor.Compress(data, 7);
+    var truncated = QuantumDecompressor.Decompress(compressed.AsMemory(0, 1), data.Length, 7);
+    Assert.That(truncated, Is.Not.EqualTo(data).AsCollection);
   }
 
   // -------------------------------------------------------------------------
@@ -302,30 +299,28 @@ public class QuantumTests {
   [Category("EdgeCase")]
   [Test]
   public void Compressor_Empty_ReturnsEmpty() {
-    var compressed = QuantumCompressor.Compress([], 1);
-    Assert.That(compressed, Is.Empty);
+    Assert.That(QuantumCompressor.Compress([], 1), Is.Empty);
+  }
+
+  [Category("Exception")]
+  [TestCase(0)]
+  [TestCase(8)]
+  public void Compressor_InvalidWindowLevel_Throws(int level) {
+    Assert.Throws<ArgumentOutOfRangeException>(() => QuantumCompressor.Compress([1, 2, 3], level));
   }
 
   [Category("EdgeCase")]
   [Category("RoundTrip")]
   [Test]
   public void Compressor_SingleByte_RoundTrip() {
-    byte[] data = [0x42];
-    var compressed = QuantumCompressor.Compress(data, 1);
-    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 1,
-      QuantumConstants.CompressorRescaleThreshold);
-    Assert.That(decompressed, Is.EqualTo(data));
+    AssertRoundTrips([0x42], 1);
   }
 
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
   public void Compressor_ShortText_RoundTrip() {
-    var data = "Hello, Quantum!"u8.ToArray();
-    var compressed = QuantumCompressor.Compress(data, 1);
-    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 1,
-      QuantumConstants.CompressorRescaleThreshold);
-    Assert.That(decompressed, Is.EqualTo(data));
+    AssertRoundTrips("Hello, Quantum!"u8.ToArray(), 1);
   }
 
   [Category("HappyPath")]
@@ -335,10 +330,8 @@ public class QuantumTests {
     var data = new byte[200];
     for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
-    var compressed = QuantumCompressor.Compress(data, 3);
-    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 3,
-      QuantumConstants.CompressorRescaleThreshold);
-    Assert.That(decompressed, Is.EqualTo(data));
+
+    AssertRoundTrips(data, 3);
   }
 
   [Category("HappyPath")]
@@ -346,9 +339,17 @@ public class QuantumTests {
   public void Compressor_RepetitiveData_SmallerThanLiteral() {
     var data = new byte[200];
     Array.Fill(data, (byte)0xAA);
-    var compressedLz = QuantumCompressor.Compress(data, 3);
-    // LZ should compress repetitive data well
-    Assert.That(compressedLz.Length, Is.LessThan(data.Length));
+    Assert.That(QuantumCompressor.Compress(data, 3), Has.Length.LessThan(data.Length));
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Compressor_IncompressibleData_DoesNotExpandMuch() {
+    // An arithmetic coder over adaptive models should cost a few percent on random
+    // input. Expansion beyond that means the coder is losing its interval.
+    var data = new byte[4096];
+    new Random(0x0A17).NextBytes(data);
+    Assert.That(QuantumCompressor.Compress(data, 7), Has.Length.LessThan(data.Length * 11 / 10));
   }
 
   [Category("HappyPath")]
@@ -361,10 +362,7 @@ public class QuantumTests {
   public void Compressor_RandomData_RoundTrip(int size) {
     var data = new byte[size];
     new Random(42).NextBytes(data);
-    var compressed = QuantumCompressor.Compress(data, 5);
-    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 5,
-      QuantumConstants.CompressorRescaleThreshold);
-    Assert.That(decompressed, Is.EqualTo(data));
+    AssertRoundTrips(data, 5);
   }
 
   [Category("HappyPath")]
@@ -372,12 +370,10 @@ public class QuantumTests {
   [Test]
   public void Compressor_AllByteValues_RoundTrip() {
     var data = new byte[256];
-    for (var i = 0; i < 256; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)i;
-    var compressed = QuantumCompressor.Compress(data, 3);
-    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 3,
-      QuantumConstants.CompressorRescaleThreshold);
-    Assert.That(decompressed, Is.EqualTo(data));
+
+    AssertRoundTrips(data, 3);
   }
 
   [Category("HappyPath")]
@@ -387,171 +383,33 @@ public class QuantumTests {
   [TestCase(5)]
   [TestCase(7)]
   public void Compressor_AllWindowLevels_RoundTrip(int level) {
-    var data = "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ"u8.ToArray();
-    var compressed = QuantumCompressor.Compress(data, level);
-    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, level,
-      QuantumConstants.CompressorRescaleThreshold);
-    Assert.That(decompressed, Is.EqualTo(data));
+    AssertRoundTrips("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ"u8.ToArray(), level);
   }
 
-  [Category("HappyPath")]
+  [Category("Boundary")]
   [Category("RoundTrip")]
   [Test]
-  public void RangeEncoder_ManySymbols_RoundTrip() {
-    var rng = new Random(123);
-    var symbols = new int[500];
-    for (var i = 0; i < symbols.Length; ++i)
-      symbols[i] = rng.Next(7);
-
-    const int threshold = QuantumConstants.CompressorRescaleThreshold;
-    using var ms = new MemoryStream();
-    var encoder = new Compression.Core.Dictionary.Quantum.QuantumRangeEncoder(ms);
-    var encModel = new QuantumModel(7, threshold);
-    foreach (var sym in symbols)
-      encoder.EncodeSymbol(encModel, sym);
-    encoder.Finish();
-    var encoded = ms.ToArray();
-
-    var decoder = new QuantumRangeDecoder(encoded);
-    var decModel = new QuantumModel(7, threshold);
-    for (var i = 0; i < symbols.Length; ++i) {
-      var decoded = decoder.DecodeSymbol(decModel);
-      Assert.That(decoded, Is.EqualTo(symbols[i]), $"Mismatch at symbol {i}");
-    }
+  public void Compressor_MatchLongerThanItsDistance_RoundTrips() {
+    // A run is coded as one overlapping match, so the copy has to be byte by byte.
+    var data = new byte[5000];
+    Array.Fill(data, (byte)0x5A);
+    AssertRoundTrips(data, 7);
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void RangeEncoder_LargeAlphabet_ManySymbols_RoundTrip() {
-    var rng = new Random(456);
-    var symbols = new int[1000];
-    for (var i = 0; i < symbols.Length; ++i)
-      symbols[i] = rng.Next(256);
-
-    const int threshold = QuantumConstants.CompressorRescaleThreshold;
-    using var ms = new MemoryStream();
-    var encoder = new Compression.Core.Dictionary.Quantum.QuantumRangeEncoder(ms);
-    var encModel = new QuantumModel(256, threshold);
-    foreach (var sym in symbols)
-      encoder.EncodeSymbol(encModel, sym);
-    encoder.Finish();
-    var encoded = ms.ToArray();
-
-    var decoder = new QuantumRangeDecoder(encoded);
-    var decModel = new QuantumModel(256, threshold);
-    for (var i = 0; i < symbols.Length; ++i) {
-      var decoded = decoder.DecodeSymbol(decModel);
-      Assert.That(decoded, Is.EqualTo(symbols[i]), $"Mismatch at symbol {i}");
-    }
+  private static void AssertRoundTrips(byte[] data, int windowLevel) {
+    var compressed = QuantumCompressor.Compress(data, windowLevel);
+    var round = QuantumDecompressor.Decompress(compressed, data.Length, windowLevel);
+    Assert.That(round, Is.EqualTo(data).AsCollection);
   }
 
-  // -------------------------------------------------------------------------
-  // Test helper: minimal Quantum range encoder (for generating test data)
-  // -------------------------------------------------------------------------
-
-  /// <summary>
-  /// Minimal Quantum range encoder that produces data decodable by QuantumRangeDecoder.
-  /// </summary>
-  private static byte[] QuantumRangeEncode(int[] symbols, int numSymbols) {
-    var state = new EncoderState();
+  private static byte[] EncodeSymbols(int[] symbols, int numSymbols) {
+    using var buffer = new MemoryStream();
+    var encoder = new QuantumRangeEncoder(buffer);
     var model = new QuantumModel(numSymbols);
+    foreach (var symbol in symbols)
+      encoder.EncodeSymbol(model, symbol);
 
-    foreach (var sym in symbols)
-      EncodeSymbol(state, model, sym);
-
-    // Flush
-    state.Output.Add((byte)(state.Low >> 8));
-    state.Output.Add((byte)(state.Low & 0xFF));
-    // Padding for decoder read-ahead
-    state.Output.Add(0);
-    state.Output.Add(0);
-
-    return [.. state.Output];
-  }
-
-  private static byte[] QuantumRangeEncodeWithRawBits(
-    int[] symbols, int numSymbols, int rawValue, int numBits) {
-    var state = new EncoderState();
-    var model = new QuantumModel(numSymbols);
-
-    foreach (var sym in symbols)
-      EncodeSymbol(state, model, sym);
-
-    // Encode raw bits (MSB first)
-    for (var i = numBits - 1; i >= 0; --i) {
-      var bit = (rawValue >> i) & 1;
-      var range = state.High - state.Low + 1;
-      var mid = state.Low + (range >> 1) - 1;
-      if (bit == 0)
-        state.High = mid;
-      else
-        state.Low = mid + 1;
-      NormalizeEncoder(state);
-    }
-
-    // Flush
-    state.Output.Add((byte)(state.Low >> 8));
-    state.Output.Add((byte)(state.Low & 0xFF));
-    state.Output.Add(0);
-    state.Output.Add(0);
-
-    return [.. state.Output];
-  }
-
-  /// <summary>
-  /// Minimal Quantum compressor for test round-trips. Encodes all bytes as literals.
-  /// </summary>
-  private static byte[] QuantumCompress(byte[] data, int windowLevel) {
-    var state = new EncoderState();
-    var selectorModel = new QuantumModel(QuantumConstants.SelectorSymbols);
-    var literalModel = new QuantumModel(QuantumConstants.LiteralSymbols);
-
-    foreach (var b in data) {
-      // Encode selector 0 (literal)
-      EncodeSymbol(state, selectorModel, 0);
-      // Encode literal value
-      EncodeSymbol(state, literalModel, b);
-    }
-
-    // Flush
-    state.Output.Add((byte)(state.Low >> 8));
-    state.Output.Add((byte)(state.Low & 0xFF));
-    state.Output.Add(0);
-    state.Output.Add(0);
-
-    return [.. state.Output];
-  }
-
-  private sealed class EncoderState {
-    public int High = 0xFFFF;
-    public int Low;
-    public List<byte> Output = []; // initial code bytes prepended later
-
-    public EncoderState() {
-      // Reserve space for initial code (will be written at start)
-      // Actually the decoder reads the first 2 bytes as the initial code.
-      // We just emit normally and the first 2 bytes become the code.
-    }
-  }
-
-  private static void EncodeSymbol(EncoderState state, QuantumModel model, int symbol) {
-    var range = state.High - state.Low + 1;
-    var symLow = model.GetCumulativeFrequency(symbol);
-    var symHigh = symLow + model.GetFrequency(symbol);
-
-    state.High = state.Low + (int)((long)range * symHigh / model.TotalFrequency) - 1;
-    state.Low = state.Low + (int)((long)range * symLow / model.TotalFrequency);
-
-    NormalizeEncoder(state);
-    model.Update(symbol);
-  }
-
-  private static void NormalizeEncoder(EncoderState state) {
-    while ((state.High - state.Low) < 256) {
-      state.Output.Add((byte)(state.Low >> 8));
-      state.High = ((state.High << 8) | 0xFF) & 0xFFFF;
-      state.Low = (state.Low << 8) & 0xFFFF;
-    }
+    encoder.Finish();
+    return buffer.ToArray();
   }
 }
