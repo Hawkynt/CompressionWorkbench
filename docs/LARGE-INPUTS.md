@@ -99,10 +99,10 @@ Selected measurements at larger sizes (English text, one process each):
 
 | Block | Input | Compressed | Ratio | Compress | Decompress | Peak RSS |
 |---|---|---|---|---|---|---|
-| BB_Deflate | 4 MB | 35,684 | 0.85 % | 0.2 s | 0.03 s | 108 MB |
-| BB_Deflate | 64 MB | 570,929 | 0.85 % | 7.5 s | 0.24 s | 382 MB |
-| BB_Deflate | 128 MB | 1,141,861 | 0.85 % | 27.8 s | 0.34 s | 649 MB |
-| BB_Deflate | 256 MB | 2,283,717 | 0.85 % | 63.7 s | 0.44 s | 1258 MB |
+| BB_Deflate | 4 MB | 35,684 | 0.85 % | 0.04 s | 0.01 s | 55 MB |
+| BB_Deflate | 64 MB | 570,929 | 0.85 % | 0.7 s | 0.22 s | 255 MB |
+| BB_Deflate | 128 MB | 1,141,861 | 0.85 % | 1.3 s | 0.38 s | 508 MB |
+| BB_Deflate | 256 MB | 2,283,717 | 0.85 % | 2.4 s | 1.1 s | 1242 MB |
 | BB_Unary | 8 MB | 134,742,020 | 1606 % | 1.0 s | 1.1 s | 591 MB |
 | BB_Unary | 64 MB | 1,077,936,132 | 1606 % | 7.6 s | 9.1 s | 5147 MB |
 
@@ -114,19 +114,34 @@ limited in practice by time rather than by correctness. What fails first beyond 
    need 2,155,872,264 bytes, past `Array.MaxLength`, so `Compress` throws. Elias Gamma,
    Elias Delta, Levenshtein and Golomb behave the same way at their own expansion
    ratios. **These are the lowest real ceilings in the collection.**
-2. **`DeflateCompressor.Write` is quadratic in the input.** It appends every byte to a
-   `List<byte>` and then drains it with `RemoveRange(0, blockSize)`, which moves the
-   remaining bytes each time. At 256 MB that is roughly 1.1 TB of memcpy, and the
-   measured compress time grows fourfold for each doubling of the input (7.5 s at
-   64 MB, 27.8 s at 128 MB, 63.7 s at 256 MB). This is a performance limit, not a
-   correctness one; it is flagged here, not fixed.
+2. **Peak memory runs at roughly 5x the input** for the mainstream blocks (1242 MB
+   for a 256 MB input through BB_Deflate), because the input array, the pending-input
+   buffer, the token list and the output all coexist.
+
+### `DeflateCompressor.Write` was quadratic in the input — fixed
+
+It appended every byte to a `List<byte>` and then drained it with
+`RemoveRange(0, blockSize)`, which moves every byte still buffered, once per block. At
+256 MB that is roughly 1.1 TB of memcpy, and the compress time grew fourfold for each
+doubling of the input.
+
+The pending bytes now live in a plain `byte[]` between two offsets. Emitting a block
+advances the start offset instead of copying, and the already-emitted prefix is
+reclaimed only when the next append would not otherwise fit — so a whole run costs
+O(n) rather than O(n²). Nothing about the block boundaries or the emitted bits changed;
+old and new output was compared byte-for-byte at every compression level, in one-shot
+and in 777-byte streaming writes, over inputs from empty to 256 MB.
+
+| Input | Compress before | Compress after |
+|---|---|---|
+| 64 MB | 6.2 s | **0.7 s** |
+| 128 MB | 20.1 s | **1.3 s** |
+| 256 MB | 84.2 s | **2.4 s** |
+
 3. **`Entropy/FseBuildingBlock.cs` stores one `byte` per bit** in a `List<byte>`.
    A 2^28-byte incompressible input needs 2,147,483,648 elements — 57 more than
    `Array.MaxLength` — so it throws `OutOfMemoryException` at exactly 256 MB.
    Flagged, not fixed: it needs a packed accumulator.
-4. **Peak memory runs at roughly 5x the input** for the mainstream blocks (1258 MB
-   for a 256 MB input through BB_Deflate), because the input array, the `List<byte>`
-   buffer, the token list and the output all coexist.
 
 ## Running the large-input tests
 

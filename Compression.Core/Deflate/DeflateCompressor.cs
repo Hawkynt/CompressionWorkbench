@@ -11,7 +11,14 @@ public sealed class DeflateCompressor {
   private readonly Stream _output;
   private readonly DeflateCompressionLevel _level;
   private readonly BitWriter<LsbBitOrder> _bitWriter;
-  private readonly List<byte> _inputBuffer;
+
+  // Pending input lives in [_bufferStart, _bufferEnd) of _inputBuffer. Emitting a block
+  // only advances _bufferStart: the previous List.RemoveRange(0, blockSize) copied every
+  // byte still buffered, once per block, which made a single Write() of n bytes cost
+  // O(n^2) — 6 s at 64 MB, 20 s at 128 MB, 84 s at 256 MB.
+  private byte[] _inputBuffer;
+  private int _bufferStart;
+  private int _bufferEnd;
   private bool _finished;
 
   private const int MaxBlockSize = 65535; // max for uncompressed blocks
@@ -27,6 +34,8 @@ public sealed class DeflateCompressor {
     this._level = level;
     this._bitWriter = new(output);
     this._inputBuffer = [];
+    this._bufferStart = 0;
+    this._bufferEnd = 0;
   }
 
   /// <summary>
@@ -51,8 +60,7 @@ public sealed class DeflateCompressor {
     if (this._finished)
       throw new InvalidOperationException("Cannot write after Finish() has been called.");
 
-    foreach (var value in data)
-      this._inputBuffer.Add(value);
+    this.Append(data);
 
     // Zopfli decides where the block boundaries go by searching for them, so at Maximum
     // level nothing is emitted until the whole input is in hand; cutting it into fixed
@@ -61,10 +69,46 @@ public sealed class DeflateCompressor {
       return;
 
     // Emit blocks when buffer gets large
-    while (this._inputBuffer.Count >= DeflateCompressor.DefaultBlockSize * 2) {
-      this.EmitBlock(this._inputBuffer.GetRange(0, DeflateCompressor.DefaultBlockSize), isFinal: false);
-      this._inputBuffer.RemoveRange(0, DeflateCompressor.DefaultBlockSize);
+    while (this.Pending >= DeflateCompressor.DefaultBlockSize * 2) {
+      this.EmitBlock(this._inputBuffer.AsSpan(this._bufferStart, DeflateCompressor.DefaultBlockSize), isFinal: false);
+      this._bufferStart += DeflateCompressor.DefaultBlockSize;
     }
+  }
+
+  /// <summary>
+  /// Gets the number of buffered bytes not yet written to a block.
+  /// </summary>
+  private int Pending => this._bufferEnd - this._bufferStart;
+
+  /// <summary>
+  /// Copies data onto the end of the pending region, reclaiming the already-emitted
+  /// prefix before growing the backing array.
+  /// </summary>
+  private void Append(ReadOnlySpan<byte> data) {
+    if (data.IsEmpty)
+      return;
+
+    if (this._inputBuffer.Length - this._bufferEnd < data.Length) {
+      var pending = this.Pending;
+      var required = (long)pending + data.Length;
+
+      if (required > this._inputBuffer.Length) {
+        var capacity = Math.Max((long)this._inputBuffer.Length, 1024);
+        while (capacity < required)
+          capacity *= 2;
+
+        var grown = new byte[(int)Math.Min(capacity, Array.MaxLength)];
+        this._inputBuffer.AsSpan(this._bufferStart, pending).CopyTo(grown);
+        this._inputBuffer = grown;
+      } else
+        this._inputBuffer.AsSpan(this._bufferStart, pending).CopyTo(this._inputBuffer);
+
+      this._bufferStart = 0;
+      this._bufferEnd = pending;
+    }
+
+    data.CopyTo(this._inputBuffer.AsSpan(this._bufferEnd));
+    this._bufferEnd += data.Length;
   }
 
   /// <summary>
@@ -76,25 +120,25 @@ public sealed class DeflateCompressor {
 
     this._finished = true;
 
-    if (this._inputBuffer.Count == 0)
+    if (this.Pending == 0)
       // Emit empty final block
       this.EmitBlock([], isFinal: true);
     else {
       // Emit remaining data as final block
       while (this._level != DeflateCompressionLevel.Maximum
-             && this._inputBuffer.Count > DeflateCompressor.DefaultBlockSize) {
-        this.EmitBlock(this._inputBuffer.GetRange(0, DeflateCompressor.DefaultBlockSize), isFinal: false);
-        this._inputBuffer.RemoveRange(0, DeflateCompressor.DefaultBlockSize);
+             && this.Pending > DeflateCompressor.DefaultBlockSize) {
+        this.EmitBlock(this._inputBuffer.AsSpan(this._bufferStart, DeflateCompressor.DefaultBlockSize), isFinal: false);
+        this._bufferStart += DeflateCompressor.DefaultBlockSize;
       }
 
-      this.EmitBlock(this._inputBuffer, isFinal: true);
-      this._inputBuffer.Clear();
+      this.EmitBlock(this._inputBuffer.AsSpan(this._bufferStart, this.Pending), isFinal: true);
+      this._bufferStart = this._bufferEnd = 0;
     }
 
     this._bitWriter.FlushBits();
   }
 
-  private void EmitBlock(List<byte> data, bool isFinal) {
+  private void EmitBlock(ReadOnlySpan<byte> data, bool isFinal) {
     switch (this._level) {
       case DeflateCompressionLevel.None: this.EmitUncompressedBlock(data, isFinal); break;
       case DeflateCompressionLevel.Maximum: this.EmitOptimalBlocks(data, isFinal); break;
@@ -107,12 +151,12 @@ public sealed class DeflateCompressor {
     }
   }
 
-  private void EmitUncompressedBlock(List<byte> data, bool isFinal) {
+  private void EmitUncompressedBlock(ReadOnlySpan<byte> data, bool isFinal) {
     // Uncompressed blocks have max 65535 bytes
     var offset = 0;
-    while (offset < data.Count) {
-      var chunkSize = Math.Min(data.Count - offset, DeflateCompressor.MaxBlockSize);
-      var isLastChunk = (offset + chunkSize >= data.Count) && isFinal;
+    while (offset < data.Length) {
+      var chunkSize = Math.Min(data.Length - offset, DeflateCompressor.MaxBlockSize);
+      var isLastChunk = (offset + chunkSize >= data.Length) && isFinal;
 
       this._bitWriter.WriteBits(isLastChunk ? 1u : 0u, 1); // BFINAL
       this._bitWriter.WriteBits(0, 2); // BTYPE=00
@@ -130,7 +174,7 @@ public sealed class DeflateCompressor {
     }
 
     // Handle empty data case
-    if (data.Count != 0 || !isFinal)
+    if (data.Length != 0 || !isFinal)
       return;
 
     this._bitWriter.WriteBits(1, 1); // BFINAL
@@ -140,8 +184,8 @@ public sealed class DeflateCompressor {
     this._bitWriter.WriteBits(0xFFFF, 16); // NLEN=0xFFFF
   }
 
-  private void EmitCompressedBlock(List<byte> data, bool isFinal) {
-    byte[] dataArray = [.. data];
+  private void EmitCompressedBlock(ReadOnlySpan<byte> data, bool isFinal) {
+    var dataArray = data.ToArray();
 
     // Run LZ77 to find matches
     var tokens = this.FindMatches(dataArray);
@@ -493,8 +537,8 @@ public sealed class DeflateCompressor {
     return bits;
   }
 
-  private void EmitOptimalBlocks(List<byte> data, bool isFinal) {
-    byte[] dataArray = [.. data];
+  private void EmitOptimalBlocks(ReadOnlySpan<byte> data, bool isFinal) {
+    var dataArray = data.ToArray();
     var blocks = ZopfliDeflate.CompressOptimal(dataArray);
 
     for (var i = 0; i < blocks.Count; ++i) {
@@ -527,7 +571,7 @@ public sealed class DeflateCompressor {
       var (blockType, _) = ZopfliBlockCost.Cheapest(litLenFreqs, distFreqs, end - start);
       switch (blockType) {
         case DeflateConstants.BlockTypeUncompressed:
-          this.EmitUncompressedBlock(data.GetRange(start, end - start), isLastBlock);
+          this.EmitUncompressedBlock(data.Slice(start, end - start), isLastBlock);
           break;
         case DeflateConstants.BlockTypeStaticHuffman:
           this.EmitStaticHuffmanBlock(tokens, isLastBlock);
