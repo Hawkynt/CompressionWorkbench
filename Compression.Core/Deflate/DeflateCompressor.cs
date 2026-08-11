@@ -161,8 +161,9 @@ public sealed class DeflateCompressor {
     // Taken in 64-bit. A 32-bit product would wrap for a 2^28-byte block, and the
     // wrapped negative estimate would make an uncompressed block look cheaper than
     // any Huffman-coded one. Write and Finish never hand this method more than
-    // DefaultBlockSize (32768, or 131072 at Maximum level) bytes, so the wrap is
-    // not reachable today; the width keeps it that way if the block size changes.
+    // DefaultBlockSize (32768) bytes — the Maximum level uses the larger block but
+    // routes to EmitOptimalBlocks instead — so the wrap is not reachable today; the
+    // width keeps it that way if the block size changes.
     var numSubBlocks = Math.Max(1, (dataArray.Length + DeflateCompressor.MaxBlockSize - 1) / DeflateCompressor.MaxBlockSize);
     var uncompressedBits = 3L + (long)numSubBlocks * 5 * 8 + (long)dataArray.Length * 8;
 

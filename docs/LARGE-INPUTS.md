@@ -64,8 +64,10 @@ Two further cases were checked and found **not** reachable:
 
 - `Deflate/DeflateCompressor.cs` and `Deflate/Deflate64Compressor.cs` compute
   `3 + numSubBlocks * 5 * 8 + dataArray.Length * 8`. `Write` and `Finish` cap a block
-  at `DefaultBlockSize` (32768 bytes, or 131072 at Maximum level), so the product
-  never exceeds about one million. Measured: BB_Deflate compresses 268,435,455 and
+  at `DefaultBlockSize`, 32768 bytes — the Maximum level uses a block four times that
+  size but routes to `EmitOptimalBlocks`, which does not use this estimate — so the
+  product never exceeds about one quarter of a million. Measured: BB_Deflate
+  compresses 268,435,455 and
   268,435,457 bytes of English text to the same 0.85 % ratio, with no regression at
   the boundary. Both expressions have been widened to `long` anyway, so a future
   change to the block size cannot reintroduce the hazard.
