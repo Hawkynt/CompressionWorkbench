@@ -46,13 +46,20 @@ public sealed class BpeBuildingBlock : IBuildingBlock {
         pairCounts[key] = count + 1;
       }
 
+      // Pick the most frequent pair, ties going to the one that occurs earliest.
+      // Scanning the data rather than the count table is what makes that rule
+      // explicit: the winner is decided by positions in the input, not by the
+      // order in which a hash table hands its entries back.
       long bestKey = 0;
       var bestCount = 0;
-      foreach (var (key, count) in pairCounts) {
-        if (count > bestCount) {
-          bestCount = count;
-          bestKey = key;
-        }
+      for (var i = 0; i < dataLen - 1; i++) {
+        var key = ((long)dataArr[i] << 32) | (uint)dataArr[i + 1];
+        var count = pairCounts[key];
+        if (count <= bestCount)
+          continue;
+
+        bestCount = count;
+        bestKey = key;
       }
 
       // Stop if the best pair doesn't save enough to justify the dictionary entry cost.

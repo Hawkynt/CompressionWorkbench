@@ -138,13 +138,19 @@ public static class ImplodeEncoder {
     // code lengths (the format stores len-1 in 4 bits, so min length is 1).
     // Build a Huffman tree with all symbols having at least frequency 1.
 
-    var pq = new PriorityQueue<int, long>();
+    // Least frequent node first; nodes of equal frequency are taken in the
+    // order they were created - the leaves in ascending symbol order, then the
+    // internal nodes in merge order. Carrying that node number in the priority
+    // makes the ordering total, so the shape of the tree, and with it the code
+    // lengths, follow from the frequencies alone and not from how a heap
+    // happens to arrange entries it considers equal.
+    var pq = new PriorityQueue<int, (long Freq, int Node)>();
     var nodes = new List<(long freq, int sym, int left, int right)>();
 
     for (var i = 0; i < numSymbols; ++i) {
       long f = Math.Max(freq[i], 1);
       nodes.Add((f, i, -1, -1));
-      pq.Enqueue(i, f);
+      pq.Enqueue(i, (f, i));
     }
 
     if (numSymbols == 1) {
@@ -154,10 +160,10 @@ public static class ImplodeEncoder {
     while (pq.Count > 1) {
       pq.TryDequeue(out var a, out var fa);
       pq.TryDequeue(out var b, out var fb);
-      var combined = fa + fb;
+      var combined = fa.Freq + fb.Freq;
       var newIdx = nodes.Count;
       nodes.Add((combined, -1, a, b));
-      pq.Enqueue(newIdx, combined);
+      pq.Enqueue(newIdx, (combined, newIdx));
     }
 
     pq.TryDequeue(out var root, out _);

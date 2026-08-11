@@ -46,7 +46,12 @@ public sealed class LzwlBuildingBlock : IBuildingBlock {
       if (digramFreq[d] >= 2)
         topDigrams.Add(d);
     }
-    topDigrams.Sort((a, b) => digramFreq[b].CompareTo(digramFreq[a]));
+    // Most frequent digram first. Digrams of equal frequency are ordered by
+    // ascending 16-bit digram value (first byte high, second byte low), so
+    // which 128 digrams survive the cut and the code each one gets are a
+    // function of the data alone and never of how the sort happens to arrange
+    // items its comparison calls equal.
+    topDigrams.Sort((a, b) => digramFreq[a] != digramFreq[b] ? digramFreq[b].CompareTo(digramFreq[a]) : a.CompareTo(b));
     if (topDigrams.Count > 128)
       topDigrams.RemoveRange(128, topDigrams.Count - 128);
 

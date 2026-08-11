@@ -148,13 +148,20 @@ public static class BurrowsWheelerTransform {
       var g = gap;
       var len = length;
       var r = rank;
+      // Order by the rank pair (this rotation, the rotation g further on), and
+      // when those are equal - which for a periodic input means the two
+      // rotations are the same string and stays true however far the doubling
+      // runs - by ascending start position. The tie-break makes the comparison
+      // a total order, so both the transformed bytes and the primary index are
+      // a function of the input rather than of how an unstable sort happens to
+      // arrange equals.
       Array.Sort(sa, (a, b) => {
         if (r[a] != r[b])
           return r[a].CompareTo(r[b]);
 
         var ra = r[(a + g) % len];
         var rb = r[(b + g) % len];
-        return ra.CompareTo(rb);
+        return ra != rb ? ra.CompareTo(rb) : a.CompareTo(b);
       });
 
       tmp[sa[0]] = 0;

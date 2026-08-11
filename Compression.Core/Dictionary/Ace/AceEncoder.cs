@@ -409,20 +409,27 @@ public sealed class AceEncoder {
       return lengths;
     }
 
-    var pq = new PriorityQueue<int, long>();
+    // Least frequent node first; nodes of equal frequency are taken in the
+    // order they were created - the leaves in ascending symbol order, then the
+    // internal nodes in merge order. Carrying that node number in the priority
+    // makes the ordering total, so the shape of the tree, and with it the code
+    // lengths, follow from the frequencies alone and not from how a heap
+    // happens to arrange entries it considers equal.
+    var pq = new PriorityQueue<int, (long Freq, int Node)>();
     var nodes = new List<(long freq, int sym, int left, int right)>();
 
     for (var i = 0; i < symbols.Count; ++i) {
       nodes.Add((symbols[i].freq, symbols[i].sym, -1, -1));
-      pq.Enqueue(i, symbols[i].freq);
+      pq.Enqueue(i, (symbols[i].freq, i));
     }
 
     while (pq.Count > 1) {
       pq.TryDequeue(out var a, out var fa);
       pq.TryDequeue(out var b, out var fb);
       var newIdx = nodes.Count;
-      nodes.Add((fa + fb, -1, a, b));
-      pq.Enqueue(newIdx, fa + fb);
+      var combined = fa.Freq + fb.Freq;
+      nodes.Add((combined, -1, a, b));
+      pq.Enqueue(newIdx, (combined, newIdx));
     }
 
     pq.TryDequeue(out var root, out _);
