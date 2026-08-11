@@ -284,18 +284,19 @@ public class BrotliTests {
   [Category("ThemVsUs")]
   [Test]
   public void StaticDictionary_TryGetStaticReference_BeyondWindow() {
-    // Distance beyond window size should be a dictionary reference
+    // RFC 7932 Section 8: word_id = distance - max_allowed_distance - 1, then
+    // index = word_id mod NWORDS[copy length] and transform = word_id div NWORDS.
     var found = BrotliStaticDictionary.TryGetStaticReference(
-      100, 10, out var wordLen, out _, out _);
-    // 100 > 10, so it's a static dict reference
+      100, 10, 4, out var wordIndex, out var transformIndex);
     Assert.That(found, Is.True);
-    Assert.That(wordLen, Is.GreaterThanOrEqualTo(BrotliStaticDictionary.MinWordLength));
+    Assert.That(wordIndex, Is.EqualTo(89));
+    Assert.That(transformIndex, Is.EqualTo(0));
   }
 
   [Category("EdgeCase")]
   [Test]
   public void StaticDictionary_TryGetStaticReference_WithinWindow() {
-    var found = BrotliStaticDictionary.TryGetStaticReference(5, 10, out _, out _, out _);
+    var found = BrotliStaticDictionary.TryGetStaticReference(5, 10, 4, out _, out _);
     Assert.That(found, Is.False); // within window, not a dict reference
   }
 

@@ -17,16 +17,18 @@ namespace Compression.Core.Dictionary.Brotli;
 /// context values clustered into several literal prefix codes and transmitted as
 /// a context map per Section 7.3), the distance ring buffer including the
 /// implicit-distance insert-and-copy ranges (Section 4 and Section 5), run-length
-/// coded complex prefix code descriptors (Section 3.5), and cost-driven
-/// meta-block splitting where each meta-block independently falls back to the
-/// uncompressed form (Section 9.2).
+/// coded complex prefix code descriptors (Section 3.5), cost-driven meta-block
+/// splitting where each meta-block independently falls back to the uncompressed
+/// form (Section 9.2), and static dictionary references with their word
+/// transforms (Section 8).
 /// </para>
 /// <para>
-/// Deliberately NOT implemented: static dictionary references (Section 8),
-/// several block types per category with block-switch commands (Section 6),
-/// non-zero NPOSTFIX/NDIRECT distance parameters (Section 4), and distance
-/// context modelling (Section 7.2). Those are all optional encoder features; the
-/// emitted streams stay fully conformant without them.
+/// Deliberately NOT implemented: the OmitFirst1-9 word transforms (8 of the 121
+/// in Appendix B, all of which carry no prefix or suffix), several block types
+/// per category with block-switch commands (Section 6), non-zero NPOSTFIX/NDIRECT
+/// distance parameters (Section 4), distance context modelling (Section 7.2), and
+/// an optimal parse. Those are all optional encoder features; the emitted streams
+/// stay fully conformant without them.
 /// </para>
 /// <para>
 /// Every encoding decision in this class is made with integer arithmetic only, so
@@ -83,7 +85,13 @@ public static class BrotliCompressor {
   /// cost, because bytes a longer reference covers would otherwise be covered by
   /// another reference rather than by literals.
   /// </summary>
-  private const int MatchRankLiteralBits = 5;
+  internal const int MatchRankLiteralBits = 5;
+
+  /// <summary>
+  /// Assumed cost of one literal, in bits, when deciding whether a static dictionary
+  /// reference repays the command that carries it.
+  /// </summary>
+  internal const int DictionaryLiteralBits = 8;
 
   /// <summary>How much better a reference one position later has to score to be preferred.</summary>
   private const int LazyMatchMargin = 8;
@@ -898,10 +906,42 @@ public static class BrotliCompressor {
   // Match finding (LZ77 parse)
   // ---------------------------------------------------------------------------
 
-  /// <summary>A parsed command: a literal run followed by an optional backward reference.</summary>
-  private readonly record struct Command(int InsertStart, int InsertLength, int CopyLength, int Distance) {
+  /// <summary>
+  /// A parsed command: a literal run followed by an optional reference. <c>CopyLength</c> is
+  /// what the copy length code carries, <c>OutputLength</c> is how many input bytes the
+  /// reference covers; the two differ only for static dictionary references whose transform
+  /// changes the word length.
+  /// </summary>
+  private readonly record struct Command(
+    int InsertStart, int InsertLength, int CopyLength, int OutputLength, int Distance, bool IsDictionary) {
     /// <summary>First byte position after the command.</summary>
-    public int End => this.InsertStart + this.InsertLength + this.CopyLength;
+    public int End => this.InsertStart + this.InsertLength + this.OutputLength;
+  }
+
+  /// <summary>Best reference of either kind at one position.</summary>
+  private readonly record struct Reference(
+    int CopyLength, int OutputLength, int Distance, int Score, bool IsDictionary);
+
+  /// <summary>The absence of any usable reference.</summary>
+  private static readonly Reference NoReference = new(0, 0, 0, int.MinValue, false);
+
+  /// <summary>
+  /// Best reference at one position: either an in-window backward match or a static
+  /// dictionary word, whichever the cost model ranks higher.
+  /// </summary>
+  private static Reference FindBestReference(
+    byte[] data, int position, int maxDistance, int[] head, int[] chain, int[] parseRing) {
+    var window = FindBestMatch(data, position, maxDistance, head, chain, parseRing);
+    var hasDictionary = BrotliDictionaryMatcher.TryFindMatch(
+      data, position, Math.Min(maxDistance, position), out var dictionary);
+
+    if (hasDictionary && (window.Length < MinMatch || dictionary.Score > window.Score))
+      return new Reference(dictionary.CopyLength, dictionary.OutputLength,
+        dictionary.Distance, dictionary.Score, true);
+
+    return window.Length < MinMatch
+      ? NoReference
+      : new Reference(window.Length, window.Length, window.Distance, window.Score, false);
   }
 
   /// <summary>Hash of the four bytes at <paramref name="position"/>.</summary>
@@ -943,6 +983,20 @@ public static class BrotliCompressor {
   /// <summary>Whether coding a reference beats coding the same bytes as literals.</summary>
   private static bool MatchPaysOff(int length, int distance, bool inRing) =>
     length * 8 > MatchCost(length, distance, inRing);
+
+  /// <summary>
+  /// Approximate bit cost of a static dictionary reference. The copy length code carries
+  /// the base word length; the distance is always explicit, because the ring buffer never
+  /// holds a dictionary distance (RFC 7932 Section 4).
+  /// </summary>
+  /// <param name="copyLength">The base word length.</param>
+  /// <param name="distance">The distance value addressing the word and transform.</param>
+  /// <returns>The estimated cost in bits.</returns>
+  internal static int DictionaryMatchCost(int copyLength, int distance) {
+    var copyCode = FindLengthCode(BrotliConstants.CopyLengthTable, copyLength);
+    return EstimatedCommandBits + BrotliConstants.CopyLengthTable[copyCode].ExtraBits +
+      EstimatedDistanceBits + DistanceExtraBits(distance);
+  }
 
   /// <summary>Best backward reference at one position, or a zero length when there is none.</summary>
   private static (int Length, int Distance, int Score) FindBestMatch(
@@ -1031,12 +1085,12 @@ public static class BrotliCompressor {
       // and SplitMetaBlocks closes a meta-block right after one, so capping the
       // run here bounds MLEN without making the stream illegal.
       if (position - literalStart >= MaxLiteralRun) {
-        commands.Add(new Command(literalStart, position - literalStart, 0, 0));
+        commands.Add(new Command(literalStart, position - literalStart, 0, 0, 0, false));
         literalStart = position;
       }
 
-      var best = FindBestMatch(data, position, maxDistance, head, chain, parseRing);
-      if (best.Length < MinMatch) {
+      var best = FindBestReference(data, position, maxDistance, head, chain, parseRing);
+      if (best.OutputLength < MinMatch) {
         Insert(position);
         ++position;
         continue;
@@ -1044,23 +1098,25 @@ public static class BrotliCompressor {
 
       Insert(position);
       if (position + 1 < data.Length) {
-        var later = FindBestMatch(data, position + 1, maxDistance, head, chain, parseRing);
-        if (later.Length >= MinMatch && later.Score > best.Score + LazyMatchMargin) {
+        var later = FindBestReference(data, position + 1, maxDistance, head, chain, parseRing);
+        if (later.OutputLength >= MinMatch && later.Score > best.Score + LazyMatchMargin) {
           ++position;
           continue;
         }
       }
 
-      commands.Add(new Command(literalStart, position - literalStart, best.Length, best.Distance));
+      commands.Add(new Command(literalStart, position - literalStart,
+        best.CopyLength, best.OutputLength, best.Distance, best.IsDictionary));
 
-      if (best.Distance != parseRing[0]) {
+      // A dictionary distance never enters the ring buffer (RFC 7932 Section 4).
+      if (!best.IsDictionary && best.Distance != parseRing[0]) {
         parseRing[3] = parseRing[2];
         parseRing[2] = parseRing[1];
         parseRing[1] = parseRing[0];
         parseRing[0] = best.Distance;
       }
 
-      var matchEnd = position + best.Length;
+      var matchEnd = position + best.OutputLength;
       for (var i = position + 1; i < matchEnd; ++i)
         Insert(i);
 
@@ -1069,7 +1125,7 @@ public static class BrotliCompressor {
     }
 
     if (literalStart < data.Length)
-      commands.Add(new Command(literalStart, data.Length - literalStart, 0, 0));
+      commands.Add(new Command(literalStart, data.Length - literalStart, 0, 0, 0, false));
 
     return commands;
   }
@@ -1097,7 +1153,7 @@ public static class BrotliCompressor {
     var forcedEnd = new List<bool> { false };
     var carried = 0;
     for (var i = 0; i < commands.Count; ++i) {
-      carried += commands[i].InsertLength + commands[i].CopyLength;
+      carried += commands[i].InsertLength + commands[i].OutputLength;
       var literalOnly = commands[i].CopyLength == 0;
       if (carried < SegmentBytes && !literalOnly || i + 1 >= commands.Count)
         continue;
@@ -1155,7 +1211,7 @@ public static class BrotliCompressor {
     var to = segment + 1 < segmentStarts.Count ? segmentStarts[segment + 1] : commands.Count;
     var bytes = 0;
     for (var i = from; i < to; ++i)
-      bytes += commands[i].InsertLength + commands[i].CopyLength;
+      bytes += commands[i].InsertLength + commands[i].OutputLength;
     return bytes;
   }
 
@@ -1237,13 +1293,19 @@ public static class BrotliCompressor {
       }
 
       var copyCode = FindLengthCode(BrotliConstants.CopyLengthTable, command.CopyLength);
-      var canUseImplicit = insertCode <= 7 && copyCode <= 15 && command.Distance == ring[0];
+      var canUseImplicit = !command.IsDictionary &&
+                           insertCode <= 7 && copyCode <= 15 && command.Distance == ring[0];
 
       int iacCode;
       int distanceCode;
       if (canUseImplicit) {
         iacCode = EncodeInsertAndCopyCode(insertCode, copyCode, true);
         distanceCode = -1;
+      } else if (command.IsDictionary) {
+        // A dictionary reference always spells its distance out and never enters
+        // the ring buffer (RFC 7932 Sections 4 and 8).
+        iacCode = EncodeInsertAndCopyCode(insertCode, copyCode, false);
+        distanceCode = EncodeDistance(command.Distance).Code;
       } else {
         iacCode = EncodeInsertAndCopyCode(insertCode, copyCode, false);
         distanceCode = FindRingDistanceCode(command.Distance, ring);

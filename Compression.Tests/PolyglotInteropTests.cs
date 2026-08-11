@@ -951,10 +951,6 @@ process.stdout.write(out);
   }
 
   [Test]
-  [Ignore("Known limitation, decoder side only: we decode .NET BrotliStream output byte-exact " +
-          "(compressed meta-blocks included), but libbrotli at quality 11 emits stream features we " +
-          "mis-decode — output length is right, some literals are wrong. Our ENCODER is fine: node " +
-          "and .NET both read our output byte-exact. TODO Phase 31 §1b.")]
   public void Node_ZlibBrotliCreates_WeRead() {
     var node = FindNode();
     if (node == null) Assert.Ignore("node interpreter not found");
