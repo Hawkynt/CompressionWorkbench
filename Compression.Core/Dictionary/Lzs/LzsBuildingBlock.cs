@@ -138,7 +138,7 @@ public sealed class LzsBuildingBlock : IBuildingBlock {
       return [];
 
     var src = data[4..].ToArray();
-    var bitIndex = 0;
+    var bitIndex = 0L;
     var result = new byte[originalSize];
     var pos = 0;
 
@@ -195,15 +195,15 @@ public sealed class LzsBuildingBlock : IBuildingBlock {
       writer.WriteBit((value >> i) & 1);
   }
 
-  private static int ReadBit(byte[] data, ref int bitIndex) {
+  private static int ReadBit(byte[] data, ref long bitIndex) {
     if (bitIndex / 8 >= data.Length)
       throw new InvalidDataException("Unexpected end of LZS bitstream.");
-    var bit = (data[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+    var bit = (data[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
     bitIndex++;
     return bit;
   }
 
-  private static int ReadBits(byte[] data, ref int bitIndex, int count) {
+  private static int ReadBits(byte[] data, ref long bitIndex, int count) {
     var value = 0;
     for (var i = 0; i < count; i++)
       value = (value << 1) | ReadBit(data, ref bitIndex);

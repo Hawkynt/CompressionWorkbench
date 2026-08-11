@@ -46,7 +46,9 @@ public sealed class EliasDeltaBuildingBlock : IBuildingBlock {
 
     var src = data[4..].ToArray();
     var result = new byte[originalSize];
-    var bitIndex = 0;
+    // Elias Delta emits up to 16 bits per input byte, so the bit position passes
+    // int.MaxValue while the stream is still far short of Array.MaxLength.
+    var bitIndex = 0L;
 
     for (var i = 0; i < originalSize; i++)
       result[i] = (byte)(DecodeDelta(src, ref bitIndex) - 1);
@@ -82,7 +84,7 @@ public sealed class EliasDeltaBuildingBlock : IBuildingBlock {
       writer.WriteBit((value >> i) & 1);
   }
 
-  private static int DecodeDelta(byte[] data, ref int bitIndex) {
+  private static int DecodeDelta(byte[] data, ref long bitIndex) {
     // Read Gamma-coded length: count leading zeros, then read that many more bits.
     var lenLen = 0;
     while (ReadBit(data, ref bitIndex) == 0)
@@ -103,10 +105,10 @@ public sealed class EliasDeltaBuildingBlock : IBuildingBlock {
     return value;
   }
 
-  private static int ReadBit(byte[] data, ref int bitIndex) {
+  private static int ReadBit(byte[] data, ref long bitIndex) {
     if (bitIndex / 8 >= data.Length)
       throw new InvalidDataException("Unexpected end of Elias Delta bitstream.");
-    var bit = (data[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+    var bit = (data[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
     bitIndex++;
     return bit;
   }

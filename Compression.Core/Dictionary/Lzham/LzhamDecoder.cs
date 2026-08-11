@@ -82,11 +82,11 @@ public sealed class LzhamDecoder {
   }
 
   internal sealed class BitReader(byte[] data) {
-    private int _bitPos;
+    private long _bitPos;
 
     public int ReadBit() {
       if (_bitPos / 8 >= data.Length) return 0;
-      var bit = (data[_bitPos / 8] >> (7 - (_bitPos % 8))) & 1;
+      var bit = (data[_bitPos / 8] >> (7 - (int)(_bitPos % 8))) & 1;
       _bitPos++;
       return bit;
     }

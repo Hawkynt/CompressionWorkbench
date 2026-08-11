@@ -42,12 +42,12 @@ public sealed class TrialHuffman : ITrialStrategy {
       var output = new List<byte>();
       var bitPos = (1 + symbolCount) * 8;
 
-      while (bitPos < data.Length * 8 && output.Count < maxOutput) {
+      while (bitPos < (long)data.Length * 8 && output.Count < maxOutput) {
         if (ct.IsCancellationRequested) break;
 
         var decoded = false;
         for (var len = 1; len <= maxLen && !decoded; len++) {
-          if (bitPos + len > data.Length * 8) break;
+          if (bitPos + len > (long)data.Length * 8) break;
 
           var code = ReadBitsLsb(data, bitPos, len);
           for (var sym = 0; sym < symbolCount; sym++) {

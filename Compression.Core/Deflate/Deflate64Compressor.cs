@@ -143,9 +143,13 @@ public sealed class Deflate64Compressor {
 
     litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
-    // Estimate uncompressed cost
+    // Estimate uncompressed cost. Taken in 64-bit for the same reason as in
+    // DeflateCompressor: a 32-bit product wraps for a 2^28-byte block and would
+    // then make an uncompressed block look cheaper than any coded one. Write and
+    // Finish cap the block at DefaultBlockSize (32768), so the wrap is not
+    // reachable today; the width keeps it that way if the block size changes.
     var numSubBlocks = Math.Max(1, (dataArray.Length + Deflate64Compressor.MaxUncompressedBlockSize - 1) / Deflate64Compressor.MaxUncompressedBlockSize);
-    var uncompressedBits = 3 + numSubBlocks * 5 * 8 + dataArray.Length * 8;
+    var uncompressedBits = 3L + (long)numSubBlocks * 5 * 8 + (long)dataArray.Length * 8;
 
     var dynamicSize = EstimateDynamicSize(litLenFreqs, distFreqs, tokens);
 

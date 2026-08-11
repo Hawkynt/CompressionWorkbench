@@ -26,7 +26,7 @@ public sealed class TrialDecompressor {
   /// Returns successful attempts sorted by output entropy (lowest first).
   /// </summary>
   public List<DecompressionAttempt> TryAll(ReadOnlySpan<byte> data) {
-    var maxOutput = _maxOutputBytes > 0 ? _maxOutputBytes : Math.Min(data.Length * 4, 1024 * 1024);
+    var maxOutput = _maxOutputBytes > 0 ? _maxOutputBytes : (int)Math.Min((long)data.Length * 4, 1024 * 1024);
     var results = new List<DecompressionAttempt>();
     var dataArray = data.ToArray();
     var foundConfidentMatch = false;
@@ -72,7 +72,7 @@ public sealed class TrialDecompressor {
   /// <param name="ct">Cancellation token for overall cancellation.</param>
   /// <returns>List of successful decompression attempts, sorted by entropy ascending.</returns>
   public async Task<List<DecompressionAttempt>> TryAllAsync(byte[] data, CancellationToken ct = default) {
-    var maxOutput = _maxOutputBytes > 0 ? _maxOutputBytes : Math.Min(data.Length * 4, 1024 * 1024);
+    var maxOutput = _maxOutputBytes > 0 ? _maxOutputBytes : (int)Math.Min((long)data.Length * 4, 1024 * 1024);
 
     // Shared CTS: cancelled when a high-confidence match is found, or when caller cancels
     using var earlyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -127,7 +127,7 @@ public sealed class TrialDecompressor {
     if (strategy == null)
       return new(algorithm, 0, -1, -1, false, $"Unknown algorithm: {algorithm}", null);
 
-    var maxOutput = _maxOutputBytes > 0 ? _maxOutputBytes : Math.Min(data.Length * 4, 1024 * 1024);
+    var maxOutput = _maxOutputBytes > 0 ? _maxOutputBytes : (int)Math.Min((long)data.Length * 4, 1024 * 1024);
     using var cts = new CancellationTokenSource(_perTrialTimeoutMs);
     return strategy.TryDecompress(data, maxOutput, cts.Token);
   }

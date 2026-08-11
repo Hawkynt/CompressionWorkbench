@@ -8,14 +8,14 @@ public sealed partial class FseDecoder {
     /// </summary>
     private ref struct MsbBitReader {
         private readonly ReadOnlySpan<byte> _data;
-        private int _bitPos; // next bit position to read (counting down from totalBits-1)
+        private long _bitPos; // next bit position to read (counting down from totalBits-1)
 
         /// <summary>
         /// Initializes the reader with the data and the total number of valid data bits.
         /// </summary>
         /// <param name="data">The byte array containing the bitstream.</param>
         /// <param name="totalBits">Total number of data bits (sentinel excluded).</param>
-        public MsbBitReader(ReadOnlySpan<byte> data, int totalBits) {
+        public MsbBitReader(ReadOnlySpan<byte> data, long totalBits) {
             this._data = data;
             this._bitPos = totalBits - 1; // start from the highest data bit
         }
@@ -42,9 +42,11 @@ public sealed partial class FseDecoder {
         /// <summary>
         /// Gets a single bit at the specified position in the flat buffer.
         /// </summary>
-        private readonly int GetBit(int pos) {
-            var byteIdx = pos >> 3;
-            var bitIdx = pos & 7;
+        private readonly int GetBit(long pos) {
+            // A span cannot be indexed by a long, but any in-range byte index fits an
+            // int because the span itself can be at most Array.MaxLength long.
+            var byteIdx = (int)(pos >> 3);
+            var bitIdx = (int)(pos & 7);
             return (this._data[byteIdx] >> bitIdx) & 1;
         }
     }

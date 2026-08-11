@@ -97,7 +97,10 @@ public static class SimdBitPack {
   /// <returns>The number of bytes required.</returns>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static int GetPackedByteCount(int symbolCount, int bitsPerSymbol)
-    => (symbolCount * bitsPerSymbol + 7) / 8;
+    // The bit total is taken in 64-bit: at 32-bit width it wraps for 2^28 symbols
+    // at 8 bits each, yielding a negative or far-too-small buffer size. The byte
+    // count itself always fits in an int, because symbolCount does.
+    => (int)(((long)symbolCount * bitsPerSymbol + 7) / 8);
 
   // ---- Scalar fallback ----
 

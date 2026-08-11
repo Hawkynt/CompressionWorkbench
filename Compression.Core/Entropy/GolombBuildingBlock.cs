@@ -140,7 +140,10 @@ public sealed class GolombBuildingBlock : IBuildingBlock {
     // Read remaining bytes as bitstream.
     var bitData = data[offset..].ToArray();
     var result = new byte[originalSize];
-    var bitIndex = 0;
+    // The unary quotient makes Golomb coding expand badly when the parameter is
+    // small relative to the data, so the bit position passes int.MaxValue while
+    // the stream is still far short of Array.MaxLength.
+    var bitIndex = 0L;
 
     for (var i = 0; i < originalSize; i++)
       result[i] = (byte)DecodeGolomb(bitData, ref bitIndex, m);
@@ -197,7 +200,7 @@ public sealed class GolombBuildingBlock : IBuildingBlock {
     }
   }
 
-  private static int DecodeGolomb(byte[] data, ref int bitIndex, int m) {
+  private static int DecodeGolomb(byte[] data, ref long bitIndex, int m) {
     // Read unary quotient: count 1-bits until a 0-bit.
     var q = 0;
     while (ReadBit(data, ref bitIndex) == 1)
@@ -236,17 +239,17 @@ public sealed class GolombBuildingBlock : IBuildingBlock {
       writer.WriteBit((value >> i) & 1);
   }
 
-  private static int ReadBitsHighFirst(byte[] data, ref int bitIndex, int count) {
+  private static int ReadBitsHighFirst(byte[] data, ref long bitIndex, int count) {
     var value = 0;
     for (var i = 0; i < count; i++)
       value = (value << 1) | ReadBit(data, ref bitIndex);
     return value;
   }
 
-  private static int ReadBit(byte[] data, ref int bitIndex) {
+  private static int ReadBit(byte[] data, ref long bitIndex) {
     if (bitIndex / 8 >= data.Length)
       throw new InvalidDataException("Unexpected end of Golomb bitstream.");
-    var bit = (data[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+    var bit = (data[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
     bitIndex++;
     return bit;
   }

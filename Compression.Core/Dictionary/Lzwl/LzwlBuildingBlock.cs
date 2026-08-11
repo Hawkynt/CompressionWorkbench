@@ -177,7 +177,7 @@ public sealed class LzwlBuildingBlock : IBuildingBlock {
 
     // LZW decode.
     var src = data[offset..].ToArray();
-    var bitIndex = 0;
+    var bitIndex = 0L;
     var result = new List<byte>(originalSize);
 
     var firstCode = ReadBits(src, ref bitIndex, codeWidth);
@@ -228,12 +228,12 @@ public sealed class LzwlBuildingBlock : IBuildingBlock {
       writer.WriteBit((value >> i) & 1);
   }
 
-  private static int ReadBits(byte[] data, ref int bitIndex, int count) {
+  private static int ReadBits(byte[] data, ref long bitIndex, int count) {
     var value = 0;
     for (var i = 0; i < count; i++) {
       if (bitIndex / 8 >= data.Length)
         throw new InvalidDataException("Unexpected end of LZWL bitstream.");
-      var bit = (data[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+      var bit = (data[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
       bitIndex++;
       value = (value << 1) | bit;
     }

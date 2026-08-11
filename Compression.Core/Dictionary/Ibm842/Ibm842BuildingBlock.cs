@@ -308,7 +308,7 @@ public sealed class Ibm842BuildingBlock : IBuildingBlock {
   }
 
   private sealed class BitReader(byte[] data) {
-    private int _bitIndex;
+    private long _bitIndex;
 
     public int ReadBits(int count) {
       var value = 0;
@@ -322,7 +322,7 @@ public sealed class Ibm842BuildingBlock : IBuildingBlock {
     private int ReadBit() {
       if (_bitIndex / 8 >= data.Length)
         throw new InvalidDataException("Unexpected end of 842 bitstream.");
-      var bit = (data[_bitIndex / 8] >> (7 - (_bitIndex % 8))) & 1;
+      var bit = (data[_bitIndex / 8] >> (7 - (int)(_bitIndex % 8))) & 1;
       _bitIndex++;
       return bit;
     }

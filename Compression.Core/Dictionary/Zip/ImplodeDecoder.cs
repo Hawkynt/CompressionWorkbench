@@ -31,7 +31,7 @@ public static class ImplodeDecoder {
   /// <param name="is8kDictionary">Whether an 8KB dictionary is used (bit 1 of GP flags).</param>
   /// <returns>The decompressed data.</returns>
   public static byte[] Decode(byte[] compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary) {
-    var bitPos = 0;
+    var bitPos = 0L;
     var distanceBits = is8kDictionary ? 7 : 6;
     var minMatchLen = hasLiteralTree ? 3 : 2;
 
@@ -89,7 +89,7 @@ public static class ImplodeDecoder {
     return output;
   }
 
-  private static int[] ReadSfTree(byte[] data, ref int bitPos, int maxSymbol) {
+  private static int[] ReadSfTree(byte[] data, ref long bitPos, int maxSymbol) {
     // Read code lengths via RLE
     var numEntries = ReadBitsReversed(data, ref bitPos, 8) + 1;
     var codeLengths = new int[maxSymbol];
@@ -158,7 +158,7 @@ public static class ImplodeDecoder {
     return result;
   }
 
-  private static int DecodeSymbol(byte[] data, ref int bitPos, int[] table) {
+  private static int DecodeSymbol(byte[] data, ref long bitPos, int[] table) {
     var tableSize = table.Length;
     var maxBits = 0;
     while ((1 << maxBits) < tableSize) ++maxBits;
@@ -177,20 +177,20 @@ public static class ImplodeDecoder {
     return symbol;
   }
 
-  private static int ReadBit(byte[] data, ref int bitPos) {
+  private static int ReadBit(byte[] data, ref long bitPos) {
     var byteIdx = bitPos / 8;
-    var bitIdx = bitPos % 8;
+    var bitIdx = (int)(bitPos % 8);
     if (byteIdx >= data.Length) return 0;
     ++bitPos;
     return (data[byteIdx] >> bitIdx) & 1;
   }
 
-  private static int ReadBitsReversed(byte[] data, ref int bitPos, int count) {
+  private static int ReadBitsReversed(byte[] data, ref long bitPos, int count) {
     // Read bits LSB-first (natural order)
     var result = 0;
     for (var i = 0; i < count; ++i) {
       var byteIdx = bitPos / 8;
-      var bitIdx = bitPos % 8;
+      var bitIdx = (int)(bitPos % 8);
       if (byteIdx >= data.Length) break;
       result |= ((data[byteIdx] >> bitIdx) & 1) << i;
       ++bitPos;

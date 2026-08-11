@@ -22,7 +22,7 @@ public sealed class LzwHeuristic : IHeuristic {
     var bitPos = 0;
     var totalCodes = 0;
 
-    while (bitPos + bitWidth <= data.Length * 8 && totalCodes < 100) {
+    while (bitPos + bitWidth <= (long)data.Length * 8 && totalCodes < 100) {
       var code = ReadBits(data, bitPos, bitWidth);
       bitPos += bitWidth;
       totalCodes++;

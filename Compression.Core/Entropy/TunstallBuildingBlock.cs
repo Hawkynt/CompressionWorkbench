@@ -129,7 +129,9 @@ public sealed class TunstallBuildingBlock : IBuildingBlock {
 
     // Decode fixed-width codewords.
     var src = data[offset..].ToArray();
-    var bitIndex = 0;
+    // A bit position over the whole stream needs more than 31 bits once the
+    // stream passes 2^28 bytes, which is well inside Array.MaxLength.
+    var bitIndex = 0L;
     var result = new List<byte>(originalSize);
 
     while (result.Count < originalSize) {
@@ -205,10 +207,10 @@ public sealed class TunstallBuildingBlock : IBuildingBlock {
     return entries.Select(e => e.Phrase).ToList();
   }
 
-  private static int ReadBit(byte[] data, ref int bitIndex) {
+  private static int ReadBit(byte[] data, ref long bitIndex) {
     if (bitIndex / 8 >= data.Length)
       throw new InvalidDataException("Unexpected end of Tunstall bitstream.");
-    var bit = (data[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+    var bit = (data[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
     bitIndex++;
     return bit;
   }

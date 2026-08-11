@@ -22,8 +22,10 @@ public static class SuccessEvaluator {
     if (outputData.Length == 0)
       return new(false, "Output is empty");
 
-    // Check for excessive expansion (>100x is suspicious)
-    if (outputData.Length > inputData.Length * 100)
+    // Check for excessive expansion (>100x is suspicious). The product is taken in
+    // 64-bit: at 32-bit width it wraps for inputs of about 20.5 MB and up, which
+    // would reject every candidate as "excessive expansion".
+    if (outputData.Length > (long)inputData.Length * 100)
       return new(false, "Excessive expansion ratio");
 
     var inputEntropy = BinaryStatistics.ComputeEntropy(inputData);

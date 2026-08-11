@@ -6,7 +6,7 @@ namespace Compression.Core.Entropy.ExpGolomb;
 public sealed class ExpGolombDecoder {
   private readonly int _order;
   private readonly byte[] _data;
-  private int _bitPos;
+  private long _bitPos;
 
   /// <summary>
   /// Creates a decoder with the specified order k.
@@ -44,7 +44,7 @@ public sealed class ExpGolombDecoder {
   private int ReadBit() {
     if (_bitPos / 8 >= _data.Length)
       throw new InvalidDataException("Unexpected end of exp-Golomb bitstream.");
-    var bit = (_data[_bitPos / 8] >> (7 - (_bitPos % 8))) & 1;
+    var bit = (_data[_bitPos / 8] >> (7 - (int)(_bitPos % 8))) & 1;
     _bitPos++;
     return bit;
   }
