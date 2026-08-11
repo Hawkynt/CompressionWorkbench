@@ -150,7 +150,11 @@ public static class ReduceEncoder {
         if (pairCount[i][j] > 0)
           sorted.Add((pairCount[i][j], (byte)j));
       }
-      sorted.Sort((a, b) => b.count.CompareTo(a.count));
+      // Most frequent follower first. Followers of equal count are ordered by
+      // ascending byte value, so which 32 followers survive the cut and the
+      // index each one gets are a function of the data alone and never of how
+      // the sort happens to arrange items its comparison calls equal.
+      sorted.Sort((a, b) => a.count != b.count ? b.count.CompareTo(a.count) : a.value.CompareTo(b.value));
 
       var setSize = Math.Min(sorted.Count, 32);
       followers[i] = new byte[setSize];

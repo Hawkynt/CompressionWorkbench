@@ -52,6 +52,10 @@ namespace Compression.Core.Dictionary.Sequitur;
 /// sequence. A symbol is a one-bit tag and then either an eight-bit byte value
 /// or a rule index at the width the rule count needs; a grammar with no rules
 /// drops the tag and stores plain bytes. Zero bits pad to a byte boundary.
+/// Rules are numbered by first appearance in a breadth-first walk of the
+/// grammar — the start sequence left to right, then the body of rule 0, then
+/// rule 1, and so on — so the numbering can be recomputed from the serialised
+/// form itself and does not depend on the order in which the rules were built.
 /// The grammar is serialised as-is with no follow-on entropy coding, so input
 /// with no exploitable repetition ends up somewhat larger than it started:
 /// Sequitur still builds rules for digrams that recur by chance, and each one
@@ -353,18 +357,37 @@ public static class SequiturCompressor {
     }
 
     /// <summary>
-    /// Assigns dense indices to the surviving rules in creation order and
-    /// renders the grammar as (rule bodies, start sequence) using the codebook
-    /// terminal = 0..255, non-terminal = 256 + rule index.
+    /// Numbers the surviving rules by first appearance in a breadth-first walk
+    /// of the finished grammar and renders it as (rule bodies, start sequence)
+    /// using the codebook terminal = 0..255, non-terminal = 256 + rule index.
     /// </summary>
+    /// <remarks>
+    /// The walk reads the start sequence left to right, giving the next free
+    /// index to each rule reference it has not seen before, then does the same
+    /// over the body of rule 0, then rule 1, and so on until no rule is left
+    /// unnumbered. The numbering is therefore a property of the grammar that is
+    /// being written out — it can be recomputed from the serialised form alone
+    /// — and owes nothing to the order in which the rules happened to be
+    /// created, how many died on the way, or how any collection enumerates.
+    /// </remarks>
     public (List<List<int>> Rules, List<int> StartSequence) Render() {
       var live = new List<Rule>();
       var index = new Dictionary<Rule, int>(ReferenceEqualityComparer.Instance);
+      var walked = 0;
+
+      NumberBody(this._start.First);
+      Drain();
+
+      // Every live rule of a well-formed Sequitur grammar is reachable from the
+      // start sequence, so this tail never runs. It is here so that an
+      // unreachable rule would still get a defined index — creation order,
+      // after everything reachable — instead of being dropped and leaving the
+      // bodies that mention it dangling.
       foreach (var rule in this._rules) {
-        if (rule.Dead || ReferenceEquals(rule, this._start))
+        if (rule.Dead || ReferenceEquals(rule, this._start) || index.ContainsKey(rule))
           continue;
-        index[rule] = live.Count;
-        live.Add(rule);
+        Number(rule);
+        Drain();
       }
 
       var rules = new List<List<int>>(live.Count);
@@ -382,6 +405,27 @@ public static class SequiturCompressor {
       return (rules, startSequence);
 
       static int Code(Sym sym, Dictionary<Rule, int> index) => sym.IsTerminal ? sym.Terminal : 256 + index[sym.Target!];
+
+      // Numbers every rule referenced by a body that has itself just been
+      // numbered, until the frontier is empty.
+      void Drain() {
+        for (; walked < live.Count; ++walked)
+          NumberBody(live[walked].First);
+      }
+
+      void NumberBody(Sym? first) {
+        for (var symbol = first; symbol != null; symbol = symbol.Next)
+          if (!symbol.IsTerminal)
+            Number(symbol.Target!);
+      }
+
+      void Number(Rule rule) {
+        if (index.ContainsKey(rule))
+          return;
+
+        index[rule] = live.Count;
+        live.Add(rule);
+      }
     }
 
     private Rule NewRule() {

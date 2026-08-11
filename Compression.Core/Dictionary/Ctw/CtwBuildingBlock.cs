@@ -201,35 +201,54 @@ public sealed class CtwBuildingBlock : IBuildingBlock {
   private static int GetContext2FromList(List<byte> data, int pos) => 0x10100 + (data[pos - 2] << 8) + data[pos - 1];
 
   /// <summary>
-  /// Context model tracking symbol frequencies in each context.
+  /// Context model tracking symbol frequencies in each context. Each context
+  /// keeps the order in which its symbols were first seen alongside their
+  /// counts, so that ties between equally frequent symbols resolve to the
+  /// earliest observed one by an explicit rule rather than by whatever order a
+  /// hash table happens to enumerate.
   /// </summary>
   private sealed class ContextModel {
-    private readonly Dictionary<int, Dictionary<byte, int>> _contexts = new();
+    private readonly Dictionary<int, (List<byte> FirstSeen, Dictionary<byte, int> Counts)> _contexts = new();
 
     /// <summary>
     /// Returns the most frequent symbol in the given context, or -1 if no data.
+    /// Equally frequent symbols lose to the one seen first in this context.
     /// </summary>
+    /// <param name="contextId">The context to predict for.</param>
+    /// <returns>The winning symbol, or -1 when the context has never been updated.</returns>
     public int GetMostFrequent(int contextId) {
-      if (!_contexts.TryGetValue(contextId, out var freqs) || freqs.Count == 0)
+      if (!_contexts.TryGetValue(contextId, out var context) || context.FirstSeen.Count == 0)
         return -1;
 
       var bestSymbol = -1;
       var bestCount = 0;
-      foreach (var (symbol, count) in freqs) {
-        if (count > bestCount) {
-          bestCount = count;
-          bestSymbol = symbol;
-        }
+      foreach (var symbol in context.FirstSeen) {
+        var count = context.Counts[symbol];
+        if (count <= bestCount)
+          continue;
+
+        bestCount = count;
+        bestSymbol = symbol;
       }
+
       return bestSymbol;
     }
 
+    /// <summary>Records one occurrence of <paramref name="symbol"/> in <paramref name="contextId"/>.</summary>
+    /// <param name="contextId">The context the symbol occurred in.</param>
+    /// <param name="symbol">The symbol observed.</param>
     public void Update(int contextId, byte symbol) {
-      if (!_contexts.TryGetValue(contextId, out var freqs)) {
-        freqs = new Dictionary<byte, int>();
-        _contexts[contextId] = freqs;
+      if (!_contexts.TryGetValue(contextId, out var context)) {
+        context = ([], []);
+        _contexts[contextId] = context;
       }
-      freqs[symbol] = freqs.GetValueOrDefault(symbol) + 1;
+
+      if (context.Counts.TryGetValue(symbol, out var count))
+        context.Counts[symbol] = count + 1;
+      else {
+        context.Counts[symbol] = 1;
+        context.FirstSeen.Add(symbol);
+      }
     }
   }
 }

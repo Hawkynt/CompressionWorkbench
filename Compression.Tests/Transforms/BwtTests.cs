@@ -84,6 +84,32 @@ public class BwtTests {
     Assert.That(transformed, Is.All.EqualTo(0x41));
   }
 
+  /// <summary>
+  /// A period-4 input puts the 64 rotations into four classes of sixteen
+  /// identical strings, so every comparison inside a class ties for good. The
+  /// order within a class is settled by ascending rotation start position,
+  /// which is what makes both the last column and the primary index a function
+  /// of the input; this vector pins that rule.
+  /// </summary>
+  [Category("EdgeCase")]
+  [Test]
+  public void Forward_FullyTiedRotations_OrdersByStartPosition() {
+    var data = new byte[64];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)('a' + i % 4);
+
+    var (transformed, index) = BurrowsWheelerTransform.Forward(data);
+
+    var expected = new byte[64];
+    for (var i = 0; i < 64; ++i)
+      expected[i] = (byte)"dabc"[i / 16];
+
+    Assert.Multiple(() => {
+      Assert.That(index, Is.EqualTo(0));
+      Assert.That(transformed, Is.EqualTo(expected).AsCollection);
+    });
+  }
+
   [Category("Exception")]
   [Test]
   public void Inverse_InvalidIndex_Throws() {

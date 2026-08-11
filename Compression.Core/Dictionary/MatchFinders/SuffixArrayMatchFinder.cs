@@ -125,11 +125,17 @@ public sealed class SuffixArrayMatchFinder {
     for (var gap = 1; gap < n; gap <<= 1) {
       var g = gap;
       var r = rank;
+      // Order by the rank pair (this suffix, the suffix g further on), and when
+      // those are equal - which is exactly when the two suffixes agree over the
+      // whole 2g-byte prefix, and stays true for the rest of the run when the
+      // input is periodic - by ascending start position. The tie-break makes
+      // the comparison a total order, so the suffix array is a function of the
+      // input rather than of how an unstable sort happens to arrange equals.
       Array.Sort(sa, (a, b) => {
         if (r[a] != r[b]) return r[a].CompareTo(r[b]);
         var ra = a + g < n ? r[a + g] : -1;
         var rb = b + g < n ? r[b + g] : -1;
-        return ra.CompareTo(rb);
+        return ra != rb ? ra.CompareTo(rb) : a.CompareTo(b);
       });
 
       tmp[sa[0]] = 0;
