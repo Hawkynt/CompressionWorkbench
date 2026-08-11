@@ -39,7 +39,14 @@ public sealed class RePairBuildingBlock : IBuildingBlock {
 
   // Non-terminals start at 256 (above byte range).
   private const int FirstNonTerminal = 256;
-  private const int MaxRules = 65536;
+
+  // Symbols are written to the stream as 16-bit values, and rule r is referred to
+  // as FirstNonTerminal + r, so the last rule that can be named is 65535 - 256.
+  // The former limit of 65536 let rule numbers run past what the wire format can
+  // express: they wrapped on serialisation and the stream decoded to the wrong
+  // bytes with nothing raised. Stopping here costs a little ratio on inputs that
+  // would exceed it and changes no output that was previously decodable.
+  private const int MaxRules = 65536 - FirstNonTerminal;
 
   /// <inheritdoc/>
   public byte[] Compress(ReadOnlySpan<byte> data) {
