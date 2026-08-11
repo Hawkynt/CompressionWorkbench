@@ -139,6 +139,88 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data)); // CRC checked during decompression
   }
 
+  [Category("ThemVsUs")]
+  [TestCase(0)]
+  [TestCase(1)]
+  [TestCase(2)]
+  [TestCase(50)]
+  [TestCase(1000)]
+  public void NumberOfHuffmanTables_StaysWithinTheTwoToSixTheFormatAllows(int size) {
+    // A block short enough to need a single selector group still has to declare at
+    // least two tables: a decoder rejects any other count outright, so a stream with
+    // one table is unreadable no matter how well formed the rest of it is.
+    var data = new byte[size];
+    for (var i = 0; i < size; ++i)
+      data[i] = (byte)(i % 7);
+
+    Assert.Multiple(() => {
+      foreach (var header in ReadBlockHeaders(CompressWithOurs(data)))
+        Assert.That(header.NumTables, Is.InRange(2, 6));
+    });
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void RunLengthStage_ThatExpandsTheBlock_StillFitsTheDeclaredBlockSize() {
+    // The block size caps the run-length-encoded block, not the raw input. A run of
+    // exactly four bytes encodes into five, so counting raw input against the cap lets
+    // a block grow past what a decoder allocates for it. This input is nothing but
+    // runs of four, the worst case for that expansion.
+    var data = new byte[800_000];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)(i / 4 % 256);
+
+    var compressed = CompressWithOurs(data, blockSize100k: 9);
+    Assert.That(DecompressWithOurs(compressed), Is.EqualTo(data));
+
+    // Each selector covers 50 symbols; this is the bound the reference decoder applies.
+    const int maxSelectors = 2 + 900_000 / 50;
+    Assert.Multiple(() => {
+      foreach (var header in ReadBlockHeaders(compressed))
+        Assert.That(header.NumSelectors, Is.LessThanOrEqualTo(maxSelectors));
+    });
+  }
+
+  private readonly record struct BlockHeader(int NumTables, int NumSelectors);
+
+  /// <summary>
+  /// Walks a bzip2 stream and reads the table count and selector count out of every
+  /// block header, which is as far as the stream can be parsed without decoding it.
+  /// </summary>
+  private static List<BlockHeader> ReadBlockHeaders(byte[] stream) {
+    var headers = new List<BlockHeader>();
+    var bit = 32; // "BZh" and the block-size digit
+
+    ulong Read(int count) {
+      ulong value = 0;
+      for (var i = 0; i < count; ++i, ++bit)
+        value = (value << 1) | ((ulong)(stream[bit >> 3] >> (7 - (bit & 7))) & 1);
+
+      return value;
+    }
+
+    for (;;) {
+      var magic = Read(48);
+      if (magic != 0x314159265359)
+        return headers; // end-of-stream magic
+
+      Read(32); // block CRC
+      Read(1);  // randomised flag
+      Read(24); // original pointer
+
+      var used16 = Read(16);
+      for (var group = 0; group < 16; ++group)
+        if ((used16 & (1UL << (15 - group))) != 0)
+          Read(16);
+
+      headers.Add(new((int)Read(3), (int)Read(15)));
+
+      // Everything after the selectors needs full Huffman decoding, so stop here and
+      // report what the header said rather than pretending to parse the payload.
+      return headers;
+    }
+  }
+
   private static byte[] CompressWithOurs(byte[] data, int blockSize100k = 9) {
     using var ms = new MemoryStream();
     using (var bz = new Bzip2Stream(ms, CompressionStreamMode.Compress,

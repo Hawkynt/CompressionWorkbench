@@ -15,6 +15,15 @@ internal sealed class Bzip2Compressor {
   private int _blockLength;
   private uint _combinedCrc;
 
+  // The block size limits the RLE1-encoded block, not the raw input, so the raw bytes
+  // are buffered while their RLE1 length is tracked alongside. A long run shrinks by a
+  // factor of up to 52 (259 bytes become 5), so the raw buffer has to be able to grow
+  // well past the block size; conversely a run of exactly four expands 4 bytes into 5,
+  // which is what would push an input-counted block past the limit a decoder allocates.
+  private int _rle1Length;
+  private int _runByte = -1;
+  private int _runLength;
+
   /// <summary>
   /// Gets the combined CRC-32 of all blocks.
   /// </summary>
@@ -28,7 +37,7 @@ internal sealed class Bzip2Compressor {
   public Bzip2Compressor(BitWriter<MsbBitOrder> bitWriter, int blockSize100k = 9) {
     this._bitWriter = bitWriter;
     this._blockSize = blockSize100k * 100_000;
-    this._blockBuffer = new byte[this._blockSize + 1000]; // Extra room for RLE1
+    this._blockBuffer = new byte[Math.Min(this._blockSize, 1 << 16)];
     this._blockLength = 0;
   }
 
@@ -36,17 +45,41 @@ internal sealed class Bzip2Compressor {
   /// Writes data to the compressor, flushing blocks as needed.
   /// </summary>
   public void Write(ReadOnlySpan<byte> data) {
-    var offset = 0;
-    while (offset < data.Length) {
-      var remaining = this._blockSize - this._blockLength;
-      var toCopy = Math.Min(remaining, data.Length - offset);
-      data.Slice(offset, toCopy).CopyTo(this._blockBuffer.AsSpan(this._blockLength));
-      this._blockLength += toCopy;
-      offset += toCopy;
+    for (var i = 0; i < data.Length; ++i) {
+      this.Append(data[i]);
 
-      if (this._blockLength >= this._blockSize)
-        FlushBlock();
+      // One byte adds at most two to the RLE1 length (the fourth byte of a run emits
+      // both that byte and the run's count byte), so stopping one short of the limit
+      // keeps the encoded block within it.
+      if (this._rle1Length >= this._blockSize - 1)
+        this.FlushBlock();
     }
+  }
+
+  /// <summary>
+  /// Buffers one raw byte and tracks what it costs in the RLE1 encoding, mirroring
+  /// <see cref="Rle1Encode"/>: the first three bytes of a run cost one each, the fourth
+  /// costs two, and every byte after that is absorbed free by the count byte until the
+  /// run reaches its 259-byte maximum and a fresh run starts.
+  /// </summary>
+  private void Append(byte value) {
+    if (this._blockLength == this._blockBuffer.Length)
+      Array.Resize(ref this._blockBuffer, this._blockBuffer.Length * 2);
+
+    this._blockBuffer[this._blockLength++] = value;
+
+    if (value != this._runByte || this._runLength >= 259) {
+      this._runByte = value;
+      this._runLength = 1;
+      ++this._rle1Length;
+      return;
+    }
+
+    ++this._runLength;
+    if (this._runLength <= 3)
+      ++this._rle1Length;
+    else if (this._runLength == 4)
+      this._rle1Length += 2;
   }
 
   /// <summary>
@@ -69,6 +102,9 @@ internal sealed class Bzip2Compressor {
   private void FlushBlock() {
     ReadOnlySpan<byte> blockData = this._blockBuffer.AsSpan(0, this._blockLength);
     this._blockLength = 0;
+    this._rle1Length = 0;
+    this._runByte = -1;
+    this._runLength = 0;
 
     // Compute block CRC
     var blockCrc = Crc32Bzip2(blockData);
@@ -125,14 +161,14 @@ internal sealed class Bzip2Compressor {
     var numGroups = (symbols.Length + Bzip2Constants.GroupSize - 1) / Bzip2Constants.GroupSize;
     if (numGroups == 0) numGroups = 1;
 
-    // Choose number of tables based on data size
-    var numTrees = numGroups < 2 ? 1
-      : numGroups < 8 ? 2
+    // Choose number of tables based on data size. The format allows 2 to 6 and a
+    // decoder rejects anything else, so a block small enough to need only one group
+    // still gets two tables — the spare one simply goes unused.
+    var numTrees = numGroups < 8 ? 2
       : numGroups < 100 ? 3
       : numGroups < 600 ? 4
       : numGroups < 1200 ? 5
       : Bzip2Constants.MaxTrees;
-    numTrees = Math.Min(numTrees, numGroups);
 
     // Build per-table code lengths and selectors
     var (tableLengths, selectors) = BuildMultiTable(symbols, alphaSize, numTrees, numGroups);
