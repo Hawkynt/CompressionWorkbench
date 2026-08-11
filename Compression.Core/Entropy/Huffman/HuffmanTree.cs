@@ -1,5 +1,3 @@
-using Compression.Core.DataStructures;
-
 namespace Compression.Core.Entropy.Huffman;
 
 /// <summary>
@@ -9,33 +7,49 @@ public static class HuffmanTree {
   /// <summary>
   /// Builds a Huffman tree from symbol frequencies.
   /// </summary>
+  /// <remarks>
+  /// The tree is the one <see cref="DeterministicHuffman"/> describes, node for node: merge the
+  /// two lightest nodes, and where several are equally light take them in rank order - a leaf
+  /// for symbol <c>s</c> ranks <c>s</c>, the <c>k</c>-th internal node created ranks
+  /// <c>frequencies.Length + k</c>, so leaves come before internal nodes, leaves by ascending
+  /// symbol and internal nodes oldest first. Ranks cannot collide, so the rule is a total order
+  /// and the tree is a function of the frequencies alone. The construction is not repeated
+  /// here: this method asks <see cref="DeterministicHuffman.BuildForest"/> for the tree and only
+  /// wraps the result in <see cref="HuffmanNode"/> objects, so the tree a caller walks and the
+  /// code lengths <see cref="DeterministicHuffman.BuildCodeLengths(ReadOnlySpan{long})"/> hands
+  /// out can never drift apart.
+  /// </remarks>
   /// <param name="frequencies">An array where index = symbol and value = frequency.
   /// Symbols with zero frequency are excluded.</param>
   /// <returns>The root of the Huffman tree.</returns>
   /// <exception cref="ArgumentException">No symbols with non-zero frequency.</exception>
   public static HuffmanNode BuildFromFrequencies(long[] frequencies) {
-    var heap = new MinHeap<HuffmanNode>();
+    var leafCount = DeterministicHuffman.CountLeaves(frequencies);
+    if (leafCount == 0)
+      throw new ArgumentException("At least one symbol must have a non-zero frequency.", nameof(frequencies));
 
-    for (var i = 0; i < frequencies.Length; ++i)
-      if (frequencies[i] > 0)
-        heap.Insert(new(i, frequencies[i]));
+    // Single-symbol tree: pair the only leaf with a dummy sibling so the symbol still gets a
+    // one-bit code instead of a zero-length one.
+    if (leafCount == 1) {
+      var single = 0;
+      while (frequencies[single] <= 0)
+        ++single;
 
-    switch (heap.Count) {
-      case 0: throw new ArgumentException("At least one symbol must have a non-zero frequency.", nameof(frequencies));
-      // Single-symbol tree: create a dummy internal node
-      case 1: {
-        var single = heap.ExtractMin();
-        return new(single, new(-2, 0));
-      }
+      return new(new HuffmanNode(single, frequencies[single]), new(-2, 0));
     }
 
-    while (heap.Count > 1) {
-      var left = heap.ExtractMin();
-      var right = heap.ExtractMin();
-      heap.Insert(new(left, right));
-    }
+    var (weight, symbol, left, right) = DeterministicHuffman.BuildForest(frequencies, leafCount);
 
-    return heap.ExtractMin();
+    // Children always sit at a lower index than their parent, so one forward pass materialises
+    // every node after both of its children exist. The last slot is the root.
+    var nodes = new HuffmanNode[weight.Length];
+    for (var i = 0; i < leafCount; ++i)
+      nodes[i] = new(symbol[i], weight[i]);
+
+    for (var i = leafCount; i < nodes.Length; ++i)
+      nodes[i] = new(nodes[left[i]], nodes[right[i]]);
+
+    return nodes[^1];
   }
 
   /// <summary>

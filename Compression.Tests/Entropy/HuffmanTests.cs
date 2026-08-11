@@ -41,6 +41,75 @@ public class HuffmanTests {
     Assert.Throws<ArgumentException>(() => HuffmanTree.BuildFromFrequencies(frequencies));
   }
 
+  [Category("Boundary")]
+  [Test]
+  public void BuildFromFrequencies_EqualWeights_TakesTheLeafBeforeTheInternalNode() {
+    // Two symbols of weight one and two of weight two. Merging the two light leaves
+    // produces an internal node of weight two, which now ties with both remaining
+    // leaves. The rule takes the leaves first - a leaf can never be deeper than a node
+    // that already has children - so all four symbols end up two bits deep. Handing the
+    // same tie to a plain binary heap instead yields 3, 3, 2, 1: still a legal Huffman
+    // code, but a different one, chosen by the container rather than by the algorithm.
+    var frequencies = new long[] { 1, 1, 2, 2 };
+
+    var root = HuffmanTree.BuildFromFrequencies(frequencies);
+    var lengths = HuffmanTree.GetCodeLengths(root, 4);
+
+    Assert.That(lengths, Is.EqualTo(new[] { 2, 2, 2, 2 }));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void BuildFromFrequencies_TieSaturatedAlphabet_AgreesWithDeterministicBuilder() {
+    // Every leaf weighs the same, so every single merge in the construction is a tie.
+    var frequencies = new long[256];
+    Array.Fill(frequencies, 4L);
+
+    var root = HuffmanTree.BuildFromFrequencies(frequencies);
+    var fromTree = HuffmanTree.GetCodeLengths(root, 256);
+
+    Assert.That(fromTree, Is.EqualTo(DeterministicHuffman.BuildCodeLengths(frequencies)));
+    Assert.That(fromTree, Has.All.EqualTo(8));
+  }
+
+  [Category("EquivalenceClass")]
+  [Test]
+  public void BuildFromFrequencies_AgreesWithDeterministicBuilder_AcrossWeightProfiles() {
+    // The tree and the code-length builder must never disagree, because they are the
+    // same construction. Small weights make ties the norm; wide weights make them rare;
+    // powers of two force a maximally skewed tree.
+    var rng = new Random(20260811);
+    for (var trial = 0; trial < 200; ++trial) {
+      var symbolCount = 2 + rng.Next(64);
+      var frequencies = new long[symbolCount];
+      var profile = trial % 3;
+      for (var i = 0; i < symbolCount; ++i)
+        frequencies[i] = profile switch {
+          0 => rng.Next(0, 4),          // heavily tied, some symbols unused
+          1 => rng.Next(1, 1_000_000),  // ties are the exception
+          _ => 1L << rng.Next(0, 20)    // skewed, ties between whole subtrees
+        };
+
+      if (frequencies.All(t => t <= 0))
+        continue;
+
+      var expected = DeterministicHuffman.BuildCodeLengths(frequencies);
+      var actual = HuffmanTree.GetCodeLengths(HuffmanTree.BuildFromFrequencies(frequencies), symbolCount);
+
+      Assert.That(actual, Is.EqualTo(expected), $"trial {trial}, profile {profile}");
+    }
+  }
+
+  [Category("EquivalenceClass")]
+  [Test]
+  public void BuildCodeLengths_IntAndLongOverloads_Agree() {
+    var weights = new[] { 0, 3, 3, 3, 3, 1, 1, 9 };
+    var promoted = weights.Select(t => (long)t).ToArray();
+
+    Assert.That(DeterministicHuffman.BuildCodeLengths(promoted),
+      Is.EqualTo(DeterministicHuffman.BuildCodeLengths(weights)));
+  }
+
   [Category("HappyPath")]
   [Test]
   public void GetCodeLengths_ReturnsCorrectLengths() {

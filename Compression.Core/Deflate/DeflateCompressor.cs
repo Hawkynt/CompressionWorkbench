@@ -289,21 +289,13 @@ public sealed class DeflateCompressor {
   /// Derives length-limited Huffman code lengths for a block's alphabet.
   /// </summary>
   /// <remarks>
-  /// Zopfli measures each candidate parse by the exact size of the block it produces, so
-  /// the lengths it costs with and the lengths it emits have to come from one builder, and
-  /// that builder is the deterministic one whose tie-break among equally likely symbols is
-  /// written down rather than inherited from a heap's internals. The other levels keep the
-  /// builder their output has always been pinned against.
+  /// Zopfli measures each candidate parse by the exact size of the block it produces, so the
+  /// lengths it costs with and the lengths it emits have to come from one builder. Every level
+  /// now uses that builder, whose tie-break among equally likely symbols is written down rather
+  /// than inherited from a heap's internals.
   /// </remarks>
-  private int[] BuildCodeLengths(long[] frequencies, int alphabetSize, int maxBits) {
-    if (this._level == DeflateCompressionLevel.Maximum)
-      return ZopfliBlockCost.BuildCodeLengths(frequencies.AsSpan(0, alphabetSize), maxBits);
-
-    var root = HuffmanTree.BuildFromFrequencies(frequencies);
-    var lengths = HuffmanTree.GetCodeLengths(root, alphabetSize);
-    HuffmanTree.LimitCodeLengths(lengths, maxBits);
-    return lengths;
-  }
+  private int[] BuildCodeLengths(long[] frequencies, int alphabetSize, int maxBits)
+    => ZopfliBlockCost.BuildCodeLengths(frequencies.AsSpan(0, alphabetSize), maxBits);
 
   private void EmitStaticHuffmanBlock(
     List<(bool IsLiteral, byte Literal, int Distance, int Length)> tokens,

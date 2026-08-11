@@ -35,6 +35,12 @@ namespace Compression.Core.Entropy.Huffman;
 /// building the tree is an ordinary two-queue merge.
 /// </para>
 /// <para>
+/// This class is the only place in the library that decides the shape of a Huffman tree.
+/// <see cref="HuffmanTree.BuildFromFrequencies"/> materialises the very same tree as
+/// <see cref="HuffmanNode"/> objects for callers that need to walk it, by calling
+/// <see cref="BuildForest"/> here rather than by ordering nodes of its own.
+/// </para>
+/// <para>
 /// The Cipher project implements the same rule in
 /// <c>algorithms/compression/huffman-code-lengths.data.js</c>; the two agree because they follow
 /// the same written rule, not because either mimics the other's runtime.
@@ -52,14 +58,27 @@ public static class DeterministicHuffman {
   /// one. Lengths are otherwise unbounded; callers that need a depth limit apply their own
   /// clamping and Kraft repair afterwards.</returns>
   public static int[] BuildCodeLengths(ReadOnlySpan<int> weights) {
+    var promoted = new long[weights.Length];
+    for (var i = 0; i < weights.Length; ++i)
+      promoted[i] = weights[i];
+
+    return DeterministicHuffman.BuildCodeLengths((ReadOnlySpan<long>)promoted);
+  }
+
+  /// <summary>
+  /// Builds Huffman code lengths for the given symbol weights.
+  /// </summary>
+  /// <param name="weights">Weight per symbol, indexed by symbol value. Symbols whose weight is
+  /// zero or negative are excluded from the tree and receive length zero.</param>
+  /// <returns>An array of the same length as <paramref name="weights"/> holding the code length
+  /// of each symbol, or zero for excluded symbols. A single participating symbol receives length
+  /// one. Lengths are otherwise unbounded; callers that need a depth limit apply their own
+  /// clamping and Kraft repair afterwards.</returns>
+  public static int[] BuildCodeLengths(ReadOnlySpan<long> weights) {
     var symbolCount = weights.Length;
     var lengths = new int[symbolCount];
 
-    var leafCount = 0;
-    for (var i = 0; i < symbolCount; ++i)
-      if (weights[i] > 0)
-        ++leafCount;
-
+    var leafCount = DeterministicHuffman.CountLeaves(weights);
     if (leafCount == 0)
       return lengths;
 
@@ -73,9 +92,56 @@ public static class DeterministicHuffman {
       return lengths;
     }
 
+    var forest = DeterministicHuffman.BuildForest(weights, leafCount);
+
+    // Depths, walked from the root backwards. Both children of a node always sit at a lower
+    // index than the node itself, so one reverse pass suffices and no recursion is needed even
+    // for a maximally skewed tree.
+    var nodeCount = forest.Weight.Length;
+    var depth = new int[nodeCount];
+    for (var i = nodeCount - 1; i >= leafCount; --i) {
+      var childDepth = depth[i] + 1;
+      depth[forest.Left[i]] = childDepth;
+      depth[forest.Right[i]] = childDepth;
+    }
+
+    for (var i = 0; i < leafCount; ++i)
+      lengths[forest.Symbol[i]] = Math.Max(depth[i], 1);
+
+    return lengths;
+  }
+
+  /// <summary>
+  /// Counts the symbols that take part in the tree.
+  /// </summary>
+  /// <param name="weights">Weight per symbol.</param>
+  /// <returns>How many weights are strictly positive.</returns>
+  internal static int CountLeaves(ReadOnlySpan<long> weights) {
+    var result = 0;
+    for (var i = 0; i < weights.Length; ++i)
+      if (weights[i] > 0)
+        ++result;
+
+    return result;
+  }
+
+  /// <summary>
+  /// Builds the Huffman tree for the given weights under the total order described on this
+  /// class, and returns it as flat parallel arrays.
+  /// </summary>
+  /// <param name="weights">Weight per symbol; only strictly positive entries take part.</param>
+  /// <param name="leafCount">How many entries of <paramref name="weights"/> are positive; at
+  /// least two.</param>
+  /// <returns>Arrays of length <c>2 * leafCount - 1</c>. Slots <c>[0, leafCount)</c> hold the
+  /// leaves in ascending total order and carry their symbol; slots <c>[leafCount, end)</c> hold
+  /// the internal nodes in creation order, carry symbol <c>-1</c> and index their two children.
+  /// Every internal node sits at a higher index than both its children, so the last slot is the
+  /// root and a single reverse pass visits parents before children.</returns>
+  internal static (long[] Weight, int[] Symbol, int[] Left, int[] Right) BuildForest(
+    ReadOnlySpan<long> weights,
+    int leafCount) {
     // Node storage. Slots [0, leafCount) hold the leaves in ascending order, slots
-    // [leafCount, nodeCount) the internal nodes in creation order. Every internal node
-    // therefore sits at a higher index than both of its children.
+    // [leafCount, nodeCount) the internal nodes in creation order.
     var nodeCount = 2 * leafCount - 1;
     var nodeWeight = new long[nodeCount];
     var nodeSymbol = new int[nodeCount];
@@ -84,7 +150,7 @@ public static class DeterministicHuffman {
 
     var leaves = new (long Weight, int Symbol)[leafCount];
     var filled = 0;
-    for (var i = 0; i < symbolCount; ++i)
+    for (var i = 0; i < weights.Length; ++i)
       if (weights[i] > 0)
         leaves[filled++] = (weights[i], i);
 
@@ -108,8 +174,8 @@ public static class DeterministicHuffman {
     var created = leafCount;
 
     int TakeSmallest() {
-      // Equal weight favours the leaf: a leaf's rank is below symbolCount while an internal
-      // node's rank is at or above it.
+      // Equal weight favours the leaf: a leaf's rank is below the symbol count while an
+      // internal node's rank is at or above it.
       var takeLeaf = leafHead < leafCount
                      && (internalHead >= created || nodeWeight[leafHead] <= nodeWeight[internalHead]);
 
@@ -126,20 +192,7 @@ public static class DeterministicHuffman {
       ++created;
     }
 
-    // Depths, walked from the root backwards. Both children of a node always sit at a lower
-    // index than the node itself, so one reverse pass suffices and no recursion is needed even
-    // for a maximally skewed tree.
-    var depth = new int[nodeCount];
-    for (var i = nodeCount - 1; i >= leafCount; --i) {
-      var childDepth = depth[i] + 1;
-      depth[nodeLeft[i]] = childDepth;
-      depth[nodeRight[i]] = childDepth;
-    }
-
-    for (var i = 0; i < leafCount; ++i)
-      lengths[nodeSymbol[i]] = Math.Max(depth[i], 1);
-
-    return lengths;
+    return (nodeWeight, nodeSymbol, nodeLeft, nodeRight);
   }
 
 }
