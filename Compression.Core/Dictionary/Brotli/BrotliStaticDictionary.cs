@@ -3,10 +3,19 @@ using System.Reflection;
 namespace Compression.Core.Dictionary.Brotli;
 
 /// <summary>
-/// Brotli static dictionary and word transform functions (RFC 7932 Appendix A/B).
-/// The static dictionary provides 122,784 bytes of word data across 21 length classes (4-24),
-/// with 121 transforms that can modify each word (identity, uppercase, prefix, etc.).
+/// Brotli static dictionary and word transform functions (RFC 7932 Section 8, Appendix A/B).
+/// The static dictionary holds 122,784 bytes of word data across 21 length classes (4-24),
+/// with 121 transforms that can modify each word (identity, case flips, prefix and suffix
+/// insertion, head and tail truncation).
 /// </summary>
+/// <remarks>
+/// A copy command whose distance exceeds the maximum in-window backward distance addresses
+/// this word list instead of the sliding window. RFC 7932 Section 8 decodes it as
+/// <c>word_id = distance - max_allowed_distance - 1</c>, <c>index = word_id mod
+/// NWORDS[copy_length]</c> and <c>transform_id = word_id div NWORDS[copy_length]</c>; the
+/// copy length selects the length class of the base word, while the number of bytes actually
+/// produced is the length of the transformed word.
+/// </remarks>
 internal static class BrotliStaticDictionary {
   /// <summary>Minimum word length in the static dictionary.</summary>
   public const int MinWordLength = 4;
@@ -14,35 +23,79 @@ internal static class BrotliStaticDictionary {
   /// <summary>Maximum word length in the static dictionary.</summary>
   public const int MaxWordLength = 24;
 
-  /// <summary>Number of transforms.</summary>
+  /// <summary>Number of transforms defined by RFC 7932 Appendix B.</summary>
   public const int NumTransforms = 121;
 
+  /// <summary>Elementary transform: leave the word unchanged.</summary>
+  public const int TransformIdentity = 0;
+
+  /// <summary>Elementary transform: flip the case of the first character.</summary>
+  public const int TransformFermentFirst = 1;
+
+  /// <summary>Elementary transform: flip the case of every character.</summary>
+  public const int TransformFermentAll = 2;
+
+  /// <summary>Lowest elementary transform id that drops leading bytes (OmitFirst1).</summary>
+  public const int TransformOmitFirstLow = 3;
+
+  /// <summary>Highest elementary transform id that drops leading bytes (OmitFirst9).</summary>
+  public const int TransformOmitFirstHigh = 11;
+
+  /// <summary>OmitLast_k has elementary transform id <c>TransformOmitLastBase + k</c>.</summary>
+  public const int TransformOmitLastBase = 11;
+
+  /// <summary>Number of distinct elementary transform ids (0-20).</summary>
+  public const int TransformIdCount = 21;
+
+  /// <summary>Index of the transform that is a bare FermentFirst with no prefix or suffix.</summary>
+  private const int FermentFirstOnly = 9;
+
+  /// <summary>Index of the transform that is a bare FermentAll with no prefix or suffix.</summary>
+  private const int FermentAllOnly = 44;
+
   /// <summary>
-  /// Number of dictionary words per length (log2). Used for computing
-  /// dictionary word index from distance code.
+  /// RFC 7932 Section 8 NDBITS, indexed by word length. <c>NWORDS[length]</c> is
+  /// <c>1 &lt;&lt; NDBITS[length]</c>; lengths below 4 hold no words.
   /// </summary>
   private static readonly int[] NumBitsPerLength = [
-    10, 10, 11, 11, 10, 10, 10, 10,  // lengths 4-11
-    10, 10, 10, 10, 10,  9,  9,  8,  // lengths 12-19
-     7,  7,  8,  7,  7              // lengths 20-24
+    0, 0, 0, 0, 10, 10, 11, 11, 10, 10,
+    10, 10, 10, 9, 9, 8, 7, 7, 8, 7,
+    7, 6, 6, 5, 5
   ];
 
   /// <summary>
-  /// Byte offset into the dictionary data for each length class (4-24).
-  /// Precomputed: offset[i] = sum of (2^NumBits[j] * (j+4)) for j=0..i-1.
+  /// Byte offset into the dictionary data at which each length class starts:
+  /// <c>DOFFSET[length + 1] = DOFFSET[length] + length * NWORDS[length]</c>.
   /// </summary>
   private static readonly int[] LengthOffsets = ComputeLengthOffsets();
 
-  /// <summary>The raw 122,784-byte static dictionary from RFC 7932 Appendix A.</summary>
-  private static readonly byte[] DictionaryData = LoadDictionary();
+  /// <summary>
+  /// The word list in three forms: untouched, every word with its first character
+  /// case-flipped, and every word with all characters case-flipped. Neither ferment
+  /// changes a word's length, so all three share the layout of the original. Built on
+  /// first use, because it needs the transform table declared further down.
+  /// </summary>
+  private static readonly Lazy<byte[][]> WordForms = new(BuildWordForms);
+
+  /// <summary>Number of word forms held by <see cref="Forms"/>.</summary>
+  public const int FormCount = 3;
+
+  /// <summary>Form index of the untouched word list.</summary>
+  public const int FormBase = 0;
+
+  /// <summary>Form index of the word list with every first character case-flipped.</summary>
+  public const int FormFermentFirst = 1;
+
+  /// <summary>Form index of the word list with every character case-flipped.</summary>
+  public const int FormFermentAll = 2;
+
+  /// <summary>The three forms of the word list, indexed by <c>Form*</c>.</summary>
+  public static byte[][] Forms => WordForms.Value;
 
   private static int[] ComputeLengthOffsets() {
-    var offsets = new int[MaxWordLength - MinWordLength + 1];
-    var pos = 0;
-    for (var i = 0; i < offsets.Length; ++i) {
-      offsets[i] = pos;
-      pos += (1 << NumBitsPerLength[i]) * (i + MinWordLength);
-    }
+    var offsets = new int[MaxWordLength + 2];
+    for (var length = 0; length <= MaxWordLength; ++length)
+      offsets[length + 1] = offsets[length] + length * GetNumWords(length);
     return offsets;
   }
 
@@ -55,328 +108,240 @@ internal static class BrotliStaticDictionary {
     return data;
   }
 
-  /// <summary>
-  /// Gets the number of dictionary index bits for a given word length.
-  /// </summary>
+  private static byte[][] BuildWordForms() {
+    var basis = LoadDictionary();
+    var fermentFirst = new byte[basis.Length];
+    var fermentAll = new byte[basis.Length];
+
+    Span<byte> scratch = stackalloc byte[MaxWordLength * 2 + 16];
+    for (var length = MinWordLength; length <= MaxWordLength; ++length) {
+      var count = GetNumWords(length);
+      for (var index = 0; index < count; ++index) {
+        var offset = LengthOffsets[length] + index * length;
+
+        basis.AsSpan(offset, length).CopyTo(scratch);
+        ApplyTransform(FermentFirstOnly, scratch, length);
+        scratch[..length].CopyTo(fermentFirst.AsSpan(offset));
+
+        basis.AsSpan(offset, length).CopyTo(scratch);
+        ApplyTransform(FermentAllOnly, scratch, length);
+        scratch[..length].CopyTo(fermentAll.AsSpan(offset));
+      }
+    }
+
+    return [basis, fermentFirst, fermentAll];
+  }
+
+  /// <summary>Gets the number of dictionary index bits for a given word length.</summary>
+  /// <param name="length">The word length.</param>
+  /// <returns>NDBITS for that length, or zero when the length holds no words.</returns>
   public static int GetNumBits(int length) =>
-    length is < MinWordLength or > MaxWordLength ? 0 : NumBitsPerLength[length - MinWordLength];
+    length is < MinWordLength or > MaxWordLength ? 0 : NumBitsPerLength[length];
 
-  /// <summary>
-  /// Gets the total number of words for a given length.
-  /// </summary>
+  /// <summary>Gets the number of words in one length class.</summary>
+  /// <param name="length">The word length.</param>
+  /// <returns>NWORDS for that length, or zero when the length holds no words.</returns>
   public static int GetNumWords(int length) =>
-    length is < MinWordLength or > MaxWordLength ? 0 : 1 << NumBitsPerLength[length - MinWordLength];
+    length is < MinWordLength or > MaxWordLength ? 0 : 1 << NumBitsPerLength[length];
+
+  /// <summary>Gets the byte offset of one word inside every word form.</summary>
+  /// <param name="length">The word length.</param>
+  /// <param name="index">The index of the word within its length class.</param>
+  /// <returns>The offset into the arrays returned by <see cref="Forms"/>.</returns>
+  public static int GetWordOffset(int length, int index) => LengthOffsets[length] + index * length;
 
   /// <summary>
-  /// Looks up a word from the static dictionary and applies a transform.
+  /// Looks up a word from the static dictionary and applies a transform to it.
   /// </summary>
   /// <param name="length">The word length (4-24).</param>
   /// <param name="wordIndex">The index of the word within the length class.</param>
   /// <param name="transformIndex">The transform to apply (0-120).</param>
-  /// <param name="output">Buffer to write the resulting bytes.</param>
-  /// <returns>Number of bytes written to the output, or 0 if not found.</returns>
+  /// <param name="output">Buffer receiving the transformed word.</param>
+  /// <returns>Number of bytes written to the output, or zero if the reference is invalid.</returns>
   public static int GetWord(int length, int wordIndex, int transformIndex, Span<byte> output) {
     if (length is < MinWordLength or > MaxWordLength)
       return 0;
-    if (transformIndex >= NumTransforms)
+    if (transformIndex is < 0 or >= NumTransforms)
+      return 0;
+    if (wordIndex < 0 || wordIndex >= GetNumWords(length))
       return 0;
 
-    var numWords = 1 << NumBitsPerLength[length - MinWordLength];
-    if (wordIndex >= numWords)
+    var offset = GetWordOffset(length, wordIndex);
+    var source = Forms[FormBase];
+    if (offset + length > source.Length)
       return 0;
 
-    // Look up the raw word from the dictionary data
-    var offset = LengthOffsets[length - MinWordLength] + wordIndex * length;
-    if (offset + length > DictionaryData.Length)
+    var (prefix, _, suffix) = Transforms[transformIndex];
+    if (prefix.Length + length + suffix.Length > output.Length)
       return 0;
 
-    var pos = Math.Min(length, output.Length);
-    DictionaryData.AsSpan(offset, pos).CopyTo(output);
-
-    // Apply transform
-    pos = ApplyTransform(transformIndex, output, pos);
-
-    return pos;
+    source.AsSpan(offset, length).CopyTo(output);
+    return ApplyTransform(transformIndex, output, length);
   }
 
   /// <summary>
-  /// Applies a Brotli dictionary transform to a word in place.
-  /// RFC 7932 Appendix B defines 121 transforms as (prefix, type, suffix) triples.
+  /// Applies transform <paramref name="transformIndex"/> in place to the
+  /// <paramref name="length"/> word bytes at the start of <paramref name="word"/>,
+  /// per RFC 7932 Section 8: <c>transform(word) = prefix + T(word) + suffix</c>.
   /// </summary>
+  /// <returns>The length of the transformed word.</returns>
   private static int ApplyTransform(int transformIndex, Span<byte> word, int length) {
-    // Decode the transform from the RFC 7932 Appendix B table
-    var (prefix, type, suffix) = Transforms[transformIndex];
+    var (prefix, tid, suffix) = Transforms[transformIndex];
 
-    // Start with prefix
-    var pos = 0;
-    if (prefix.Length > 0 && prefix.Length + length + suffix.Length <= word.Length) {
-      // Need to shift word right to make room for prefix
-      word[..length].CopyTo(word[prefix.Length..]);
+    var middle = length;
+    switch (tid) {
+      case TransformFermentFirst:
+        FermentFirst(word, middle);
+        break;
+      case TransformFermentAll:
+        FermentAll(word, middle);
+        break;
+      case >= TransformOmitFirstLow and <= TransformOmitFirstHigh: {
+        var omit = Math.Min(tid - (TransformOmitFirstLow - 1), middle);
+        word[omit..middle].CopyTo(word);
+        middle -= omit;
+        break;
+      }
+      case > TransformOmitLastBase and < TransformOmitLastBase + 10:
+        middle = Math.Max(0, middle - (tid - TransformOmitLastBase));
+        break;
+    }
+
+    if (prefix.Length > 0) {
+      word[..middle].CopyTo(word[prefix.Length..]);
       prefix.CopyTo(word);
-      pos = prefix.Length + length;
-    } else {
-      pos = length;
     }
 
-    // Apply word transform type
-    switch (type) {
-      case TransformType.Identity:
-        break;
-      case TransformType.UppercaseFirst:
-        TransformUppercaseFirst(word[prefix.Length..], length);
-        break;
-      case TransformType.UppercaseAll:
-        TransformUppercaseAll(word[prefix.Length..], length);
-        break;
-      case TransformType.OmitFirst1: pos = OmitFirst(word, prefix.Length, pos, 1); break;
-      case TransformType.OmitFirst2: pos = OmitFirst(word, prefix.Length, pos, 2); break;
-      case TransformType.OmitFirst3: pos = OmitFirst(word, prefix.Length, pos, 3); break;
-      case TransformType.OmitFirst4: pos = OmitFirst(word, prefix.Length, pos, 4); break;
-      case TransformType.OmitFirst5: pos = OmitFirst(word, prefix.Length, pos, 5); break;
-      case TransformType.OmitFirst6: pos = OmitFirst(word, prefix.Length, pos, 6); break;
-      case TransformType.OmitFirst7: pos = OmitFirst(word, prefix.Length, pos, 7); break;
-      case TransformType.OmitFirst8: pos = OmitFirst(word, prefix.Length, pos, 8); break;
-      case TransformType.OmitFirst9: pos = OmitFirst(word, prefix.Length, pos, 9); break;
-      case TransformType.OmitLast1: pos = Math.Max(prefix.Length, pos - 1); break;
-      case TransformType.OmitLast2: pos = Math.Max(prefix.Length, pos - 2); break;
-      case TransformType.OmitLast3: pos = Math.Max(prefix.Length, pos - 3); break;
-      case TransformType.OmitLast4: pos = Math.Max(prefix.Length, pos - 4); break;
-      case TransformType.OmitLast5: pos = Math.Max(prefix.Length, pos - 5); break;
-      case TransformType.OmitLast6: pos = Math.Max(prefix.Length, pos - 6); break;
-      case TransformType.OmitLast7: pos = Math.Max(prefix.Length, pos - 7); break;
-      case TransformType.OmitLast8: pos = Math.Max(prefix.Length, pos - 8); break;
-      case TransformType.OmitLast9: pos = Math.Max(prefix.Length, pos - 9); break;
+    var total = prefix.Length + middle;
+    if (suffix.Length > 0) {
+      suffix.CopyTo(word[total..]);
+      total += suffix.Length;
     }
 
-    // Append suffix
-    if (suffix.Length > 0 && pos + suffix.Length <= word.Length) {
-      suffix.CopyTo(word[pos..]);
-      pos += suffix.Length;
-    }
-
-    return pos;
-  }
-
-  private static int OmitFirst(Span<byte> word, int prefixLen, int totalLen, int count) {
-    var wordStart = prefixLen;
-    var wordEnd = totalLen;
-    var wordLen = wordEnd - wordStart;
-    if (count >= wordLen)
-      return prefixLen;
-    word[(wordStart + count)..wordEnd].CopyTo(word[wordStart..]);
-    return totalLen - count;
-  }
-
-  private static void TransformUppercaseFirst(Span<byte> word, int length) {
-    if (length <= 0) return;
-    if (word[0] >= 0x61 && word[0] <= 0x7A) {
-      word[0] -= 0x20;
-    } else if (word[0] >= 0xC0 && length >= 2) {
-      // UTF-8 2-byte sequence
-      if (word[0] < 0xE0) {
-        word[1] ^= 0x20;
-      } else if (length >= 3) {
-        // UTF-8 3-byte sequence
-        word[2] ^= 0x20; // not precisely correct but matches reference
-      }
-    }
-  }
-
-  private static void TransformUppercaseAll(Span<byte> word, int length) {
-    for (var i = 0; i < length;) {
-      if (word[i] >= 0x61 && word[i] <= 0x7A) {
-        word[i] -= 0x20;
-        ++i;
-      } else if (word[i] >= 0xC0 && i + 1 < length) {
-        if (word[i] < 0xE0) {
-          word[i + 1] ^= 0x20;
-          i += 2;
-        } else if (i + 2 < length) {
-          word[i + 2] ^= 0x20;
-          i += 3;
-        } else {
-          ++i;
-        }
-      } else {
-        ++i;
-      }
-    }
-  }
-
-  private enum TransformType {
-    Identity,
-    UppercaseFirst,
-    UppercaseAll,
-    OmitFirst1, OmitFirst2, OmitFirst3, OmitFirst4, OmitFirst5,
-    OmitFirst6, OmitFirst7, OmitFirst8, OmitFirst9,
-    OmitLast1, OmitLast2, OmitLast3, OmitLast4, OmitLast5,
-    OmitLast6, OmitLast7, OmitLast8, OmitLast9
+    return total;
   }
 
   /// <summary>
-  /// RFC 7932 Appendix B: 121 transforms as (prefix, type, suffix) triples.
+  /// RFC 7932 Section 8 single-step case flip, covering ASCII plus two- and three-byte
+  /// UTF-8 sequences. Returns the number of bytes the step consumed.
   /// </summary>
-  private static readonly (byte[] Prefix, TransformType Type, byte[] Suffix)[] Transforms = [
-    (""u8.ToArray(), TransformType.Identity, ""u8.ToArray()),           // 0
-    (""u8.ToArray(), TransformType.Identity, " "u8.ToArray()),          // 1
-    (" "u8.ToArray(), TransformType.Identity, " "u8.ToArray()),         // 2
-    (""u8.ToArray(), TransformType.OmitFirst1, ""u8.ToArray()),         // 3
-    (""u8.ToArray(), TransformType.UppercaseFirst, " "u8.ToArray()),    // 4
-    (""u8.ToArray(), TransformType.Identity, " the "u8.ToArray()),      // 5
-    (" "u8.ToArray(), TransformType.Identity, ""u8.ToArray()),          // 6
-    ("s "u8.ToArray(), TransformType.Identity, " "u8.ToArray()),        // 7
-    (""u8.ToArray(), TransformType.Identity, " of "u8.ToArray()),       // 8
-    (""u8.ToArray(), TransformType.UppercaseFirst, ""u8.ToArray()),     // 9
-    (""u8.ToArray(), TransformType.Identity, " and "u8.ToArray()),      // 10
-    (""u8.ToArray(), TransformType.OmitFirst2, ""u8.ToArray()),         // 11
-    (""u8.ToArray(), TransformType.OmitLast1, ""u8.ToArray()),          // 12
-    (", "u8.ToArray(), TransformType.Identity, " "u8.ToArray()),        // 13
-    (""u8.ToArray(), TransformType.Identity, ", "u8.ToArray()),         // 14
-    (" "u8.ToArray(), TransformType.UppercaseFirst, " "u8.ToArray()),   // 15
-    (""u8.ToArray(), TransformType.Identity, " in "u8.ToArray()),       // 16
-    (""u8.ToArray(), TransformType.Identity, " to "u8.ToArray()),       // 17
-    ("e "u8.ToArray(), TransformType.Identity, " "u8.ToArray()),        // 18
-    (""u8.ToArray(), TransformType.Identity, "\""u8.ToArray()),         // 19
-    (""u8.ToArray(), TransformType.Identity, "."u8.ToArray()),          // 20
-    (""u8.ToArray(), TransformType.Identity, "\">"u8.ToArray()),        // 21
-    (""u8.ToArray(), TransformType.Identity, "\n"u8.ToArray()),         // 22
-    (""u8.ToArray(), TransformType.OmitLast3, ""u8.ToArray()),          // 23
-    (""u8.ToArray(), TransformType.Identity, "]"u8.ToArray()),          // 24
-    (""u8.ToArray(), TransformType.Identity, " for "u8.ToArray()),      // 25
-    (""u8.ToArray(), TransformType.OmitFirst3, ""u8.ToArray()),         // 26
-    (""u8.ToArray(), TransformType.OmitLast2, ""u8.ToArray()),          // 27
-    (""u8.ToArray(), TransformType.Identity, " a "u8.ToArray()),        // 28
-    (""u8.ToArray(), TransformType.Identity, " that "u8.ToArray()),     // 29
-    (" "u8.ToArray(), TransformType.UppercaseFirst, ""u8.ToArray()),    // 30
-    (""u8.ToArray(), TransformType.Identity, ". "u8.ToArray()),         // 31
-    ("."u8.ToArray(), TransformType.Identity, ""u8.ToArray()),          // 32
-    (" "u8.ToArray(), TransformType.Identity, ", "u8.ToArray()),        // 33
-    (""u8.ToArray(), TransformType.OmitFirst4, ""u8.ToArray()),         // 34
-    (""u8.ToArray(), TransformType.Identity, " with "u8.ToArray()),     // 35
-    (""u8.ToArray(), TransformType.Identity, "'"u8.ToArray()),          // 36
-    (""u8.ToArray(), TransformType.Identity, " from "u8.ToArray()),     // 37
-    (""u8.ToArray(), TransformType.Identity, " by "u8.ToArray()),       // 38
-    (""u8.ToArray(), TransformType.OmitFirst5, ""u8.ToArray()),         // 39
-    (""u8.ToArray(), TransformType.OmitFirst6, ""u8.ToArray()),         // 40
-    (" the "u8.ToArray(), TransformType.Identity, ""u8.ToArray()),      // 41
-    (""u8.ToArray(), TransformType.OmitLast4, ""u8.ToArray()),          // 42
-    (""u8.ToArray(), TransformType.Identity, ". The "u8.ToArray()),     // 43
-    (""u8.ToArray(), TransformType.UppercaseAll, ""u8.ToArray()),       // 44
-    (""u8.ToArray(), TransformType.Identity, " on "u8.ToArray()),       // 45
-    (""u8.ToArray(), TransformType.Identity, " as "u8.ToArray()),       // 46
-    (""u8.ToArray(), TransformType.Identity, " is "u8.ToArray()),       // 47
-    (""u8.ToArray(), TransformType.OmitLast7, ""u8.ToArray()),          // 48
-    (""u8.ToArray(), TransformType.OmitLast1, "ing "u8.ToArray()),      // 49
-    (""u8.ToArray(), TransformType.Identity, "\n\t"u8.ToArray()),       // 50
-    (""u8.ToArray(), TransformType.Identity, ":"u8.ToArray()),          // 51
-    (" "u8.ToArray(), TransformType.Identity, ". "u8.ToArray()),        // 52
-    (""u8.ToArray(), TransformType.Identity, "ed "u8.ToArray()),        // 53
-    (""u8.ToArray(), TransformType.OmitFirst9, ""u8.ToArray()),         // 54
-    (""u8.ToArray(), TransformType.OmitFirst7, ""u8.ToArray()),         // 55
-    (""u8.ToArray(), TransformType.OmitLast6, ""u8.ToArray()),          // 56
-    (""u8.ToArray(), TransformType.Identity, "("u8.ToArray()),          // 57
-    (""u8.ToArray(), TransformType.UppercaseFirst, ", "u8.ToArray()),   // 58
-    (""u8.ToArray(), TransformType.OmitLast8, ""u8.ToArray()),          // 59
-    (""u8.ToArray(), TransformType.Identity, " at "u8.ToArray()),       // 60
-    (""u8.ToArray(), TransformType.Identity, "ly "u8.ToArray()),        // 61
-    (" the "u8.ToArray(), TransformType.Identity, " of "u8.ToArray()),  // 62
-    (""u8.ToArray(), TransformType.OmitLast5, ""u8.ToArray()),          // 63
-    (""u8.ToArray(), TransformType.OmitLast9, ""u8.ToArray()),          // 64
-    (" "u8.ToArray(), TransformType.UppercaseFirst, ", "u8.ToArray()),  // 65
-    (""u8.ToArray(), TransformType.UppercaseFirst, "\""u8.ToArray()),   // 66
-    ("."u8.ToArray(), TransformType.Identity, "("u8.ToArray()),         // 67
-    (""u8.ToArray(), TransformType.UppercaseAll, " "u8.ToArray()),      // 68
-    (""u8.ToArray(), TransformType.UppercaseFirst, "\">"u8.ToArray()),  // 69
-    (""u8.ToArray(), TransformType.Identity, "=\""u8.ToArray()),        // 70
-    (" "u8.ToArray(), TransformType.Identity, "."u8.ToArray()),         // 71
-    (".com/"u8.ToArray(), TransformType.Identity, ""u8.ToArray()),      // 72
-    (" the "u8.ToArray(), TransformType.Identity, " of the "u8.ToArray()), // 73
-    (""u8.ToArray(), TransformType.UppercaseFirst, "'"u8.ToArray()),    // 74
-    (""u8.ToArray(), TransformType.Identity, ". This "u8.ToArray()),    // 75
-    (""u8.ToArray(), TransformType.Identity, ","u8.ToArray()),          // 76
-    ("."u8.ToArray(), TransformType.Identity, " "u8.ToArray()),         // 77
-    (""u8.ToArray(), TransformType.UppercaseFirst, "("u8.ToArray()),    // 78
-    (""u8.ToArray(), TransformType.UppercaseFirst, "."u8.ToArray()),    // 79
-    (""u8.ToArray(), TransformType.Identity, " not "u8.ToArray()),      // 80
-    (" "u8.ToArray(), TransformType.Identity, "=\""u8.ToArray()),       // 81
-    (""u8.ToArray(), TransformType.Identity, "er "u8.ToArray()),        // 82
-    (" "u8.ToArray(), TransformType.UppercaseAll, " "u8.ToArray()),     // 83
-    (""u8.ToArray(), TransformType.Identity, "al "u8.ToArray()),        // 84
-    (" "u8.ToArray(), TransformType.UppercaseAll, ""u8.ToArray()),      // 85
-    (""u8.ToArray(), TransformType.Identity, "='"u8.ToArray()),         // 86
-    (""u8.ToArray(), TransformType.UppercaseAll, "\""u8.ToArray()),     // 87
-    (""u8.ToArray(), TransformType.UppercaseFirst, ". "u8.ToArray()),   // 88
-    (" "u8.ToArray(), TransformType.Identity, "("u8.ToArray()),         // 89
-    (""u8.ToArray(), TransformType.Identity, "ful "u8.ToArray()),       // 90
-    (" "u8.ToArray(), TransformType.UppercaseFirst, ". "u8.ToArray()),  // 91
-    (""u8.ToArray(), TransformType.Identity, "ive "u8.ToArray()),       // 92
-    (""u8.ToArray(), TransformType.Identity, "less "u8.ToArray()),      // 93
-    (""u8.ToArray(), TransformType.UppercaseAll, "'"u8.ToArray()),      // 94
-    (""u8.ToArray(), TransformType.Identity, "est "u8.ToArray()),       // 95
-    (" "u8.ToArray(), TransformType.UppercaseFirst, "."u8.ToArray()),   // 96
-    (""u8.ToArray(), TransformType.UppercaseAll, "\">"u8.ToArray()),    // 97
-    (" "u8.ToArray(), TransformType.Identity, "='"u8.ToArray()),        // 98
-    (""u8.ToArray(), TransformType.UppercaseFirst, ","u8.ToArray()),    // 99
-    (""u8.ToArray(), TransformType.Identity, "ize "u8.ToArray()),       // 100
-    (""u8.ToArray(), TransformType.UppercaseAll, "."u8.ToArray()),      // 101
-    ("\xc2\xa0"u8.ToArray(), TransformType.Identity, ""u8.ToArray()),   // 102
-    (" "u8.ToArray(), TransformType.Identity, ","u8.ToArray()),         // 103
-    (""u8.ToArray(), TransformType.UppercaseFirst, "=\""u8.ToArray()),  // 104
-    (""u8.ToArray(), TransformType.UppercaseAll, "=\""u8.ToArray()),    // 105
-    (""u8.ToArray(), TransformType.Identity, "ous "u8.ToArray()),       // 106
-    (""u8.ToArray(), TransformType.UppercaseAll, ", "u8.ToArray()),     // 107
-    (""u8.ToArray(), TransformType.UppercaseFirst, "='"u8.ToArray()),   // 108
-    (" "u8.ToArray(), TransformType.UppercaseFirst, ","u8.ToArray()),   // 109
-    (" "u8.ToArray(), TransformType.UppercaseAll, "=\""u8.ToArray()),   // 110
-    (" "u8.ToArray(), TransformType.UppercaseAll, ", "u8.ToArray()),    // 111
-    (""u8.ToArray(), TransformType.UppercaseAll, ","u8.ToArray()),      // 112
-    (""u8.ToArray(), TransformType.UppercaseAll, "("u8.ToArray()),      // 113
-    (""u8.ToArray(), TransformType.UppercaseAll, ". "u8.ToArray()),     // 114
-    (" "u8.ToArray(), TransformType.UppercaseAll, "."u8.ToArray()),     // 115
-    (""u8.ToArray(), TransformType.UppercaseAll, "='"u8.ToArray()),     // 116
-    (" "u8.ToArray(), TransformType.UppercaseAll, ". "u8.ToArray()),    // 117
-    (" "u8.ToArray(), TransformType.UppercaseFirst, "=\""u8.ToArray()), // 118
-    (" "u8.ToArray(), TransformType.UppercaseAll, "='"u8.ToArray()),    // 119
-    (" "u8.ToArray(), TransformType.UppercaseFirst, "='"u8.ToArray()),  // 120
+  private static int FermentStep(Span<byte> word, int length, int position) {
+    var value = word[position];
+    if (value < 192) {
+      if (value is >= 97 and <= 122)
+        word[position] = (byte)(value ^ 32);
+      return 1;
+    }
+
+    if (value < 224) {
+      if (position + 1 < length)
+        word[position + 1] ^= 32;
+      return 2;
+    }
+
+    if (position + 2 < length)
+      word[position + 2] ^= 5;
+    return 3;
+  }
+
+  private static void FermentFirst(Span<byte> word, int length) {
+    if (length > 0)
+      FermentStep(word, length, 0);
+  }
+
+  private static void FermentAll(Span<byte> word, int length) {
+    var position = 0;
+    while (position < length)
+      position += FermentStep(word, length, position);
+  }
+
+  /// <summary>RFC 7932 Appendix B transform 102 prefixes the word with U+00A0 in UTF-8.</summary>
+  private static readonly byte[] NonBreakingSpace = [0xC2, 0xA0];
+
+  /// <summary>Converts a latin-1 literal into the byte sequence RFC 7932 Appendix B spells out.</summary>
+  private static byte[] Bytes(string text) {
+    var result = new byte[text.Length];
+    for (var i = 0; i < text.Length; ++i)
+      result[i] = (byte)text[i];
+    return result;
+  }
+
+  /// <summary>
+  /// RFC 7932 Appendix B: the 121 transforms as (prefix, elementary transform id, suffix)
+  /// triples. Elementary ids are 0 Identity, 1 FermentFirst, 2 FermentAll,
+  /// 3-11 OmitFirst1-9, 12-20 OmitLast1-9.
+  /// </summary>
+  public static readonly (byte[] Prefix, int Tid, byte[] Suffix)[] Transforms = [
+    (Bytes(""), 0, Bytes("")),          (Bytes(""), 0, Bytes(" ")),        (Bytes(" "), 0, Bytes(" ")),
+    (Bytes(""), 3, Bytes("")),          (Bytes(""), 1, Bytes(" ")),        (Bytes(""), 0, Bytes(" the ")),
+    (Bytes(" "), 0, Bytes("")),         (Bytes("s "), 0, Bytes(" ")),      (Bytes(""), 0, Bytes(" of ")),
+    (Bytes(""), 1, Bytes("")),          (Bytes(""), 0, Bytes(" and ")),    (Bytes(""), 4, Bytes("")),
+    (Bytes(""), 12, Bytes("")),         (Bytes(", "), 0, Bytes(" ")),      (Bytes(""), 0, Bytes(", ")),
+    (Bytes(" "), 1, Bytes(" ")),        (Bytes(""), 0, Bytes(" in ")),     (Bytes(""), 0, Bytes(" to ")),
+    (Bytes("e "), 0, Bytes(" ")),       (Bytes(""), 0, Bytes("\"")),       (Bytes(""), 0, Bytes(".")),
+    (Bytes(""), 0, Bytes("\">")),       (Bytes(""), 0, Bytes("\n")),       (Bytes(""), 14, Bytes("")),
+    (Bytes(""), 0, Bytes("]")),         (Bytes(""), 0, Bytes(" for ")),    (Bytes(""), 5, Bytes("")),
+    (Bytes(""), 13, Bytes("")),         (Bytes(""), 0, Bytes(" a ")),      (Bytes(""), 0, Bytes(" that ")),
+    (Bytes(" "), 1, Bytes("")),         (Bytes(""), 0, Bytes(". ")),       (Bytes("."), 0, Bytes("")),
+    (Bytes(" "), 0, Bytes(", ")),       (Bytes(""), 6, Bytes("")),         (Bytes(""), 0, Bytes(" with ")),
+    (Bytes(""), 0, Bytes("'")),         (Bytes(""), 0, Bytes(" from ")),   (Bytes(""), 0, Bytes(" by ")),
+    (Bytes(""), 7, Bytes("")),          (Bytes(""), 8, Bytes("")),         (Bytes(" the "), 0, Bytes("")),
+    (Bytes(""), 15, Bytes("")),         (Bytes(""), 0, Bytes(". The ")),   (Bytes(""), 2, Bytes("")),
+    (Bytes(""), 0, Bytes(" on ")),      (Bytes(""), 0, Bytes(" as ")),     (Bytes(""), 0, Bytes(" is ")),
+    (Bytes(""), 18, Bytes("")),         (Bytes(""), 12, Bytes("ing ")),    (Bytes(""), 0, Bytes("\n\t")),
+    (Bytes(""), 0, Bytes(":")),         (Bytes(" "), 0, Bytes(". ")),      (Bytes(""), 0, Bytes("ed ")),
+    (Bytes(""), 11, Bytes("")),         (Bytes(""), 9, Bytes("")),         (Bytes(""), 17, Bytes("")),
+    (Bytes(""), 0, Bytes("(")),         (Bytes(""), 1, Bytes(", ")),       (Bytes(""), 19, Bytes("")),
+    (Bytes(""), 0, Bytes(" at ")),      (Bytes(""), 0, Bytes("ly ")),      (Bytes(" the "), 0, Bytes(" of ")),
+    (Bytes(""), 16, Bytes("")),         (Bytes(""), 20, Bytes("")),        (Bytes(" "), 1, Bytes(", ")),
+    (Bytes(""), 1, Bytes("\"")),        (Bytes("."), 0, Bytes("(")),       (Bytes(""), 2, Bytes(" ")),
+    (Bytes(""), 1, Bytes("\">")),       (Bytes(""), 0, Bytes("=\"")),      (Bytes(" "), 0, Bytes(".")),
+    (Bytes(".com/"), 0, Bytes("")),     (Bytes(" the "), 0, Bytes(" of the ")), (Bytes(""), 1, Bytes("'")),
+    (Bytes(""), 0, Bytes(". This ")),   (Bytes(""), 0, Bytes(",")),        (Bytes("."), 0, Bytes(" ")),
+    (Bytes(""), 1, Bytes("(")),         (Bytes(""), 1, Bytes(".")),        (Bytes(""), 0, Bytes(" not ")),
+    (Bytes(" "), 0, Bytes("=\"")),      (Bytes(""), 0, Bytes("er ")),      (Bytes(" "), 2, Bytes(" ")),
+    (Bytes(""), 0, Bytes("al ")),       (Bytes(" "), 2, Bytes("")),        (Bytes(""), 0, Bytes("='")),
+    (Bytes(""), 2, Bytes("\"")),        (Bytes(""), 1, Bytes(". ")),       (Bytes(" "), 0, Bytes("(")),
+    (Bytes(""), 0, Bytes("ful ")),      (Bytes(" "), 1, Bytes(". ")),      (Bytes(""), 0, Bytes("ive ")),
+    (Bytes(""), 0, Bytes("less ")),     (Bytes(""), 2, Bytes("'")),        (Bytes(""), 0, Bytes("est ")),
+    (Bytes(" "), 1, Bytes(".")),        (Bytes(""), 2, Bytes("\">")),      (Bytes(" "), 0, Bytes("='")),
+    (Bytes(""), 1, Bytes(",")),         (Bytes(""), 0, Bytes("ize ")),     (Bytes(""), 2, Bytes(".")),
+    (NonBreakingSpace, 0, Bytes("")), (Bytes(" "), 0, Bytes(",")), (Bytes(""), 1, Bytes("=\"")),
+    (Bytes(""), 2, Bytes("=\"")),       (Bytes(""), 0, Bytes("ous ")),     (Bytes(""), 2, Bytes(", ")),
+    (Bytes(""), 1, Bytes("='")),        (Bytes(" "), 1, Bytes(",")),       (Bytes(" "), 2, Bytes("=\"")),
+    (Bytes(" "), 2, Bytes(", ")),       (Bytes(""), 2, Bytes(",")),        (Bytes(""), 2, Bytes("(")),
+    (Bytes(""), 2, Bytes(". ")),        (Bytes(" "), 2, Bytes(".")),       (Bytes(""), 2, Bytes("='")),
+    (Bytes(" "), 2, Bytes(". ")),       (Bytes(" "), 1, Bytes("=\"")),     (Bytes(" "), 2, Bytes("='")),
+    (Bytes(" "), 1, Bytes("='"))
   ];
 
   /// <summary>
-  /// Computes the distance parameters for a static dictionary reference.
+  /// Splits a raw stream distance into the static dictionary reference it addresses.
   /// </summary>
-  /// <param name="distance">The raw distance value from the stream.</param>
-  /// <param name="maxDistance">The current maximum backward distance.</param>
-  /// <param name="wordLength">Output: the word length.</param>
-  /// <param name="wordIndex">Output: the word index within the length class.</param>
-  /// <param name="transformIndex">Output: the transform to apply.</param>
+  /// <param name="distance">The distance value decoded from the stream.</param>
+  /// <param name="maxAllowedDistance">The minimum of the window size and the bytes produced so far.</param>
+  /// <param name="copyLength">The copy length of the command, which selects the length class.</param>
+  /// <param name="wordIndex">Receives the word index within the length class.</param>
+  /// <param name="transformIndex">Receives the transform to apply.</param>
   /// <returns><see langword="true"/> if this is a valid static dictionary reference.</returns>
-  public static bool TryGetStaticReference(int distance, int maxDistance,
-    out int wordLength, out int wordIndex, out int transformIndex) {
-    wordLength = 0;
+  public static bool TryGetStaticReference(int distance, int maxAllowedDistance, int copyLength,
+    out int wordIndex, out int transformIndex) {
     wordIndex = 0;
     transformIndex = 0;
 
-    if (distance <= maxDistance)
+    if (distance <= maxAllowedDistance)
       return false; // Regular backward reference, not a dictionary reference
 
-    var offset = distance - maxDistance - 1;
+    var numBits = GetNumBits(copyLength);
+    if (numBits == 0)
+      return false;
 
-    // The static dictionary is addressed by: word_id = offset
-    // word_id encodes (length, word_index, transform_index)
-    // Layout: for each length L from 4 to 24:
-    //   numWords(L) * NumTransforms entries
+    var wordId = distance - maxAllowedDistance - 1;
+    if (wordId < 0)
+      return false;
 
-    for (var len = MinWordLength; len <= MaxWordLength; ++len) {
-      var numWords = 1 << NumBitsPerLength[len - MinWordLength];
-      var blockSize = numWords * NumTransforms;
-      if (offset < blockSize) {
-        wordLength = len;
-        wordIndex = offset % numWords;
-        transformIndex = offset / numWords;
-        return true;
-      }
-      offset -= blockSize;
-    }
-
-    return false;
+    wordIndex = wordId & ((1 << numBits) - 1);
+    transformIndex = wordId >> numBits;
+    return transformIndex < NumTransforms;
   }
 }

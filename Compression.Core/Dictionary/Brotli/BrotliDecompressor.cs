@@ -54,6 +54,7 @@ public static class BrotliDecompressor {
     // Read window bits (WBITS)
     var windowBits = DecodeWindowBits(reader);
     var windowSize = 1 << windowBits;
+    var maxBackwardDistance = windowSize - 16;
     var ringBuffer = ArrayPool<byte>.Shared.Rent(windowSize);
     var ringMask = windowSize - 1;
     try {
@@ -292,10 +293,11 @@ public static class BrotliDecompressor {
         if (distance <= 0)
           distance = 1; // safety: distance must be positive
 
-        // Per RFC 7932 Section 4 the ring buffer only takes a new distance when an
-        // explicit, non-zero distance code was read and the reference points into
-        // the already produced output rather than the static dictionary.
-        var isDictionaryReference = ringPos < distance;
+        // RFC 7932 Section 4: the maximum allowed backward distance is the smaller
+        // of the window size and the number of bytes produced so far; anything
+        // beyond it addresses the static dictionary instead of the window.
+        var maxAllowedDistance = Math.Min(maxBackwardDistance, ringPos);
+        var isDictionaryReference = distance > maxAllowedDistance;
         if (!useDistanceZero && explicitDistanceCode != 0 && !isDictionaryReference) {
           distRingIdx = (distRingIdx + 1) & 3;
           distRing[distRingIdx] = distance;
@@ -303,13 +305,8 @@ public static class BrotliDecompressor {
 
         // Check for static dictionary reference (RFC 7932 Section 8)
         if (isDictionaryReference) {
-          // Distance beyond current position — static dictionary reference
-          // copy_length determines the word length class
-          var offset = distance - Math.Max(ringPos, 1) - 1;
-          var nBits = BrotliStaticDictionary.GetNumBits(copyLength);
-          if (nBits > 0) {
-            var wordIdx = offset & ((1 << nBits) - 1);
-            var transformIdx = offset >> nBits;
+          if (BrotliStaticDictionary.TryGetStaticReference(
+                distance, maxAllowedDistance, copyLength, out var wordIdx, out var transformIdx)) {
             Span<byte> wordBuf = new byte[copyLength + 24]; // extra for transforms
             var wordBytes = BrotliStaticDictionary.GetWord(
               copyLength,
