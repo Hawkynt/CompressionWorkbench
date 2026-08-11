@@ -1,101 +1,104 @@
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// 16-bit byte-based range decoder for the Quantum compression format.
+/// Bit-oriented 32-bit arithmetic decoder used by the Quantum decompressor.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Quantum uses a 16-bit range coder where normalization shifts in whole bytes
-/// (not individual bits). The range [low, high] is maintained as unsigned 16-bit values,
-/// and when (high - low) drops below 256 the coder shifts both endpoints left by 8 bits
-/// and reads a new byte into the code value.
-/// </para>
-/// <para>
-/// This decoder also supports reading raw bits (not probability-coded) from the
-/// byte stream via <see cref="ReadRawBits"/>, which is used for match offsets.
-/// </para>
+/// The exact mirror of <see cref="QuantumRangeEncoder"/>: it tracks the same
+/// [low, high] interval and performs the same renormalisation, shifting one code bit
+/// in from the stream each time the encoder shifted one out. Bits are read
+/// most-significant-bit first, and reads past the end of the data yield zero bits so
+/// that the encoder's zero padding of the final byte needs no separate handling.
 /// </remarks>
 internal sealed class QuantumRangeDecoder {
+  private const uint Top = 0xFFFFFFFFu;
+  private const uint Half = 0x80000000u;
+  private const uint Quarter = 0x40000000u;
+  private const uint ThreeQuarters = 0xC0000000u;
+
   private readonly ReadOnlyMemory<byte> _data;
-  private int _pos;
-  private int _high;
-  private int _low;
-  private int _code;
+  private int _bitPosition;
+  private uint _low;
+  private uint _high = Top;
+  private uint _value;
 
   /// <summary>
   /// Initializes a new <see cref="QuantumRangeDecoder"/> from compressed data.
   /// </summary>
-  /// <param name="data">The compressed data.</param>
+  /// <param name="data">The packed code bits produced by <see cref="QuantumRangeEncoder"/>.</param>
   public QuantumRangeDecoder(ReadOnlyMemory<byte> data) {
     this._data = data;
-    this._pos = 0;
-    this._low = 0;
-    this._high = 0xFFFF;
-
-    // Read initial 2 bytes as big-endian 16-bit code value
-    this._code = this.ReadByte() << 8;
-    this._code |= this.ReadByte();
+    for (var i = 0; i < 32; ++i)
+      this._value = (this._value << 1) | this.NextBit();
   }
 
-  /// <summary>
-  /// Decodes a symbol from the given adaptive model.
-  /// </summary>
+  /// <summary>Decodes a symbol from the given adaptive model and updates the model.</summary>
   /// <param name="model">The adaptive frequency model.</param>
   /// <returns>The decoded symbol index.</returns>
   public int DecodeSymbol(QuantumModel model) {
-    var range = this._high - this._low + 1;
-    var scaledCount = (int)(((long)(this._code - this._low + 1) * model.TotalFrequency - 1) / range);
+    var range = (ulong)this._high - this._low + 1;
+    var total = (ulong)model.TotalFrequency;
+    var scaled = (int)((((ulong)(this._value - this._low) + 1) * total - 1) / range);
+    var symbol = model.FindSymbol(scaled, out var cumulativeLow);
+    var cumulativeHigh = (ulong)(cumulativeLow + model.GetFrequency(symbol));
 
-    var symbol = model.FindSymbol(scaledCount);
+    var low = this._low;
+    this._high = (uint)(low + range * cumulativeHigh / total - 1);
+    this._low = (uint)(low + range * (ulong)cumulativeLow / total);
 
-    var symLow = model.GetCumulativeFrequency(symbol);
-    var symHigh = symLow + model.GetFrequency(symbol);
-
-    this._high = this._low + (int)((long)range * symHigh / model.TotalFrequency) - 1;
-    this._low += (int)((long)range * symLow / model.TotalFrequency);
-
-    this.Normalize();
-
+    this.Renormalize();
     model.Update(symbol);
     return symbol;
   }
 
-  /// <summary>
-  /// Reads raw (uncoded) bits from the range coder stream.
-  /// Each bit is decoded as a 50/50 binary decision (mid-split of the range).
-  /// </summary>
-  /// <param name="numBits">The number of bits to read (MSB first).</param>
-  /// <returns>The decoded value.</returns>
-  public int ReadRawBits(int numBits) {
-    var value = 0;
-    for (var i = 0; i < numBits; ++i) {
-      var range = this._high - this._low + 1;
-      var mid = this._low + (range >> 1) - 1;
-      int bit;
-      if (this._code <= mid) {
-        bit = 0;
-        this._high = mid;
-      } else {
-        bit = 1;
-        this._low = mid + 1;
-      }
-      value = (value << 1) | bit;
+  /// <summary>Decodes one bit that was written with a fixed 50/50 probability.</summary>
+  /// <returns>The decoded bit (0 or 1).</returns>
+  public int DecodeEqualProbabilityBit() {
+    var range = (ulong)this._high - this._low + 1;
+    var mid = (uint)(this._low + range / 2 - 1);
 
-      this.Normalize();
+    int bit;
+    if (this._value <= mid) {
+      bit = 0;
+      this._high = mid;
+    } else {
+      bit = 1;
+      this._low = mid + 1;
     }
-    return value;
+
+    this.Renormalize();
+    return bit;
   }
 
-  private void Normalize() {
-    while ((this._high - this._low) < 256) {
-      this._high = ((this._high << 8) | 0xFF) & 0xFFFF;
-      this._low = (this._low << 8) & 0xFFFF;
-      this._code = ((this._code << 8) | this.ReadByte()) & 0xFFFF;
+  private void Renormalize() {
+    for (;;) {
+      if (this._high < Half) {
+        // Interval sits in the lower half: nothing to subtract, just double it.
+      } else if (this._low >= Half) {
+        this._low -= Half;
+        this._high -= Half;
+        this._value -= Half;
+      } else if (this._low >= Quarter && this._high < ThreeQuarters) {
+        this._low -= Quarter;
+        this._high -= Quarter;
+        this._value -= Quarter;
+      } else
+        break;
+
+      this._low <<= 1;
+      this._high = (this._high << 1) | 1;
+      this._value = (this._value << 1) | this.NextBit();
     }
   }
 
-  private int ReadByte() {
+  private uint NextBit() {
     var span = this._data.Span;
-    return this._pos < span.Length ? span[this._pos++] : 0; // Pad with zero bytes past end of input
+    var index = this._bitPosition >> 3;
+    if (index >= span.Length)
+      return 0;
+
+    var bit = (uint)(span[index] >> (7 - (this._bitPosition & 7))) & 1u;
+    ++this._bitPosition;
+    return bit;
   }
 }

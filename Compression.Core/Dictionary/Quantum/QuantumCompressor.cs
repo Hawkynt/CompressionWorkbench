@@ -1,13 +1,21 @@
-using Compression.Core.Dictionary.MatchFinders;
-
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Compresses data with the Quantum algorithm (used in Microsoft CAB files).
+/// Compresses data with the Quantum algorithm.
 /// </summary>
 /// <remarks>
-/// Uses LZ77 match finding with a 16-bit byte-aligned range coder and
-/// adaptive frequency models. Mirrors <see cref="QuantumDecompressor"/>.
+/// <para>
+/// LZ77 dictionary matching feeding a bit-oriented adaptive arithmetic coder. A
+/// seven-state machine, driven by whether the previous tokens were literals or
+/// matches, selects which literal and literal/match-flag models code the next token;
+/// match lengths and distances are coded as magnitude slots (see
+/// <see cref="QuantumSlotCoding"/>). Mirrors <see cref="QuantumDecompressor"/>.
+/// </para>
+/// <para>
+/// The bitstream is an original design rather than a reconstruction of the Quantum
+/// method found in Microsoft Cabinet archives, whose exact models and slot tables
+/// Microsoft never published; see <see cref="QuantumBuildingBlock"/>.
+/// </para>
 /// </remarks>
 public static class QuantumCompressor {
   /// <summary>
@@ -15,7 +23,7 @@ public static class QuantumCompressor {
   /// </summary>
   /// <param name="data">The uncompressed input data.</param>
   /// <param name="windowLevel">Window level (1–7). The window size is 1024 &lt;&lt; (level − 1).</param>
-  /// <returns>The compressed data.</returns>
+  /// <returns>The compressed data, without any length header.</returns>
   public static byte[] Compress(ReadOnlySpan<byte> data, int windowLevel) {
     ArgumentOutOfRangeException.ThrowIfLessThan(windowLevel, QuantumConstants.MinWindowLevel, nameof(windowLevel));
     ArgumentOutOfRangeException.ThrowIfGreaterThan(windowLevel, QuantumConstants.MaxWindowLevel, nameof(windowLevel));
@@ -23,70 +31,34 @@ public static class QuantumCompressor {
     if (data.Length == 0)
       return [];
 
-    var windowSize = QuantumConstants.WindowSize(windowLevel);
-    var offsetBits = 0;
-    for (var ws = windowSize; ws > 1; ws >>= 1)
-      ++offsetBits;
-
     using var output = new MemoryStream();
     var encoder = new QuantumRangeEncoder(output);
 
-    // Create adaptive models with a low rescale threshold to prevent zero-width
-    // symbols in the 16-bit range coder (min range after normalize = 256).
-    // The decompressor must use the same threshold for data we produce.
-    const int threshold = QuantumConstants.CompressorRescaleThreshold;
-    var selectorModel = new QuantumModel(QuantumConstants.SelectorSymbols, threshold);
-    var literalModel = new QuantumModel(QuantumConstants.LiteralSymbols, threshold);
-    var lenModel4 = new QuantumModel(QuantumConstants.MatchLengthSymbols, threshold);
-    var lenModel5 = new QuantumModel(QuantumConstants.MatchLengthSymbols, threshold);
-    var lenModel6 = new QuantumModel(QuantumConstants.MatchLengthSymbols, threshold);
-    var lenModel7 = new QuantumModel(QuantumConstants.MatchLengthSymbols, threshold);
-    var lenModelLong = new QuantumModel(QuantumConstants.MatchLengthSymbols, threshold);
+    var literalModels = new QuantumModel[QuantumConstants.StateCount];
+    var matchFlagModels = new QuantumModel[QuantumConstants.StateCount];
+    for (var state = 0; state < QuantumConstants.StateCount; ++state) {
+      literalModels[state] = new QuantumModel(QuantumConstants.LiteralSymbols);
+      matchFlagModels[state] = new QuantumModel(2);
+    }
 
-    var dataArray = data.ToArray();
-    var matchFinder = new HashChainMatchFinder(windowSize);
-    var pos = 0;
+    var lengthSlotModel = new QuantumModel(QuantumConstants.SlotSymbols);
+    var distanceSlotModel = new QuantumModel(QuantumConstants.SlotSymbols);
 
-    while (pos < data.Length) {
-      // Try to find a match (minimum length 4)
-      Match bestMatch = default;
-      if (pos + 4 <= data.Length) {
-        var maxDist = Math.Min(pos, windowSize);
-        var maxLen = Math.Min(QuantumConstants.MaxMatchLength, data.Length - pos);
-        bestMatch = matchFinder.FindMatch(dataArray, pos, maxDist, maxLen, 4);
+    var windowSize = QuantumConstants.WindowSize(windowLevel);
+    var currentState = 0;
+
+    foreach (var token in Parse(data, windowSize)) {
+      if (token.Length == 0) {
+        encoder.EncodeSymbol(matchFlagModels[currentState], 0);
+        encoder.EncodeSymbol(literalModels[currentState], token.Distance);
+        currentState = QuantumConstants.LiteralNextState[currentState];
+        continue;
       }
 
-      if (bestMatch.Length >= 4) {
-        var matchLen = bestMatch.Length;
-        var offset = bestMatch.Distance;
-
-        // Choose selector based on match length
-        var (selector, baseLen) = ChooseSelector(matchLen);
-        var extraLen = matchLen - baseLen;
-
-        // Encode selector
-        encoder.EncodeSymbol(selectorModel, selector);
-
-        // Encode extra length from the appropriate model
-        var lenModel = selector switch {
-          1 => lenModel4,
-          2 => lenModel5,
-          3 => lenModel6,
-          4 => lenModel7,
-          _ => lenModelLong
-        };
-        encoder.EncodeSymbol(lenModel, extraLen);
-
-        // Encode offset as raw bits
-        encoder.WriteRawBits(offset, offsetBits);
-
-        pos += matchLen;
-      } else {
-        // Literal
-        encoder.EncodeSymbol(selectorModel, 0);
-        encoder.EncodeSymbol(literalModel, data[pos]);
-        ++pos;
-      }
+      encoder.EncodeSymbol(matchFlagModels[currentState], 1);
+      QuantumSlotCoding.Encode(encoder, lengthSlotModel, token.Length - QuantumConstants.MinMatch + 1);
+      QuantumSlotCoding.Encode(encoder, distanceSlotModel, token.Distance);
+      currentState = QuantumConstants.MatchNextState[currentState];
     }
 
     encoder.Finish();
@@ -94,15 +66,74 @@ public static class QuantumCompressor {
   }
 
   /// <summary>
-  /// Chooses the best selector and base length for a given match length.
-  /// Prefers the selector with the largest base (smallest extra).
+  /// A parsed token: a literal (<see cref="Length"/> 0, <see cref="Distance"/> holding
+  /// the byte value) or a match of <see cref="Length"/> bytes <see cref="Distance"/> back.
   /// </summary>
-  private static (int Selector, int BaseLen) ChooseSelector(int matchLen) => matchLen switch {
-    4 => (1, 4),
-    5 => (2, 5),
-    6 => (3, 6),
-    >= 7 and <= 11 => (4, 7),
-    >= 12 and <= 23 => (5, 12),
-    _ => (6, 24) // 24-50
-  };
+  private readonly record struct Token(int Length, int Distance);
+
+  /// <summary>
+  /// Greedy LZ77 parse over a hash chain keyed on the next three bytes.
+  /// </summary>
+  /// <remarks>
+  /// The chain for a key holds the positions where that key was seen, in increasing
+  /// order, and is walked newest first for at most
+  /// <see cref="QuantumConstants.MaxMatchChain"/> candidates, stopping early once a
+  /// candidate falls outside the window. The longest match wins; among equally long
+  /// matches the most recent position wins, because the walk starts there and a later
+  /// candidate must be strictly longer to replace it. The current position joins the
+  /// chain after the search, so it is never its own candidate. Positions covered by an
+  /// emitted match are not indexed.
+  /// </remarks>
+  private static List<Token> Parse(ReadOnlySpan<byte> data, int windowSize) {
+    var tokens = new List<Token>();
+    var chains = new Dictionary<int, List<int>>();
+    var length = data.Length;
+
+    for (var position = 0; position < length;) {
+      var bestLength = 0;
+      var bestDistance = 0;
+
+      if (position + QuantumConstants.MinMatch <= length) {
+        var key = (data[position] << 16) ^ (data[position + 1] << 8) ^ data[position + 2];
+
+        if (chains.TryGetValue(key, out var chain))
+          for (int index = chain.Count - 1, tries = 0; index >= 0 && tries < QuantumConstants.MaxMatchChain; --index, ++tries) {
+            var candidate = chain[index];
+            if (position - candidate > windowSize)
+              break;
+
+            var matchLength = MatchLength(data, candidate, position);
+            if (matchLength <= bestLength)
+              continue;
+
+            bestLength = matchLength;
+            bestDistance = position - candidate;
+          }
+        else
+          chains[key] = chain = [];
+
+        chain.Add(position);
+      }
+
+      if (bestLength >= QuantumConstants.MinMatch) {
+        tokens.Add(new(bestLength, bestDistance));
+        position += bestLength;
+        continue;
+      }
+
+      tokens.Add(new(0, data[position]));
+      ++position;
+    }
+
+    return tokens;
+  }
+
+  private static int MatchLength(ReadOnlySpan<byte> data, int candidate, int position) {
+    var limit = data.Length - position;
+    var length = 0;
+    while (length < limit && data[candidate + length] == data[position + length])
+      ++length;
+
+    return length;
+  }
 }
