@@ -13,7 +13,7 @@ public sealed class BrotliBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "Brotli";
   /// <inheritdoc/>
-  public string Description => "Modern LZ77+Huffman compression with static dictionary, designed by Google";
+  public string Description => "Modern LZ77 and Huffman compression designed by Google (RFC 7932), with literal context modelling, distance ring-buffer reuse and cost-driven meta-block splitting. The static dictionary and block-switch commands are not emitted, so output is smaller than a plain LZ77 and Huffman pass but larger than the reference encoder at its highest quality.";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
