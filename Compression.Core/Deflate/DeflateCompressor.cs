@@ -54,11 +54,16 @@ public sealed class DeflateCompressor {
     foreach (var value in data)
       this._inputBuffer.Add(value);
 
-    // Emit blocks when buffer gets large (larger threshold for Maximum level)
-    var blockSize = this._level == DeflateCompressionLevel.Maximum ? DeflateCompressor.DefaultBlockSize * 4 : DeflateCompressor.DefaultBlockSize;
-    while (this._inputBuffer.Count >= blockSize * 2) {
-      this.EmitBlock(this._inputBuffer.GetRange(0, blockSize), isFinal: false);
-      this._inputBuffer.RemoveRange(0, blockSize);
+    // Zopfli decides where the block boundaries go by searching for them, so at Maximum
+    // level nothing is emitted until the whole input is in hand; cutting it into fixed
+    // chunks first would throw that search away.
+    if (this._level == DeflateCompressionLevel.Maximum)
+      return;
+
+    // Emit blocks when buffer gets large
+    while (this._inputBuffer.Count >= DeflateCompressor.DefaultBlockSize * 2) {
+      this.EmitBlock(this._inputBuffer.GetRange(0, DeflateCompressor.DefaultBlockSize), isFinal: false);
+      this._inputBuffer.RemoveRange(0, DeflateCompressor.DefaultBlockSize);
     }
   }
 
@@ -76,10 +81,10 @@ public sealed class DeflateCompressor {
       this.EmitBlock([], isFinal: true);
     else {
       // Emit remaining data as final block
-      var blockSize = this._level == DeflateCompressionLevel.Maximum ? DeflateCompressor.DefaultBlockSize * 4 : DeflateCompressor.DefaultBlockSize;
-      while (this._inputBuffer.Count > blockSize) {
-        this.EmitBlock(this._inputBuffer.GetRange(0, blockSize), isFinal: false);
-        this._inputBuffer.RemoveRange(0, blockSize);
+      while (this._level != DeflateCompressionLevel.Maximum
+             && this._inputBuffer.Count > DeflateCompressor.DefaultBlockSize) {
+        this.EmitBlock(this._inputBuffer.GetRange(0, DeflateCompressor.DefaultBlockSize), isFinal: false);
+        this._inputBuffer.RemoveRange(0, DeflateCompressor.DefaultBlockSize);
       }
 
       this.EmitBlock(this._inputBuffer, isFinal: true);
@@ -230,6 +235,26 @@ public sealed class DeflateCompressor {
     return result;
   }
 
+  /// <summary>
+  /// Derives length-limited Huffman code lengths for a block's alphabet.
+  /// </summary>
+  /// <remarks>
+  /// Zopfli measures each candidate parse by the exact size of the block it produces, so
+  /// the lengths it costs with and the lengths it emits have to come from one builder, and
+  /// that builder is the deterministic one whose tie-break among equally likely symbols is
+  /// written down rather than inherited from a heap's internals. The other levels keep the
+  /// builder their output has always been pinned against.
+  /// </remarks>
+  private int[] BuildCodeLengths(long[] frequencies, int alphabetSize, int maxBits) {
+    if (this._level == DeflateCompressionLevel.Maximum)
+      return ZopfliBlockCost.BuildCodeLengths(frequencies.AsSpan(0, alphabetSize), maxBits);
+
+    var root = HuffmanTree.BuildFromFrequencies(frequencies);
+    var lengths = HuffmanTree.GetCodeLengths(root, alphabetSize);
+    HuffmanTree.LimitCodeLengths(lengths, maxBits);
+    return lengths;
+  }
+
   private void EmitStaticHuffmanBlock(
     List<(bool IsLiteral, byte Literal, int Distance, int Length)> tokens,
     bool isFinal) {
@@ -251,42 +276,35 @@ public sealed class DeflateCompressor {
     long[] distFreqs,
     List<(bool IsLiteral, byte Literal, int Distance, int Length)> tokens,
     bool isFinal) {
-    // Ensure at least one distance code
-    var hasDistCodes = distFreqs.Any(t => t > 0);
-
-    // Need at least one distance code for a valid table
-    if (!hasDistCodes)
-      distFreqs[0] = 1;
-
-    // Build Huffman trees and get code lengths
-    var litLenRoot = HuffmanTree.BuildFromFrequencies(litLenFreqs);
-    var litLenLengths = HuffmanTree.GetCodeLengths(litLenRoot, DeflateConstants.LiteralLengthAlphabetSize);
-    HuffmanTree.LimitCodeLengths(litLenLengths, DeflateConstants.MaxBits);
-
-    var distRoot = HuffmanTree.BuildFromFrequencies(distFreqs);
-    var distLengths = HuffmanTree.GetCodeLengths(distRoot, DeflateConstants.DistanceAlphabetSize);
-    HuffmanTree.LimitCodeLengths(distLengths, DeflateConstants.MaxBits);
+    // Build Huffman trees and get code lengths. At Maximum level the trees are the ones
+    // the block's measured cost was based on, which may be the run-friendly variant, and
+    // which already invents the distance code a block without back-references needs.
+    int[] litLenLengths, distLengths;
+    if (this._level == DeflateCompressionLevel.Maximum) {
+      var chosen = ZopfliBlockCost.BuildDynamicBlock(litLenFreqs, distFreqs);
+      litLenLengths = chosen.LitLenLengths;
+      distLengths = chosen.DistLengths;
+    } else {
+      // Need at least one distance code for a valid table
+      ZopfliBlockCost.EnsureDistanceCode(distFreqs);
+      litLenLengths = this.BuildCodeLengths(litLenFreqs, DeflateConstants.LiteralLengthAlphabetSize, DeflateConstants.MaxBits);
+      distLengths = this.BuildCodeLengths(distFreqs, DeflateConstants.DistanceAlphabetSize, DeflateConstants.MaxBits);
+    }
 
     // Determine HLIT and HDIST (trim trailing zeros)
-    var hlit = litLenLengths.Length;
-    while (hlit > 257 && litLenLengths[hlit - 1] == 0)
-      --hlit;
-
-    var hdist = distLengths.Length;
-    while (hdist > 1 && distLengths[hdist - 1] == 0)
-      --hdist;
+    var (hlit, hdist) = ZopfliBlockCost.TrimTrees(litLenLengths, distLengths);
 
     // RLE encode combined code lengths
     var combinedLengths = new int[hlit + hdist];
     litLenLengths.AsSpan(0, hlit).CopyTo(combinedLengths);
     distLengths.AsSpan(0, hdist).CopyTo(combinedLengths.AsSpan(hlit));
 
-    var rleSymbols = RunLengthEncode(combinedLengths);
+    var rleSymbols = DeflateCodeLengthRuns.Encode(combinedLengths);
 
     // Build code-length Huffman table
     var clFreqs = new long[DeflateConstants.CodeLengthAlphabetSize];
-    foreach (var (sym, _, _) in rleSymbols)
-      ++clFreqs[sym];
+    foreach (var run in rleSymbols)
+      ++clFreqs[run.Symbol];
 
     // Ensure at least one non-zero frequency
     var hasClCodes = clFreqs.Any(t => t > 0);
@@ -294,9 +312,7 @@ public sealed class DeflateCompressor {
     if (!hasClCodes)
       clFreqs[0] = 1;
 
-    var clRoot = HuffmanTree.BuildFromFrequencies(clFreqs);
-    var clLengths = HuffmanTree.GetCodeLengths(clRoot, DeflateConstants.CodeLengthAlphabetSize);
-    HuffmanTree.LimitCodeLengths(clLengths, DeflateConstants.MaxCodeLengthBits);
+    var clLengths = this.BuildCodeLengths(clFreqs, DeflateConstants.CodeLengthAlphabetSize, DeflateConstants.MaxCodeLengthBits);
 
     // Determine HCLEN (trim trailing zeros in permuted order)
     var hclen = DeflateConstants.CodeLengthAlphabetSize;
@@ -318,8 +334,8 @@ public sealed class DeflateCompressor {
       this._bitWriter.WriteBits((uint)clLengths[DeflateConstants.CodeLengthOrder[i]], 3);
 
     // Write RLE-encoded code lengths
-    foreach (var (sym, extraBits, extraValue) in rleSymbols) {
-      var (code, len) = clTable.GetCode(sym);
+    foreach (var (symbol, extraBits, extraValue) in rleSymbols) {
+      var (code, len) = clTable.GetCode(symbol);
       this._bitWriter.WriteBits(code, len);
       if (extraBits > 0)
         this._bitWriter.WriteBits((uint)extraValue, extraBits);
@@ -476,7 +492,7 @@ public sealed class DeflateCompressor {
     var blocks = ZopfliDeflate.CompressOptimal(dataArray);
 
     for (var i = 0; i < blocks.Count; ++i) {
-      var (symbols, litLenLengths, distLengths) = blocks[i];
+      var (start, end, symbols) = blocks[i];
       var isLastBlock = isFinal && (i == blocks.Count - 1);
 
       // Convert LzSymbol[] to token format
@@ -499,76 +515,28 @@ public sealed class DeflateCompressor {
 
       litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
-      // Ensure at least one distance code
-      var hasDistCodes = distFreqs.Any(t => t > 0);
-      if (!hasDistCodes) 
-        distFreqs[0] = 1;
-
-      // Try both static and dynamic, pick smaller
-      var staticSize = EstimateStaticSize(tokens);
-      var dynamicSize = EstimateDynamicSize(litLenFreqs, distFreqs, tokens);
-
-      if (staticSize <= dynamicSize)
-        this.EmitStaticHuffmanBlock(tokens, isLastBlock);
-      else
-        this.EmitDynamicHuffmanBlock(litLenFreqs, distFreqs, tokens, isLastBlock);
+      // Data that will not compress must still be handed on unharmed: without the stored
+      // block type an incompressible block grows by roughly a byte per hundred instead of
+      // by five bytes per 64 KB.
+      var (blockType, _) = ZopfliBlockCost.Cheapest(litLenFreqs, distFreqs, end - start);
+      switch (blockType) {
+        case DeflateConstants.BlockTypeUncompressed:
+          this.EmitUncompressedBlock(data.GetRange(start, end - start), isLastBlock);
+          break;
+        case DeflateConstants.BlockTypeStaticHuffman:
+          this.EmitStaticHuffmanBlock(tokens, isLastBlock);
+          break;
+        default:
+          this.EmitDynamicHuffmanBlock(litLenFreqs, distFreqs, tokens, isLastBlock);
+          break;
+      }
     }
   }
 
   private static List<(int Symbol, int ExtraBits, int ExtraValue)> RunLengthEncode(int[] lengths) {
     var result = new List<(int, int, int)>();
-    var i = 0;
-
-    while (i < lengths.Length) {
-      var value = lengths[i];
-
-      if (value == 0) {
-        // Count consecutive zeros
-        var count = 1;
-        while (i + count < lengths.Length && lengths[i + count] == 0)
-          ++count;
-
-        while (count > 0)
-          switch (count) {
-            case >= 11: {
-              var run = Math.Min(count, 138);
-              result.Add((18, 7, run - 11));
-              count -= run;
-              continue;
-            }
-            case >= 3:
-              result.Add((17, 3, count - 3));
-              count = 0;
-              continue;
-            default:
-              result.Add((0, 0, 0));
-              --count;
-              continue;
-          }
-
-        i += lengths.Skip(i).TakeWhile(x => x == 0).Count();
-      }
-      else {
-        result.Add((value, 0, 0));
-        ++i;
-
-        // Count repeats of the same value
-        var count = 0;
-        while (i + count < lengths.Length && lengths[i + count] == value)
-          ++count;
-
-        while (count >= 3) {
-          var run = Math.Min(count, 6);
-          result.Add((16, 2, run - 3));
-          count -= run;
-        }
-        while (count > 0) {
-          result.Add((value, 0, 0));
-          --count;
-        }
-        i += lengths.Skip(i).TakeWhile(x => x == value).Count();
-      }
-    }
+    foreach (var (symbol, extraBits, extraValue) in DeflateCodeLengthRuns.Encode(lengths))
+      result.Add((symbol, extraBits, extraValue));
 
     return result;
   }

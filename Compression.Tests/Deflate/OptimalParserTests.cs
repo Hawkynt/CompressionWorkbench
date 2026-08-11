@@ -7,11 +7,7 @@ public class OptimalParserTests {
   [Category("EdgeCase")]
   [Test]
   public void Parse_EmptyInput_ReturnsEmpty() {
-    var hashChain = new ZopfliHashChain();
-    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    var distLengths = DeflateConstants.GetStaticDistanceLengths();
-
-    var symbols = OptimalParser.Parse([], hashChain, litLenLengths, distLengths);
+    var symbols = Parse([]);
     Assert.That(symbols, Is.Empty);
   }
 
@@ -19,11 +15,7 @@ public class OptimalParserTests {
   [Test]
   public void Parse_ShortData_AllLiterals() {
     var data = "AB"u8.ToArray();
-    var hashChain = new ZopfliHashChain();
-    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    var distLengths = DeflateConstants.GetStaticDistanceLengths();
-
-    var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
+    var symbols = Parse(data);
 
     Assert.That(symbols.Length, Is.EqualTo(2));
     Assert.That(symbols.All(s => s.IsLiteral), Is.True);
@@ -33,11 +25,7 @@ public class OptimalParserTests {
   [Test]
   public void Parse_RepetitiveData_ContainsMatches() {
     var data = "ABCABCABCABCABCABCABCABC"u8.ToArray();
-    var hashChain = new ZopfliHashChain();
-    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    var distLengths = DeflateConstants.GetStaticDistanceLengths();
-
-    var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
+    var symbols = Parse(data);
 
     // Should have at least one match
     Assert.That(symbols.Any(s => !s.IsLiteral), Is.True);
@@ -49,11 +37,7 @@ public class OptimalParserTests {
   [Test]
   public void Parse_SymbolsReconstructInput() {
     var data = "ABCABCABCDEF"u8.ToArray();
-    var hashChain = new ZopfliHashChain();
-    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    var distLengths = DeflateConstants.GetStaticDistanceLengths();
-
-    var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
+    var symbols = Parse(data);
 
     // Reconstruct data from symbols
     var reconstructed = ReconstructFromSymbols(symbols, data);
@@ -64,11 +48,7 @@ public class OptimalParserTests {
   [Test]
   public void Parse_SingleByte_OneLiteral() {
     byte[] data = [0x42];
-    var hashChain = new ZopfliHashChain();
-    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    var distLengths = DeflateConstants.GetStaticDistanceLengths();
-
-    var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
+    var symbols = Parse(data);
 
     Assert.That(symbols.Length, Is.EqualTo(1));
     Assert.That(symbols[0].IsLiteral, Is.True);
@@ -79,11 +59,7 @@ public class OptimalParserTests {
   [Test]
   public void Parse_AllZeros_UsesMatches() {
     var data = new byte[256];
-    var hashChain = new ZopfliHashChain();
-    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    var distLengths = DeflateConstants.GetStaticDistanceLengths();
-
-    var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
+    var symbols = Parse(data);
 
     // Highly compressible — should use matches
     Assert.That(symbols.Length, Is.LessThan(data.Length));
@@ -91,6 +67,27 @@ public class OptimalParserTests {
     // Verify reconstruction
     var reconstructed = ReconstructFromSymbols(symbols, data);
     Assert.That(reconstructed, Is.EqualTo(data));
+  }
+
+  /// <summary>
+  /// Parses the whole of <paramref name="data"/> under the cost model its own greedy parse
+  /// implies, which is how the search begins on any real block.
+  /// </summary>
+  private static LzSymbol[] Parse(byte[] data) {
+    var cache = ZopfliMatchCache.Build(data);
+    var litLenCounts = new long[DeflateConstants.LiteralLengthAlphabetSize];
+    var distCounts = new long[DeflateConstants.DistanceAlphabetSize];
+    litLenCounts[DeflateConstants.EndOfBlock] = 1;
+
+    foreach (var symbol in OptimalParser.ParseGreedy(data, 0, data.Length, cache))
+      if (symbol.IsLiteral)
+        ++litLenCounts[symbol.LitLen];
+      else {
+        ++litLenCounts[DeflateConstants.GetLengthCode(symbol.LitLen)];
+        ++distCounts[DeflateConstants.GetDistanceCode(symbol.Distance)];
+      }
+
+    return OptimalParser.Parse(data, 0, data.Length, cache, ZopfliCostModel.FromCounts(litLenCounts, distCounts));
   }
 
   private static byte[] ReconstructFromSymbols(LzSymbol[] symbols, byte[] originalData) {
