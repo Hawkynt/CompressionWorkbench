@@ -370,10 +370,14 @@ public sealed class ZpaqlVm {
     var range = _x2 - _x1;
     var split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
 
+    // The subrange below the split is proportional to the prediction, so it is
+    // the one a 1 bit must take: the likelier a 1 is, the fewer bits coding it
+    // costs. Assigning it the other way round would make every confident
+    // prediction expensive and the coder would inflate rather than compress.
     if (bit != 0)
-      _x1 = split + 1;
-    else
       _x2 = split;
+    else
+      _x1 = split + 1;
 
     // Normalize: emit matching high bytes.
     while ((_x1 ^ _x2) < 0x01000000U) {
@@ -396,12 +400,13 @@ public sealed class ZpaqlVm {
     var range = _x2 - _x1;
     var split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
 
+    // Mirror of ArithEncode: the subrange below the split belongs to a 1 bit.
     int bit;
     if (code <= split) {
-      bit = 0;
+      bit = 1;
       _x2 = split;
     } else {
-      bit = 1;
+      bit = 0;
       _x1 = split + 1;
     }
 
