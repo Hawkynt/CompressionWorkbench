@@ -79,8 +79,10 @@ public sealed class FseBuildingBlock : IBuildingBlock {
       encTable[sym][r - normFreq[sym]] = s;
     }
 
-    // Encode in reverse.
-    var bitStack = new List<byte>();
+    // Encode in reverse. The bits go straight into their packed form: keeping one
+    // list element per bit needed eight times the memory and hit the array size
+    // limit at 2^28 bytes of incompressible input.
+    var bitStack = new PackedBitStack();
     var state = tableSize;
 
     for (var i = data.Length - 1; i >= 0; i--) {
@@ -89,7 +91,7 @@ public sealed class FseBuildingBlock : IBuildingBlock {
 
       // Reduce state to [f, 2*f-1] by outputting low bits.
       while (state >= 2 * f) {
-        bitStack.Add((byte)(state & 1));
+        bitStack.Push(state & 1);
         state >>= 1;
       }
 
@@ -119,14 +121,7 @@ public sealed class FseBuildingBlock : IBuildingBlock {
     BinaryPrimitives.WriteInt32LittleEndian(buf4, bitStack.Count);
     ms.Write(buf4);
 
-    // Pack bits into bytes.
-    var byteCount = (bitStack.Count + 7) / 8;
-    var packed = new byte[byteCount];
-    for (var i = 0; i < bitStack.Count; i++) {
-      if (bitStack[i] != 0)
-        packed[i / 8] |= (byte)(1 << (i % 8));
-    }
-    ms.Write(packed);
+    ms.Write(bitStack.PackedBits);
 
     return ms.ToArray();
   }
@@ -173,12 +168,9 @@ public sealed class FseBuildingBlock : IBuildingBlock {
     offset += 4;
 
     var byteCount = (bitCount + 7) / 8;
+    // Bits are read out of their packed form in place; expanding them to one array
+    // element per bit first cost eight times the memory of the payload itself.
     var packed = data.Slice(offset, byteCount);
-
-    // Unpack bits.
-    var bitStack = new byte[bitCount];
-    for (var i = 0; i < bitCount; i++)
-      bitStack[i] = (byte)((packed[i / 8] >> (i % 8)) & 1);
 
     // Rebuild spread table and occurrence mapping.
     var symbolTable = BuildSpreadTable(normFreq, symbols, tableSize);
@@ -193,7 +185,7 @@ public sealed class FseBuildingBlock : IBuildingBlock {
 
     // Decode.
     var decoded = new byte[uncompressedSize];
-    var bitPos = bitStack.Length - 1;
+    var bitPos = bitCount - 1;
 
     for (var i = 0; i < uncompressedSize; i++) {
       var spreadPos = state - tableSize;
@@ -209,7 +201,8 @@ public sealed class FseBuildingBlock : IBuildingBlock {
       while (state < tableSize) {
         if (bitPos < 0)
           throw new InvalidDataException("FSE: unexpected end of bitstream during decoding.");
-        state = (state << 1) | bitStack[bitPos--];
+        state = (state << 1) | ((packed[bitPos / 8] >> (bitPos % 8)) & 1);
+        --bitPos;
       }
     }
 
@@ -263,6 +256,47 @@ public sealed class FseBuildingBlock : IBuildingBlock {
     }
 
     return normFreq;
+  }
+
+  /// <summary>
+  /// Collects the encoder's bits in the packed form the wire format uses — eight to a
+  /// byte, least significant bit of each byte first — so the encoder never has to hold
+  /// an expanded copy.
+  /// </summary>
+  private sealed class PackedBitStack {
+    private byte[] _bytes = new byte[256];
+    private long _count;
+
+    /// <summary>
+    /// Gets the number of bits pushed so far.
+    /// </summary>
+    public int Count => (int)this._count;
+
+    /// <summary>
+    /// Gets the packed bits, filling the final byte's unused high bits with zero.
+    /// </summary>
+    public ReadOnlySpan<byte> PackedBits => this._bytes.AsSpan(0, (int)((this._count + 7) / 8));
+
+    /// <summary>
+    /// Appends a single bit.
+    /// </summary>
+    /// <param name="bit">The bit; any non-zero value counts as set.</param>
+    /// <exception cref="NotSupportedException">
+    /// The bit count would no longer fit the format's 32-bit field.
+    /// </exception>
+    public void Push(int bit) {
+      if (this._count == int.MaxValue)
+        throw new NotSupportedException("FSE: the bitstream no longer fits the format's 32-bit bit count.");
+
+      var index = (int)(this._count / 8);
+      if (index >= this._bytes.Length)
+        Array.Resize(ref this._bytes, this._bytes.Length * 2);
+
+      if (bit != 0)
+        this._bytes[index] |= (byte)(1 << (int)(this._count % 8));
+
+      ++this._count;
+    }
   }
 
   private static byte[] BuildSpreadTable(int[] normFreq, List<byte> symbols, int tableSize) {
