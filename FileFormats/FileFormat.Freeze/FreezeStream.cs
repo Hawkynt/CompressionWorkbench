@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Core.Entropy.Huffman;
 
 namespace FileFormat.Freeze;
 
@@ -352,8 +353,10 @@ public static class FreezeStream {
       return lengths;
     }
 
-    // Build Huffman tree to get code lengths.
-    lengths = BuildHuffmanTreeLengths(frequencies);
+    // Build Huffman tree to get code lengths. Tie-break between equally frequent symbols is
+    // defined by DeterministicHuffman, not by whatever order a container happens to hand back
+    // equal keys.
+    lengths = DeterministicHuffman.BuildCodeLengths(frequencies);
 
     // Clamp to maxBits and fix Kraft inequality if needed.
     var clamped = false;
@@ -366,48 +369,6 @@ public static class FreezeStream {
 
     if (clamped)
       FixKraftInequality(lengths, maxBits);
-
-    return lengths;
-  }
-
-  private static int[] BuildHuffmanTreeLengths(int[] frequencies) {
-    var n = frequencies.Length;
-    var lengths = new int[n];
-
-    // Collect active symbols.
-    var active = new List<int>();
-    for (var i = 0; i < n; i++) {
-      if (frequencies[i] > 0)
-        active.Add(i);
-    }
-
-    if (active.Count <= 1) {
-      if (active.Count == 1)
-        lengths[active[0]] = 1;
-      return lengths;
-    }
-
-    // Build Huffman tree using a priority queue.
-    var pq = new PriorityQueue<List<(int Symbol, int Depth)>, long>();
-    foreach (var sym in active)
-      pq.Enqueue([(sym, 0)], frequencies[sym]);
-
-    while (pq.Count > 1) {
-      pq.TryDequeue(out var left, out var freqLeft);
-      pq.TryDequeue(out var right, out var freqRight);
-
-      var merged = new List<(int Symbol, int Depth)>(left!.Count + right!.Count);
-      foreach (var (sym, depth) in left)
-        merged.Add((sym, depth + 1));
-      foreach (var (sym, depth) in right)
-        merged.Add((sym, depth + 1));
-
-      pq.Enqueue(merged, freqLeft + freqRight);
-    }
-
-    pq.TryDequeue(out var root, out _);
-    foreach (var (sym, depth) in root!)
-      lengths[sym] = depth;
 
     return lengths;
   }
