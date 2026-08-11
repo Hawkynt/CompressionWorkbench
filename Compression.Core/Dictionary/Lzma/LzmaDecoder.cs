@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Compression.Core.DataStructures;
 using Compression.Core.Entropy.RangeCoding;
 
@@ -6,15 +7,45 @@ namespace Compression.Core.Dictionary.Lzma;
 /// <summary>
 /// LZMA decoder implementing the full LZMA1 decompression algorithm.
 /// </summary>
+/// <remarks>
+/// The complete coder state — probability model, 12-state machine, rep distances,
+/// dictionary window and the uncompressed position counter — is held in fields so that
+/// LZMA2 can carry it from chunk to chunk and reset exactly the parts a chunk asks for.
+/// A single LZMA2 chunk is one self-contained range-coded unit, so the range decoder is
+/// re-initialised for every chunk; everything else survives unless the chunk's control
+/// byte says otherwise.
+/// </remarks>
 public sealed class LzmaDecoder {
-  private readonly int _lc;
-  private readonly int _lp;
-  private readonly int _pb;
+  private int _lc;
+  private int _lp;
+  private int _pb;
+  private int _posStateMask;
   private readonly int _dictionarySize;
-  private readonly int _posStateMask;
 
-  private readonly Stream _input;
+  private readonly Stream? _input;
   private readonly long _uncompressedSize;
+
+  // Probability model — survives across LZMA2 chunks unless a chunk requests a state reset.
+  private readonly int[] _isMatch = new int[LzmaConstants.NumStates << 4];
+  private readonly int[] _isRep = new int[LzmaConstants.NumStates];
+  private readonly int[] _isRepG0 = new int[LzmaConstants.NumStates];
+  private readonly int[] _isRepG1 = new int[LzmaConstants.NumStates];
+  private readonly int[] _isRepG2 = new int[LzmaConstants.NumStates];
+  private readonly int[] _isRep0Long = new int[LzmaConstants.NumStates << 4];
+  private readonly int[] _posDecoders = new int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
+  private readonly BitTreeDecoder[] _posSlotDecoder = new BitTreeDecoder[LzmaConstants.NumLenToPosStates];
+  private readonly BitTreeDecoder _alignDecoder = new(LzmaConstants.NumAlignBits);
+  private readonly LzmaLengthDecoder _matchLenDecoder = new();
+  private readonly LzmaLengthDecoder _repLenDecoder = new();
+  private LzmaLiteralDecoder _literalDecoder = new(0, 0);
+
+  // Match state — likewise survives unless a chunk requests a state reset.
+  private int _state;
+  private readonly int[] _reps = new int[LzmaConstants.NumRepDistances];
+
+  // Dictionary state — survives every chunk except an explicit dictionary reset.
+  private SlidingWindow? _window;
+  private long _processedPos;
 
   /// <summary>
   /// Initializes a new LZMA decoder.
@@ -30,21 +61,29 @@ public sealed class LzmaDecoder {
     this._input = input;
     this._uncompressedSize = uncompressedSize;
 
-    // Parse properties byte
-    int propByte = properties[0];
-    if (propByte >= 9 * 5 * 5)
-      throw new InvalidDataException("Invalid LZMA properties byte.");
+    var dictionarySize = properties[1] | (properties[2] << 8) | (properties[3] << 16) | (properties[4] << 24);
+    this._dictionarySize = dictionarySize < 0 ? int.MaxValue : dictionarySize;
 
-    this._lc = propByte % 9;
-    propByte /= 9;
-    this._lp = propByte % 5;
-    this._pb = propByte / 5;
+    this.Initialize(properties[0]);
+  }
 
-    this._dictionarySize = properties[1] | (properties[2] << 8) | (properties[3] << 16) | (properties[4] << 24);
-    if (this._dictionarySize < 0)
-      this._dictionarySize = int.MaxValue;
+  /// <summary>
+  /// Initializes a new LZMA decoder for chunk-wise use by <see cref="Lzma2Decoder"/>.
+  /// The properties arrive later with the first chunk that carries them.
+  /// </summary>
+  /// <param name="dictionarySize">The dictionary size in bytes.</param>
+  internal LzmaDecoder(int dictionarySize) {
+    this._dictionarySize = dictionarySize;
+    this._uncompressedSize = -1;
+    this.Initialize(0);
+  }
 
-    this._posStateMask = (1 << this._pb) - 1;
+  private void Initialize(byte propertiesByte) {
+    for (var i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
+      this._posSlotDecoder[i] = new(6);
+
+    this.SetProperties(propertiesByte);
+    this.ResetState();
   }
 
   /// <summary>
@@ -62,62 +101,137 @@ public sealed class LzmaDecoder {
   /// </summary>
   /// <param name="output">The output stream.</param>
   public void Decode(Stream output) {
-    var winSize = Math.Max(this._dictionarySize, 1);
-    if (winSize < 4096)
-      winSize = 4096;
+    ArgumentNullException.ThrowIfNull(output);
+    if (this._input == null)
+      throw new InvalidOperationException("This decoder was created without an input stream.");
 
-    var window = new SlidingWindow(winSize);
-    this.Decode(output, window, null);
+    this.EnsureWindow();
+    this.DecodeCore(this._input, output, this._uncompressedSize);
   }
 
   /// <summary>
-  /// Decodes the compressed stream using a shared sliding window and rep distances.
-  /// Used by LZMA2 for cross-chunk dictionary persistence.
+  /// Applies a new LZMA properties byte (lc/lp/pb), as carried by LZMA2 chunks with
+  /// reset level 2 or 3.
+  /// </summary>
+  /// <param name="propertiesByte">The encoded (pb * 5 + lp) * 9 + lc value.</param>
+  internal void ApplyProperties(byte propertiesByte) => this.SetProperties(propertiesByte);
+
+  /// <summary>
+  /// Resets the probability model, the 12-state machine and the rep distances,
+  /// as requested by LZMA2 chunks with reset level 1 or higher. The dictionary and the
+  /// uncompressed position counter are left untouched.
+  /// </summary>
+  internal void ResetState() {
+    this._isMatch.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    this._isRep.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    this._isRepG0.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    this._isRepG1.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    this._isRepG2.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    this._isRep0Long.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    this._posDecoders.AsSpan().Fill(RangeEncoder.ProbInitValue);
+
+    foreach (var posSlot in this._posSlotDecoder)
+      posSlot.Reset();
+
+    this._alignDecoder.Reset();
+    this._matchLenDecoder.Reset();
+    this._repLenDecoder.Reset();
+    this._literalDecoder.Reset();
+
+    this._state = 0;
+    this._reps.AsSpan().Clear();
+  }
+
+  /// <summary>
+  /// Discards the dictionary contents and restarts the uncompressed position counter,
+  /// as requested by LZMA2 chunks with reset level 3 and by uncompressed chunks with
+  /// control byte 0x01.
+  /// </summary>
+  internal void ResetDictionary() {
+    this._window = null;
+    this._processedPos = 0;
+  }
+
+  /// <summary>
+  /// Decodes one LZMA2 chunk of range-coded data into the output stream, continuing the
+  /// dictionary and whatever coder state the chunk's control byte did not reset.
+  /// </summary>
+  /// <param name="input">The chunk's packed bytes.</param>
+  /// <param name="output">The output stream.</param>
+  /// <param name="unpackedSize">The number of bytes this chunk produces.</param>
+  internal void DecodeChunk(Stream input, Stream output, int unpackedSize) {
+    this.EnsureWindow();
+    this.DecodeCore(input, output, this._processedPos + unpackedSize);
+  }
+
+  /// <summary>
+  /// Feeds the payload of an LZMA2 uncompressed chunk through the dictionary so that later
+  /// chunks can reference it, and advances the uncompressed position counter.
   /// </summary>
   /// <param name="output">The output stream.</param>
-  /// <param name="window">The shared sliding window.</param>
-  /// <param name="reps">Rep distances to carry across chunks (4 elements), or null for fresh state.</param>
-  internal void Decode(Stream output, SlidingWindow window, int[]? reps) {
-    var decoder = new RangeDecoder(this._input);
-    var literalDecoder = new LzmaLiteralDecoder(this._lc, this._lp);
-    var matchLenDecoder = new LzmaLengthDecoder();
-    var repLenDecoder = new LzmaLengthDecoder();
+  /// <param name="data">The literal chunk payload.</param>
+  internal void WriteUncompressed(Stream output, ReadOnlySpan<byte> data) {
+    this.EnsureWindow();
+    output.Write(data);
+    this._window.WriteBytes(data);
+    this._processedPos += data.Length;
+  }
 
-    // State variables
-    var state = 0;
-    reps ??= [0, 0, 0, 0];
+  [MemberNotNull(nameof(LzmaDecoder._window))]
+  private void EnsureWindow() => this._window ??= new(Math.Max(this._dictionarySize, 4096));
 
-    // Probability arrays (stackalloc: 432 ints = 1,728 bytes total)
-    Span<int> isMatch = stackalloc int[LzmaConstants.NumStates << 4];
-    Span<int> isRep = stackalloc int[LzmaConstants.NumStates];
-    Span<int> isRepG0 = stackalloc int[LzmaConstants.NumStates];
-    Span<int> isRepG1 = stackalloc int[LzmaConstants.NumStates];
-    Span<int> isRepG2 = stackalloc int[LzmaConstants.NumStates];
-    Span<int> isRep0Long = stackalloc int[LzmaConstants.NumStates << 4];
-    isMatch.Fill(RangeEncoder.ProbInitValue);
-    isRep.Fill(RangeEncoder.ProbInitValue);
-    isRepG0.Fill(RangeEncoder.ProbInitValue);
-    isRepG1.Fill(RangeEncoder.ProbInitValue);
-    isRepG2.Fill(RangeEncoder.ProbInitValue);
-    isRep0Long.Fill(RangeEncoder.ProbInitValue);
+  private void SetProperties(byte propertiesByte) {
+    int value = propertiesByte;
+    if (value >= 9 * 5 * 5)
+      throw new InvalidDataException("Invalid LZMA properties byte.");
 
-    // Distance decoding
-    var posSlotDecoder = new BitTreeDecoder[LzmaConstants.NumLenToPosStates];
-    for (var i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
-      posSlotDecoder[i] = new(6);
+    var lc = value % 9;
+    value /= 9;
+    var lp = value % 5;
+    var pb = value / 5;
 
-    Span<int> posDecoders = stackalloc int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
-    posDecoders.Fill(RangeEncoder.ProbInitValue);
+    // lc/lp shape the literal sub-coder table, so only a change reshapes it. Its
+    // probabilities need no clearing here: new properties always come with a state reset.
+    if (lc != this._lc || lp != this._lp)
+      this._literalDecoder = new(lc, lp);
+
+    this._lc = lc;
+    this._lp = lp;
+    this._pb = pb;
+    this._posStateMask = (1 << pb) - 1;
+  }
+
+  /// <summary>
+  /// Runs the LZMA symbol loop until <paramref name="limit"/> uncompressed bytes have been
+  /// produced since the last dictionary reset, or until the end marker when negative.
+  /// </summary>
+  private void DecodeCore(Stream input, Stream output, long limit) {
+    var window = this._window!;
+    var decoder = new RangeDecoder(input);
+
+    var isMatch = this._isMatch.AsSpan();
+    var isRep = this._isRep.AsSpan();
+    var isRepG0 = this._isRepG0.AsSpan();
+    var isRepG1 = this._isRepG1.AsSpan();
+    var isRepG2 = this._isRepG2.AsSpan();
+    var isRep0Long = this._isRep0Long.AsSpan();
+    var posDecoders = this._posDecoders.AsSpan();
+    var posSlotDecoder = this._posSlotDecoder;
+    var alignDecoder = this._alignDecoder;
+    var literalDecoder = this._literalDecoder;
+    var reps = this._reps;
+
+    var state = this._state;
+    var outPos = this._processedPos;
+
+    // The literal context byte is the byte before the current position; right after a
+    // dictionary reset there is none and zero is used instead.
+    var prevByte = outPos == 0 ? (byte)0 : window.GetByte(1);
 
     // Reusable copy buffer (max match length = 273 bytes)
     Span<byte> copyBuf = stackalloc byte[LzmaConstants.MatchMaxLen];
 
-    var alignDecoder = new BitTreeDecoder(LzmaConstants.NumAlignBits);
-
-    var outPos = 0L;
-    var prevByte = (byte)0;
-
-    while (this._uncompressedSize < 0 || outPos < this._uncompressedSize) {
+    while (limit < 0 || outPos < limit) {
       var posState = (int)(outPos & this._posStateMask);
 
       if (decoder.DecodeBit(ref isMatch[(state << 4) + posState]) == 0) {
@@ -137,7 +251,7 @@ public sealed class LzmaDecoder {
 
         if (decoder.DecodeBit(ref isRep[state]) == 0) {
           // Normal match
-          len = matchLenDecoder.Decode(decoder, posState);
+          len = this._matchLenDecoder.Decode(decoder, posState);
           state = LzmaConstants.StateUpdateMatch(state);
 
           distance = DecodeDistance(decoder, posSlotDecoder, posDecoders,
@@ -184,7 +298,7 @@ public sealed class LzmaDecoder {
             reps[0] = dist;
           }
 
-          len = repLenDecoder.Decode(decoder, posState);
+          len = this._repLenDecoder.Decode(decoder, posState);
           state = LzmaConstants.StateUpdateRep(state);
           distance = reps[0];
         }
@@ -198,6 +312,9 @@ public sealed class LzmaDecoder {
         outPos += len;
       }
     }
+
+    this._state = state;
+    this._processedPos = outPos;
   }
 
   private static int DecodeDistance(RangeDecoder decoder,
