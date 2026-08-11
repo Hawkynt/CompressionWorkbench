@@ -15,6 +15,14 @@ public sealed class Rar3Decoder {
   private const int RepLenTableSize = 28;
   private const int MaxCodeLength = 15;
 
+  // Huffman decoding peeks a full MaxCodeLength-bit window before it knows how
+  // long the current code actually is, so the last codes of a stream need
+  // lookahead past the final payload byte. Inside an archive that lookahead
+  // lands on the bytes of whatever follows the packed block; for a standalone
+  // buffer there is nothing there, so we append zero padding of the same width
+  // (MaxCodeLength bits plus a partial byte, rounded up).
+  private const int LookaheadPaddingBytes = (MaxCodeLength + 7) / 8 + 1;
+
   // Length table for new matches (symbol 263+ in main table, 36 slots)
   private static readonly int[] LenBits = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0];
   private static readonly int[] LenBase = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
@@ -79,7 +87,9 @@ public sealed class Rar3Decoder {
     var output = new byte[unpackedSize];
     var outPos = 0;
 
-    using var ms = new MemoryStream(compressed.ToArray());
+    var buffer = new byte[compressed.Length + LookaheadPaddingBytes];
+    compressed.CopyTo(buffer);
+    using var ms = new MemoryStream(buffer);
     var bitReader = new BitBuffer<MsbBitOrder>(ms);
 
     while (outPos < unpackedSize) {
