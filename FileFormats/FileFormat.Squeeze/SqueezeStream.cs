@@ -236,47 +236,78 @@ public static class SqueezeStream {
       return;
     }
 
-    // Build Huffman tree using a priority queue (min-heap by frequency)
-    // Each entry: (frequency, nodeIndex). Leaf nodes get negative indices: -(symbol+1).
-    // Internal nodes get indices starting from 0 in the node list.
-    var nodeLeft = new List<short>();
-    var nodeRight = new List<short>();
-
-    // Priority queue: (frequency, identifier)
-    // Identifier < 0: leaf = -(symbol+1), Identifier >= 0: internal node index
-    var pq = new PriorityQueue<int, long>();
+    // Huffman construction under an explicit total order on nodes. Squeeze stores the tree
+    // itself - the node array below is written to the file verbatim - so it is not enough to
+    // pin down the code lengths: which of two merged nodes becomes the left child, and in what
+    // order the internal nodes come into existence, both end up in the output. Compression.Core's
+    // DeterministicHuffman cannot be used here for that reason (it returns code lengths only, and
+    // takes int weights where Squeeze counts in long), so the same rule is applied directly.
+    //
+    // The rule: a node's key is the pair (weight, rank), where a leaf for symbol s has weight
+    // freq[s] and rank s, and the k-th internal node created has the summed weight of its two
+    // children and rank 257 + k. Node a precedes node b when a.Weight < b.Weight, or the weights
+    // are equal and a.Rank < b.Rank. Ranks are pairwise distinct - symbols are distinct and all
+    // below 257, creation indices are distinct and all at or above it - so no two nodes ever
+    // compare equal and the tree is a function of the frequencies alone. In plain terms: lighter
+    // first; among equal weights, leaves before internal nodes, leaves by ascending symbol,
+    // internal nodes oldest first.
+    //
+    // No heap is involved. The leaves are sorted once into that order and the internal nodes are
+    // appended as they are created, which leaves them already sorted, because merge weights are
+    // non-decreasing and creation indices increase. The smallest node still unmerged is therefore
+    // always at the front of one of the two queues.
+    var leafCount = symbolCount;
+    var leaves = new (long Weight, int Symbol)[leafCount];
+    var filled = 0;
     for (var i = 0; i < freq.Length; i++)
       if (freq[i] > 0)
-        pq.Enqueue(-(i + 1), freq[i]);
+        leaves[filled++] = (freq[i], i);
 
-    while (pq.Count > 1) {
-      pq.TryDequeue(out var id1, out var f1);
-      pq.TryDequeue(out var id2, out var f2);
+    // The comparison never returns zero for two different leaves, so how the sort itself treats
+    // equal keys cannot matter.
+    Array.Sort(leaves, static (a, b) => a.Weight != b.Weight
+      ? a.Weight.CompareTo(b.Weight)
+      : a.Symbol.CompareTo(b.Symbol));
 
-      var nodeIndex = nodeLeft.Count;
-      // Convert identifiers to node-array values:
-      // Negative ids are already leaf encodings (-(symbol+1))
-      // Non-negative ids are internal node indices
-      nodeLeft.Add(IdToNodeValue(id1));
-      nodeRight.Add(IdToNodeValue(id2));
+    // Node-array values: a leaf child is encoded as -(symbol + 1), an internal child as its
+    // creation index. Two leaves per merge minus the shared root gives leafCount - 1 internals.
+    var internalCount = leafCount - 1;
+    var internalWeight = new long[internalCount];
+    var nodeLeft = new short[internalCount];
+    var nodeRight = new short[internalCount];
 
-      pq.Enqueue(nodeIndex, f1 + f2);
+    var leafHead = 0;
+    var internalHead = 0;
+    var created = 0;
+
+    (short Value, long Weight) TakeSmallest() {
+      // Equal weight favours the leaf: a leaf's rank is below 257 while an internal node's rank
+      // is at or above it. Entries [internalHead, created) are the internal nodes still unmerged.
+      var takeLeaf = leafHead < leafCount
+                     && (internalHead >= created || leaves[leafHead].Weight <= internalWeight[internalHead]);
+
+      if (takeLeaf) {
+        var leaf = leaves[leafHead++];
+        return ((short)(-(leaf.Symbol + 1)), leaf.Weight);
+      }
+
+      var index = internalHead++;
+      return ((short)index, internalWeight[index]);
     }
 
-    // The last item in the queue is the root
-    pq.TryDequeue(out var rootId, out _);
-
-    // If the root is a leaf (only possible with 1 symbol, handled above), wrap it
-    if (rootId < 0) {
-      var nodeIndex = nodeLeft.Count;
-      nodeLeft.Add((short)rootId);
-      nodeRight.Add((short)rootId);
-      rootId = nodeIndex;
+    while (created < internalCount) {
+      var (leftValue, leftWeight) = TakeSmallest();
+      var (rightValue, rightWeight) = TakeSmallest();
+      nodeLeft[created] = leftValue;
+      nodeRight[created] = rightValue;
+      internalWeight[created] = leftWeight + rightWeight;
+      ++created;
     }
 
-    // The root must be the last node added. The Squeeze format expects node 0 = root.
-    // We need to remap so the root is at index 0.
-    var totalNodes = nodeLeft.Count;
+    // The root is the last internal node created. The Squeeze format expects node 0 = root,
+    // so the nodes have to be remapped.
+    var rootId = internalCount - 1;
+    var totalNodes = internalCount;
     left = new short[totalNodes];
     right = new short[totalNodes];
 
@@ -301,9 +332,6 @@ public static class SqueezeStream {
     codeLens = new int[257];
     GenerateCodes(left, right, 0, 0, 0, codes, codeLens);
   }
-
-  private static short IdToNodeValue(int id) =>
-    id < 0 ? (short)id : (short)id;
 
   private static short RemapChild(short child, int[] remap) =>
     child >= 0 ? (short)remap[child] : child;

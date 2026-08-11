@@ -94,6 +94,18 @@ public static class XmiToMidiConverter {
   // A pending note-off: absolute tick + MIDI status/note to emit.
   private readonly record struct PendingOff(long Tick, byte Status, byte Note);
 
+  // Orders pending note-offs by tick, then by status and note. Several notes routinely fall due
+  // on the same tick, and List.Sort is an unstable introsort, so comparing on the tick alone
+  // would leave the order of those note-offs - and with it the emitted MIDI bytes - down to how
+  // the sort happened to permute equal keys. Two note-offs agreeing on all three fields are
+  // indistinguishable in the output, so this comparison pins the byte stream down completely.
+  private static int ComparePendingOff(PendingOff x, PendingOff y) {
+    if (x.Tick != y.Tick)
+      return x.Tick.CompareTo(y.Tick);
+
+    return x.Status != y.Status ? x.Status.CompareTo(y.Status) : x.Note.CompareTo(y.Note);
+  }
+
   private static byte[] ConvertEvents(ReadOnlySpan<byte> evnt, int division) {
     var track = new List<byte>();
     var pending = new List<PendingOff>();
@@ -161,7 +173,7 @@ public static class XmiToMidiConverter {
 
         // Schedule the matching note-off.
         pending.Add(new PendingOff(absTick + duration, (byte)(0x80 | (runningStatus & 0x0F)), note));
-        pending.Sort(static (x, y) => x.Tick.CompareTo(y.Tick));
+        pending.Sort(ComparePendingOff);
         continue;
       }
 
@@ -175,7 +187,7 @@ public static class XmiToMidiConverter {
     }
 
     // Flush remaining note-offs at their scheduled ticks.
-    pending.Sort(static (x, y) => x.Tick.CompareTo(y.Tick));
+    pending.Sort(ComparePendingOff);
     foreach (var off in pending) {
       var at = Math.Max(off.Tick, currentTick);
       EmitDelta(track, ref currentTick, at);
