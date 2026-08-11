@@ -261,6 +261,7 @@ public static class BrotliDecompressor {
 
         // Decode distance
         int distance;
+        var explicitDistanceCode = 0;
         if (useDistanceZero)
           distance = distRing[distRingIdx & 3];
         else {
@@ -283,22 +284,25 @@ public static class BrotliDecompressor {
 
           var distTreeIdx = distContextMap[distBlockType * 4 + distContext];
 
-          var distCode = DecodeSymbol(reader, distTrees[distTreeIdx]);
-          distance = DecodeDistance(distCode, reader, nPostfix, nDirect, distRing, distRingIdx);
-
-          // Update distance ring buffer
-          if (distance > 0) {
-            distRingIdx = (distRingIdx + 1) & 3;
-            distRing[distRingIdx] = distance;
-          }
+          explicitDistanceCode = DecodeSymbol(reader, distTrees[distTreeIdx]);
+          distance = DecodeDistance(explicitDistanceCode, reader, nPostfix, nDirect, distRing, distRingIdx);
         }
 
         // Copy from ring buffer
         if (distance <= 0)
           distance = 1; // safety: distance must be positive
 
+        // Per RFC 7932 Section 4 the ring buffer only takes a new distance when an
+        // explicit, non-zero distance code was read and the reference points into
+        // the already produced output rather than the static dictionary.
+        var isDictionaryReference = ringPos < distance;
+        if (!useDistanceZero && explicitDistanceCode != 0 && !isDictionaryReference) {
+          distRingIdx = (distRingIdx + 1) & 3;
+          distRing[distRingIdx] = distance;
+        }
+
         // Check for static dictionary reference (RFC 7932 Section 8)
-        if (ringPos < distance) {
+        if (isDictionaryReference) {
           // Distance beyond current position — static dictionary reference
           // copy_length determines the word length class
           var offset = distance - Math.Max(ringPos, 1) - 1;

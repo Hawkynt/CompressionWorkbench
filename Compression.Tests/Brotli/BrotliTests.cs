@@ -505,4 +505,115 @@ public class BrotliTests {
       brotli.Write(data);
     return ms.ToArray();
   }
+
+  // --- Encoder feature tests: context modelling, ring distances, splitting ---
+
+  /// <summary>
+  /// English prose long enough that the encoder clusters the 64 literal contexts
+  /// into several prefix codes and emits a context map (RFC 7932 Section 7.3).
+  /// The reference decoder has to accept that, not just our own.
+  /// </summary>
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
+  [Test]
+  public void ContextModelledText_SystemDecompress() {
+    var data = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Range(0, 400).Select(i =>
+      $"Sentence number {i} explains that context modelling assigns literals to trees by preceding bytes. ")));
+
+    var compressed = BrotliCompressor.CompressLz77(data);
+
+    using var ms = new MemoryStream(compressed);
+    using var brotli = new BrotliStream(ms, CompressionMode.Decompress);
+    using var result = new MemoryStream();
+    brotli.CopyTo(result);
+
+    Assert.That(result.ToArray(), Is.EqualTo(data));
+    Assert.That(compressed.Length, Is.LessThan(data.Length / 4),
+      "Entropy coding with context modelling should beat a quarter of the input on English prose.");
+  }
+
+  /// <summary>
+  /// Prose, then incompressible noise, then prose again. Cost-driven splitting has
+  /// to put the noise into its own meta-block and store it uncompressed, so the
+  /// result must stay close to the noise size rather than exceeding the input.
+  /// </summary>
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void MixedContent_SplitsIntoMetaBlocks_AndStaysSmall() {
+    var text = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat(
+      "compression algorithms encode redundancy into shorter symbol streams. ", 1500)));
+    var noise = new byte[80000];
+    new Random(1234).NextBytes(noise);
+
+    var data = new byte[text.Length * 2 + noise.Length];
+    text.CopyTo(data, 0);
+    noise.CopyTo(data, text.Length);
+    text.CopyTo(data, text.Length + noise.Length);
+
+    var compressed = BrotliCompressor.CompressLz77(data);
+    Assert.That(BrotliDecompressor.Decompress(compressed), Is.EqualTo(data));
+
+    using var ms = new MemoryStream(compressed);
+    using var brotli = new BrotliStream(ms, CompressionMode.Decompress);
+    using var result = new MemoryStream();
+    brotli.CopyTo(result);
+    Assert.That(result.ToArray(), Is.EqualTo(data));
+
+    Assert.That(compressed.Length, Is.LessThan(noise.Length + noise.Length / 4),
+      "The two prose halves must cost far less than the noise they surround.");
+  }
+
+  /// <summary>
+  /// A fixed unit repeated many times makes every reference reuse the same
+  /// backward distance, which the encoder should code through the distance ring
+  /// buffer and the implicit-distance insert-and-copy ranges (RFC 7932 Sections 4
+  /// and 5) rather than as full distance codes.
+  /// </summary>
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RepeatedUnit_UsesRingDistances_SystemDecompress() {
+    var unit = Encoding.UTF8.GetBytes("abcdefghij0123456789");
+    var data = new byte[unit.Length * 2000];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = unit[i % unit.Length];
+
+    var compressed = BrotliCompressor.CompressLz77(data);
+
+    using var ms = new MemoryStream(compressed);
+    using var brotli = new BrotliStream(ms, CompressionMode.Decompress);
+    using var result = new MemoryStream();
+    brotli.CopyTo(result);
+
+    Assert.That(result.ToArray(), Is.EqualTo(data));
+    Assert.That(compressed.Length, Is.LessThan(200));
+  }
+
+  /// <summary>
+  /// Alphabets with very few coded symbols take the simple prefix code form of
+  /// RFC 7932 Section 3.4, whose implied code lengths are positional; getting the
+  /// symbol order wrong there desynchronises any conformant decoder.
+  /// </summary>
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [TestCase(1)]
+  [TestCase(2)]
+  [TestCase(3)]
+  [TestCase(4)]
+  [TestCase(5)]
+  [TestCase(6)]
+  public void SmallLiteralAlphabet_SystemDecompress(int alphabetSize) {
+    var data = new byte[20000];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)(i * 37 % alphabetSize);
+
+    var compressed = BrotliCompressor.CompressLz77(data);
+
+    using var ms = new MemoryStream(compressed);
+    using var brotli = new BrotliStream(ms, CompressionMode.Decompress);
+    using var result = new MemoryStream();
+    brotli.CopyTo(result);
+    Assert.That(result.ToArray(), Is.EqualTo(data));
+  }
 }

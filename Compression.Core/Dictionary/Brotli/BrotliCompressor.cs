@@ -1,20 +1,124 @@
-using Compression.Core.Dictionary.MatchFinders;
-
 namespace Compression.Core.Dictionary.Brotli;
 
 /// <summary>
 /// Compresses data in the Brotli format (RFC 7932).
 /// </summary>
 /// <remarks>
+/// <para>
 /// Supports two modes:
 /// <list type="bullet">
-///   <item>Compress: Uses uncompressed meta-blocks (fast, no compression ratio).</item>
-///   <item><see cref="CompressLz77"/>: Uses LZ77 + Huffman compressed meta-blocks (actual compression).</item>
+///   <item><see cref="Compress(ReadOnlySpan{byte})"/>: uncompressed meta-blocks only (fast, no ratio).</item>
+///   <item><see cref="CompressLz77"/>: LZ77 plus entropy-coded meta-blocks (actual compression).</item>
 /// </list>
+/// </para>
+/// <para>
+/// The entropy-coding encoder implements the following parts of RFC 7932:
+/// literal context modelling (Section 7.1, all four context modes, with the 64
+/// context values clustered into several literal prefix codes and transmitted as
+/// a context map per Section 7.3), the distance ring buffer including the
+/// implicit-distance insert-and-copy ranges (Section 4 and Section 5), run-length
+/// coded complex prefix code descriptors (Section 3.5), and cost-driven
+/// meta-block splitting where each meta-block independently falls back to the
+/// uncompressed form (Section 9.2).
+/// </para>
+/// <para>
+/// Deliberately NOT implemented: static dictionary references (Section 8),
+/// several block types per category with block-switch commands (Section 6),
+/// non-zero NPOSTFIX/NDIRECT distance parameters (Section 4), and distance
+/// context modelling (Section 7.2). Those are all optional encoder features; the
+/// emitted streams stay fully conformant without them.
+/// </para>
+/// <para>
+/// Every encoding decision in this class is made with integer arithmetic only, so
+/// that the JavaScript port in the Cipher project produces byte-identical output.
+/// </para>
 /// </remarks>
 public static class BrotliCompressor {
-  // Brotli copy length code 23 (base 2118, 24 extra bits) → max single copy ~16 MB.
-  private const int BrotliMaxCopyLength = 16 * 1024 * 1024;
+  // ---------------------------------------------------------------------------
+  // Tunables. Any change here must be mirrored in Cipher's brotli.js, otherwise
+  // the two implementations stop producing identical bytes.
+  // ---------------------------------------------------------------------------
+
+  /// <summary>Shortest backward reference the match finder will emit.</summary>
+  private const int MinMatch = 4;
+
+  /// <summary>Number of bits in the match finder's hash table index.</summary>
+  private const int HashBits = 17;
+
+  /// <summary>Maximum number of hash chain candidates inspected per position.</summary>
+  private const int MaxChain = 256;
+
+  /// <summary>Copy length code 23 has base 2118 and 24 extra bits.</summary>
+  private const int MaxCopyLength = 8388608;
+
+  /// <summary>
+  /// Longest literal run the parse will accumulate. A run this long closes its
+  /// meta-block, which keeps MLEN inside the six nibbles RFC 7932 Section 9.2
+  /// allows even for input that never matches anything.
+  /// </summary>
+  private const int MaxLiteralRun = 4194304;
+
+  /// <summary>Granularity at which meta-block split points may be placed.</summary>
+  private const int SegmentBytes = 32768;
+
+  /// <summary>Largest MLEN expressible with MNIBBLES=6 (RFC 7932 Section 9.2).</summary>
+  private const int MaxMetaBlockBytes = 16777216;
+
+  /// <summary>
+  /// Merging two adjacent segments into one meta-block is rejected when it costs
+  /// more than this many 1/256-bit units, which is roughly the size of a second
+  /// meta-block header.
+  /// </summary>
+  private const long SplitThresholdUnits = 262144;
+
+  /// <summary>Rough bit cost of one insert-and-copy symbol plus its length codes.</summary>
+  private const int EstimatedCommandBits = 12;
+
+  /// <summary>Rough bit cost of one explicit distance symbol, before its extra bits.</summary>
+  private const int EstimatedDistanceBits = 12;
+
+  /// <summary>
+  /// Value, in bits, of one extra matched byte when two candidate references are
+  /// ranked against each other. It is well below the eight bits a literal would
+  /// cost, because bytes a longer reference covers would otherwise be covered by
+  /// another reference rather than by literals.
+  /// </summary>
+  private const int MatchRankLiteralBits = 5;
+
+  /// <summary>How much better a reference one position later has to score to be preferred.</summary>
+  private const int LazyMatchMargin = 8;
+
+  /// <summary>Candidate literal prefix code counts (NTREESL) evaluated per meta-block.</summary>
+  private static readonly int[] LiteralTreeCandidates = [1, 2, 4, 8, 16];
+
+  /// <summary>Initial contents of the distance ring buffer (RFC 7932 Section 4).</summary>
+  private static readonly int[] InitialDistanceRing = [4, 11, 15, 16];
+
+  /// <summary>
+  /// RFC 7932 Table 8: (insertCodeBase, copyCodeBase, firstCode, usesImplicitDistance).
+  /// Ranges 0-1 (codes 0-127) take the distance from the ring buffer without
+  /// reading a distance symbol; ranges 2-10 (codes 128-703) read one.
+  /// </summary>
+  private static readonly (int InsertBase, int CopyBase, int CodeBase, bool Implicit)[] IacRanges = [
+    (0, 0, 0, true),
+    (0, 8, 64, true),
+    (0, 0, 128, false),
+    (0, 8, 192, false),
+    (8, 0, 256, false),
+    (8, 8, 320, false),
+    (0, 16, 384, false),
+    (16, 0, 448, false),
+    (8, 16, 512, false),
+    (16, 8, 576, false),
+    (16, 16, 640, false)
+  ];
+
+  /// <summary>Size of the distance alphabet for NPOSTFIX=0, NDIRECT=0.</summary>
+  private const int DistanceAlphabetSize = 64;
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
 
   /// <summary>
   /// Compresses data to the Brotli format at the specified compression level.
@@ -22,14 +126,8 @@ public static class BrotliCompressor {
   /// <param name="data">The data to compress.</param>
   /// <param name="level">The compression level.</param>
   /// <returns>The Brotli-compressed data.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data, BrotliCompressionLevel level) {
-    if (level == BrotliCompressionLevel.Uncompressed || data.Length < 16)
-      return Compress(data);
-
-    var lz77 = CompressLz77(data);
-    var uncomp = Compress(data);
-    return lz77.Length < uncomp.Length ? lz77 : uncomp;
-  }
+  public static byte[] Compress(ReadOnlySpan<byte> data, BrotliCompressionLevel level) =>
+    level == BrotliCompressionLevel.Uncompressed ? Compress(data) : CompressLz77(data);
 
   /// <summary>
   /// Compresses data to the Brotli format using uncompressed meta-blocks.
@@ -38,1189 +136,1495 @@ public static class BrotliCompressor {
   /// <param name="data">The data to compress.</param>
   /// <returns>The Brotli-compressed data.</returns>
   public static byte[] Compress(ReadOnlySpan<byte> data) {
-    using var output = new MemoryStream();
-    var writer = new BrotliBitWriter(output);
+    var writer = new BrotliBitWriter();
 
-    // Encode window bits (WBITS = 16 → single 0 bit)
-    writer.WriteBits(1, 0); // WBITS = 16
+    // WBITS = 16 is a single zero bit (RFC 7932 Section 9.1).
+    writer.WriteBits(1, 0);
 
-    if (data.Length == 0) {
-      // Empty stream: WBITS then ISLAST=1, ISEMPTY=1
-      writer.WriteBits(1, 1); // ISLAST
-      writer.WriteBits(1, 1); // ISEMPTY
-      writer.AlignToByte();
-      writer.Flush();
-      return output.ToArray();
-    }
-
-    // Split into uncompressed meta-blocks of up to 65536 bytes.
-    // Per RFC 7932, ISUNCOMPRESSED is only present when ISLAST=0,
-    // so all data blocks use ISLAST=0, followed by a final empty last block.
+    // Per RFC 7932 Section 9.2 ISUNCOMPRESSED only exists when ISLAST=0, so every
+    // data-carrying meta-block is non-last and a true empty last one terminates.
     var offset = 0;
     while (offset < data.Length) {
       var blockSize = Math.Min(data.Length - offset, 65536);
-
-      // ISLAST = 0 (uncompressed blocks cannot be last)
-      writer.WriteBits(1, 0);
-
-      // MLEN: encode as MNIBBLES=4 (16-bit length)
-      var mlen = blockSize - 1;
-      writer.WriteBits(2, 0); // MNIBBLES - 4 = 0 → 4 nibbles
-      writer.WriteBits(4, (uint)(mlen & 0xF));
-      writer.WriteBits(4, (uint)((mlen >> 4) & 0xF));
-      writer.WriteBits(4, (uint)((mlen >> 8) & 0xF));
-      writer.WriteBits(4, (uint)((mlen >> 12) & 0xF));
-
-      // ISUNCOMPRESSED = 1
-      writer.WriteBits(1, 1);
-
-      // Align to byte boundary before uncompressed data
+      writer.WriteBits(1, 0); // ISLAST = 0
+      WriteMetaBlockLength(writer, blockSize);
+      writer.WriteBits(1, 1); // ISUNCOMPRESSED = 1
       writer.AlignToByte();
-
-      // Write raw bytes
       for (var i = 0; i < blockSize; ++i)
-        writer.WriteByte(data[offset + i]);
+        writer.WriteBits(8, data[offset + i]);
 
       offset += blockSize;
     }
 
-    // Final empty last meta-block: ISLAST=1, ISEMPTY=1
-    writer.WriteBits(1, 1); // ISLAST
-    writer.WriteBits(1, 1); // ISEMPTY
-    writer.AlignToByte();
+    writer.WriteBits(1, 1); // ISLAST = 1
+    writer.WriteBits(1, 1); // ISLASTEMPTY = 1
     writer.Flush();
-    return output.ToArray();
+    return writer.ToArray();
   }
 
   /// <summary>
-  /// Compresses data to the Brotli format using LZ77 + Huffman compressed meta-blocks.
-  /// Produces actual compression by finding repeated sequences.
+  /// Compresses data to the Brotli format using entropy-coded meta-blocks.
   /// </summary>
   /// <param name="data">The data to compress.</param>
   /// <returns>The Brotli-compressed data.</returns>
   public static byte[] CompressLz77(ReadOnlySpan<byte> data) {
-    switch (data.Length) {
-      // For very short data, uncompressed is more efficient
-      case 0:
-      case < 16: return Compress(data);
-    }
-
-    using var output = new MemoryStream();
-    var writer = new BrotliBitWriter(output);
-
-    // Determine window size
-    var windowBits = ComputeWindowBits(data.Length);
-    var windowSize = 1 << windowBits;
-
-    // Encode window bits (WBITS)
-    WriteWindowBits(writer, windowBits);
-
-    // Find LZ77 matches using hash chain.
-    // Per RFC 7932 §4: max backward distance is (1 << WBITS) - 16.
-    var dataArray = data.ToArray();
-    var maxBackwardDistance = Math.Max(1, windowSize - 16);
-    var matchFinder = new HashChainMatchFinder(maxBackwardDistance);
-    var commands = FindMatches(dataArray, matchFinder, maxBackwardDistance);
-
-    // Emit compressed meta-blocks
-    EmitCompressedMetaBlock(writer, dataArray, commands, isLast: true);
-
-    writer.AlignToByte();
-    writer.Flush();
-
-    var compressed = output.ToArray();
-
-    // If compressed is larger, fall back to uncompressed
-    if (compressed.Length >= data.Length + 10)
+    if (data.Length == 0)
       return Compress(data);
 
-    return compressed;
+    var input = data.ToArray();
+    var windowBits = ComputeWindowBits(input.Length);
+    var maxDistance = (1 << windowBits) - 16;
+
+    var commands = FindCommands(input, maxDistance);
+    var blocks = SplitMetaBlocks(input, commands);
+
+    var writer = new BrotliBitWriter();
+    WriteWindowBits(writer, windowBits);
+
+    var ring = (int[])InitialDistanceRing.Clone();
+    for (var bi = 0; bi < blocks.Count; ++bi) {
+      var block = blocks[bi];
+      var isLastBlock = bi == blocks.Count - 1;
+
+      var candidateRing = (int[])ring.Clone();
+      var compressed = BuildCompressedMetaBlock(input, commands, block, isLastBlock, candidateRing);
+      var stored = BuildUncompressedMetaBlock(input, block, writer.BitLength());
+
+      bool useCompressed;
+      if (isLastBlock) {
+        // The stream ends here: the compressed form can carry ISLAST=1 directly,
+        // while the uncompressed form needs a trailing empty last meta-block.
+        var withCompressed = ByteLength(writer.BitLength() + compressed.BitLength());
+        var withStored = ByteLength(writer.BitLength() + stored.BitLength() + 2);
+        useCompressed = withCompressed <= withStored;
+      } else
+        useCompressed = compressed.BitLength() < stored.BitLength();
+
+      if (useCompressed) {
+        writer.Append(compressed);
+        ring = candidateRing;
+      } else
+        writer.Append(stored);
+
+      if (!isLastBlock || useCompressed)
+        continue;
+
+      writer.WriteBits(1, 1); // ISLAST = 1
+      writer.WriteBits(1, 1); // ISLASTEMPTY = 1
+    }
+
+    writer.Flush();
+    return writer.ToArray();
   }
 
-  /// <summary>
-  /// Computes appropriate window bits for the given data length.
-  /// </summary>
+  /// <summary>Number of whole bytes needed to hold <paramref name="bits"/> bits.</summary>
+  private static int ByteLength(int bits) => (bits + 7) / 8;
+
+  // ---------------------------------------------------------------------------
+  // Stream header
+  // ---------------------------------------------------------------------------
+
+  /// <summary>Picks the smallest window that can express every backward distance.</summary>
   private static int ComputeWindowBits(int dataLength) {
-    var bits = BrotliConstants.MinWindowBits;
-    while ((1 << bits) < dataLength && bits < BrotliConstants.MaxWindowBits)
-      ++bits;
+    for (var bits = BrotliConstants.MinWindowBits; bits < BrotliConstants.MaxWindowBits; ++bits)
+      if ((1 << bits) - 16 >= dataLength)
+        return bits;
 
-    return bits;
+    return BrotliConstants.MaxWindowBits;
   }
 
-  /// <summary>
-  /// Writes the WBITS field to the stream header (RFC 7932 §9.1).
-  /// </summary>
+  /// <summary>Writes the WBITS field of the stream header (RFC 7932 Section 9.1).</summary>
   private static void WriteWindowBits(BrotliBitWriter writer, int windowBits) {
     switch (windowBits) {
       case 16:
-        // Single '0' bit.
         writer.WriteBits(1, 0);
-        break;
-
-      case 17:
-        // 7 bits: bit '1', then six '0' bits.
-        writer.WriteBits(7, 1);
-        break;
-
+        return;
       case >= 18 and <= 24:
-        // 4 bits: bit '1', then 3-bit (windowBits - 17) in [1..7].
         writer.WriteBits(1, 1);
         writer.WriteBits(3, (uint)(windowBits - 17));
-        break;
-
+        return;
+      case 17:
+        writer.WriteBits(1, 1);
+        writer.WriteBits(3, 0);
+        writer.WriteBits(3, 0);
+        return;
       case >= 10 and <= 15:
-        // 7 bits: bit '1', then '000', then 3-bit (windowBits - 8) in [2..7].
         writer.WriteBits(1, 1);
         writer.WriteBits(3, 0);
         writer.WriteBits(3, (uint)(windowBits - 8));
-        break;
-
+        return;
       default:
-        throw new ArgumentOutOfRangeException(nameof(windowBits), windowBits,
-          $"WBITS must be in [{BrotliConstants.MinWindowBits}..{BrotliConstants.MaxWindowBits}].");
+        throw new ArgumentOutOfRangeException(nameof(windowBits), windowBits, "Unsupported Brotli window size.");
     }
   }
 
   /// <summary>
-  /// An LZ77 command: either a literal run or a match (distance + length).
-  /// <see cref="DistanceCode"/> is the chosen Brotli distance code (-1 = implicit/last
-  /// distance via IaC range, 0-15 = ring-buffer reference, 16+ = complex distance code).
+  /// Writes MNIBBLES and MLEN (RFC 7932 Section 9.2). MNIBBLES must be the
+  /// smallest nibble count whose most significant nibble is non-zero, because a
+  /// conformant decoder rejects a stream whose last nibble is all zeros.
   /// </summary>
-  private readonly record struct LzCommand(int InsertLength, int CopyLength, int Distance, int DistanceCode = 0);
+  private static void WriteMetaBlockLength(BrotliBitWriter writer, int byteLength) {
+    var mlen = byteLength - 1;
+    var nibbles = mlen <= 0xFFFF ? 4 : mlen <= 0xFFFFF ? 5 : 6;
+    writer.WriteBits(2, (uint)(nibbles - 4));
+    for (var i = 0; i < nibbles; ++i)
+      writer.WriteBits(4, (uint)((mlen >> (i * 4)) & 0xF));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Deterministic integer cost model
+  //
+  // Every size comparison the encoder makes has to be reproduced bit-for-bit by
+  // the JavaScript port. Floating point logarithms are not safe for that (the
+  // last unit in the last place may differ between runtimes), so all costs are
+  // computed from an exact fixed-point base-2 logarithm and carried in units of
+  // 1/256 bit.
+  // ---------------------------------------------------------------------------
+
+  private static readonly int[] Log2Table = BuildLog2Table();
+
+  private static int[] BuildLog2Table() {
+    var table = new int[65536];
+    for (var i = 1; i < 65536; ++i)
+      table[i] = (int)ComputeLog2Fixed(i);
+    return table;
+  }
 
   /// <summary>
-  /// Finds LZ77 matches in the input data and returns a sequence of commands.
+  /// Returns floor(log2(<paramref name="x"/>) * 65536) using integer arithmetic
+  /// only, for <paramref name="x"/> greater than or equal to 1.
   /// </summary>
-  private static List<LzCommand> FindMatches(byte[] data, HashChainMatchFinder matchFinder, int windowSize) {
-    var commands = new List<LzCommand>();
-    var pos = 0;
-    var literalStart = 0;
+  private static long ComputeLog2Fixed(long x) {
+    long exponent = 0;
+    var v = x;
+    while (v >= 2) {
+      v /= 2;
+      ++exponent;
+    }
 
-    while (pos < data.Length) {
-      Match bestMatch = default;
-      if (pos + 4 <= data.Length) {
-        var maxDist = Math.Min(pos, windowSize);
-        var maxLen = Math.Min(BrotliMaxCopyLength, data.Length - pos);
-        bestMatch = matchFinder.FindMatch(data, pos, maxDist, maxLen, 4);
+    // Mantissa in [1, 2) held as a fixed point number with 20 fractional bits.
+    var mantissa = x * 1048576L / (1L << (int)exponent);
+    var result = exponent * 65536L;
+    var bit = 32768L;
+    for (var i = 0; i < 16; ++i) {
+      mantissa = mantissa * mantissa / 1048576L;
+      if (mantissa >= 2097152L) {
+        result += bit;
+        mantissa /= 2;
       }
 
-      if (bestMatch.Length >= 4) {
-        var insertLen = pos - literalStart;
-        commands.Add(new(insertLen, bestMatch.Length, bestMatch.Distance));
-        var end = Math.Min(pos + bestMatch.Length - 1, data.Length - 4);
-        for (var j = pos + 1; j <= end; ++j)
-          matchFinder.InsertPosition(data, j);
-        pos += bestMatch.Length;
-        literalStart = pos;
-      } else
-        ++pos;
+      bit /= 2;
     }
 
-    // Trailing literals
-    if (literalStart < data.Length)
-      commands.Add(new(data.Length - literalStart, 0, 0));
-
-    return commands;
+    return result;
   }
+
+  /// <summary>Table-accelerated <see cref="ComputeLog2Fixed"/>.</summary>
+  private static long Log2Fixed(long x) => x < 65536 ? Log2Table[(int)x] : ComputeLog2Fixed(x);
 
   /// <summary>
-  /// Emits a compressed meta-block containing the given LZ77 commands.
-  /// Uses a simple Huffman coding scheme with a single block type per category.
+  /// Ideal cost, in 1/256-bit units, of coding <paramref name="count"/>
+  /// occurrences of one symbol inside an alphabet seen <paramref name="total"/> times.
   /// </summary>
-  /// <summary>
-  /// Checks whether a command fits in an IAC range of the specified type.
-  /// </summary>
-  private static bool FitsRange(int insertLength, int copyLength, bool wantImplicit) {
-    var insertCode = FindTableCode(BrotliConstants.InsertLengthTable, insertLength);
-    var copyCode = copyLength >= 2 ? FindTableCode(BrotliConstants.CopyLengthTable, copyLength) : 0;
-    foreach (var (insBase, cpBase, _, isImplicit) in IacRanges) {
-      if (isImplicit != wantImplicit) continue;
-      if (insertCode - insBase is >= 0 and <= 7 && copyCode - cpBase is >= 0 and <= 7) return true;
-    }
-    return false;
+  private static long BitCostUnits(long count, long total) {
+    if (count <= 0)
+      return 0;
+
+    // Clamped so the division below can never see a negative numerator: integer
+    // division truncates towards zero in C# but towards minus infinity in the
+    // JavaScript port, and the two must not be able to disagree.
+    var delta = Log2Fixed(total) - Log2Fixed(count);
+    return delta <= 0 ? 0 : count * delta / 256;
   }
 
-  /// <summary>
-  /// Preprocesses commands to resolve distance encoding. For each match command, picks
-  /// the best Brotli distance code: implicit IaC (no code) when the distance is the
-  /// most-recent in the ring, ring codes 0-15 when the distance matches a ring slot or
-  /// an offset thereof (no extra bits), or complex codes 16+ otherwise (extra bits).
-  /// Commands that don't fit any IaC range are converted to literals.
-  /// </summary>
-  private static List<LzCommand> ResolveDistanceEncoding(List<LzCommand> commands) {
-    int[] distRing = [16, 15, 11, 4];
-    var distRingIdx = 3;
-    var resolved = new List<LzCommand>(commands.Count);
+  /// <summary>Ideal cost, in 1/256-bit units, of coding a whole histogram.</summary>
+  private static long HistogramCostUnits(int[] histogram) {
+    long total = 0;
+    for (var i = 0; i < histogram.Length; ++i)
+      total += histogram[i];
 
-    foreach (var cmd in commands) {
-      if (cmd.CopyLength <= 0) {
-        resolved.Add(cmd);
-        continue;
-      }
+    if (total == 0)
+      return 0;
 
-      var lastDist = distRing[distRingIdx & 3];
-      var canImplicit = cmd.Distance == lastDist && FitsRange(cmd.InsertLength, cmd.CopyLength, true);
-      var canExplicit = FitsRange(cmd.InsertLength, cmd.CopyLength, false);
+    long cost = 0;
+    for (var i = 0; i < histogram.Length; ++i)
+      cost += BitCostUnits(histogram[i], total);
 
-      var emittedImplicit = false;
-      if (canImplicit) {
-        resolved.Add(cmd with { Distance = -1, DistanceCode = -1 });
-        emittedImplicit = true;
-      } else if (canExplicit) {
-        // Pick the cheapest distance code: prefer ring codes 1-15 (no extra bits) over
-        // complex codes 16+ (5-25 extra bits). Code 0 is reserved for the implicit path.
-        var distCode = FindRingDistanceCode(cmd.Distance, distRing, distRingIdx);
-        if (distCode < 0)
-          distCode = EncodeComplexDistanceCode(cmd.Distance);
-        resolved.Add(cmd with { DistanceCode = distCode });
-      } else {
-        // Try adjusting insert/copy split to fit an explicit range.
-        var total = cmd.InsertLength + cmd.CopyLength;
-        var adjusted = false;
-        for (var ni = cmd.InsertLength + 1; ni <= total - 2; ++ni) {
-          if (!FitsRange(ni, total - ni, false)) continue;
-          var distCode = FindRingDistanceCode(cmd.Distance, distRing, distRingIdx);
-          if (distCode < 0) distCode = EncodeComplexDistanceCode(cmd.Distance);
-          resolved.Add(new LzCommand(ni, total - ni, cmd.Distance, distCode));
-          adjusted = true;
-          break;
-        }
-
-        if (!adjusted) {
-          resolved.Add(new LzCommand(total, 0, 0));
-          continue;
-        }
-      }
-
-      // Per RFC 7932 §4: the distance ring updates only when an explicit distance code != 0
-      // is used. Implicit IaC = distance code 0 (no update).
-      if (!emittedImplicit) {
-        distRingIdx = (distRingIdx + 1) & 3;
-        distRing[distRingIdx] = cmd.Distance;
-      }
-    }
-
-    // Merge non-final literal-only commands into the next command's insert.
-    // Literal-only commands in non-final position corrupt the stream because the
-    // decoder always decodes a copy length and may attempt to copy bytes.
-    for (var i = resolved.Count - 2; i >= 0; --i) {
-      if (resolved[i].CopyLength != 0) continue;
-      var next = resolved[i + 1];
-      resolved[i + 1] = new LzCommand(resolved[i].InsertLength + next.InsertLength,
-        next.CopyLength, next.Distance);
-      resolved.RemoveAt(i);
-    }
-
-    return resolved;
-  }
-
-  private static void EmitCompressedMetaBlock(BrotliBitWriter writer, byte[] data,
-    List<LzCommand> commands, bool isLast) {
-    var totalBytes = data.Length;
-    commands = ResolveDistanceEncoding(commands);
-    // ISLAST
-    writer.WriteBits(1, isLast ? 1u : 0u);
-    if (isLast)
-      writer.WriteBits(1, 0); // ISEMPTY = 0
-
-    // MLEN: MNIBBLES nibbles (4, 5, or 6), encoded as MNIBBLES-4 in 2 bits
-    var mlen = totalBytes - 1;
-    var mNibbles = mlen <= 0xFFFF ? 4 : mlen <= 0xFFFFF ? 5 : 6;
-    writer.WriteBits(2, (uint)(mNibbles - 4));
-    for (var n = 0; n < mNibbles; ++n)
-      writer.WriteBits(4, (uint)((mlen >> (n * 4)) & 0xF));
-
-    if (!isLast)
-      writer.WriteBits(1, 0); // ISUNCOMPRESSED = 0
-
-    // Block type counts: 1 each (no block partitioning).
-    WriteBlockTypeCount(writer, 1); // literal
-    WriteBlockTypeCount(writer, 1); // insert&copy
-    WriteBlockTypeCount(writer, 1); // distance
-
-    // NPOSTFIX = 0, NDIRECT = 0
-    writer.WriteBits(2, 0);
-    writer.WriteBits(4, 0);
-
-    // First pass: collect per-context literal frequencies (UTF8 context mode).
-    // We always use UTF8 mode — works well for both text and binary, with the lookup
-    // tables collapsing similar byte categories to the same context value.
-    const int contextMode = 2; // UTF8
-    var litFreqByContext = new int[64][];
-    for (var c = 0; c < 64; ++c) litFreqByContext[c] = new int[256];
-
-    var litPos = 0;
-    foreach (var cmd in commands) {
-      for (var i = 0; i < cmd.InsertLength && litPos < data.Length; ++i) {
-        var ctx = LiteralContext(data, litPos, contextMode);
-        ++litFreqByContext[ctx][data[litPos]];
-        ++litPos;
-      }
-      litPos += cmd.CopyLength;
-    }
-
-    // Cluster contexts into N literal trees; pick the N that gives the best
-    // estimated compression (entropy + tree-overhead trade-off).
-    var (contextMap, numLitTrees, treeFreqs) = ClusterContexts(litFreqByContext);
-
-    // Context mode for the (single) literal block type.
-    writer.WriteBits(2, (uint)contextMode);
-
-    // NTREESL: number of literal trees.
-    WriteBlockTypeCount(writer, numLitTrees);
-
-    // Literal context map (only emitted if numLitTrees > 1).
-    if (numLitTrees > 1)
-      WriteContextMap(writer, contextMap, numLitTrees);
-
-    // NTREESD: number of distance trees (always 1).
-    WriteBlockTypeCount(writer, 1);
-
-    // Build IaC and distance frequencies.
-    var iacFreq = new int[BrotliConstants.NumInsertAndCopyLengthCodes];
-    var distAlphabetSize = 16 + 0 + (48 << 0); // 64
-    var distFreq = new int[distAlphabetSize];
-
-    foreach (var cmd in commands) {
-      var useImplicit = cmd is { CopyLength: > 0, Distance: -1 };
-      var iacCode = EncodeInsertAndCopyCode(cmd.InsertLength, cmd.CopyLength, useImplicit);
-      if (iacCode < iacFreq.Length)
-        ++iacFreq[iacCode];
-    }
-
-    foreach (var cmd in commands) {
-      if (cmd.CopyLength <= 0 || cmd.DistanceCode < 0) continue;
-      if (cmd.DistanceCode < distFreq.Length) ++distFreq[cmd.DistanceCode];
-    }
-
-    // Build Huffman trees: one per literal-tree-cluster, plus IaC and distance.
-    var litLengths = new int[numLitTrees][];
-    var litCodes = new int[numLitTrees][];
-    var singleLit = new bool[numLitTrees];
-    for (var t = 0; t < numLitTrees; ++t) {
-      litLengths[t] = BuildCodeLengths(treeFreqs[t], 256);
-      WriteSimplePrefixCode(writer, litLengths[t], 256);
-      litCodes[t] = BuildCanonicalCodes(litLengths[t], 256);
-      singleLit[t] = litLengths[t].Count(l => l > 0) <= 1;
-    }
-
-    var iacLengths = BuildCodeLengths(iacFreq, BrotliConstants.NumInsertAndCopyLengthCodes);
-    WriteSimplePrefixCode(writer, iacLengths, BrotliConstants.NumInsertAndCopyLengthCodes);
-
-    var distLengths = BuildCodeLengths(distFreq, distAlphabetSize);
-    WriteSimplePrefixCode(writer, distLengths, distAlphabetSize);
-
-    var iacCodes = BuildCanonicalCodes(iacLengths, BrotliConstants.NumInsertAndCopyLengthCodes);
-    var distCodes = BuildCanonicalCodes(distLengths, distAlphabetSize);
-
-    var singleIac = iacLengths.Count(l => l > 0) <= 1;
-    var singleDist = distLengths.Count(l => l > 0) <= 1;
-
-    // Encode commands.
-    litPos = 0;
-    foreach (var cmd in commands) {
-      var useImplicit = cmd is { CopyLength: > 0, Distance: -1 };
-      var iacCode = EncodeInsertAndCopyCode(cmd.InsertLength, cmd.CopyLength, useImplicit);
-      if (!singleIac) WriteCode(writer, iacCodes, iacLengths, iacCode);
-
-      WriteInsertLengthExtra(writer, cmd.InsertLength);
-
-      if (cmd.CopyLength > 0)
-        WriteCopyLengthExtra(writer, cmd.CopyLength);
-
-      for (var i = 0; i < cmd.InsertLength && litPos < data.Length; ++i) {
-        var ctx = LiteralContext(data, litPos, contextMode);
-        var tree = contextMap[ctx];
-        if (!singleLit[tree]) WriteCode(writer, litCodes[tree], litLengths[tree], data[litPos]);
-        ++litPos;
-      }
-
-      litPos += cmd.CopyLength;
-
-      if (cmd.CopyLength <= 0 || cmd.DistanceCode < 0) continue;
-
-      if (!singleDist) WriteCode(writer, distCodes, distLengths, cmd.DistanceCode);
-      WriteDistanceExtra(writer, cmd.Distance, cmd.DistanceCode);
-    }
-  }
-
-  /// <summary>Computes the Brotli literal context (0-63) for the byte at <paramref name="pos"/>.</summary>
-  private static int LiteralContext(byte[] data, int pos, int contextMode) {
-    var p1 = pos > 0 ? data[pos - 1] : (byte)0;
-    var p2 = pos > 1 ? data[pos - 2] : (byte)0;
-    return contextMode switch {
-      0 => p1 & 0x3F,
-      1 => p1 >> 2,
-      2 => BrotliConstants.Utf8ContextLut0[p1] | BrotliConstants.Utf8ContextLut1[p2],
-      _ => p1 & 0x3F,
-    };
-  }
-
-  /// <summary>
-  /// Clusters the 64 context byte-frequency vectors into a small number of trees,
-  /// trading off cluster compactness against per-tree header overhead. Tries
-  /// candidate cluster counts (1, 2, 4) and picks the one with lowest total cost.
-  /// </summary>
-  private static (int[] ContextMap, int NumTrees, int[][] TreeFreqs) ClusterContexts(int[][] freqByContext) {
-    var totalLiterals = 0;
-    for (var c = 0; c < 64; ++c)
-      for (var b = 0; b < 256; ++b)
-        totalLiterals += freqByContext[c][b];
-
-    // For very small literal counts the per-tree header overhead dwarfs any savings.
-    if (totalLiterals < 1024)
-      return BuildSingleTreeCluster(freqByContext);
-
-    // TEMP: only single-tree until multi-tree libbrotli interop bug is found.
-    // Multi-tree self-round-trip works, but libbrotli rejects the output for some inputs.
-    var candidates = new[] { 1 };
-    int[] bestMap = null!;
-    var bestN = 0;
-    int[][] bestF = null!;
-    var bestCost = double.PositiveInfinity;
-
-    foreach (var k in candidates) {
-      var (map, n, f) = ClusterContextsK(freqByContext, k);
-      var cost = EstimateClusterCost(f, n, totalLiterals);
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestMap = map;
-        bestN = n;
-        bestF = f;
-      }
-    }
-
-    return (bestMap, bestN, bestF);
-  }
-
-  private static (int[] ContextMap, int NumTrees, int[][] TreeFreqs) BuildSingleTreeCluster(int[][] freqByContext) {
-    var map = new int[64];
-    var combined = new int[256];
-    for (var c = 0; c < 64; ++c)
-      for (var b = 0; b < 256; ++b)
-        combined[b] += freqByContext[c][b];
-    return (map, 1, [combined]);
-  }
-
-  /// <summary>
-  /// Clusters 64 context distributions into <paramref name="k"/> groups using simple
-  /// agglomerative (greedy nearest-merge) clustering on entropy-weighted similarity.
-  /// </summary>
-  private static (int[] ContextMap, int NumTrees, int[][] TreeFreqs) ClusterContextsK(int[][] freqByContext, int k) {
-    if (k <= 1)
-      return BuildSingleTreeCluster(freqByContext);
-
-    // Start: each context is its own cluster (skip empty contexts).
-    var clusters = new List<int[]>(); // each cluster is a 256-byte freq vector
-    var clusterMembers = new List<List<int>>(); // contexts in each cluster
-    for (var c = 0; c < 64; ++c) {
-      var freq = freqByContext[c];
-      var sum = 0;
-      for (var b = 0; b < 256; ++b) sum += freq[b];
-      if (sum == 0) continue;
-      clusters.Add((int[])freq.Clone());
-      clusterMembers.Add([c]);
-    }
-
-    // Greedily merge the closest pair until k clusters remain.
-    while (clusters.Count > k) {
-      var bestI = 0;
-      var bestJ = 1;
-      var bestCost = double.PositiveInfinity;
-      for (var i = 0; i < clusters.Count; ++i)
-        for (var j = i + 1; j < clusters.Count; ++j) {
-          var cost = MergeCost(clusters[i], clusters[j]);
-          if (cost < bestCost) {
-            bestCost = cost;
-            bestI = i;
-            bestJ = j;
-          }
-        }
-
-      var merged = new int[256];
-      for (var b = 0; b < 256; ++b)
-        merged[b] = clusters[bestI][b] + clusters[bestJ][b];
-      var mergedMembers = new List<int>(clusterMembers[bestI]);
-      mergedMembers.AddRange(clusterMembers[bestJ]);
-
-      clusters.RemoveAt(bestJ);
-      clusterMembers.RemoveAt(bestJ);
-      clusters[bestI] = merged;
-      clusterMembers[bestI] = mergedMembers;
-    }
-
-    var actualK = clusters.Count;
-    var map = new int[64];
-    for (var t = 0; t < actualK; ++t)
-      foreach (var ctx in clusterMembers[t])
-        map[ctx] = t;
-    // Empty contexts default to tree 0.
-
-    return (map, actualK, clusters.ToArray());
-  }
-
-  /// <summary>
-  /// Cost (in bits) of merging two clusters: total bits to encode using the merged
-  /// distribution minus the sum of bits using individual distributions. Always ≥ 0;
-  /// 0 when distributions are identical, larger when they differ. Greedy clustering
-  /// picks the merge with smallest cost.
-  /// </summary>
-  private static double MergeCost(int[] a, int[] b) {
-    long sumA = 0, sumB = 0;
-    for (var i = 0; i < 256; ++i) { sumA += a[i]; sumB += b[i]; }
-    var sumM = sumA + sumB;
-    if (sumM == 0) return 0;
-
-    // cost(X) = Σ count_i * log2(N / count_i), the optimal bits to encode X.
-    // Return cost(merged) - cost(A) - cost(B).
-    double cost = 0;
-    for (var i = 0; i < 256; ++i) {
-      var fa = a[i];
-      var fb = b[i];
-      var fm = fa + fb;
-      if (fa > 0) cost -= fa * Math.Log2((double)sumA / fa);
-      if (fb > 0) cost -= fb * Math.Log2((double)sumB / fb);
-      if (fm > 0) cost += fm * Math.Log2((double)sumM / fm);
-    }
     return cost;
   }
 
   /// <summary>
-  /// Estimates total bit cost of using <paramref name="numTrees"/> literal trees:
-  /// sum of per-tree entropy plus rough header overhead.
+  /// Extra cost, in 1/256-bit units, of coding two histograms with one shared
+  /// distribution instead of two separate ones. Never negative.
   /// </summary>
-  private static double EstimateClusterCost(int[][] treeFreqs, int numTrees, long totalLiterals) {
-    double entropy = 0;
-    for (var t = 0; t < numTrees; ++t) {
-      long sum = 0;
-      for (var b = 0; b < 256; ++b) sum += treeFreqs[t][b];
-      if (sum == 0) continue;
-      for (var b = 0; b < 256; ++b) {
-        var f = treeFreqs[t][b];
-        if (f > 0) entropy -= f * Math.Log2((double)f / sum);
-      }
+  private static long MergeCostUnits(int[] a, int[] b) {
+    long totalA = 0, totalB = 0;
+    for (var i = 0; i < a.Length; ++i) {
+      totalA += a[i];
+      totalB += b[i];
     }
-    // Per-tree header overhead estimate: a 256-symbol Huffman tree with RLE compression
-    // typically takes 30-80 bytes in the bitstream depending on length distribution.
-    // Add ~80 bits for the context-map header when multi-tree.
-    var overheadBits = numTrees * 50.0 * 8 + (numTrees > 1 ? 80 : 0);
-    return entropy + overheadBits;
+
+    var totalMerged = totalA + totalB;
+    if (totalMerged == 0)
+      return 0;
+
+    long cost = 0;
+    for (var i = 0; i < a.Length; ++i) {
+      var fa = a[i];
+      var fb = b[i];
+      cost += BitCostUnits(fa + fb, totalMerged) - BitCostUnits(fa, totalA) - BitCostUnits(fb, totalB);
+    }
+
+    return cost;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Prefix codes (RFC 7932 Section 3)
+  // ---------------------------------------------------------------------------
+
+  /// <summary>A canonical prefix code together with its transmitted code lengths.</summary>
+  private sealed class PrefixCode {
+    /// <summary>Code length per symbol; zero means the symbol is not coded.</summary>
+    public int[] Lengths = [];
+
+    /// <summary>Canonical code value per symbol, valid where the length is non-zero.</summary>
+    public int[] Codes = [];
+
+    /// <summary>The only coded symbol, or -1 when the code has two or more symbols.</summary>
+    public int SingleSymbol = -1;
   }
 
   /// <summary>
-  /// Writes a context map to the stream (RFC 7932 §7.3). Uses a Huffman code over symbols
-  /// {0=tree-0, 1..maxRle=run-of-zeros, maxRle+1..maxRle+numTrees-1=trees 1..N-1}. We pick
-  /// no RLE and no MTF for simplicity — the map is only 64 entries so the savings are marginal.
+  /// Builds optimal length-limited code lengths with the package-merge algorithm
+  /// (Larmore and Hirschberg, 1990). RFC 7932 Section 3.2 caps code lengths at 15
+  /// bits for the data alphabets and Section 3.5 at 5 bits for the code-length
+  /// alphabet, which an unrestricted Huffman build can exceed.
   /// </summary>
-  private static void WriteContextMap(BrotliBitWriter writer, int[] contextMap, int numTrees) {
-    writer.WriteBits(1, 0); // useRleEncoding = 0
+  private static int[] BuildCodeLengths(int[] frequencies, int alphabetSize, int maxLength) {
+    var lengths = new int[alphabetSize];
 
-    var alphabetSize = numTrees;
-    var freq = new int[alphabetSize];
-    foreach (var c in contextMap)
-      ++freq[c];
+    var used = new List<int>();
+    for (var symbol = 0; symbol < alphabetSize; ++symbol)
+      if (frequencies[symbol] > 0)
+        used.Add(symbol);
 
-    var lengths = BuildCodeLengths(freq, alphabetSize);
-    WriteSimplePrefixCode(writer, lengths, alphabetSize);
-    var codes = BuildCanonicalCodes(lengths, alphabetSize);
-
-    var single = lengths.Count(l => l > 0) <= 1;
-    foreach (var c in contextMap)
-      if (!single)
-        WriteCode(writer, codes, lengths, c);
-
-    writer.WriteBits(1, 0); // MTF = 0
-  }
-
-  /// <summary>
-  /// Writes a count using Brotli's VarLenUint8 + 1 encoding (RFC 7932 §6).
-  /// VarLenUint8(N): if N==0 → "0" (1 bit); if N==1 → "1 000" (4 bits with nbits=0);
-  /// else → "1 nbits<sub>3</sub> extra<sub>nbits</sub>" where nbits = floor(log2(N)) and extra = N - 2^nbits.
-  /// </summary>
-  private static void WriteBlockTypeCount(BrotliBitWriter writer, int count) {
-    var n = count - 1;
-    if (n == 0) {
-      writer.WriteBits(1, 0);
-      return;
-    }
-    writer.WriteBits(1, 1);
-    if (n == 1) {
-      writer.WriteBits(3, 0);
-      return;
-    }
-    var bits = 0;
-    var v = n;
-    while (v > 1) { v >>= 1; ++bits; }
-    writer.WriteBits(3, (uint)bits);
-    writer.WriteBits(bits, (uint)(n - (1 << bits)));
-  }
-
-  /// <summary>
-  /// RFC 7932 Table 8 range definitions: (insertCodeBase, copyCodeBase, iacCodeBase, implicit).
-  /// Ranges 0-1 use implicit distance (codes 0-127).
-  /// Ranges 2-8 use explicit distance (codes 128-575).
-  /// </summary>
-  private static readonly (int InsBase, int CpBase, int CodeBase, bool Implicit)[] IacRanges = [
-    (0, 0, 0, true),      // range 0:  insert 0-7,   copy 0-7,   implicit
-    (0, 8, 64, true),     // range 1:  insert 0-7,   copy 8-15,  implicit
-    (0, 0, 128, false),   // range 2:  insert 0-7,   copy 0-7,   explicit
-    (0, 8, 192, false),   // range 3:  insert 0-7,   copy 8-15,  explicit
-    (8, 0, 256, false),   // range 4:  insert 8-15,  copy 0-7,   explicit
-    (8, 8, 320, false),   // range 5:  insert 8-15,  copy 8-15,  explicit
-    (0, 16, 384, false),  // range 6:  insert 0-7,   copy 16-23, explicit
-    (16, 0, 448, false),  // range 7:  insert 16-23, copy 0-7,   explicit
-    (8, 16, 512, false),  // range 8:  insert 8-15,  copy 16-23, explicit
-    (16, 8, 576, false),  // range 9:  insert 16-23, copy 8-15,  explicit
-    (16, 16, 640, false)  // range 10: insert 16-23, copy 16-23, explicit
-  ];
-
-  /// <summary>
-  /// Encodes insert and copy lengths into a combined insert-and-copy code (RFC 7932 Table 8).
-  /// </summary>
-  /// <param name="insertLength">Number of literal bytes to insert.</param>
-  /// <param name="copyLength">Number of bytes to copy (0 for literal-only).</param>
-  /// <param name="useImplicitDistance">When true, uses implicit distance ranges (codes 0-127).</param>
-  private static int EncodeInsertAndCopyCode(int insertLength, int copyLength, bool useImplicitDistance) {
-    var insertCode = FindTableCode(BrotliConstants.InsertLengthTable, insertLength);
-    var copyCode = copyLength >= 2
-      ? FindTableCode(BrotliConstants.CopyLengthTable, copyLength)
-      : 0;
-
-    if (useImplicitDistance) {
-      // Find matching implicit range (verified to fit by ResolveDistanceEncoding)
-      foreach (var (insBase, cpBase, codeBase, isImplicit) in IacRanges) {
-        if (!isImplicit) continue;
-        var insOff = insertCode - insBase;
-        var cpOff = copyCode - cpBase;
-        if (insOff is >= 0 and <= 7 && cpOff is >= 0 and <= 7)
-          return codeBase + insOff * 8 + cpOff;
-      }
-    }
-
-    // Literal-only: must use implicit ranges (codes 0-127) so decoder doesn't expect a distance.
-    // The decoder stops before copying when metaBytesRemaining hits zero.
-    if (copyLength == 0) {
-      foreach (var (insBase, cpBase, codeBase, isImplicit) in IacRanges) {
-        if (!isImplicit) continue;
-        var insOff = insertCode - insBase;
-        if (insOff is >= 0 and <= 7 && cpBase == 0)
-          return codeBase + insOff * 8;
-      }
-    }
-
-    // Find a valid explicit-distance range
-    foreach (var (insBase, cpBase, codeBase, isImplicit) in IacRanges) {
-      if (isImplicit) continue;
-      var insOff = insertCode - insBase;
-      var cpOff = copyCode - cpBase;
-      if (insOff is < 0 or > 7 || cpOff is < 0 or > 7) continue;
-      return codeBase + (insOff << 3) + cpOff;
-    }
-
-    // Fallback: clamp to range 2 (insert 0-7, copy 0-7, explicit)
-    return 128 + (Math.Clamp(insertCode, 0, 7)) * 8 + Math.Min(copyCode, 7);
-  }
-
-  private static int FindTableCode((int BaseValue, int ExtraBits)[] table, int value) {
-    for (var i = table.Length - 1; i >= 0; --i)
-      if (value >= table[i].BaseValue)
-        return i;
-    return 0;
-  }
-
-  private static void WriteInsertLengthExtra(BrotliBitWriter writer, int insertLength) {
-    for (var i = BrotliConstants.InsertLengthTable.Length - 1; i >= 0; --i) {
-      var (baseVal, extraBits) = BrotliConstants.InsertLengthTable[i];
-      if (insertLength < baseVal)
-        continue;
-
-      if (extraBits > 0)
-        writer.WriteBits(extraBits, (uint)(insertLength - baseVal));
-      return;
-    }
-  }
-
-  private static void WriteCopyLengthExtra(BrotliBitWriter writer, int copyLength) {
-    for (var i = BrotliConstants.CopyLengthTable.Length - 1; i >= 0; --i) {
-      var (baseVal, extraBits) = BrotliConstants.CopyLengthTable[i];
-      if (copyLength < baseVal)
-        continue;
-
-      if (extraBits > 0)
-        writer.WriteBits(extraBits, (uint)(copyLength - baseVal));
-      return;
-    }
-  }
-
-  /// <summary>
-  /// Returns a Brotli distance code 1-15 (ring buffer reference, no extra bits) if
-  /// <paramref name="distance"/> matches a ring slot or a small offset thereof.
-  /// Returns -1 if no ring code matches and a complex code 16+ must be used.
-  /// Code 0 is reserved for the implicit-distance IaC path; never returned here.
-  /// </summary>
-  private static int FindRingDistanceCode(int distance, int[] distRing, int distRingIdx) {
-    // Codes 1-3: 2nd, 3rd, 4th most-recent distance.
-    for (var i = 1; i < 4; ++i)
-      if (distance == distRing[(distRingIdx - i) & 3])
-        return i;
-
-    // Codes 4-9: last distance ± {1, 2, 3}. Codes 10-15: 2nd-last distance ± {1, 2, 3}.
-    var last = distRing[distRingIdx & 3];
-    var secondLast = distRing[(distRingIdx - 1) & 3];
-    if (distance == last - 1) return 4;
-    if (distance == last + 1) return 5;
-    if (distance == last - 2) return 6;
-    if (distance == last + 2) return 7;
-    if (distance == last - 3) return 8;
-    if (distance == last + 3) return 9;
-    if (distance == secondLast - 1) return 10;
-    if (distance == secondLast + 1) return 11;
-    if (distance == secondLast - 2) return 12;
-    if (distance == secondLast + 2) return 13;
-    if (distance == secondLast - 3) return 14;
-    if (distance == secondLast + 3) return 15;
-    return -1;
-  }
-
-  /// <summary>
-  /// Encodes a distance value into a complex distance code 16+ (NPOSTFIX=0, NDIRECT=0).
-  /// dcode = code - 16; nBits = 1 + (dcode &gt;&gt; 1); base = ((2 + (dcode &amp; 1)) &lt;&lt; nBits) - 4;
-  /// distance = base + extra + 1.
-  /// </summary>
-  private static int EncodeComplexDistanceCode(int distance) {
-    if (distance <= 0) return 16;
-
-    var d = distance - 1;
-    for (var dcode = 0; dcode < 48; ++dcode) {
-      var nBits = 1 + (dcode >> 1);
-      var baseDist = ((2 + (dcode & 1)) << nBits) - 4;
-      if (d >= baseDist && d < baseDist + (1 << nBits))
-        return 16 + dcode;
-    }
-
-    return 16 + 47;
-  }
-
-  private static void WriteDistanceExtra(BrotliBitWriter writer, int distance, int distCode) {
-    if (distCode < 16) return; // ring codes 0-15 carry no extra bits
-
-    var dcode = distCode - 16;
-    var nBits = 1 + (dcode >> 1);
-    var baseDist = ((2 + (dcode & 1)) << nBits) - 4;
-    var extra = (distance - 1) - baseDist;
-    writer.WriteBits(nBits, (uint)extra);
-  }
-
-  /// <summary>
-  /// Builds Huffman code lengths from symbol frequencies using a simple algorithm.
-  /// </summary>
-  /// <summary>
-  /// Builds optimal length-limited Huffman code lengths from symbol frequencies
-  /// using the package-merge algorithm (Larmore &amp; Hirschberg 1990).
-  /// Produces codes where the maximum length does not exceed <paramref name="maxLen"/>.
-  /// </summary>
-  /// <param name="freq">Symbol frequencies (0 means unused).</param>
-  /// <param name="numSymbols">Total alphabet size.</param>
-  /// <param name="maxLen">Maximum code length (Brotli spec: 15 for alphabets, 5 for CL tree).</param>
-  /// <returns>Array of code lengths indexed by symbol.</returns>
-  private static int[] BuildCodeLengths(int[] freq, int numSymbols, int maxLen = BrotliConstants.MaxHuffmanCodeLength) {
-    var lengths = new int[numSymbols];
-
-    var active = new List<(int Freq, int Symbol)>();
-    for (var i = 0; i < numSymbols; ++i)
-      if (freq[i] > 0) active.Add((freq[i], i));
-
-    switch (active.Count) {
-      case 0:
-        // Empty tree: assign length 1 to two symbols to satisfy Kraft, so the decoder's
-        // space counter reaches zero when the tree is used inside a complex prefix code.
-        lengths[0] = 1;
-        lengths[numSymbols > 1 ? 1 : 0] = 1;
-        return lengths;
-
+    switch (used.Count) {
+      case 0: return lengths;
       case 1:
-        // Single symbol: pair it with a dummy so sum(2^-1 + 2^-1) = 1.
-        var onlySym = active[0].Symbol;
-        lengths[onlySym] = 1;
-        lengths[onlySym == 0 ? 1 : 0] = 1;
+        lengths[used[0]] = 1;
         return lengths;
     }
 
-    active.Sort((a, b) => a.Freq != b.Freq ? a.Freq.CompareTo(b.Freq) : a.Symbol.CompareTo(b.Symbol));
+    var basis = new List<(long Weight, List<int> Symbols)>(used.Count);
+    foreach (var symbol in used)
+      basis.Add((frequencies[symbol], [symbol]));
 
-    var n = active.Count;
+    // Ascending by weight, ties broken by the smaller symbol so the ordering is
+    // reproducible in any language.
+    basis.Sort((x, y) => x.Weight != y.Weight ? x.Weight.CompareTo(y.Weight) : x.Symbols[0].CompareTo(y.Symbols[0]));
 
-    // Package-merge: at each level, existing coins are paired, merged with the N
-    // original single-symbol coins, and sorted by cost. After maxLen iterations the
-    // 2N-2 cheapest coins give the optimal length-limited prefix code: each symbol's
-    // occurrence count across the selected coins equals its code length.
-    var originals = new (long Cost, List<int> Syms)[n];
-    for (var i = 0; i < n; ++i)
-      originals[i] = (active[i].Freq, [active[i].Symbol]);
-
-    var current = new List<(long Cost, List<int> Syms)>(n);
-    foreach (var (cost, syms) in originals)
-      current.Add((cost, [..syms]));
-
-    for (var level = 2; level <= maxLen; ++level) {
-      var packaged = new List<(long Cost, List<int> Syms)>(current.Count / 2);
-      for (var i = 0; i + 1 < current.Count; i += 2) {
-        var combined = new List<int>(current[i].Syms.Count + current[i + 1].Syms.Count);
-        combined.AddRange(current[i].Syms);
-        combined.AddRange(current[i + 1].Syms);
-        packaged.Add((current[i].Cost + current[i + 1].Cost, combined));
+    var list = basis;
+    for (var level = 2; level <= maxLength; ++level) {
+      var packaged = new List<(long Weight, List<int> Symbols)>(list.Count / 2);
+      for (var i = 0; i + 1 < list.Count; i += 2) {
+        var combined = new List<int>(list[i].Symbols.Count + list[i + 1].Symbols.Count);
+        combined.AddRange(list[i].Symbols);
+        combined.AddRange(list[i + 1].Symbols);
+        packaged.Add((list[i].Weight + list[i + 1].Weight, combined));
       }
 
-      var merged = new List<(long Cost, List<int> Syms)>(packaged.Count + n);
-      int pi = 0, li = 0;
-      while (pi < packaged.Count && li < n) {
-        if (packaged[pi].Cost <= originals[li].Cost) {
-          merged.Add(packaged[pi]);
-          ++pi;
-        } else {
-          merged.Add((originals[li].Cost, [..originals[li].Syms]));
-          ++li;
-        }
-      }
-      while (pi < packaged.Count)
-        merged.Add(packaged[pi++]);
-      while (li < n)
-        merged.Add((originals[li].Cost, [..originals[li++].Syms]));
-
-      current = merged;
+      list = MergeAscending(packaged, basis);
     }
 
-    var takeCount = Math.Min(2 * n - 2, current.Count);
-    for (var i = 0; i < takeCount; ++i)
-      foreach (var sym in current[i].Syms)
-        ++lengths[sym];
+    var take = Math.Min(2 * used.Count - 2, list.Count);
+    for (var i = 0; i < take; ++i)
+      foreach (var symbol in list[i].Symbols)
+        ++lengths[symbol];
 
     return lengths;
   }
 
   /// <summary>
-  /// Builds canonical code values from code lengths.
-  /// Returns an array where codes[symbol] is the canonical code for that symbol.
+  /// Merges two weight-ascending lists into one, preferring the first list on
+  /// ties so the result is independent of any sort implementation.
   /// </summary>
-  private static int[] BuildCanonicalCodes(int[] codeLengths, int numSymbols) {
-    var codes = new int[numSymbols];
+  private static List<(long Weight, List<int> Symbols)> MergeAscending(
+    List<(long Weight, List<int> Symbols)> first,
+    List<(long Weight, List<int> Symbols)> second) {
+    var merged = new List<(long Weight, List<int> Symbols)>(first.Count + second.Count);
+    int i = 0, j = 0;
+    while (i < first.Count && j < second.Count)
+      if (first[i].Weight <= second[j].Weight)
+        merged.Add(first[i++]);
+      else
+        merged.Add(second[j++]);
 
-    var maxLen = 0;
-    for (var i = 0; i < numSymbols; ++i)
-      maxLen = Math.Max(maxLen, codeLengths[i]);
+    while (i < first.Count)
+      merged.Add(first[i++]);
+    while (j < second.Count)
+      merged.Add(second[j++]);
 
-    if (maxLen == 0) return codes;
-
-    var blCount = new int[maxLen + 1];
-    for (var i = 0; i < numSymbols; ++i)
-      if (codeLengths[i] > 0)
-        blCount[codeLengths[i]]++;
-
-    var nextCode = new int[maxLen + 1];
-    var code = 0;
-    for (var bits = 1; bits <= maxLen; ++bits) {
-      code = (code + blCount[bits - 1]) << 1;
-      nextCode[bits] = code;
-    }
-
-    for (var sym = 0; sym < numSymbols; ++sym) {
-      var len = codeLengths[sym];
-      if (len > 0)
-        codes[sym] = nextCode[len]++;
-    }
-
-    return codes;
+    return merged;
   }
 
   /// <summary>
-  /// Writes a Huffman code to the bit stream.
-  /// Per Google Brotli reference (c/enc/entropy_encode.c, BrotliConvertBitDepthsToSymbols):
-  /// canonical codes are constructed MSB-first numerically, but bit-reversed before storage
-  /// so the decoder (reading LSB-first) reconstructs the canonical tree path correctly.
+  /// Rewrites code lengths that will be transmitted as a simple prefix code
+  /// (RFC 7932 Section 3.4). The implied lengths are positional, and the symbols
+  /// are always written in ascending order, so the shortest code goes to the
+  /// smallest symbol - exactly what a canonical code does for equal lengths.
   /// </summary>
-  private static void WriteCode(BrotliBitWriter writer, int[] codes, int[] lengths, int symbol) {
-    if (symbol >= lengths.Length || lengths[symbol] == 0) {
-      // Symbol not in code table — write 0 code for symbol 0
-      writer.WriteBits(lengths[0] > 0 ? lengths[0] : 1, 0);
+  private static void NormalizeSimpleCode(int[] lengths, int alphabetSize) {
+    var used = new List<int>();
+    for (var symbol = 0; symbol < alphabetSize; ++symbol)
+      if (lengths[symbol] > 0)
+        used.Add(symbol);
+
+    switch (used.Count) {
+      case 2:
+        lengths[used[0]] = 1;
+        lengths[used[1]] = 1;
+        return;
+      case 3:
+        lengths[used[0]] = 1;
+        lengths[used[1]] = 2;
+        lengths[used[2]] = 2;
+        return;
+      case 4:
+        foreach (var symbol in used)
+          lengths[symbol] = 2;
+        return;
+    }
+  }
+
+  /// <summary>Assigns canonical code values to a set of code lengths.</summary>
+  private static PrefixCode MakePrefixCode(int[] lengths, int alphabetSize) {
+    var code = new PrefixCode { Lengths = lengths, Codes = new int[alphabetSize] };
+
+    int usedCount = 0, lastSymbol = 0, maxLength = 0;
+    for (var symbol = 0; symbol < alphabetSize; ++symbol) {
+      if (lengths[symbol] <= 0)
+        continue;
+
+      ++usedCount;
+      lastSymbol = symbol;
+      maxLength = Math.Max(maxLength, lengths[symbol]);
+    }
+
+    if (usedCount <= 1) {
+      code.SingleSymbol = lastSymbol;
+      return code;
+    }
+
+    var lengthCounts = new int[maxLength + 1];
+    for (var symbol = 0; symbol < alphabetSize; ++symbol)
+      if (lengths[symbol] > 0)
+        ++lengthCounts[lengths[symbol]];
+
+    var nextCode = new int[maxLength + 1];
+    var value = 0;
+    for (var bits = 1; bits <= maxLength; ++bits) {
+      value = (value + lengthCounts[bits - 1]) << 1;
+      nextCode[bits] = value;
+    }
+
+    for (var symbol = 0; symbol < alphabetSize; ++symbol) {
+      var length = lengths[symbol];
+      if (length > 0)
+        code.Codes[symbol] = nextCode[length]++;
+    }
+
+    return code;
+  }
+
+  /// <summary>Builds the prefix code the encoder will actually use for a histogram.</summary>
+  private static PrefixCode BuildPrefixCode(int[] frequencies, int alphabetSize, int maxLength) {
+    var lengths = BuildCodeLengths(frequencies, alphabetSize, maxLength);
+
+    var usedCount = 0;
+    for (var symbol = 0; symbol < alphabetSize; ++symbol)
+      if (lengths[symbol] > 0)
+        ++usedCount;
+
+    // An alphabet nothing was coded from still needs a descriptor; the NSYM=1
+    // simple form costs the fewest bits and decodes to a zero-bit code.
+    if (usedCount == 0)
+      lengths[0] = 1;
+    else if (usedCount <= 4)
+      NormalizeSimpleCode(lengths, alphabetSize);
+
+    return MakePrefixCode(lengths, alphabetSize);
+  }
+
+  /// <summary>
+  /// Writes one symbol, most significant bit of the canonical code first, which is
+  /// how a decoder reading bit by bit reconstructs the tree path.
+  /// </summary>
+  private static void WriteSymbol(BrotliBitWriter writer, PrefixCode code, int symbol) {
+    if (code.SingleSymbol >= 0)
+      return; // zero-bit code
+
+    var length = code.Lengths[symbol];
+    var value = code.Codes[symbol];
+    for (var i = length - 1; i >= 0; --i)
+      writer.WriteBits(1, (uint)((value >> i) & 1));
+  }
+
+  /// <summary>Bits used to code one symbol with the given code.</summary>
+  private static int SymbolBits(PrefixCode code, int symbol) =>
+    code.SingleSymbol >= 0 ? 0 : code.Lengths[symbol];
+
+  /// <summary>Number of bits an alphabet index occupies in a simple prefix code.</summary>
+  private static int AlphabetBits(int alphabetSize) {
+    var bits = 1;
+    while ((1 << bits) < alphabetSize)
+      ++bits;
+    return bits;
+  }
+
+  /// <summary>
+  /// Writes a prefix code descriptor. Alphabets with at most four coded symbols
+  /// use the simple form of RFC 7932 Section 3.4; everything else uses the
+  /// complex form of Section 3.5.
+  /// </summary>
+  private static void WritePrefixCodeDescriptor(BrotliBitWriter writer, PrefixCode code, int alphabetSize) {
+    var used = new List<int>();
+    for (var symbol = 0; symbol < alphabetSize; ++symbol)
+      if (code.Lengths[symbol] > 0)
+        used.Add(symbol);
+
+    if (used.Count > 4) {
+      WriteComplexPrefixCodeDescriptor(writer, code.Lengths, alphabetSize);
       return;
     }
 
-    var code = codes[symbol];
-    var len = lengths[symbol];
+    writer.WriteBits(2, 1); // HSKIP = 1 selects the simple form
+    writer.WriteBits(2, (uint)(used.Count - 1)); // NSYM - 1
 
-    // Bit-reverse: canonical code's MSB becomes the first bit written LSB-first.
-    var reversed = 0;
-    for (var i = 0; i < len; ++i) {
-      reversed = (reversed << 1) | (code & 1);
-      code >>= 1;
-    }
+    var symbolBits = AlphabetBits(alphabetSize);
+    foreach (var symbol in used)
+      writer.WriteBits(symbolBits, (uint)symbol);
 
-    writer.WriteBits(len, (uint)reversed);
+    // tree-select 0 gives all four symbols length 2; the 1/2/3/3 shape is never
+    // used because its lengths would then follow symbol order, not frequency.
+    if (used.Count == 4)
+      writer.WriteBits(1, 0);
   }
 
-  /// <summary>
-  /// Writes a prefix code definition to the stream using simple format
-  /// (RFC 7932 Section 3.5).
-  /// </summary>
-  private static void WriteSimplePrefixCode(BrotliBitWriter writer, int[] codeLengths, int numSymbols) {
-    // Count used symbols
-    var usedSymbols = new List<int>();
-    for (var i = 0; i < numSymbols; ++i)
-      if (codeLengths[i] > 0)
-        usedSymbols.Add(i);
-
-    // RFC 7932: symbol values use max(1, ceil(log2(ALPHABET_SIZE))) bits
-    var numSymBits = 1;
-    while ((1 << numSymBits) < numSymbols)
-      ++numSymBits;
-
-    if (usedSymbols.Count <= 4) {
-      // Simple prefix code (HSKIP=1). Lengths are positional (smallest-valued symbol
-      // gets the shortest code per RFC §3.4), so we override codeLengths to the fixed
-      // pattern for each NSYM. tree_select=1 [1,2,3,3] for NSYM=4 is avoided because
-      // it only matches Huffman-optimal when the smallest-valued symbol is most frequent.
-      writer.WriteBits(2, 1); // HSKIP = 1
-
-      var count = usedSymbols.Count;
-      writer.WriteBits(2, (uint)(count - 1)); // NSYM - 1
-
-      foreach (var sym in usedSymbols)
-        writer.WriteBits(numSymBits, (uint)sym);
-
-      switch (count) {
-        case 1:
-          codeLengths[usedSymbols[0]] = 0;
-          break;
-        case 2:
-          codeLengths[usedSymbols[0]] = 1;
-          codeLengths[usedSymbols[1]] = 1;
-          break;
-        case 3:
-          codeLengths[usedSymbols[0]] = 1;
-          codeLengths[usedSymbols[1]] = 2;
-          codeLengths[usedSymbols[2]] = 2;
-          break;
-        case 4:
-          foreach (var sym in usedSymbols)
-            codeLengths[sym] = 2;
-          writer.WriteBits(1, 0); // tree_select=0 → [2,2,2,2]
-          break;
-      }
-    } else
-      // Use complex prefix code format
-      WriteComplexPrefixCode(writer, codeLengths, numSymbols);
+  /// <summary>Measures a descriptor without emitting it.</summary>
+  private static int MeasureDescriptorBits(PrefixCode code, int alphabetSize) {
+    var scratch = new BrotliBitWriter();
+    WritePrefixCodeDescriptor(scratch, code, alphabetSize);
+    return scratch.BitLength();
   }
 
-  /// <summary>
-  /// A planned emission for the complex prefix code: either a direct length code
-  /// (CL symbol 0-15) or a repeat code (16 or 17) with extra bits.
-  /// </summary>
-  private readonly record struct ClEmission(int Symbol, int ExtraBits, int ExtraValue);
+  /// <summary>One entry of a complex prefix code descriptor's symbol stream.</summary>
+  private readonly record struct CodeLengthEmission(int Symbol, int ExtraBits, int ExtraValue);
 
   /// <summary>
-  /// Writes a complex prefix code to the stream (RFC 7932 §3.5).
-  /// Uses repeat codes 16 (non-zero run) and 17 (zero run) to compactly
-  /// encode runs of identical code lengths.
+  /// Writes a complex prefix code descriptor (RFC 7932 Section 3.5). Two symbol
+  /// streams are planned - one that spells out every code length and one that
+  /// folds runs into the repeat codes 16 and 17 - and the cheaper one wins.
   /// </summary>
-  private static void WriteComplexPrefixCode(BrotliBitWriter writer, int[] codeLengths, int numSymbols) {
+  private static void WriteComplexPrefixCodeDescriptor(BrotliBitWriter writer, int[] lengths, int alphabetSize) {
     var lastNonZero = 0;
-    for (var i = numSymbols - 1; i >= 0; --i)
-      if (codeLengths[i] > 0) {
-        lastNonZero = i;
+    for (var symbol = alphabetSize - 1; symbol >= 0; --symbol)
+      if (lengths[symbol] > 0) {
+        lastNonZero = symbol;
         break;
       }
 
-    var emissions = PlanComplexEmissions(codeLengths, lastNonZero);
+    var plain = PlanPlainEmissions(lengths, lastNonZero);
+    var runLength = PlanRunLengthEmissions(lengths, lastNonZero);
 
-    // Build CL frequency table from planned emissions (so codes 16/17 are accounted for).
-    var clFreq = new int[BrotliConstants.NumCodeLengthCodes];
-    foreach (var e in emissions)
-      ++clFreq[e.Symbol];
+    var plainBits = MeasureEmissions(plain);
+    var runLengthBits = MeasureEmissions(runLength);
+    var chosen = plainBits >= 0 && (runLengthBits < 0 || plainBits <= runLengthBits) ? plain : runLength;
 
-    // CL bit lengths are emitted via the fixed static code (max value 5).
-    var clLengths = BuildCodeLengths(clFreq, BrotliConstants.NumCodeLengthCodes, maxLen: 5);
-
-    // HSKIP = 0
-    writer.WriteBits(2, 0);
-
-    var clCount = BrotliConstants.NumCodeLengthCodes;
-    while (clCount > 0 && clLengths[BrotliConstants.CodeLengthCodeOrder[clCount - 1]] == 0)
-      --clCount;
-
-    for (var i = 0; i < clCount; ++i) {
-      int idx = BrotliConstants.CodeLengthCodeOrder[i];
-      WriteSmallCodeLength(writer, clLengths[idx]);
-    }
-
-    var clCodes = BuildCanonicalCodes(clLengths, BrotliConstants.NumCodeLengthCodes);
-
-    foreach (var e in emissions) {
-      WriteCode(writer, clCodes, clLengths, e.Symbol);
-      if (e.ExtraBits > 0)
-        writer.WriteBits(e.ExtraBits, (uint)e.ExtraValue);
-    }
+    EmitComplexPrefixCodeDescriptor(writer, chosen);
   }
 
   /// <summary>
-  /// Plans the sequence of CL emissions needed to encode <paramref name="codeLengths"/>
-  /// up to <paramref name="lastNonZero"/>, using repeat codes 16/17 for runs.
+  /// Bits a planned emission stream occupies, or -1 when the plan is unusable
+  /// because its code-length alphabet would hold a single symbol (an incomplete
+  /// code that decoders are not required to accept in this position).
   /// </summary>
-  private static List<ClEmission> PlanComplexEmissions(int[] codeLengths, int lastNonZero) {
-    var emissions = new List<ClEmission>();
+  private static int MeasureEmissions(List<CodeLengthEmission> emissions) {
+    var distinct = 0;
+    var seen = new bool[BrotliConstants.NumCodeLengthCodes];
+    foreach (var emission in emissions)
+      if (!seen[emission.Symbol]) {
+        seen[emission.Symbol] = true;
+        ++distinct;
+      }
+
+    if (distinct < 2)
+      return -1;
+
+    var scratch = new BrotliBitWriter();
+    EmitComplexPrefixCodeDescriptor(scratch, emissions);
+    return scratch.BitLength();
+  }
+
+  /// <summary>Emits a planned complex prefix code descriptor.</summary>
+  private static void EmitComplexPrefixCodeDescriptor(BrotliBitWriter writer, List<CodeLengthEmission> emissions) {
+    var frequencies = new int[BrotliConstants.NumCodeLengthCodes];
+    foreach (var emission in emissions)
+      ++frequencies[emission.Symbol];
+
+    var clLengths = BuildCodeLengths(frequencies, BrotliConstants.NumCodeLengthCodes, 5);
+    var clCode = MakePrefixCode(clLengths, BrotliConstants.NumCodeLengthCodes);
+
+    writer.WriteBits(2, 0); // HSKIP = 0
+
+    // The decoder stops reading code-length code lengths once the Kraft sum
+    // (tracked as `space`, scaled by 32) is exhausted, so the writer stops at
+    // exactly the same point.
+    var space = 32;
+    for (var i = 0; i < BrotliConstants.NumCodeLengthCodes && space > 0; ++i) {
+      var index = BrotliConstants.CodeLengthCodeOrder[i];
+      var length = clLengths[index];
+      WriteCodeLengthCodeLength(writer, length);
+      if (length != 0)
+        space -= 32 >> length;
+    }
+
+    foreach (var emission in emissions) {
+      WriteSymbol(writer, clCode, emission.Symbol);
+      if (emission.ExtraBits > 0)
+        writer.WriteBits(emission.ExtraBits, (uint)emission.ExtraValue);
+    }
+  }
+
+  /// <summary>Plans a descriptor that spells out every code length individually.</summary>
+  private static List<CodeLengthEmission> PlanPlainEmissions(int[] lengths, int lastNonZero) {
+    var emissions = new List<CodeLengthEmission>(lastNonZero + 1);
+    for (var symbol = 0; symbol <= lastNonZero; ++symbol)
+      emissions.Add(new CodeLengthEmission(lengths[symbol], 0, 0));
+    return emissions;
+  }
+
+  /// <summary>Plans a descriptor that folds runs into the repeat codes 16 and 17.</summary>
+  private static List<CodeLengthEmission> PlanRunLengthEmissions(int[] lengths, int lastNonZero) {
+    var emissions = new List<CodeLengthEmission>();
     var i = 0;
     while (i <= lastNonZero) {
-      var cl = codeLengths[i];
+      var length = lengths[i];
       var runEnd = i;
-      while (runEnd + 1 <= lastNonZero && codeLengths[runEnd + 1] == cl)
+      while (runEnd + 1 <= lastNonZero && lengths[runEnd + 1] == length)
         ++runEnd;
-      var runLen = runEnd - i + 1;
 
-      if (cl == 0 && runLen >= 3) {
-        PlanZeroRun(emissions, runLen);
-      } else if (cl > 0 && runLen >= 4) {
-        // Emit the length once, then encode (runLen - 1) repeats via code 16.
-        emissions.Add(new ClEmission(cl, 0, 0));
-        PlanNonZeroRun(emissions, runLen - 1);
-      } else {
-        for (var j = 0; j < runLen; ++j)
-          emissions.Add(new ClEmission(cl, 0, 0));
-      }
+      var runLength = runEnd - i + 1;
+      if (length == 0 && runLength >= 3)
+        PlanZeroRun(emissions, runLength);
+      else if (length > 0 && runLength >= 4) {
+        emissions.Add(new CodeLengthEmission(length, 0, 0));
+        PlanRepeatRun(emissions, runLength - 1);
+      } else
+        for (var j = 0; j < runLength; ++j)
+          emissions.Add(new CodeLengthEmission(length, 0, 0));
 
       i = runEnd + 1;
     }
+
     return emissions;
   }
 
   /// <summary>
-  /// Plans a zero run (≥3) using code 17.
-  /// Successive code 17s chain in the decoder: run_new = ((run_old - 2) &lt;&lt; 3) + delta + 3.
-  /// We pick deltas that exactly produce <paramref name="count"/> zeros.
+  /// Plans a run of at least three zeros with code 17. Consecutive 17s chain in
+  /// the decoder as run = ((run - 2) * 8) + delta + 3, so N emissions with deltas
+  /// d(1)..d(N) produce sum(8^(N-i) * d(i)) + (8^N + 13) / 7 zeros.
   /// </summary>
-  private static void PlanZeroRun(List<ClEmission> emissions, int count) {
-    // Each emission: code 17 with 3 extra bits (delta 0-7).
-    // After N emissions with deltas (d_1, ..., d_N), total run is:
-    //   sum_i (8^(N-i) * d_i) + (8^N + 13) / 7
-    // Range covered by N emissions: [(8^N + 13)/7, (8^(N+1) + 6)/7].
-
+  private static void PlanZeroRun(List<CodeLengthEmission> emissions, int count) {
     var n = 1;
     while (((1L << (3 * (n + 1))) + 6) / 7 < count)
       ++n;
 
-    long power8N = 1L << (3 * n);
-    var target = count - (power8N + 13) / 7;
-
+    var remaining = count - ((1L << (3 * n)) + 13) / 7;
     for (var i = 0; i < n; ++i) {
-      var power = 1L << (3 * (n - 1 - i));
-      var d = (int)Math.Min(target / power, 7);
-      emissions.Add(new ClEmission(17, 3, d));
-      target -= d * power;
+      var weight = 1L << (3 * (n - 1 - i));
+      var delta = (int)Math.Min(remaining / weight, 7);
+      emissions.Add(new CodeLengthEmission(17, 3, delta));
+      remaining -= delta * weight;
     }
   }
 
   /// <summary>
-  /// Plans a non-zero run (≥3) using code 16, repeating the previous non-zero length.
-  /// Chain semantics: run_new = ((run_old - 2) &lt;&lt; 2) + delta + 3.
+  /// Plans a repeat of the previous non-zero length with code 16. Consecutive 16s
+  /// chain as run = ((run - 2) * 4) + delta + 3, so N emissions with deltas
+  /// d(1)..d(N) produce sum(4^(N-i) * d(i)) + (4^N + 5) / 3 repeats.
   /// </summary>
-  private static void PlanNonZeroRun(List<ClEmission> emissions, int count) {
-    if (count < 3) {
-      // Caller must have emitted the length; trailing leftovers fall through here.
-      // For count=1 or 2, callers should emit the length again directly. We don't
-      // know the length here, so this branch shouldn't be reached when count<3.
-      return;
-    }
-
+  private static void PlanRepeatRun(List<CodeLengthEmission> emissions, int count) {
     var n = 1;
     while (((1L << (2 * (n + 1))) + 2) / 3 < count)
       ++n;
 
-    long power4N = 1L << (2 * n);
-    var target = count - (power4N + 5) / 3;
-
+    var remaining = count - ((1L << (2 * n)) + 5) / 3;
     for (var i = 0; i < n; ++i) {
-      var power = 1L << (2 * (n - 1 - i));
-      var d = (int)Math.Min(target / power, 3);
-      emissions.Add(new ClEmission(16, 2, d));
-      target -= d * power;
+      var weight = 1L << (2 * (n - 1 - i));
+      var delta = (int)Math.Min(remaining / weight, 3);
+      emissions.Add(new CodeLengthEmission(16, 2, delta));
+      remaining -= delta * weight;
     }
   }
 
   /// <summary>
-  /// Writes a small code length value (0-5) using the fixed prefix code
-  /// from RFC 7932 Section 3.5, matching the decoder's 4-bit peek table.
+  /// Writes one code length of the code-length alphabet using the fixed prefix
+  /// code of RFC 7932 Section 3.5.
   /// </summary>
-  private static void WriteSmallCodeLength(BrotliBitWriter writer, int len) {
-    switch (len) {
-      case 0: writer.WriteBits(2, 0);  break; // 00
-      case 1: writer.WriteBits(4, 7);  break; // 0111
-      case 2: writer.WriteBits(3, 3);  break; // 011
-      case 3: writer.WriteBits(2, 2);  break; // 10
-      case 4: writer.WriteBits(2, 1);  break; // 01
-      case 5: writer.WriteBits(4, 15); break; // 1111
+  private static void WriteCodeLengthCodeLength(BrotliBitWriter writer, int length) {
+    switch (length) {
+      case 0: writer.WriteBits(2, 0); return;  // 00
+      case 3: writer.WriteBits(2, 2); return;  // 10
+      case 4: writer.WriteBits(2, 1); return;  // 01
+      case 2: writer.WriteBits(3, 3); return;  // 011
+      case 1: writer.WriteBits(4, 7); return;  // 0111
+      case 5: writer.WriteBits(4, 15); return; // 1111
+      default: throw new ArgumentOutOfRangeException(nameof(length), length, "Code length code length must be 0-5.");
     }
+  }
+
+  /// <summary>
+  /// Writes a block-type or tree count using the variable-length code of
+  /// RFC 7932 Section 9.2: 1 is a single zero bit, 2 is "1" plus three zero bits,
+  /// and any larger N is "1", three bits of nbits, then nbits of N - 1 - 2^nbits.
+  /// </summary>
+  private static void WriteCount(BrotliBitWriter writer, int count) {
+    if (count == 1) {
+      writer.WriteBits(1, 0);
+      return;
+    }
+
+    writer.WriteBits(1, 1);
+    var value = count - 1;
+    if (value == 1) {
+      writer.WriteBits(3, 0);
+      return;
+    }
+
+    var bits = 0;
+    var v = value;
+    while (v > 1) {
+      v /= 2;
+      ++bits;
+    }
+
+    writer.WriteBits(3, (uint)bits);
+    writer.WriteBits(bits, (uint)(value - (1 << bits)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Insert-and-copy and distance codes (RFC 7932 Sections 4 and 5)
+  // ---------------------------------------------------------------------------
+
+  /// <summary>Finds the length code bucket holding <paramref name="value"/>.</summary>
+  private static int FindLengthCode((int BaseValue, int ExtraBits)[] table, int value) {
+    for (var i = table.Length - 1; i >= 0; --i)
+      if (value >= table[i].BaseValue)
+        return i;
+
+    return 0;
+  }
+
+  /// <summary>Combines an insert length code and a copy length code (RFC 7932 Table 8).</summary>
+  private static int EncodeInsertAndCopyCode(int insertCode, int copyCode, bool implicitDistance) {
+    foreach (var (insertBase, copyBase, codeBase, isImplicit) in IacRanges) {
+      if (isImplicit != implicitDistance)
+        continue;
+
+      var insertOffset = insertCode - insertBase;
+      var copyOffset = copyCode - copyBase;
+      if (insertOffset is >= 0 and <= 7 && copyOffset is >= 0 and <= 7)
+        return codeBase + insertOffset * 8 + copyOffset;
+    }
+
+    return -1;
+  }
+
+  /// <summary>
+  /// Returns the ring buffer distance code 0-15 that reproduces
+  /// <paramref name="distance"/>, or -1 when none does (RFC 7932 Section 4).
+  /// </summary>
+  private static int FindRingDistanceCode(int distance, int[] ring) {
+    for (var i = 0; i < 4; ++i)
+      if (distance == ring[i])
+        return i;
+
+    if (distance == ring[0] - 1) return 4;
+    if (distance == ring[0] + 1) return 5;
+    if (distance == ring[0] - 2) return 6;
+    if (distance == ring[0] + 2) return 7;
+    if (distance == ring[0] - 3) return 8;
+    if (distance == ring[0] + 3) return 9;
+    if (distance == ring[1] - 1) return 10;
+    if (distance == ring[1] + 1) return 11;
+    if (distance == ring[1] - 2) return 12;
+    if (distance == ring[1] + 2) return 13;
+    if (distance == ring[1] - 3) return 14;
+    if (distance == ring[1] + 3) return 15;
+    return -1;
+  }
+
+  /// <summary>
+  /// Inverts the NPOSTFIX=0, NDIRECT=0 distance formula of RFC 7932 Section 4:
+  /// for code 16 + b the decoder reads nbits = 1 + b / 2 extra bits and forms
+  /// ((2 + (b mod 2)) * 2^nbits) - 4 + extra + 1.
+  /// </summary>
+  private static (int Code, int ExtraBits, int ExtraValue) EncodeDistance(int distance) {
+    for (var b = 0; b < 48; ++b) {
+      var extraBits = 1 + b / 2;
+      var offset = ((2 + b % 2) << extraBits) - 4;
+      var first = offset + 1;
+      var last = offset + (1 << extraBits);
+      if (distance >= first && distance <= last)
+        return (16 + b, extraBits, distance - first);
+    }
+
+    throw new ArgumentOutOfRangeException(nameof(distance), distance, "Distance is outside the representable range.");
+  }
+
+  /// <summary>Number of extra distance bits a distance would need as a complex code.</summary>
+  private static int DistanceExtraBits(int distance) {
+    for (var b = 0; b < 48; ++b) {
+      var extraBits = 1 + b / 2;
+      var offset = ((2 + b % 2) << extraBits) - 4;
+      if (distance >= offset + 1 && distance <= offset + (1 << extraBits))
+        return extraBits;
+    }
+
+    return 24;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Match finding (LZ77 parse)
+  // ---------------------------------------------------------------------------
+
+  /// <summary>A parsed command: a literal run followed by an optional backward reference.</summary>
+  private readonly record struct Command(int InsertStart, int InsertLength, int CopyLength, int Distance) {
+    /// <summary>First byte position after the command.</summary>
+    public int End => this.InsertStart + this.InsertLength + this.CopyLength;
+  }
+
+  /// <summary>Hash of the four bytes at <paramref name="position"/>.</summary>
+  private static int HashAt(byte[] data, int position) {
+    var word = (uint)((data[position] << 24) | (data[position + 1] << 16) |
+                      (data[position + 2] << 8) | data[position + 3]);
+    return (int)(word * 2654435761u >> (32 - HashBits));
+  }
+
+  /// <summary>Length of the common prefix of two positions, capped at <paramref name="maxLength"/>.</summary>
+  private static int MatchLength(byte[] data, int a, int b, int maxLength) {
+    var length = 0;
+    while (length < maxLength && data[a + length] == data[b + length])
+      ++length;
+    return length;
+  }
+
+  /// <summary>
+  /// Approximate cost in bits of a backward reference, used only to steer the
+  /// parse. A ring buffer distance is assumed to cost three bits, an explicit one
+  /// twelve plus its extra bits.
+  /// </summary>
+  private static int MatchCost(int length, int distance, bool inRing) {
+    var copyCode = FindLengthCode(BrotliConstants.CopyLengthTable, length);
+    var cost = EstimatedCommandBits + BrotliConstants.CopyLengthTable[copyCode].ExtraBits;
+    cost += inRing ? 3 : EstimatedDistanceBits + DistanceExtraBits(distance);
+    return cost;
+  }
+
+  /// <summary>
+  /// Ranks two candidate references against each other. Extra matched bytes are
+  /// only worth what the command that would otherwise cover them costs, not a
+  /// full literal each, so long far references do not automatically beat short
+  /// near ones.
+  /// </summary>
+  private static int MatchScore(int length, int distance, bool inRing) =>
+    length * MatchRankLiteralBits - MatchCost(length, distance, inRing);
+
+  /// <summary>Whether coding a reference beats coding the same bytes as literals.</summary>
+  private static bool MatchPaysOff(int length, int distance, bool inRing) =>
+    length * 8 > MatchCost(length, distance, inRing);
+
+  /// <summary>Best backward reference at one position, or a zero length when there is none.</summary>
+  private static (int Length, int Distance, int Score) FindBestMatch(
+    byte[] data, int position, int maxDistance, int[] head, int[] chain, int[] parseRing) {
+    var maxLength = Math.Min(MaxCopyLength, data.Length - position);
+    if (maxLength < MinMatch || position + MinMatch > data.Length)
+      return (0, 0, int.MinValue);
+
+    int bestLength = 0, bestDistance = 0, bestScore = int.MinValue;
+
+    // Distances already in the ring buffer code for almost nothing, so they are
+    // worth trying even when the hash chain offers a longer match elsewhere.
+    for (var i = 0; i < 4; ++i) {
+      var distance = parseRing[i];
+      if (distance > position || distance > maxDistance)
+        continue;
+
+      var length = MatchLength(data, position, position - distance, maxLength);
+      if (length < MinMatch || !MatchPaysOff(length, distance, true))
+        continue;
+
+      var score = MatchScore(length, distance, true);
+      if (score <= bestScore)
+        continue;
+
+      bestScore = score;
+      bestLength = length;
+      bestDistance = distance;
+    }
+
+    var candidate = head[HashAt(data, position)];
+    var depth = 0;
+    while (candidate >= 0 && depth < MaxChain) {
+      var distance = position - candidate;
+      if (distance > maxDistance)
+        break;
+
+      if (distance > 0) {
+        var length = MatchLength(data, position, candidate, maxLength);
+        if (length >= MinMatch && MatchPaysOff(length, distance, false)) {
+          var score = MatchScore(length, distance, false);
+          if (score > bestScore) {
+            bestScore = score;
+            bestLength = length;
+            bestDistance = distance;
+          }
+        }
+      }
+
+      candidate = chain[candidate];
+      ++depth;
+    }
+
+    return (bestLength, bestDistance, bestScore);
+  }
+
+  /// <summary>
+  /// Splits the input into insert-and-copy commands using a hash chain match
+  /// finder with one step of lazy matching driven by the approximate bit cost.
+  /// </summary>
+  private static List<Command> FindCommands(byte[] data, int maxDistance) {
+    var head = new int[1 << HashBits];
+    Array.Fill(head, -1);
+    var chain = new int[Math.Max(1, data.Length)];
+    Array.Fill(chain, -1);
+
+    // Mirrors the real distance ring buffer closely enough to steer the parse;
+    // the codes actually emitted are resolved later against the true ring.
+    var parseRing = (int[])InitialDistanceRing.Clone();
+
+    var commands = new List<Command>();
+    var literalStart = 0;
+    var position = 0;
+
+    void Insert(int at) {
+      if (at + MinMatch > data.Length)
+        return;
+
+      var h = HashAt(data, at);
+      chain[at] = head[h];
+      head[h] = at;
+    }
+
+    while (position < data.Length) {
+      // A literal-only command is only legal as the last command of a meta-block,
+      // and SplitMetaBlocks closes a meta-block right after one, so capping the
+      // run here bounds MLEN without making the stream illegal.
+      if (position - literalStart >= MaxLiteralRun) {
+        commands.Add(new Command(literalStart, position - literalStart, 0, 0));
+        literalStart = position;
+      }
+
+      var best = FindBestMatch(data, position, maxDistance, head, chain, parseRing);
+      if (best.Length < MinMatch) {
+        Insert(position);
+        ++position;
+        continue;
+      }
+
+      Insert(position);
+      if (position + 1 < data.Length) {
+        var later = FindBestMatch(data, position + 1, maxDistance, head, chain, parseRing);
+        if (later.Length >= MinMatch && later.Score > best.Score + LazyMatchMargin) {
+          ++position;
+          continue;
+        }
+      }
+
+      commands.Add(new Command(literalStart, position - literalStart, best.Length, best.Distance));
+
+      if (best.Distance != parseRing[0]) {
+        parseRing[3] = parseRing[2];
+        parseRing[2] = parseRing[1];
+        parseRing[1] = parseRing[0];
+        parseRing[0] = best.Distance;
+      }
+
+      var matchEnd = position + best.Length;
+      for (var i = position + 1; i < matchEnd; ++i)
+        Insert(i);
+
+      position = matchEnd;
+      literalStart = position;
+    }
+
+    if (literalStart < data.Length)
+      commands.Add(new Command(literalStart, data.Length - literalStart, 0, 0));
+
+    return commands;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Meta-block layout
+  // ---------------------------------------------------------------------------
+
+  /// <summary>A contiguous run of commands forming one meta-block.</summary>
+  private readonly record struct MetaBlockRange(int CommandStart, int CommandEnd, int ByteStart, int ByteEnd);
+
+  /// <summary>
+  /// Groups commands into meta-blocks. Adjacent segments are merged while their
+  /// literal distributions are similar enough that one shared set of prefix codes
+  /// stays cheaper than a second meta-block header.
+  /// </summary>
+  private static List<MetaBlockRange> SplitMetaBlocks(byte[] data, List<Command> commands) {
+    var blocks = new List<MetaBlockRange>();
+    if (commands.Count == 0)
+      return blocks;
+
+    // Cut the command stream into fixed-size segments first; split points may
+    // only fall on those boundaries.
+    var segmentStarts = new List<int> { 0 };
+    var forcedEnd = new List<bool> { false };
+    var carried = 0;
+    for (var i = 0; i < commands.Count; ++i) {
+      carried += commands[i].InsertLength + commands[i].CopyLength;
+      var literalOnly = commands[i].CopyLength == 0;
+      if (carried < SegmentBytes && !literalOnly || i + 1 >= commands.Count)
+        continue;
+
+      segmentStarts.Add(i + 1);
+      forcedEnd.Add(literalOnly);
+      carried = 0;
+    }
+
+    var segmentCount = segmentStarts.Count;
+    var histograms = new int[segmentCount][];
+    for (var s = 0; s < segmentCount; ++s) {
+      var histogram = new int[256];
+      var from = segmentStarts[s];
+      var to = s + 1 < segmentCount ? segmentStarts[s + 1] : commands.Count;
+      for (var i = from; i < to; ++i) {
+        var command = commands[i];
+        for (var k = 0; k < command.InsertLength; ++k)
+          ++histogram[data[command.InsertStart + k]];
+      }
+
+      histograms[s] = histogram;
+    }
+
+    var openStart = 0;
+    var openHistogram = (int[])histograms[0].Clone();
+    var openBytes = SegmentByteCount(commands, segmentStarts, 0);
+
+    for (var s = 1; s < segmentCount; ++s) {
+      var segmentBytes = SegmentByteCount(commands, segmentStarts, s);
+      var startNewBlock = forcedEnd[s] ||
+                          openBytes + segmentBytes > MaxMetaBlockBytes ||
+                          MergeCostUnits(openHistogram, histograms[s]) > SplitThresholdUnits;
+
+      if (startNewBlock) {
+        blocks.Add(MakeRange(commands, segmentStarts, openStart, s));
+        openStart = s;
+        openHistogram = (int[])histograms[s].Clone();
+        openBytes = segmentBytes;
+        continue;
+      }
+
+      for (var b = 0; b < 256; ++b)
+        openHistogram[b] += histograms[s][b];
+      openBytes += segmentBytes;
+    }
+
+    blocks.Add(MakeRange(commands, segmentStarts, openStart, segmentCount));
+    return blocks;
+  }
+
+  /// <summary>Number of output bytes produced by one segment.</summary>
+  private static int SegmentByteCount(List<Command> commands, List<int> segmentStarts, int segment) {
+    var from = segmentStarts[segment];
+    var to = segment + 1 < segmentStarts.Count ? segmentStarts[segment + 1] : commands.Count;
+    var bytes = 0;
+    for (var i = from; i < to; ++i)
+      bytes += commands[i].InsertLength + commands[i].CopyLength;
+    return bytes;
+  }
+
+  /// <summary>Builds the command and byte range covering segments [from, to).</summary>
+  private static MetaBlockRange MakeRange(List<Command> commands, List<int> segmentStarts, int from, int to) {
+    var commandStart = segmentStarts[from];
+    var commandEnd = to < segmentStarts.Count ? segmentStarts[to] : commands.Count;
+    var byteStart = commands[commandStart].InsertStart;
+    var byteEnd = commands[commandEnd - 1].End;
+    return new MetaBlockRange(commandStart, commandEnd, byteStart, byteEnd);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Literal context modelling (RFC 7932 Section 7.1)
+  // ---------------------------------------------------------------------------
+
+  /// <summary>Signed context mode lookup (RFC 7932 Section 7.1).</summary>
+  private static readonly byte[] SignedContextLut = BuildSignedContextLut();
+
+  private static byte[] BuildSignedContextLut() {
+    var lut = new byte[256];
+    for (var i = 0; i < 256; ++i)
+      lut[i] = i switch {
+        0 => 0,
+        < 16 => 1,
+        < 64 => 2,
+        < 128 => 3,
+        < 192 => 4,
+        < 240 => 5,
+        < 255 => 6,
+        _ => 7
+      };
+    return lut;
+  }
+
+  /// <summary>Computes the literal context value 0-63 for the two preceding bytes.</summary>
+  private static int LiteralContext(byte p1, byte p2, int contextMode) => contextMode switch {
+    0 => p1 & 0x3F,
+    1 => p1 >> 2,
+    2 => BrotliConstants.Utf8ContextLut0[p1] | BrotliConstants.Utf8ContextLut1[p2],
+    _ => (SignedContextLut[p1] << 3) | SignedContextLut[p2]
+  };
+
+  // ---------------------------------------------------------------------------
+  // Compressed meta-block emission
+  // ---------------------------------------------------------------------------
+
+  /// <summary>A command with its insert-and-copy and distance codes resolved.</summary>
+  private readonly record struct ResolvedCommand(
+    int InsertStart,
+    int InsertLength,
+    int CopyLength,
+    int Distance,
+    int IacCode,
+    int InsertCode,
+    int CopyCode,
+    int DistanceCode);
+
+  /// <summary>
+  /// Resolves the distance encoding of every command in a meta-block, advancing
+  /// the distance ring buffer exactly as the decoder will. A distance code of -1
+  /// means the command uses an implicit-distance insert-and-copy range and no
+  /// distance symbol is written; the ring is left untouched for code 0 and for
+  /// implicit distances, per RFC 7932 Section 4.
+  /// </summary>
+  private static ResolvedCommand[] ResolveCommands(List<Command> commands, MetaBlockRange range, int[] ring) {
+    var resolved = new ResolvedCommand[range.CommandEnd - range.CommandStart];
+    for (var i = range.CommandStart; i < range.CommandEnd; ++i) {
+      var command = commands[i];
+      var insertCode = FindLengthCode(BrotliConstants.InsertLengthTable, command.InsertLength);
+
+      if (command.CopyLength == 0) {
+        // A trailing literal-only command: the decoder finishes the meta-block
+        // before it would read a distance, so the copy code only has to exist.
+        var literalIac = EncodeInsertAndCopyCode(insertCode, 0, insertCode <= 7);
+        resolved[i - range.CommandStart] = new ResolvedCommand(
+          command.InsertStart, command.InsertLength, 0, 0, literalIac, insertCode, 0, -1);
+        continue;
+      }
+
+      var copyCode = FindLengthCode(BrotliConstants.CopyLengthTable, command.CopyLength);
+      var canUseImplicit = insertCode <= 7 && copyCode <= 15 && command.Distance == ring[0];
+
+      int iacCode;
+      int distanceCode;
+      if (canUseImplicit) {
+        iacCode = EncodeInsertAndCopyCode(insertCode, copyCode, true);
+        distanceCode = -1;
+      } else {
+        iacCode = EncodeInsertAndCopyCode(insertCode, copyCode, false);
+        distanceCode = FindRingDistanceCode(command.Distance, ring);
+        if (distanceCode < 0)
+          distanceCode = EncodeDistance(command.Distance).Code;
+
+        if (distanceCode != 0) {
+          ring[3] = ring[2];
+          ring[2] = ring[1];
+          ring[1] = ring[0];
+          ring[0] = command.Distance;
+        }
+      }
+
+      resolved[i - range.CommandStart] = new ResolvedCommand(
+        command.InsertStart, command.InsertLength, command.CopyLength, command.Distance,
+        iacCode, insertCode, copyCode, distanceCode);
+    }
+
+    return resolved;
+  }
+
+  /// <summary>
+  /// Builds one entropy-coded meta-block into its own writer so its size can be
+  /// compared against the uncompressed alternative before it is spliced into the
+  /// stream.
+  /// </summary>
+  private static BrotliBitWriter BuildCompressedMetaBlock(
+    byte[] data, List<Command> commands, MetaBlockRange range, bool isLast, int[] ring) {
+    var resolved = ResolveCommands(commands, range, ring);
+
+    // Literal frequencies per context, for every context mode, so the cheapest
+    // mode can be picked before the contexts are clustered.
+    var perMode = new int[BrotliConstants.NumLiteralContextModes][][];
+    for (var mode = 0; mode < BrotliConstants.NumLiteralContextModes; ++mode) {
+      var byContext = new int[64][];
+      for (var c = 0; c < 64; ++c)
+        byContext[c] = new int[256];
+      perMode[mode] = byContext;
+    }
+
+    var iacFrequencies = new int[BrotliConstants.NumInsertAndCopyLengthCodes];
+    var distanceFrequencies = new int[DistanceAlphabetSize];
+
+    foreach (var command in resolved) {
+      ++iacFrequencies[command.IacCode];
+      if (command.DistanceCode >= 0)
+        ++distanceFrequencies[command.DistanceCode];
+
+      for (var k = 0; k < command.InsertLength; ++k) {
+        var position = command.InsertStart + k;
+        var p1 = position > 0 ? data[position - 1] : (byte)0;
+        var p2 = position > 1 ? data[position - 2] : (byte)0;
+        var literal = data[position];
+        for (var mode = 0; mode < BrotliConstants.NumLiteralContextModes; ++mode)
+          ++perMode[mode][LiteralContext(p1, p2, mode)][literal];
+      }
+    }
+
+    var contextMode = ChooseContextMode(perMode);
+    var contextFrequencies = perMode[contextMode];
+    var (contextMap, literalCodes) = ChooseLiteralTrees(contextFrequencies);
+
+    var iacCode = BuildPrefixCode(iacFrequencies, BrotliConstants.NumInsertAndCopyLengthCodes,
+      BrotliConstants.MaxHuffmanCodeLength);
+    var distanceCode = BuildPrefixCode(distanceFrequencies, DistanceAlphabetSize,
+      BrotliConstants.MaxHuffmanCodeLength);
+
+    var writer = new BrotliBitWriter();
+
+    writer.WriteBits(1, isLast ? 1u : 0u);
+    if (isLast)
+      writer.WriteBits(1, 0); // ISLASTEMPTY = 0
+
+    WriteMetaBlockLength(writer, range.ByteEnd - range.ByteStart);
+
+    if (!isLast)
+      writer.WriteBits(1, 0); // ISUNCOMPRESSED = 0
+
+    WriteCount(writer, 1); // NBLTYPESL
+    WriteCount(writer, 1); // NBLTYPESI
+    WriteCount(writer, 1); // NBLTYPESD
+
+    writer.WriteBits(2, 0); // NPOSTFIX = 0
+    writer.WriteBits(4, 0); // NDIRECT = 0
+
+    writer.WriteBits(2, (uint)contextMode);
+
+    WriteCount(writer, literalCodes.Length); // NTREESL
+    if (literalCodes.Length > 1)
+      WriteContextMap(writer, contextMap, literalCodes.Length);
+
+    WriteCount(writer, 1); // NTREESD
+
+    foreach (var code in literalCodes)
+      WritePrefixCodeDescriptor(writer, code, BrotliConstants.LiteralAlphabetSize);
+
+    WritePrefixCodeDescriptor(writer, iacCode, BrotliConstants.NumInsertAndCopyLengthCodes);
+    WritePrefixCodeDescriptor(writer, distanceCode, DistanceAlphabetSize);
+
+    foreach (var command in resolved) {
+      WriteSymbol(writer, iacCode, command.IacCode);
+
+      var insertExtra = BrotliConstants.InsertLengthTable[command.InsertCode].ExtraBits;
+      if (insertExtra > 0)
+        writer.WriteBits(insertExtra,
+          (uint)(command.InsertLength - BrotliConstants.InsertLengthTable[command.InsertCode].BaseValue));
+
+      var copyExtra = BrotliConstants.CopyLengthTable[command.CopyCode].ExtraBits;
+      if (copyExtra > 0)
+        writer.WriteBits(copyExtra,
+          (uint)(command.CopyLength - BrotliConstants.CopyLengthTable[command.CopyCode].BaseValue));
+
+      for (var k = 0; k < command.InsertLength; ++k) {
+        var position = command.InsertStart + k;
+        var p1 = position > 0 ? data[position - 1] : (byte)0;
+        var p2 = position > 1 ? data[position - 2] : (byte)0;
+        var tree = contextMap[LiteralContext(p1, p2, contextMode)];
+        WriteSymbol(writer, literalCodes[tree], data[position]);
+      }
+
+      if (command.DistanceCode < 0)
+        continue;
+
+      WriteSymbol(writer, distanceCode, command.DistanceCode);
+      if (command.DistanceCode < 16)
+        continue;
+
+      var (_, extraBits, extraValue) = EncodeDistance(command.Distance);
+      if (extraBits > 0)
+        writer.WriteBits(extraBits, (uint)extraValue);
+    }
+
+    return writer;
+  }
+
+  /// <summary>
+  /// Picks the literal context mode whose per-context distributions are cheapest
+  /// to code before any clustering is applied.
+  /// </summary>
+  private static int ChooseContextMode(int[][][] perMode) {
+    var best = 0;
+    var bestCost = long.MaxValue;
+    for (var mode = 0; mode < perMode.Length; ++mode) {
+      long cost = 0;
+      for (var c = 0; c < 64; ++c)
+        cost += HistogramCostUnits(perMode[mode][c]);
+
+      if (cost >= bestCost)
+        continue;
+
+      bestCost = cost;
+      best = mode;
+    }
+
+    return best;
+  }
+
+  /// <summary>
+  /// Clusters the 64 literal contexts into prefix codes. Contexts are merged
+  /// greedily by the extra cost of sharing one distribution, and the tree count
+  /// that minimises the measured total of descriptors, context map and literal
+  /// data wins.
+  /// </summary>
+  private static (int[] ContextMap, PrefixCode[] Codes) ChooseLiteralTrees(int[][] contextFrequencies) {
+    var members = new List<List<int>>();
+    var clusters = new List<int[]>();
+    for (var c = 0; c < 64; ++c) {
+      var total = 0;
+      for (var b = 0; b < 256; ++b)
+        total += contextFrequencies[c][b];
+
+      if (total == 0)
+        continue;
+
+      members.Add([c]);
+      clusters.Add((int[])contextFrequencies[c].Clone());
+    }
+
+    // Nothing was coded from this alphabet at all.
+    if (clusters.Count == 0)
+      return (new int[64], [BuildPrefixCode(new int[256], 256, BrotliConstants.MaxHuffmanCodeLength)]);
+
+    // Pairwise merge costs are cached; a merge only invalidates one row.
+    var pairCost = new List<List<long>>(clusters.Count);
+    for (var i = 0; i < clusters.Count; ++i) {
+      var row = new List<long>(clusters.Count);
+      for (var j = 0; j < clusters.Count; ++j)
+        row.Add(j <= i ? 0 : MergeCostUnits(clusters[i], clusters[j]));
+      pairCost.Add(row);
+    }
+
+    var bestCost = long.MaxValue;
+    int[] bestMap = null!;
+    PrefixCode[] bestCodes = null!;
+
+    while (true) {
+      if (Array.IndexOf(LiteralTreeCandidates, clusters.Count) >= 0) {
+        var (map, codes, cost) = EvaluateClustering(members, clusters);
+        if (cost < bestCost) {
+          bestCost = cost;
+          bestMap = map;
+          bestCodes = codes;
+        }
+      }
+
+      if (clusters.Count <= 1)
+        break;
+
+      var mergeI = 0;
+      var mergeJ = 1;
+      var mergeCost = long.MaxValue;
+      for (var i = 0; i < clusters.Count; ++i)
+        for (var j = i + 1; j < clusters.Count; ++j) {
+          if (pairCost[i][j] >= mergeCost)
+            continue;
+
+          mergeCost = pairCost[i][j];
+          mergeI = i;
+          mergeJ = j;
+        }
+
+      for (var b = 0; b < 256; ++b)
+        clusters[mergeI][b] += clusters[mergeJ][b];
+      members[mergeI].AddRange(members[mergeJ]);
+      clusters.RemoveAt(mergeJ);
+      members.RemoveAt(mergeJ);
+
+      pairCost.RemoveAt(mergeJ);
+      foreach (var row in pairCost)
+        row.RemoveAt(mergeJ);
+
+      for (var k = 0; k < clusters.Count; ++k) {
+        if (k == mergeI)
+          continue;
+
+        var cost = MergeCostUnits(clusters[mergeI], clusters[k]);
+        if (k > mergeI)
+          pairCost[mergeI][k] = cost;
+        else
+          pairCost[k][mergeI] = cost;
+      }
+    }
+
+    return (bestMap, bestCodes);
+  }
+
+  /// <summary>
+  /// Measures one clustering: descriptor bits for every literal code, the context
+  /// map, the NTREESL field and the literal payload itself.
+  /// </summary>
+  private static (int[] Map, PrefixCode[] Codes, long Cost) EvaluateClustering(
+    List<List<int>> members, List<int[]> clusters) {
+    var map = new int[64];
+    for (var t = 0; t < members.Count; ++t)
+      foreach (var context in members[t])
+        map[context] = t;
+
+    var codes = new PrefixCode[clusters.Count];
+    long cost = 0;
+    for (var t = 0; t < clusters.Count; ++t) {
+      codes[t] = BuildPrefixCode(clusters[t], 256, BrotliConstants.MaxHuffmanCodeLength);
+      cost += (long)MeasureDescriptorBits(codes[t], 256) * 256;
+      for (var b = 0; b < 256; ++b)
+        cost += (long)clusters[t][b] * SymbolBits(codes[t], b) * 256;
+    }
+
+    var scratch = new BrotliBitWriter();
+    WriteCount(scratch, clusters.Count);
+    if (clusters.Count > 1)
+      WriteContextMap(scratch, map, clusters.Count);
+    cost += (long)scratch.BitLength() * 256;
+
+    return (map, codes, cost);
+  }
+
+  /// <summary>
+  /// Writes a literal context map (RFC 7932 Section 7.3) with RLEMAX = 0 and no
+  /// move-to-front transform: only 64 entries are involved, so neither pays off.
+  /// </summary>
+  private static void WriteContextMap(BrotliBitWriter writer, int[] contextMap, int treeCount) {
+    writer.WriteBits(1, 0); // RLEMAX = 0
+
+    var frequencies = new int[treeCount];
+    foreach (var tree in contextMap)
+      ++frequencies[tree];
+
+    var code = BuildPrefixCode(frequencies, treeCount, BrotliConstants.MaxHuffmanCodeLength);
+    WritePrefixCodeDescriptor(writer, code, treeCount);
+    foreach (var tree in contextMap)
+      WriteSymbol(writer, code, tree);
+
+    writer.WriteBits(1, 0); // IMTF = 0
+  }
+
+  /// <summary>
+  /// Builds one uncompressed meta-block into its own writer. The payload is
+  /// byte-aligned against the whole stream, so the number of padding bits depends
+  /// on how many bits already precede this meta-block.
+  /// </summary>
+  private static BrotliBitWriter BuildUncompressedMetaBlock(byte[] data, MetaBlockRange range, int startBitOffset) {
+    var writer = new BrotliBitWriter();
+    writer.WriteBits(1, 0); // ISLAST = 0
+    WriteMetaBlockLength(writer, range.ByteEnd - range.ByteStart);
+    writer.WriteBits(1, 1); // ISUNCOMPRESSED = 1
+
+    var padding = (8 - (startBitOffset + writer.BitLength()) % 8) % 8;
+    if (padding > 0)
+      writer.WriteBits(padding, 0);
+
+    for (var i = range.ByteStart; i < range.ByteEnd; ++i)
+      writer.WriteBits(8, data[i]);
+
+    return writer;
   }
 }
 
 /// <summary>
-/// Bit writer for Brotli streams. Writes bits LSB-first.
+/// Bit writer for Brotli streams. Writes bits least significant bit first
+/// (RFC 7932 Section 1.5.1).
 /// </summary>
 internal sealed class BrotliBitWriter {
-  private readonly Stream _output;
+  private readonly List<byte> _bytes = [];
   private uint _bitBuffer;
-  private int _bitsUsed;
+  private int _bitCount;
 
   /// <summary>
-  /// Initializes a new <see cref="BrotliBitWriter"/>.
+  /// Writes the low <paramref name="count"/> bits of <paramref name="value"/>.
   /// </summary>
-  /// <param name="output">The output stream.</param>
-  public BrotliBitWriter(Stream output) => this._output = output;
-
-  /// <summary>
-  /// Writes <paramref name="count"/> bits (LSB-first) to the stream.
-  /// </summary>
-  /// <param name="count">Number of bits to write (1-24).</param>
-  /// <param name="value">The value whose low <paramref name="count"/> bits are written.</param>
+  /// <param name="count">Number of bits to write (0-24).</param>
+  /// <param name="value">The value whose low bits are written.</param>
   public void WriteBits(int count, uint value) {
-    this._bitBuffer |= (value & ((1u << count) - 1)) << this._bitsUsed;
-    this._bitsUsed += count;
-    while (this._bitsUsed >= 8) {
-      this._output.WriteByte((byte)(this._bitBuffer & 0xFF));
+    if (count <= 0)
+      return;
+
+    this._bitBuffer |= (value & ((1u << count) - 1)) << this._bitCount;
+    this._bitCount += count;
+    while (this._bitCount >= 8) {
+      this._bytes.Add((byte)(this._bitBuffer & 0xFF));
       this._bitBuffer >>= 8;
-      this._bitsUsed -= 8;
+      this._bitCount -= 8;
     }
   }
 
-  /// <summary>
-  /// Writes a single raw byte (must be byte-aligned).
-  /// </summary>
-  /// <param name="value">The byte to write.</param>
-  public void WriteByte(byte value) {
-    if (this._bitsUsed == 0)
-      this._output.WriteByte(value);
-    else
-      this.WriteBits(8, value);
-  }
-
-  /// <summary>
-  /// Aligns to the next byte boundary by writing zero padding bits.
-  /// </summary>
+  /// <summary>Pads with zero bits up to the next byte boundary.</summary>
   public void AlignToByte() {
-    if (this._bitsUsed <= 0)
+    if (this._bitCount <= 0)
       return;
 
-    var padding = 8 - this._bitsUsed;
-    this.WriteBits(padding, 0);
+    this._bytes.Add((byte)(this._bitBuffer & 0xFF));
+    this._bitBuffer = 0;
+    this._bitCount = 0;
   }
 
   /// <summary>
-  /// Flushes any remaining partial byte to the output stream.
+  /// Appends another writer's exact bit sequence without introducing padding at
+  /// the join. Brotli meta-blocks are not individually byte-aligned, so a
+  /// candidate built in its own writer has to be re-threaded bit for bit.
   /// </summary>
+  /// <param name="other">The writer whose bits are appended.</param>
+  public void Append(BrotliBitWriter other) {
+    foreach (var value in other._bytes)
+      this.WriteBits(8, value);
+
+    if (other._bitCount > 0)
+      this.WriteBits(other._bitCount, other._bitBuffer);
+  }
+
+  /// <summary>Total number of bits written so far.</summary>
+  public int BitLength() => this._bytes.Count * 8 + this._bitCount;
+
+  /// <summary>Emits any pending partial byte.</summary>
   public void Flush() {
-    if (this._bitsUsed <= 0)
+    if (this._bitCount <= 0)
       return;
 
-    this._output.WriteByte((byte)(this._bitBuffer & 0xFF));
+    this._bytes.Add((byte)(this._bitBuffer & 0xFF));
     this._bitBuffer = 0;
-    this._bitsUsed = 0;
+    this._bitCount = 0;
   }
+
+  /// <summary>Returns everything written so far as a byte array.</summary>
+  public byte[] ToArray() => this._bytes.ToArray();
 }

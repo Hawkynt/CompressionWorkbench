@@ -19,14 +19,11 @@ public sealed class BrotliBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
   public byte[] Compress(ReadOnlySpan<byte> data) {
-    // CompressLz77 is the encoder that actually codes; Compress only wraps the
-    // input in uncompressed meta-blocks, which is legal Brotli that any decoder
-    // reads but never smaller than what went in. Keep the uncompressed form when
-    // it wins, which it does on short or incompressible input.
-    var compressed = BrotliCompressor.CompressLz77(data);
-    var stored = BrotliCompressor.Compress(data);
-    if (stored.Length < compressed.Length)
-      compressed = stored;
+    // CompressLz77 already falls back to an uncompressed meta-block per
+    // meta-block whenever entropy coding would not pay, so no second whole-stream
+    // comparison is needed. Empty input produces an empty payload, matching the
+    // empty-in/empty-out contract the Cipher port has to honour.
+    var compressed = data.Length == 0 ? [] : BrotliCompressor.CompressLz77(data);
     var result = new byte[4 + compressed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
     compressed.CopyTo(result.AsSpan(4));
@@ -37,6 +34,6 @@ public sealed class BrotliBuildingBlock : IBuildingBlock {
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     _ = originalSize; // Brotli is self-terminating, but we store size for validation
-    return BrotliDecompressor.Decompress(data[4..]);
+    return data.Length <= 4 ? [] : BrotliDecompressor.Decompress(data[4..]);
   }
 }
