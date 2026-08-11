@@ -14,14 +14,20 @@ namespace FileFormat.Zpaq;
 /// codes one bit at a time: an array of prediction components supplies a probability
 /// for the next bit, a binary arithmetic coder codes the bit against that probability,
 /// and a ZPAQL bytecode program (HCOMP) recomputes the context hashes in H[] after
-/// every whole byte. <see cref="ZpaqlVm"/> implements all three parts; this block
-/// supplies one concrete configuration and drives the loop.
+/// every whole byte. <see cref="ZpaqlVm"/> runs the program and the components,
+/// <see cref="ZpaqRangeEncoder"/> and <see cref="ZpaqRangeDecoder"/> do the coding,
+/// and this block supplies one concrete configuration and drives the loop.
 /// </para>
 /// <para>
 /// The configuration is four direct context models over hashed orders 1 to 4, built
 /// by the HCOMP program in <see cref="Hcomp"/>. Per the format, the component context
 /// is refined with the bits of the partly coded byte before each bit is coded; that
 /// refinement belongs to the predictor rather than to HCOMP, so it is applied here.
+/// </para>
+/// <para>
+/// The wire format is a 4-byte little-endian uncompressed length followed by the
+/// coded bytes. An empty message is the header alone. The decoder learns how many
+/// bytes to produce from the header, so the coded stream carries no end marker.
 /// </para>
 /// <para>
 /// This is one configuration among the many the format allows, and it combines the
@@ -33,7 +39,9 @@ namespace FileFormat.Zpaq;
 /// This block is the codec only. It is deliberately not the archive container:
 /// <see cref="ZpaqWriter"/> and <see cref="ZpaqReader"/> model the journaling archive
 /// (transactions, filenames, timestamps, SHA-1 index) and store their payloads
-/// verbatim, so they carry no compression stage of their own to expose.
+/// verbatim, so they carry no compression stage of their own to expose. Deduplication
+/// and versioning, which the real container layers on top of those, are likewise not
+/// implemented.
 /// </para>
 /// </remarks>
 public sealed class ZpaqBuildingBlock : IBuildingBlock {
@@ -55,9 +63,6 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
 
   /// <summary>Size of the uncompressed-length header, in bytes.</summary>
   private const int SizeHeaderBytes = 4;
-
-  /// <summary>Width of the arithmetic coder state, in bytes, as flushed and primed.</summary>
-  private const int CoderStateBytes = 4;
 
   /// <summary>Odd multiplier that spreads the partly coded byte across the low context bits.</summary>
   private const uint PartialByteMultiplier = 0x9E3779B1;
@@ -122,7 +127,7 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "ZPAQ";
   /// <inheritdoc/>
-  public string Description => "ZPAQ context-mixing model over hashed orders 1-4, coded bit by bit by the ZPAQL virtual machine";
+  public string Description => "ZPAQ context-mixing model over hashed orders 1-4, contexts built by the ZPAQL virtual machine, coded bit by bit by a carry-propagating binary range coder";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
@@ -138,14 +143,14 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
 
     var vm = CreateVm();
     var contexts = new uint[ComponentCount];
-    Action<byte> emit = output.WriteByte;
+    var coder = new ZpaqRangeEncoder(output);
 
     foreach (var value in data) {
       var partial = 1;
       for (var shift = 7; shift >= 0; --shift) {
         var bit = (value >> shift) & 1;
         ApplyContexts(vm, contexts, partial);
-        vm.ArithEncode(bit, vm.Predict(), emit);
+        coder.EncodeBit(bit, vm.Predict());
         vm.Update(bit);
         partial = (partial << 1) | bit;
       }
@@ -154,13 +159,7 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
       CaptureContexts(vm, contexts);
     }
 
-    // Flush the coder. Any value inside [low, high] identifies the message and
-    // low is already inside it, so emitting low in full lets the decoder prime
-    // its own state from the head of the stream.
-    var low = vm.ArithLow;
-    for (var i = CoderStateBytes - 1; i >= 0; --i)
-      output.WriteByte((byte)(low >> (i * 8)));
-
+    coder.Flush();
     return output.ToArray();
   }
 
@@ -171,15 +170,7 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
       return [];
 
     var payload = data[SizeHeaderBytes..].ToArray();
-    var position = 0;
-    Func<int> readByte = () => position < payload.Length ? payload[position++] : -1;
-
-    // Prime the coder with the leading bytes of the stream.
-    var code = 0u;
-    for (var i = 0; i < CoderStateBytes; ++i) {
-      var next = readByte();
-      code = (code << 8) | (uint)(next < 0 ? 0 : next);
-    }
+    var coder = new ZpaqRangeDecoder(payload, 0);
 
     var vm = CreateVm();
     var contexts = new uint[ComponentCount];
@@ -189,8 +180,7 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
       var partial = 1;
       for (var shift = 7; shift >= 0; --shift) {
         ApplyContexts(vm, contexts, partial);
-        var (bit, next) = vm.ArithDecode(vm.Predict(), code, readByte);
-        code = next;
+        var bit = coder.DecodeBit(vm.Predict());
         vm.Update(bit);
         partial = (partial << 1) | bit;
       }
@@ -231,6 +221,13 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Refines each component's context with the bits of the partly coded byte.
   /// </summary>
+  /// <remarks>
+  /// The multiplier is odd, so within one model no two prefixes of the same byte
+  /// can land on the same counter. The component then indexes its table by the low
+  /// <see cref="ContextModelBits"/> bits of the offset hash; those bits are the same
+  /// whether or not the sum is first reduced modulo 2^32, because the table size
+  /// divides 2^32.
+  /// </remarks>
   /// <param name="vm">The VM whose H[] array supplies the component contexts.</param>
   /// <param name="contexts">The per-byte hashes captured by <see cref="CaptureContexts"/>.</param>
   /// <param name="partial">The bits coded so far in the current byte, preceded by a leading 1.</param>
