@@ -93,8 +93,14 @@ public static class BrotliCompressor {
   /// </summary>
   internal const int DictionaryLiteralBits = 8;
 
-  /// <summary>How much better a reference one position later has to score to be preferred.</summary>
+  /// <summary>
+  /// How much better a reference has to score, per position of delay, before the parse
+  /// defers the one it already has.
+  /// </summary>
   private const int LazyMatchMargin = 8;
+
+  /// <summary>How many positions ahead the lazy match step looks.</summary>
+  private const int LazyLookahead = 2;
 
   /// <summary>Candidate literal prefix code counts (NTREESL) evaluated per meta-block.</summary>
   private static readonly int[] LiteralTreeCandidates = [1, 2, 4, 8, 16];
@@ -1055,7 +1061,7 @@ public static class BrotliCompressor {
 
   /// <summary>
   /// Splits the input into insert-and-copy commands using a hash chain match
-  /// finder with one step of lazy matching driven by the approximate bit cost.
+  /// finder with two steps of lazy matching driven by the approximate bit cost.
   /// </summary>
   private static List<Command> FindCommands(byte[] data, int maxDistance) {
     var head = new int[1 << HashBits];
@@ -1097,12 +1103,21 @@ public static class BrotliCompressor {
       }
 
       Insert(position);
-      if (position + 1 < data.Length) {
-        var later = FindBestReference(data, position + 1, maxDistance, head, chain, parseRing);
-        if (later.OutputLength >= MinMatch && later.Score > best.Score + LazyMatchMargin) {
-          ++position;
+      var deferred = false;
+      for (var ahead = 1; ahead <= LazyLookahead && position + ahead < data.Length; ++ahead) {
+        var later = FindBestReference(data, position + ahead, maxDistance, head, chain, parseRing);
+        if (later.OutputLength < MinMatch)
           continue;
-        }
+        if (later.Score <= best.Score + LazyMatchMargin * ahead)
+          continue;
+
+        deferred = true;
+        break;
+      }
+
+      if (deferred) {
+        ++position;
+        continue;
       }
 
       commands.Add(new Command(literalStart, position - literalStart,
