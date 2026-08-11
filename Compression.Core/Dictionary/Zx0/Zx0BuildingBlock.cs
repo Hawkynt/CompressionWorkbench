@@ -36,7 +36,9 @@ namespace Compression.Core.Dictionary.Zx0;
 ///         <c>(127-((offset-1)&amp;127))&lt;&lt;1</c> in bits 7..1 of the LSB byte and the
 ///         <b>first bit</b> of the subsequent <c>elias(length-1)</c> in bit 0.</item>
 ///   <item>End-of-stream: a new-offset match with high-nibble value 256
-///         (encoded as Elias-gamma of 256, which overflows the 1..255 range).</item>
+///         (encoded as Elias-gamma of 256, which overflows the 1..255 range).
+///         Offsets are therefore bounded by 32640, so that no real match can
+///         produce the sentinel value.</item>
 /// </list>
 /// <para>
 /// The "backtrack" mechanism in the reference encoder re-uses bit 0 of the
@@ -69,7 +71,10 @@ public sealed class Zx0BuildingBlock : IBuildingBlock {
   // ZX0 v2 forward, non-inverted. Salvador uses invert=true; see SalvadorBuildingBlock.
   private const bool InvertMode = false;
   private const int InitialOffset = 1;
-  private const int MaxOffset = 0xFFFFFF;  // ZX0's offset field is unbounded in principle; cap for search sanity.
+  // Largest offset whose Elias-coded MSB stays below the 256 end-of-stream
+  // sentinel: (32640-1)/128+1 == 255. This is the reference MAX_OFFSET; an
+  // offset of 32641 would encode MSB value 256 and be read back as end-of-stream.
+  private const int MaxOffset = 0x7F80;
   private const int MinMatchLength = 2;
 
   /// <summary>Compress <paramref name="data"/> with a 4-byte little-endian original-size prefix followed by a bare ZX0 stream.</summary>
@@ -160,8 +165,15 @@ public sealed class Zx0BuildingBlock : IBuildingBlock {
         if (pos > literalStart) {
           enc.EmitLiterals(data, literalStart, pos - literalStart);
           literalStart = pos;
+          enc.EmitRepMatch(repLen);
+        } else {
+          // A rep-match is only decodable directly after a literal block: at the
+          // start of a command the leading 0 bit already means "literal run", so
+          // a rep-match emitted there would be mis-read as a literal count. With
+          // no pending literals the same distance is re-encoded as a new-offset
+          // match, which is legal in every state.
+          enc.EmitNewOffsetMatch((uint)lastOffset, repLen);
         }
-        enc.EmitRepMatch(repLen);
         // Insert into hash for trailing positions so forward hashes stay accurate.
         for (var j = 1; j < repLen && pos + j + MinMatchLength <= data.Length; j++) {
           var h = Hash(data, pos + j);

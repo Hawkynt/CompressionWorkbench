@@ -83,6 +83,37 @@ public class Zx0Tests {
     Assert.That(round, Is.EqualTo(data).AsCollection);
   }
 
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void LongText_BeyondSingleMaximumMatch_RoundTrips() {
+    // Inputs past ~64 KB force a second match immediately after the first, with
+    // no literal block between them. A rep-match is undecodable in that state,
+    // so the encoder has to fall back to a new-offset match.
+    var data = LargeText(90_000);
+    var compressed = Bb.Compress(data);
+    var round = Bb.Decompress(compressed);
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void LargeRandomData_NeverEncodesTheEndOfStreamSentinelAsAnOffset_RoundTrips() {
+    // 200 KB of random data offers matches at every distance, including the
+    // 32641..32768 band whose Elias-coded offset MSB would collide with the
+    // 256 end-of-stream marker and truncate the output.
+    var rng = new Random(0xBEEF);
+    var data = new byte[200_000];
+    rng.NextBytes(data);
+    var compressed = Bb.Compress(data);
+    var round = Bb.Decompress(compressed);
+    Assert.That(round, Is.EqualTo(data).AsCollection);
+  }
+
+  private static byte[] LargeText(int length) {
+    var unit = Encoding.ASCII.GetBytes("the quick brown fox jumps over the lazy dog. ");
+    var data = new byte[length];
+    for (var i = 0; i < length; i++) data[i] = unit[i % unit.Length];
+    return data;
+  }
+
   [Test, Category("EdgeCase")]
   public void Decompress_TooSmallHeader_Throws() {
     Assert.That(() => Bb.Decompress([0x01]), Throws.InstanceOf<InvalidDataException>());
