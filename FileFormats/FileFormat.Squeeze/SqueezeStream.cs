@@ -178,7 +178,7 @@ public static class SqueezeStream {
     }
 
     // Encode data + EOF (LSB-first)
-    var bitBuffer = 0;
+    var bitBuffer = 0u;
     var bitCount = 0;
 
     for (var i = 0; i < data.Length; i++)
@@ -192,10 +192,15 @@ public static class SqueezeStream {
       output.WriteByte((byte)bitBuffer);
   }
 
-  private static void WriteBits(Stream output, uint code, int length, ref int bitBuffer, ref int bitCount) {
+  private static void WriteBits(Stream output, uint code, int length, ref uint bitBuffer, ref int bitCount) {
     // Codes are stored LSB-first: we emit the lowest bit of code first.
     // code is already in LSB-first order (bit 0 = first bit to emit).
-    bitBuffer |= (int)((long)code << bitCount);
+    //
+    // The accumulator is unsigned deliberately. As a signed int, a code long
+    // enough to reach bit 31 made the value negative, and the shift below is
+    // then arithmetic: it sign-extends and feeds 1-bits back into the stream.
+    // Squeeze codes can reach that length on a sufficiently skewed alphabet.
+    bitBuffer |= (uint)((ulong)code << bitCount);
     bitCount += length;
 
     while (bitCount >= 8) {
