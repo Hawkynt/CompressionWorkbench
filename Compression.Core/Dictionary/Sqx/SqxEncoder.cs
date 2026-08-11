@@ -1,4 +1,5 @@
 using Compression.Core.Dictionary.MatchFinders;
+using Compression.Core.Entropy.Huffman;
 
 namespace Compression.Core.Dictionary.Sqx;
 
@@ -382,36 +383,13 @@ public sealed class SqxEncoder {
   }
 
   private static int[] BuildCodeLengths(int[] freq, int numSymbols, int maxBits) {
-    var lengths = new int[numSymbols];
-    var symbols = new List<(int sym, int freq)>();
+    // Tie-break between equally frequent symbols is defined by DeterministicHuffman, not
+    // by whatever order a container happens to hand back equal keys.
+    var lengths = DeterministicHuffman.BuildCodeLengths(freq.AsSpan(0, numSymbols));
+
     for (var i = 0; i < numSymbols; ++i)
-      if (freq[i] > 0) symbols.Add((i, freq[i]));
-
-    if (symbols.Count == 0) return lengths;
-    if (symbols.Count == 1) { lengths[symbols[0].sym] = 1; return lengths; }
-
-    var pq = new PriorityQueue<int, long>();
-    var nodes = new List<(long freq, int sym, int left, int right)>();
-    for (var i = 0; i < symbols.Count; ++i) {
-      nodes.Add((symbols[i].freq, symbols[i].sym, -1, -1));
-      pq.Enqueue(i, symbols[i].freq);
-    }
-    while (pq.Count > 1) {
-      pq.TryDequeue(out var a, out var fa);
-      pq.TryDequeue(out var b, out var fb);
-      var newIdx = nodes.Count;
-      nodes.Add((fa + fb, -1, a, b));
-      pq.Enqueue(newIdx, fa + fb);
-    }
-    pq.TryDequeue(out var root, out _);
-
-    void Walk(int idx, int depth) {
-      var node = nodes[idx];
-      if (node.sym >= 0) { lengths[node.sym] = Math.Clamp(depth, 1, maxBits); return; }
-      Walk(node.left, depth + 1);
-      Walk(node.right, depth + 1);
-    }
-    Walk(root, 0);
+      if (lengths[i] > maxBits)
+        lengths[i] = maxBits;
 
     // Fix oversubscribed codes caused by depth clamping
     FixCodeLengths(lengths, maxBits);
