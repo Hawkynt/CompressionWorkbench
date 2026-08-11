@@ -132,9 +132,9 @@ public sealed class RomFsWriter : IDisposable {
 
     // Collect children of this directory
     var childDirs  = allDirs.Where(d => d.Length > 0 && GetParent(d) == dirPath)
-                            .OrderBy(d => d).ToList();
+                            .OrderBy(d => d, StringComparer.Ordinal).ToList();
     var childFiles = allFiles.Where(f => GetParent(f.Path) == dirPath)
-                             .OrderBy(f => f.Path).ToList();
+                             .OrderBy(f => f.Path, StringComparer.Ordinal).ToList();
 
     // The first child entry starts at current buf position
     var firstChildOffset = buf.Count;

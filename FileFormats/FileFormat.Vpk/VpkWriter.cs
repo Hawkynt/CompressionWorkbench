@@ -40,7 +40,7 @@ public sealed class VpkWriter : IDisposable {
     // Group entries by Extension → Path for directory tree structure
     var grouped = _pendingEntries
       .GroupBy(e => e.Entry.Extension)
-      .OrderBy(g => g.Key);
+      .OrderBy(g => g.Key, StringComparer.Ordinal);
 
     // First pass: build the directory tree in memory to calculate tree size
     using var treeMs = new MemoryStream();
@@ -48,7 +48,7 @@ public sealed class VpkWriter : IDisposable {
 
     foreach (var extGroup in grouped) {
       WriteNullString(treeMs, extGroup.Key);
-      var byPath = extGroup.GroupBy(e => e.Entry.DirectoryPath).OrderBy(g => g.Key);
+      var byPath = extGroup.GroupBy(e => e.Entry.DirectoryPath).OrderBy(g => g.Key, StringComparer.Ordinal);
       foreach (var pathGroup in byPath) {
         WriteNullString(treeMs, pathGroup.Key);
         foreach (var (entry, data) in pathGroup) {
