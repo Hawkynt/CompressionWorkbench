@@ -103,7 +103,7 @@ public sealed partial class FseDecoder {
   /// <summary>
   /// Finds the total number of data bits in the compressed stream (excluding sentinel).
   /// </summary>
-  private static int FindTotalBits(ReadOnlySpan<byte> compressed) {
+  private static long FindTotalBits(ReadOnlySpan<byte> compressed) {
     // Find the sentinel: the highest set bit in the entire bitstream
     // The bitstream is stored as a sequence of bytes with bits from position 0 upward.
     // Total bits in the stream = (compressed.Length * 8)
@@ -121,7 +121,7 @@ public sealed partial class FseDecoder {
     var highBit = BitOperations.Log2((uint)lastByte);
 
     // Total data bits = position of sentinel bit = lastByteIndex * 8 + highBit
-    return lastByteIndex * 8 + highBit;
+    return (long)lastByteIndex * 8 + highBit;
   }
 
 }

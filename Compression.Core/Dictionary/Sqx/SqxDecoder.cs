@@ -41,7 +41,7 @@ public sealed class SqxDecoder {
   public byte[] Decode(byte[] compressed, int originalSize) {
     var output = new byte[originalSize];
     var outPos = 0;
-    var bitPos = 0;
+    var bitPos = 0L;
 
     var distSlots = SqxConstants.GetDistSlots(this._dictSize);
 
@@ -193,14 +193,14 @@ public sealed class SqxDecoder {
     }
   }
 
-  private static int DecodeDistance(byte[] data, ref int bitPos, int distSym) {
+  private static int DecodeDistance(byte[] data, ref long bitPos, int distSym) {
     if (distSym == 0) return 1;
     if (distSym == 1) return 2;
     var extraBits = distSym - 1;
     return (1 << extraBits) + ReadBits(data, ref bitPos, extraBits);
   }
 
-  private static int[] ReadCodeLengths(byte[] data, ref int bitPos, int[] preTree, int preTreeBits, int count) {
+  private static int[] ReadCodeLengths(byte[] data, ref long bitPos, int[] preTree, int preTreeBits, int count) {
     var lengths = new int[count];
     var i = 0;
     while (i < count) {
@@ -231,7 +231,7 @@ public sealed class SqxDecoder {
     return lengths;
   }
 
-  private static int DecodeSymbol(byte[] data, ref int bitPos, int[] table, int tableBits) {
+  private static int DecodeSymbol(byte[] data, ref long bitPos, int[] table, int tableBits) {
     var peek = PeekBits(data, bitPos, tableBits);
     var entry = table[peek & ((1 << tableBits) - 1)];
     var symbol = entry & 0xFFFF;
@@ -243,11 +243,11 @@ public sealed class SqxDecoder {
     return symbol;
   }
 
-  private static int PeekBits(byte[] data, int bitPos, int count) {
+  private static int PeekBits(byte[] data, long bitPos, int count) {
     var result = 0;
     for (var i = 0; i < count; ++i) {
       var byteIdx = (bitPos + i) >> 3;
-      var bitIdx = 7 - ((bitPos + i) & 7);
+      var bitIdx = 7 - (int)((bitPos + i) & 7);
       if (byteIdx < data.Length)
         result = (result << 1) | ((data[byteIdx] >> bitIdx) & 1);
       else
@@ -256,11 +256,11 @@ public sealed class SqxDecoder {
     return result;
   }
 
-  private static int ReadBits(byte[] data, ref int bitPos, int count) {
+  private static int ReadBits(byte[] data, ref long bitPos, int count) {
     var result = 0;
     for (var i = 0; i < count; ++i) {
       var byteIdx = bitPos >> 3;
-      var bitIdx = 7 - (bitPos & 7);
+      var bitIdx = 7 - (int)(bitPos & 7);
       if (byteIdx < data.Length)
         result = (result << 1) | ((data[byteIdx] >> bitIdx) & 1);
       else

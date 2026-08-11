@@ -47,7 +47,9 @@ public sealed class LevenshteinBuildingBlock : IBuildingBlock {
 
     var src = data[4..].ToArray();
     var result = new byte[originalSize];
-    var bitIndex = 0;
+    // Levenshtein coding expands, so the bit position passes int.MaxValue while
+    // the stream is still far short of Array.MaxLength.
+    var bitIndex = 0L;
 
     for (var i = 0; i < originalSize; i++)
       result[i] = (byte)(DecodeLevenshtein(src, ref bitIndex) - 1);
@@ -87,7 +89,7 @@ public sealed class LevenshteinBuildingBlock : IBuildingBlock {
     }
   }
 
-  private static int DecodeLevenshtein(byte[] data, ref int bitIndex) {
+  private static int DecodeLevenshtein(byte[] data, ref long bitIndex) {
     // Read unary step count: count 1-bits until 0.
     var c = 0;
     while (ReadBit(data, ref bitIndex) == 1)
@@ -119,10 +121,10 @@ public sealed class LevenshteinBuildingBlock : IBuildingBlock {
     return result;
   }
 
-  private static int ReadBit(byte[] data, ref int bitIndex) {
+  private static int ReadBit(byte[] data, ref long bitIndex) {
     if (bitIndex / 8 >= data.Length)
       throw new InvalidDataException("Unexpected end of Levenshtein bitstream.");
-    var bit = (data[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+    var bit = (data[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
     bitIndex++;
     return bit;
   }

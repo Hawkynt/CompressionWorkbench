@@ -5,7 +5,7 @@ namespace Compression.Core.Entropy.GolombRice;
 /// </summary>
 public sealed class GolombRiceDecoder {
   private readonly byte[] _data;
-  private int _bitPos;
+  private long _bitPos;
 
   /// <summary>
   /// Gets or sets the Rice parameter k (number of remainder bits).
@@ -25,7 +25,7 @@ public sealed class GolombRiceDecoder {
   /// <summary>
   /// Gets the current bit position in the data.
   /// </summary>
-  public int BitPosition => this._bitPos;
+  public long BitPosition => this._bitPos;
 
   /// <summary>
   /// Decodes a non-negative value.
@@ -56,7 +56,7 @@ public sealed class GolombRiceDecoder {
     var byteIdx = this._bitPos >> 3;
     if (byteIdx >= this._data.Length)
       return 0;
-    var bitIdx = 7 - (this._bitPos & 7);
+    var bitIdx = 7 - (int)(this._bitPos & 7);
     ++this._bitPos;
     return (this._data[byteIdx] >> bitIdx) & 1;
   }

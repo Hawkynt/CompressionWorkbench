@@ -35,7 +35,7 @@ internal sealed class BrotliBitReader {
   public int BytePosition => this._bytePos - (this._bitsAvailable >> 3);
 
   /// <summary>Gets the exact bit position in the stream.</summary>
-  public int BitPosition => this._bytePos * 8 - this._bitsAvailable;
+  public long BitPosition => (long)this._bytePos * 8 - this._bitsAvailable;
 
   /// <summary>Debug: dump buffer state.</summary>
   public string DebugState => $"bytePos={this._bytePos} bitsAvail={this._bitsAvailable} buf=0x{this._bitBuffer:X16} bitPos={this.BitPosition}";

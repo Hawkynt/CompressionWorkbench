@@ -105,13 +105,15 @@ public sealed class ShannonFanoBuildingBlock : IBuildingBlock {
 
     // Decode bitstream.
     var result = new byte[originalSize];
-    var bitIndex = 0;
+    // A bit position over the whole stream needs more than 31 bits once the
+    // stream passes 2^28 bytes, which is well inside Array.MaxLength.
+    var bitIndex = 0L;
     for (var i = 0; i < originalSize; i++) {
       var node = root;
       while (node!.Left != null || node.Right != null) {
         if (bitIndex / 8 >= bitData.Length)
           throw new InvalidDataException("Unexpected end of Shannon-Fano bitstream.");
-        var bit = (bitData[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+        var bit = (bitData[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
         bitIndex++;
         node = bit == 0 ? node.Left : node.Right;
         if (node == null)

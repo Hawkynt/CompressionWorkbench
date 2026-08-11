@@ -50,7 +50,10 @@ public sealed class UnaryBuildingBlock : IBuildingBlock {
 
     var src = data[4..].ToArray();
     var result = new byte[originalSize];
-    var bitIndex = 0;
+    // Unary coding emits up to 256 bits per input byte, so the bit position runs
+    // past int.MaxValue long before the stream reaches Array.MaxLength: an input
+    // of uniformly distributed bytes crosses 2^31 bits at roughly 16.7 MB.
+    var bitIndex = 0L;
 
     for (var i = 0; i < originalSize; i++) {
       var count = 0;
@@ -62,10 +65,10 @@ public sealed class UnaryBuildingBlock : IBuildingBlock {
     return result;
   }
 
-  private static int ReadBit(byte[] data, ref int bitIndex) {
+  private static int ReadBit(byte[] data, ref long bitIndex) {
     if (bitIndex / 8 >= data.Length)
       throw new InvalidDataException("Unexpected end of Unary bitstream.");
-    var bit = (data[bitIndex / 8] >> (7 - (bitIndex % 8))) & 1;
+    var bit = (data[bitIndex / 8] >> (7 - (int)(bitIndex % 8))) & 1;
     bitIndex++;
     return bit;
   }
