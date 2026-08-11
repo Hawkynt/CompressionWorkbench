@@ -1,3 +1,5 @@
+using Compression.Core.Entropy.Huffman;
+
 namespace Compression.Core.Dictionary.Zip;
 
 /// <summary>
@@ -138,43 +140,13 @@ public static class ImplodeEncoder {
     // code lengths (the format stores len-1 in 4 bits, so min length is 1).
     // Build a Huffman tree with all symbols having at least frequency 1.
 
-    var pq = new PriorityQueue<int, long>();
-    var nodes = new List<(long freq, int sym, int left, int right)>();
+    var weights = new int[numSymbols];
+    for (var i = 0; i < numSymbols; ++i)
+      weights[i] = Math.Max(freq[i], 1);
 
-    for (var i = 0; i < numSymbols; ++i) {
-      long f = Math.Max(freq[i], 1);
-      nodes.Add((f, i, -1, -1));
-      pq.Enqueue(i, f);
-    }
-
-    if (numSymbols == 1) {
-      return [1];
-    }
-
-    while (pq.Count > 1) {
-      pq.TryDequeue(out var a, out var fa);
-      pq.TryDequeue(out var b, out var fb);
-      var combined = fa + fb;
-      var newIdx = nodes.Count;
-      nodes.Add((combined, -1, a, b));
-      pq.Enqueue(newIdx, combined);
-    }
-
-    pq.TryDequeue(out var root, out _);
-
-    var lengths = new int[numSymbols];
-
-    void Walk(int idx, int depth) {
-      var node = nodes[idx];
-      if (node.sym >= 0) {
-        lengths[node.sym] = Math.Max(depth, 1);
-        return;
-      }
-      Walk(node.left, depth + 1);
-      Walk(node.right, depth + 1);
-    }
-
-    Walk(root, 0);
+    // Tie-break between equally frequent symbols is defined by DeterministicHuffman, not
+    // by whatever order a container happens to hand back equal keys.
+    var lengths = DeterministicHuffman.BuildCodeLengths(weights);
 
     // Clamp to max 16 (4-bit field stores len-1, max 15 → len 16)
     // If any exceed 16, flatten to uniform lengths
