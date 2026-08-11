@@ -124,7 +124,7 @@ algorithm by ratio + compress / decompress wall time on a single input.
 | DNA / 4-symbol alphabets | `BB_Dna` (specialised) |
 | Hardware-friendly chunked compression | `BB_842` (IBM hardware-style 2 / 4 / 8-byte template matching) |
 | Network-protocol-style framing (packet sizes) | `BB_Lzs` (Stac LZS — RFC 1967 / RFC 2395) |
-| Templated grammar / repetition mining | `BB_RePair`, `BB_Bpe`, `BB_Lzwl` |
+| Templated grammar / repetition mining | `BB_RePair`, `BB_Sequitur`, `BB_Bpe`, `BB_Lzwl` |
 
 When in doubt: run `cwb benchmark` from the source repo on a representative sample of your data and let
 the numbers pick.
@@ -164,8 +164,9 @@ or canonical specification.
 | `BB_Lzs` | [LZS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Stac) | Dictionary | R/W | Stac LZS (7 / 11-bit offset LZSS for networking) | [RFC 1967](https://www.rfc-editor.org/rfc/rfc1967) / [RFC 2395](https://www.rfc-editor.org/rfc/rfc2395) |
 | `BB_Lzwl` | LZWL | Dictionary | R/W | LZW with variable-length initial alphabet from digram analysis | [LZWL paper](https://www.jucs.org/jucs_9_9/compression_with_finite_mixed/jucs_9_9_1055_1081_salomon.pdf) |
 | `BB_RePair` | [Re-Pair](https://en.wikipedia.org/wiki/Re-Pair) | Dictionary | R/W | Recursive Pairing, offline grammar-based compression | [Larsson & Moffat 1999](https://ieeexplore.ieee.org/document/755679) |
+| `BB_Sequitur` | [Sequitur](https://en.wikipedia.org/wiki/Sequitur_algorithm) | Dictionary | R/W | Online grammar inference by digram uniqueness and rule utility | [Nevill-Manning & Witten 1997](https://www.jair.org/index.php/jair/article/view/10151) |
 | `BB_842` | [842](https://en.wikipedia.org/wiki/842_(compression_algorithm)) | Dictionary | R/W | IBM 842 hardware compression with 2 / 4 / 8-byte template matching | [Linux `crypto/842*`](https://github.com/torvalds/linux/tree/master/crypto) |
-| `BB_PPM` | [PPM](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | Context-Mixing | R/W | Prediction by Partial Matching, order-2 context modelling | [Cleary & Witten 1984](https://ieeexplore.ieee.org/document/1096090) |
+| `BB_PPM` | [PPM](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | Context-Mixing | R/W | Prediction by Partial Matching — order-3 contexts, escape method C, full exclusion, arithmetic coded | [Cleary & Witten 1984](https://ieeexplore.ieee.org/document/1096090) / [Moffat 1990](https://ieeexplore.ieee.org/document/61469) |
 | `BB_CTW` | [CTW](https://en.wikipedia.org/wiki/Context_tree_weighting) | Context-Mixing | R/W | Context Tree Weighting — optimal universal compression | [Willems 1995](https://ieeexplore.ieee.org/document/382012) |
 | `BB_Huffman` | [Huffman](https://en.wikipedia.org/wiki/Huffman_coding) | Entropy | R/W | Optimal prefix-free entropy coding | [Huffman 1952](https://ieeexplore.ieee.org/document/4051119) |
 | `BB_Arithmetic` | [Arithmetic](https://en.wikipedia.org/wiki/Arithmetic_coding) | Entropy | R/W | Order-0 arithmetic coding with frequency table | [Witten / Neal / Cleary 1987](https://dl.acm.org/doi/10.1145/214762.214771) |

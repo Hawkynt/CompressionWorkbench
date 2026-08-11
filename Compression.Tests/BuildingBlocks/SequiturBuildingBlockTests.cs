@@ -8,10 +8,25 @@ public class SequiturBuildingBlockTests {
 
   private static readonly SequiturBuildingBlock Bb = new();
 
+  private static byte[] Repeat(byte value, int count) {
+    var data = new byte[count];
+    Array.Fill(data, value);
+    return data;
+  }
+
+  private static byte[] Repeat(string text, int count) {
+    var unit = Encoding.ASCII.GetBytes(text);
+    var data = new byte[unit.Length * count];
+    for (var i = 0; i < count; ++i)
+      unit.CopyTo(data, i * unit.Length);
+    return data;
+  }
+
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Empty_RoundTrips() {
-    var round = Bb.Decompress(Bb.Compress([]));
-    Assert.That(round, Is.Empty);
+    var compressed = Bb.Compress([]);
+    Assert.That(Convert.ToHexString(compressed), Is.EqualTo("00000000"));
+    Assert.That(Bb.Decompress(compressed), Is.Empty);
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
@@ -21,44 +36,54 @@ public class SequiturBuildingBlockTests {
     Assert.That(round, Is.EqualTo(data).AsCollection);
   }
 
+  /// <summary>
+  /// A run of one byte is the shortest possible period, so the grammar becomes
+  /// a doubling hierarchy: R0 = "aa", R1 = R0 R0, and so on. Twenty kilobytes
+  /// need about fourteen rules in total.
+  /// </summary>
   [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void HighlyRepetitive_RoundTripsAndCompresses() {
-    var data = new byte[2048];
-    Array.Fill(data, (byte)0x99);
+  public void SingleRepeatedByte_CompressesToAlmostNothing() {
+    var data = Repeat(0x5A, 20480);
     var compressed = Bb.Compress(data);
-    var round = Bb.Decompress(compressed);
-    Assert.That(round, Is.EqualTo(data).AsCollection);
-    Assert.That(compressed.Length, Is.LessThan(data.Length / 4));
+    Assert.That(Bb.Decompress(compressed), Is.EqualTo(data).AsCollection);
+    TestContext.Out.WriteLine($"Sequitur repeated byte: {compressed.Length}/{data.Length}");
+    Assert.That(compressed.Length, Is.LessThan(64));
+  }
+
+  /// <summary>
+  /// The point of grammar inference: a long phrase repeated many times collapses
+  /// to a rule for the phrase, then rules for pairs and quadruples of that rule,
+  /// leaving a start sequence of a handful of symbols. The length of the
+  /// repeated phrase does not matter — only that it repeats.
+  /// </summary>
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void RepeatedSentence_CompressesToUnderOnePercent() {
+    var data = Repeat("the quick brown fox jumps over the lazy dog. ", 2000);
+    var compressed = Bb.Compress(data);
+    Assert.That(Bb.Decompress(compressed), Is.EqualTo(data).AsCollection);
+    TestContext.Out.WriteLine($"Sequitur repeated sentence: {compressed.Length}/{data.Length}");
+    Assert.That(compressed.Length, Is.LessThan(data.Length / 100));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Alternating_RoundTrips() {
+  public void Alternating_RoundTripsAndCompresses() {
     var data = new byte[1024];
     for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 2 == 0 ? 0xC3 : 0x3C);
-    var round = Bb.Decompress(Bb.Compress(data));
-    Assert.That(round, Is.EqualTo(data).AsCollection);
+    var compressed = Bb.Compress(data);
+    Assert.That(Bb.Decompress(compressed), Is.EqualTo(data).AsCollection);
+    Assert.That(compressed.Length, Is.LessThan(data.Length / 10));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void IncompressibleRandom_RoundTrips() {
     var rng = new Random(0x9BEEF);
-    var data = new byte[512];
+    var data = new byte[4096];
     rng.NextBytes(data);
     var round = Bb.Decompress(Bb.Compress(data));
     Assert.That(round, Is.EqualTo(data).AsCollection);
   }
 
-  /// <summary>
-  /// Ordinary prose has real but irregular word-level recurrence, not the
-  /// short (period 1-2) internal periodicity that lets Sequitur's digram
-  /// matching collapse a block into a compact doubling hierarchy (see
-  /// <see cref="HeavyRepeatedSubstrings_RoundTripsAndCompressesWell"/> and the
-  /// "compression is input-shaped" remarks on <see cref="SequiturCompressor"/>).
-  /// This is a round-trip test, not a compression guarantee: raw grammar
-  /// serialisation with no follow-on entropy coding is not expected to beat
-  /// the input on general text.
-  /// </summary>
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void EnglishText_RoundTrips() {
     var data = Encoding.ASCII.GetBytes(
@@ -80,30 +105,48 @@ public class SequiturBuildingBlockTests {
     Assert.That(round, Is.EqualTo(data).AsCollection);
   }
 
-  /// <summary>
-  /// Heavily repeated substrings are exactly where grammar inference is meant
-  /// to pay off: a short repeating unit ("ab") folds into a compact doubling
-  /// hierarchy of two-symbol rules (R0="ab", R1=R0R0="abab", R2=R1R1, ...)
-  /// instead of storing every repetition literally, and the ratio keeps
-  /// improving as the input grows — unlike a longer unit with no short
-  /// internal periodicity, which only achieves near-linear grammar size (see
-  /// the "compression is input-shaped" remarks on <see cref="SequiturCompressor"/>).
-  /// </summary>
   [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void HeavyRepeatedSubstrings_RoundTripsAndCompressesWell() {
-    var unit = Encoding.ASCII.GetBytes("ab");
-    var data = new byte[unit.Length * 500];
-    for (var i = 0; i < 500; ++i)
-      unit.CopyTo(data, i * unit.Length);
-
+  public void OneMegabyte_RoundTrips() {
+    var data = Repeat("Lorem ipsum dolor sit amet, consectetur adipiscing elit. ", 18725);
     var compressed = Bb.Compress(data);
-    var round = Bb.Decompress(compressed);
-    Assert.That(round, Is.EqualTo(data).AsCollection);
-
-    var ratio = (double)compressed.Length / data.Length;
-    TestContext.Out.WriteLine($"Sequitur heavy-repeat ratio: {compressed.Length}/{data.Length} = {ratio:P2}");
+    Assert.That(Bb.Decompress(compressed), Is.EqualTo(data).AsCollection);
     Assert.That(compressed.Length, Is.LessThan(data.Length / 10));
   }
+
+  /// <summary>
+  /// The wire format is shared byte-for-byte with the JavaScript implementation
+  /// in the Cipher project, so these vectors pin the grammar the two invariants
+  /// produce as well as its bit-level layout.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void KnownVectors_MatchWireFormat() {
+    (byte[] Data, string Hex)[] vectors = [
+      (Encoding.ASCII.GetBytes("A"), "0100000000A080"),
+      (Repeat(0x61, 4), "0400000001A3098680"),
+      (Repeat(0x61, 256), "0001000007FE8C2618899AABBCCDDEE0"),
+      (Repeat("ab", 32), "4000000005FA3098A2266AAEF300"),
+      (Repeat("the quick brown fox jumps over the lazy dog. ", 4),
+       "B400000004782331D0D065100827A713A9A4C66B10188E46F3B9B84066379E0406A3A9B4E073101BCEC6539536184F47910190DE67174DB71000"),
+      (Convert.FromHexString("D3B07A1C8F4E2B6905C1FD3846A70E92"), "10000000000869D83D0E47A715B482E0FE9C2353874900"),
+    ];
+
+    Assert.Multiple(() => {
+      foreach (var (data, hex) in vectors) {
+        Assert.That(Convert.ToHexString(Bb.Compress(data)), Is.EqualTo(hex));
+        Assert.That(Bb.Decompress(Convert.FromHexString(hex)), Is.EqualTo(data).AsCollection);
+      }
+    });
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void TruncatedHeader_Throws() =>
+    Assert.Throws<InvalidDataException>(() => Bb.Decompress([0x01, 0x00]));
+
+  [Test, Category("ExceptionalCase")]
+  public void ReferenceToMissingRule_Throws() =>
+    // One byte of payload declaring no rules but a start symbol of 0xFF, then a
+    // length that the grammar cannot fill.
+    Assert.Throws<InvalidDataException>(() => Bb.Decompress([0x10, 0x00, 0x00, 0x00, 0x00, 0xA0, 0x80]));
 
   [Test, Category("EdgeCase")]
   public void Registry_Metadata_IsStable() {
