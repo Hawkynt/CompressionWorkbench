@@ -55,7 +55,7 @@ public sealed class Lzma2Encoder {
       // Try LZMA compression with context
       using var lzmaData = new MemoryStream();
       var encoder = new LzmaEncoder(this._dictionarySize, level: this._level);
-      encoder.Encode(lzmaData, contextAndChunk, chunkOffset, writeEndMarker: false);
+      encoder.Encode(lzmaData, contextAndChunk, chunkOffset, historyStart, writeEndMarker: false);
       var compressed = lzmaData.ToArray();
 
       if (compressed.Length < chunkSize && compressed.Length <= Lzma2Encoder.MaxPackedSize) {

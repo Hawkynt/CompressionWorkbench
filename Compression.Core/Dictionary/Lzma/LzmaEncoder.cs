@@ -61,7 +61,7 @@ public sealed class LzmaEncoder {
   /// <param name="output">The output stream.</param>
   /// <param name="data">The data to compress.</param>
   /// <param name="writeEndMarker">Whether to write the end-of-stream marker.</param>
-  public void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true) => this.Encode(output, data, 0, writeEndMarker);
+  public void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true) => this.Encode(output, data, 0, 0, writeEndMarker);
 
   /// <summary>
   /// Encodes data starting at <paramref name="startOffset"/> within <paramref name="data"/>.
@@ -71,8 +71,13 @@ public sealed class LzmaEncoder {
   /// <param name="output">The output stream.</param>
   /// <param name="data">The data including optional historical prefix.</param>
   /// <param name="startOffset">The position in <paramref name="data"/> where actual encoding begins.</param>
+  /// <param name="positionBase">
+  /// The uncompressed position of <c>data[0]</c> counted from the last dictionary reset.
+  /// Position state and literal position bits are derived from it, because a decoder counts
+  /// positions across the whole stream while this call only sees a window of it.
+  /// </param>
   /// <param name="writeEndMarker">Whether to write the end-of-stream marker.</param>
-  internal void Encode(Stream output, ReadOnlySpan<byte> data, int startOffset, bool writeEndMarker = true) {
+  internal void Encode(Stream output, ReadOnlySpan<byte> data, int startOffset, long positionBase, bool writeEndMarker = true) {
     var encoder = new RangeEncoder(output);
     var literalEncoder = new LzmaLiteralEncoder(this._lc, this._lp);
     var matchLenEncoder = new LzmaLengthEncoder();
@@ -122,7 +127,8 @@ public sealed class LzmaEncoder {
     var pos = startOffset;
 
     while (pos < data.Length) {
-      var posState = pos & this._posStateMask;
+      var absolutePos = positionBase + pos;
+      var posState = (int)(absolutePos & this._posStateMask);
       var prevByte = pos > 0 ? data[pos - 1] : (byte)0;
 
       // Try rep matches first
@@ -228,7 +234,7 @@ public sealed class LzmaEncoder {
         encoder.EncodeBit(ref isMatch[(state << 4) + posState], 0);
 
         var matchByte = (pos > 0 && reps[0] < pos) ? data[pos - reps[0] - 1] : (byte)0;
-        literalEncoder.Encode(encoder, state, data[pos], matchByte, pos, prevByte);
+        literalEncoder.Encode(encoder, state, data[pos], matchByte, (int)absolutePos, prevByte);
         state = LzmaConstants.StateUpdateLiteral(state);
         ++pos;
       }
@@ -236,7 +242,7 @@ public sealed class LzmaEncoder {
 
     if (writeEndMarker) {
       // Write end marker: match with distance = 0xFFFFFFFF
-      var posState = pos & this._posStateMask;
+      var posState = (int)((positionBase + pos) & this._posStateMask);
       encoder.EncodeBit(ref isMatch[(state << 4) + posState], 1);
       encoder.EncodeBit(ref isRep[state], 0);
       matchLenEncoder.Encode(encoder, LzmaConstants.MatchMinLen, posState);
