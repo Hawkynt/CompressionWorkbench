@@ -244,6 +244,11 @@ source code** — `IArchiveCreatable` and `IArchiveModifiable` interface impleme
 > [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md). Per-verb coverage counts are in
 > [`docs/OPERATION_COVERAGE.md`](docs/OPERATION_COVERAGE.md).
 
+> **How big an input can a building block take?** The measured ceilings, the
+> `Array.MaxLength` limit that `IBuildingBlock` cannot exceed, the 32-bit quantities
+> that wrap below it, and how to run the large-input tests are in
+> [`docs/LARGE-INPUTS.md`](docs/LARGE-INPUTS.md).
+
 ### NuGet meta-packages
 
 The raw algorithm primitives registered via `IBuildingBlock` live in `Hawkynt.Compression.Core`
