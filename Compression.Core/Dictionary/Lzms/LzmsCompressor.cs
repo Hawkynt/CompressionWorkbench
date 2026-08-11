@@ -55,7 +55,11 @@ public sealed class LzmsCompressor {
 
     // Allocate forward output buffer — for incompressible data (random bytes),
     // matches expand the output, so the forward stream can exceed the input size
-    var maxSize = data.Length * 2 + 1024;
+    var maxSize = (long)data.Length * 2 + 1024;
+    if (maxSize > Array.MaxLength)
+      throw new NotSupportedException(
+        $"LZMS: an input of {data.Length} bytes needs a {maxSize}-byte worst-case output buffer, which exceeds the {Array.MaxLength}-element array limit.");
+
     _fwdOutput = new byte[maxSize];
     _fwdPos = 0;
     _fwdBitBuf = 0;

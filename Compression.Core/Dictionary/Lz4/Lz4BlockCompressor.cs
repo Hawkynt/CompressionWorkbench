@@ -44,8 +44,16 @@ public static class Lz4BlockCompressor {
   public static int Compress(ReadOnlySpan<byte> source, Span<byte> dest) =>
     CompressCore(source, dest);
 
-  internal static int CompressBound(int inputSize) =>
-    inputSize + (inputSize / 255) + 16;
+  internal static int CompressBound(int inputSize) {
+    // Taken in 64-bit and refused explicitly when it does not fit an array, rather
+    // than wrapping to a negative length just under Array.MaxLength.
+    var bound = (long)inputSize + inputSize / 255 + 16;
+    if (bound > Array.MaxLength)
+      throw new NotSupportedException(
+        $"LZ4: an input of {inputSize} bytes needs a {bound}-byte worst-case output buffer, which exceeds the {Array.MaxLength}-element array limit.");
+
+    return (int)bound;
+  }
 
   private static int CompressCore(ReadOnlySpan<byte> src, Span<byte> dst) {
     var srcLen = src.Length;

@@ -34,8 +34,15 @@ public static class Lzo1xCompressor {
     if (data.IsEmpty)
       return [];
 
-    // Worst case: every byte is a literal. Allocate generously to avoid mid-stream resizing.
-    var output = new byte[data.Length + data.Length / 255 + 32];
+    // Worst case: every byte is a literal. Allocate generously to avoid mid-stream
+    // resizing. The bound is taken in 64-bit and refused explicitly when it does not
+    // fit an array, rather than wrapping to a negative length.
+    var bound = (long)data.Length + data.Length / 255 + 32;
+    if (bound > Array.MaxLength)
+      throw new NotSupportedException(
+        $"LZO1X: an input of {data.Length} bytes needs a {bound}-byte worst-case output buffer, which exceeds the {Array.MaxLength}-element array limit.");
+
+    var output = new byte[bound];
     var outPos = 0;
 
     var hashTable = new int[Lzo1xCompressor.HashSize];

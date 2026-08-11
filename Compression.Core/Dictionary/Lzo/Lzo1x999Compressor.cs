@@ -15,7 +15,14 @@ internal static class Lzo1x999Compressor {
     if (data.IsEmpty)
       return [];
 
-    var output = new byte[data.Length + data.Length / 255 + 32];
+    // Worst-case bound taken in 64-bit and refused explicitly when it does not fit
+    // an array, rather than wrapping to a negative length.
+    var bound = (long)data.Length + data.Length / 255 + 32;
+    if (bound > Array.MaxLength)
+      throw new NotSupportedException(
+        $"LZO1X-999: an input of {data.Length} bytes needs a {bound}-byte worst-case output buffer, which exceeds the {Array.MaxLength}-element array limit.");
+
+    var output = new byte[bound];
     var outPos = 0;
 
     // Hash table + chain table for deep match finding

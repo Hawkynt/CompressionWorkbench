@@ -18,8 +18,12 @@ public static class SnappyCompressor {
       return [0]; // varint 0
 
     // Worst case: varint header + source + overhead
-    var bufLen = 10 + source.Length + source.Length / 6 + 32;
-    var buf = ArrayPool<byte>.Shared.Rent(bufLen);
+    var bufLen = 10L + source.Length + source.Length / 6 + 32;
+    if (bufLen > Array.MaxLength)
+      throw new NotSupportedException(
+        $"Snappy: an input of {source.Length} bytes needs a {bufLen}-byte worst-case output buffer, which exceeds the {Array.MaxLength}-element array limit.");
+
+    var buf = ArrayPool<byte>.Shared.Rent((int)bufLen);
     try {
       var pos = WriteVarInt(buf, 0, source.Length);
       pos = CompressBlock(source, buf, pos);

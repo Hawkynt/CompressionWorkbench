@@ -30,7 +30,14 @@ public static class DfpwmCodec {
   /// The state machine matches ffmpeg's <c>au_decompress</c> exactly.
   /// </summary>
   public static byte[] Decompress(ReadOnlySpan<byte> dfpwm) {
-    var output = new byte[dfpwm.Length * 8];
+    // One input byte decodes to eight samples, so the result cannot be represented
+    // as a single array above Array.MaxLength / 8. Say so rather than wrap.
+    var sampleCount = (long)dfpwm.Length * 8;
+    if (sampleCount > Array.MaxLength)
+      throw new NotSupportedException(
+        $"DFPWM: {dfpwm.Length} bytes decode to {sampleCount} samples, which exceeds the {Array.MaxLength}-element array limit.");
+
+    var output = new byte[sampleCount];
 
     // DFPWMState: fq (filtered charge), q (charge), s (strength), lt (last target).
     var fq = 0;

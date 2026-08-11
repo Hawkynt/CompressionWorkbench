@@ -70,7 +70,14 @@ public static class CvsdCodec {
   /// </summary>
   public static short[] Decode(ReadOnlySpan<byte> data, bool msbFirst = true) {
     var s = new State();
-    var output = new short[data.Length * 8];
+    // One input byte decodes to eight samples, so the result cannot be represented
+    // as a single array above Array.MaxLength / 8. Say so rather than wrap.
+    var sampleCount = (long)data.Length * 8;
+    if (sampleCount > Array.MaxLength)
+      throw new NotSupportedException(
+        $"CVSD: {data.Length} bytes decode to {sampleCount} samples, which exceeds the {Array.MaxLength}-element array limit.");
+
+    var output = new short[sampleCount];
     var n = 0;
     foreach (var b in data)
       for (var k = 0; k < 8; ++k) {
