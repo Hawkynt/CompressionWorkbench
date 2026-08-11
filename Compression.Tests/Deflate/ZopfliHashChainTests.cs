@@ -4,113 +4,122 @@ namespace Compression.Tests.Deflate;
 
 [TestFixture]
 public class ZopfliHashChainTests {
-  [Category("HappyPath")]
-  [Test]
-  public void FindAllMatches_ReturnsMultipleLengths() {
-    // "ABCABCABCABC" — position 3 should match position 0 at lengths 3,4,5,6,7,8,9
-    var data = "ABCABCABCABC"u8.ToArray();
-    var chain = new ZopfliHashChain();
+  /// <summary>
+  /// Expands the run-encoded answer of a whole-input search into one entry per achievable
+  /// length at <paramref name="position"/>, which is the form the shortest-path parser
+  /// consumes it in.
+  /// </summary>
+  private static List<(int Length, int Distance)> MatchesAt(byte[] data, int position) {
+    var cache = ZopfliMatchCache.Build(data);
+    var result = new List<(int, int)>();
 
-    // Insert positions 0,1,2
-    for (var i = 0; i < 3; ++i)
-      chain.Insert(data, i);
+    var length = ZopfliMatchCache.MinMatch;
+    for (var run = cache.RunStart(position); run < cache.RunEnd(position); ++run)
+      for (; length <= cache.MaxLengthOf(run); ++length)
+        result.Add((length, cache.DistanceOf(run)));
 
-    var matches = chain.FindAllMatches(data, 3, 32768, 258);
-    Assert.That(matches, Has.Count.GreaterThan(1));
+    return result;
   }
 
   [Category("HappyPath")]
   [Test]
-  public void FindAllMatches_AscendingLengthOrder() {
+  public void Matches_CoverEveryAchievableLength() {
+    // "ABCABCABCABC" — position 3 matches position 0 at every length from 3 upwards.
     var data = "ABCABCABCABC"u8.ToArray();
-    var chain = new ZopfliHashChain();
 
-    for (var i = 0; i < 3; ++i)
-      chain.Insert(data, i);
+    var matches = MatchesAt(data, 3);
 
-    var matches = chain.FindAllMatches(data, 3, 32768, 258);
+    Assert.That(matches, Has.Count.GreaterThan(1));
+    Assert.That(matches.Select(m => m.Length), Is.EqualTo(Enumerable.Range(3, matches.Count)).AsCollection);
+  }
 
-    for (var i = 1; i < matches.Count; ++i) {
+  [Category("HappyPath")]
+  [Test]
+  public void Matches_AreInAscendingLengthOrder() {
+    var data = "ABCABCABCABC"u8.ToArray();
+
+    var matches = MatchesAt(data, 3);
+
+    for (var i = 1; i < matches.Count; ++i)
       Assert.That(matches[i].Length, Is.GreaterThan(matches[i - 1].Length),
         "Matches must be sorted by ascending length");
-    }
   }
 
   [Category("HappyPath")]
   [Test]
-  public void FindAllMatches_DeduplicatesByLength() {
-    // Multiple candidates at the same length — only one per length (shortest distance)
+  public void Matches_HoldOneDistancePerLength() {
+    // Several candidates reach the same length; only one entry per length survives.
     var data = "ABABABABAB"u8.ToArray();
-    var chain = new ZopfliHashChain();
 
-    for (var i = 0; i < 6; ++i)
-      chain.Insert(data, i);
+    var matches = MatchesAt(data, 6);
 
-    var matches = chain.FindAllMatches(data, 6, 32768, 258);
-
-    // Should have no duplicate lengths
     var lengths = matches.Select(m => m.Length).ToList();
-    Assert.That(lengths, Is.EqualTo(lengths.Distinct().ToList()));
+    Assert.That(lengths, Is.EqualTo(lengths.Distinct().ToList()).AsCollection);
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Matches_PreferTheShortestDistance() {
+    // "XYZ" appears at 0, 3 and 6; searching from 9 must report the nearest of them.
+    var data = "XYZXYZXYZXYZ"u8.ToArray();
+
+    var matches = MatchesAt(data, 9);
+
+    Assert.That(matches, Is.Not.Empty);
+    Assert.That(matches[0].Distance, Is.EqualTo(3));
   }
 
   [Category("Boundary")]
   [Test]
-  public void FindAllMatches_RespectsMaxDistance() {
+  public void Matches_NeverReachBeforeTheStartOfInput() {
     var data = new byte[100];
     Array.Fill(data, (byte)'A');
-    var chain = new ZopfliHashChain();
 
-    // Insert position 0
-    chain.Insert(data, 0);
-
-    // Skip far ahead — insert positions 1-49
-    for (var i = 1; i < 50; ++i)
-      chain.Insert(data, i);
-
-    // Position 50 with maxDistance=10 should only find matches within 10 bytes
-    var matches = chain.FindAllMatches(data, 50, 10, 258);
-    foreach (var m in matches)
-      Assert.That(m.Distance, Is.LessThanOrEqualTo(10));
+    foreach (var (_, distance) in MatchesAt(data, 50))
+      Assert.That(distance, Is.LessThanOrEqualTo(50));
   }
 
   [Category("EdgeCase")]
   [Test]
-  public void FindAllMatches_NoMatchForShortData() {
+  public void Matches_AreEmptyWhenTooFewBytesRemain() {
     var data = "AB"u8.ToArray();
-    var chain = new ZopfliHashChain();
 
-    var matches = chain.FindAllMatches(data, 0, 32768, 258);
-    Assert.That(matches, Is.Empty);
+    Assert.That(MatchesAt(data, 0), Is.Empty);
   }
 
   [Category("EdgeCase")]
   [Test]
-  public void FindAllMatches_NoMatchForUniqueData() {
+  public void Matches_AreEmptyWhenNothingRepeats() {
     var data = new byte[256];
     for (var i = 0; i < 256; ++i)
       data[i] = (byte)i;
 
-    var chain = new ZopfliHashChain();
-    for (var i = 0; i < 200; ++i)
-      chain.Insert(data, i);
-
-    var matches = chain.FindAllMatches(data, 200, 32768, 258);
-    Assert.That(matches, Is.Empty);
+    Assert.That(MatchesAt(data, 200), Is.Empty);
   }
 
-  [Category("HappyPath")]
+  [Category("Boundary")]
   [Test]
-  public void Insert_DoesNotReturnMatches() {
-    var data = "ABCABC"u8.ToArray();
-    var chain = new ZopfliHashChain();
+  public void Matches_ReachTheVeryFirstPosition() {
+    // A match whose source is byte zero used to be dropped, because the walk stopped at
+    // the window's lower bound instead of examining what sat on it.
+    var data = "ABCDXXXXABCD"u8.ToArray();
 
-    // Insert should not throw and not return anything
-    chain.Insert(data, 0);
-    chain.Insert(data, 1);
-    chain.Insert(data, 2);
+    var matches = MatchesAt(data, 8);
 
-    // Verify that FindAllMatches works after inserts
-    var matches = chain.FindAllMatches(data, 3, 32768, 258);
-    Assert.That(matches, Has.Count.GreaterThanOrEqualTo(1));
+    Assert.That(matches, Is.Not.Empty);
+    Assert.That(matches[^1].Distance, Is.EqualTo(8));
+    Assert.That(matches[^1].Length, Is.EqualTo(4));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Matches_StopAtTheLongestLengthRfc1951Allows() {
+    var data = new byte[1000];
+    Array.Fill(data, (byte)0x5A);
+
+    var matches = MatchesAt(data, 1);
+
+    Assert.That(matches[^1].Length, Is.EqualTo(ZopfliMatchCache.MaxMatch));
+    Assert.That(matches[^1].Distance, Is.EqualTo(1));
   }
 }

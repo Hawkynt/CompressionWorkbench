@@ -1,122 +1,152 @@
 namespace Compression.Core.Deflate;
 
 /// <summary>
-/// Forward-DP shortest-path parser that produces a minimum-cost LZ parse
-/// given Huffman code lengths.
+/// Finds the cheapest LZ parse of a range of input under a given cost model, by shortest
+/// path over the positions of that range.
 /// </summary>
+/// <remarks>
+/// <para>
+/// This is the heart of the published Zopfli method. Every position is a node; a literal is
+/// an edge one byte long and a match of length <c>l</c> is an edge <c>l</c> bytes long, each
+/// weighted by what the current cost model says the corresponding symbols cost. Because
+/// every edge moves strictly forward, one sweep in increasing position order relaxes the
+/// graph in topological order and the result is the true minimum, not the greedy or lazy
+/// approximation an ordinary DEFLATE encoder settles for.
+/// </para>
+/// <para>
+/// Weights are integers in units of 1/65536 bit, so the parse depends on nothing but the
+/// input and the counts it was seeded with.
+/// </para>
+/// </remarks>
 internal static class OptimalParser {
-  private struct DpNode {
-    public double Cost;
-    public ushort Length;   // 0 = unreachable, 1 = literal, >1 = match length
-    public ushort Distance; // 0 for literals
-  }
-
   /// <summary>
-  /// Parses <paramref name="data"/> into an optimal sequence of <see cref="LzSymbol"/>s
-  /// using the supplied Huffman code lengths to compute edge costs.
+  /// Parses <c>data[start..end)</c> into the cheapest sequence of symbols under
+  /// <paramref name="model"/>.
   /// </summary>
+  /// <param name="data">The whole input; matches may reach back before <paramref name="start"/>.</param>
+  /// <param name="start">First position of the range to parse.</param>
+  /// <param name="end">One past the last position of the range to parse.</param>
+  /// <param name="cache">The match runs of the whole input.</param>
+  /// <param name="model">The cost model to price edges with.</param>
+  /// <returns>The parsed symbols, in input order.</returns>
   public static LzSymbol[] Parse(
     ReadOnlySpan<byte> data,
-    ZopfliHashChain hashChain,
-    ReadOnlySpan<int> litLenLengths,
-    ReadOnlySpan<int> distLengths) {
-    if (data.Length == 0)
+    int start,
+    int end,
+    ZopfliMatchCache cache,
+    ZopfliCostModel model) {
+    var span = end - start;
+    if (span <= 0)
       return [];
 
-    var length = data.Length;
-    var dp = new DpNode[length + 1];
-    dp[0].Cost = 0;
-    dp.AsSpan(1).Fill(new() { Cost = double.MaxValue });
+    var cost = new long[span + 1];
+    var length = new ushort[span + 1];
+    var distance = new ushort[span + 1];
+    cost.AsSpan(1).Fill(long.MaxValue);
 
-    const double UnseenPenalty = 15.0;
-
-    for (var i = 0; i < length; ++i) {
-      if (dp[i].Cost >= double.MaxValue)
+    for (var i = 0; i < span; ++i) {
+      var here = cost[i];
+      if (here == long.MaxValue)
         continue;
 
-      // Literal edge: i → i+1
-      var litCost = GetLitLenCost(data[i], litLenLengths, UnseenPenalty);
-      var newCost = dp[i].Cost + litCost;
-      if (newCost < dp[i + 1].Cost) {
-        dp[i + 1].Cost = newCost;
-        dp[i + 1].Length = 1;
-        dp[i + 1].Distance = 0;
+      var position = start + i;
+
+      var literalCost = here + model.LiteralCost(data[position]);
+      if (literalCost < cost[i + 1]) {
+        cost[i + 1] = literalCost;
+        length[i + 1] = 1;
+        distance[i + 1] = 0;
       }
 
-      // Match edges from hash chain
-      var matches = hashChain.FindAllMatches(data, i, DeflateConstants.WindowSize, 258);
-      foreach (var (distance, len) in matches) {
-        var dest = i + len;
-        if (dest > length)
-          continue;
+      var runEnd = cache.RunEnd(position);
+      var matchLength = ZopfliMatchCache.MinMatch;
+      for (var run = cache.RunStart(position); run < runEnd; ++run) {
+        var runDistance = cache.DistanceOf(run);
+        var runMax = cache.MaxLengthOf(run);
+        var distanceCost = here + model.DistanceCost(runDistance);
 
-        var matchCost = GetMatchCost(len, distance, litLenLengths, distLengths, UnseenPenalty);
-        newCost = dp[i].Cost + matchCost;
-        if (!(newCost < dp[dest].Cost))
-          continue;
+        // A match may not reach past the end of the range being parsed: the next block
+        // starts there and would decode the overlap twice.
+        while (matchLength <= runMax && i + matchLength <= span) {
+          var candidate = distanceCost + model.LengthCost(matchLength);
+          if (candidate < cost[i + matchLength]) {
+            cost[i + matchLength] = candidate;
+            length[i + matchLength] = (ushort)matchLength;
+            distance[i + matchLength] = (ushort)runDistance;
+          }
 
-        dp[dest].Cost = newCost;
-        dp[dest].Length = (ushort)len;
-        dp[dest].Distance = (ushort)distance;
+          ++matchLength;
+        }
+
+        if (i + matchLength > span)
+          break;
       }
     }
 
-    // Traceback
     var symbols = new List<LzSymbol>();
-    var pos = length;
+    var pos = span;
     while (pos > 0) {
-      ref var node = ref dp[pos];
-      if (node.Distance == 0) {
-        // Literal
-        symbols.Add(LzSymbol.Literal(data[pos - 1]));
-        pos -= 1;
+      if (distance[pos] == 0) {
+        symbols.Add(LzSymbol.Literal(data[start + pos - 1]));
+        --pos;
+        continue;
       }
-      else {
-        // Match
-        symbols.Add(LzSymbol.Match(node.Length, node.Distance));
-        pos -= node.Length;
-      }
+
+      symbols.Add(LzSymbol.Match(length[pos], distance[pos]));
+      pos -= length[pos];
     }
 
     symbols.Reverse();
     return [.. symbols];
   }
 
-  private static double GetLitLenCost(int symbol, ReadOnlySpan<int> litLenLengths, double unseenPenalty) => 
-    symbol < litLenLengths.Length && litLenLengths[symbol] > 0 
-      ? litLenLengths[symbol] 
-      : unseenPenalty
-      ;
+  /// <summary>
+  /// Parses <c>data[start..end)</c> greedily, taking the longest match at each position
+  /// unless the next position offers a longer one.
+  /// </summary>
+  /// <param name="data">The whole input; matches may reach back before <paramref name="start"/>.</param>
+  /// <param name="start">First position of the range to parse.</param>
+  /// <param name="end">One past the last position of the range to parse.</param>
+  /// <param name="cache">The match runs of the whole input.</param>
+  /// <returns>The parsed symbols, in input order.</returns>
+  /// <remarks>
+  /// This is the ordinary lazy-matching parse of a plain DEFLATE encoder. Zopfli runs it
+  /// once before the first shortest-path pass, purely to have realistic symbol counts to
+  /// seed the cost model with: starting from the RFC 1951 fixed tables instead would spend
+  /// the first pass, and often several after it, discovering what the input looks like.
+  /// </remarks>
+  public static LzSymbol[] ParseGreedy(ReadOnlySpan<byte> data, int start, int end, ZopfliMatchCache cache) {
+    var symbols = new List<LzSymbol>();
+    var position = start;
 
-  private static double GetMatchCost(
-    int length, int distance,
-    ReadOnlySpan<int> litLenLengths,
-    ReadOnlySpan<int> distLengths,
-    double unseenPenalty) {
-    var lenCode = DeflateConstants.GetLengthCode(length);
-    var lenIdx = lenCode - 257;
+    while (position < end) {
+      var (length, distance) = cache.LongestMatch(position);
+      if (length > end - position)
+        length = end - position;
 
-    var cost = 0.0;
+      if (length >= ZopfliMatchCache.MinMatch && position + 1 < end) {
+        var (nextLength, _) = cache.LongestMatch(position + 1);
+        if (nextLength > end - position - 1)
+          nextLength = end - position - 1;
 
-    // Length code bits
-    if (lenCode < litLenLengths.Length && litLenLengths[lenCode] > 0)
-      cost += litLenLengths[lenCode];
-    else
-      cost += unseenPenalty;
+        // A longer match one byte later is worth the literal it costs to wait for.
+        if (nextLength > length) {
+          symbols.Add(LzSymbol.Literal(data[position]));
+          ++position;
+          continue;
+        }
+      }
 
-    // Length extra bits
-    cost += DeflateConstants.LengthExtraBits[lenIdx];
+      if (length < ZopfliMatchCache.MinMatch) {
+        symbols.Add(LzSymbol.Literal(data[position]));
+        ++position;
+        continue;
+      }
 
-    // Distance code bits
-    var distCode = DeflateConstants.GetDistanceCode(distance);
-    if (distCode < distLengths.Length && distLengths[distCode] > 0)
-      cost += distLengths[distCode];
-    else
-      cost += unseenPenalty;
+      symbols.Add(LzSymbol.Match(length, distance));
+      position += length;
+    }
 
-    // Distance extra bits
-    cost += DeflateConstants.DistanceExtraBits[distCode];
-
-    return cost;
+    return [.. symbols];
   }
 }
