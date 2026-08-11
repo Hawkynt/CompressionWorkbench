@@ -218,7 +218,7 @@ public static class BrotliCompressor {
   }
 
   /// <summary>Number of whole bytes needed to hold <paramref name="bits"/> bits.</summary>
-  private static int ByteLength(int bits) => (bits + 7) / 8;
+  private static long ByteLength(long bits) => (bits + 7) / 8;
 
   // ---------------------------------------------------------------------------
   // Stream header
@@ -614,7 +614,7 @@ public static class BrotliCompressor {
   private static int MeasureDescriptorBits(PrefixCode code, int alphabetSize) {
     var scratch = new BrotliBitWriter();
     WritePrefixCodeDescriptor(scratch, code, alphabetSize);
-    return scratch.BitLength();
+    return (int)scratch.BitLength();
   }
 
   /// <summary>One entry of a complex prefix code descriptor's symbol stream.</summary>
@@ -662,7 +662,7 @@ public static class BrotliCompressor {
 
     var scratch = new BrotliBitWriter();
     EmitComplexPrefixCodeDescriptor(scratch, emissions);
-    return scratch.BitLength();
+    return (int)scratch.BitLength();
   }
 
   /// <summary>Emits a planned complex prefix code descriptor.</summary>
@@ -1544,13 +1544,13 @@ public static class BrotliCompressor {
   /// byte-aligned against the whole stream, so the number of padding bits depends
   /// on how many bits already precede this meta-block.
   /// </summary>
-  private static BrotliBitWriter BuildUncompressedMetaBlock(byte[] data, MetaBlockRange range, int startBitOffset) {
+  private static BrotliBitWriter BuildUncompressedMetaBlock(byte[] data, MetaBlockRange range, long startBitOffset) {
     var writer = new BrotliBitWriter();
     writer.WriteBits(1, 0); // ISLAST = 0
     WriteMetaBlockLength(writer, range.ByteEnd - range.ByteStart);
     writer.WriteBits(1, 1); // ISUNCOMPRESSED = 1
 
-    var padding = (8 - (startBitOffset + writer.BitLength()) % 8) % 8;
+    var padding = (int)((8 - (startBitOffset + writer.BitLength()) % 8) % 8);
     if (padding > 0)
       writer.WriteBits(padding, 0);
 
@@ -1612,8 +1612,13 @@ internal sealed class BrotliBitWriter {
       this.WriteBits(other._bitCount, other._bitBuffer);
   }
 
-  /// <summary>Total number of bits written so far.</summary>
-  public int BitLength() => this._bytes.Count * 8 + this._bitCount;
+  /// <summary>
+  /// Total number of bits written so far. This counts the whole stream when the
+  /// writer is the output accumulator, so it is 64-bit: a 32-bit count wraps
+  /// negative once the output passes 2^28 bytes, which corrupts the byte-alignment
+  /// padding of every later uncompressed meta-block.
+  /// </summary>
+  public long BitLength() => (long)this._bytes.Count * 8 + this._bitCount;
 
   /// <summary>Emits any pending partial byte.</summary>
   public void Flush() {

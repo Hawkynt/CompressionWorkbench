@@ -63,7 +63,7 @@ public sealed class BpeBuildingBlock : IBuildingBlock {
       }
 
       // Stop if the best pair doesn't save enough to justify the dictionary entry cost.
-      var netSavings = bestCount * 2 - 6;
+      var netSavings = (long)bestCount * 2 - 6;
       if (netSavings <= 0)
         break;
 
@@ -86,8 +86,11 @@ public sealed class BpeBuildingBlock : IBuildingBlock {
       dictionary.Add((nextCode, b1, b2));
       nextCode++;
 
-      // Stop if this iteration shrank the data by less than 0.5%.
-      if ((prevLen - dataLen) * 200 < prevLen)
+      // Stop if this iteration shrank the data by less than 0.5%. The product is
+      // taken in 64-bit: a single round on a large input can remove far more than
+      // int.MaxValue / 200 pairs, and the wrapped value then reads as "no progress"
+      // and aborts the merge loop after one round, costing compression ratio.
+      if ((long)(prevLen - dataLen) * 200 < prevLen)
         break;
     }
 

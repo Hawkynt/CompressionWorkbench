@@ -113,7 +113,7 @@ public sealed class ChainReconstructor {
 
       try {
         using var cts = new CancellationTokenSource(BlindTrialTimeoutMs(current.Length));
-        var attempt = strategy.TryDecompress(current, Math.Min(current.Length * 4, 1024 * 1024), cts.Token);
+        var attempt = strategy.TryDecompress(current, (int)Math.Min((long)current.Length * 4, 1024 * 1024), cts.Token);
         if (!attempt.Success || attempt.Output == null) continue;
 
         var quality = SuccessEvaluator.Evaluate(current, attempt.Output, strategy.Algorithm);

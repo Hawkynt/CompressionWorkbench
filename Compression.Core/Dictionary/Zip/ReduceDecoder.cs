@@ -34,7 +34,11 @@ public static class ReduceDecoder {
     if (factor < 1 || factor > 4)
       throw new ArgumentOutOfRangeException(nameof(factor), "Compression factor must be 1-4.");
 
-    var pos = 0;
+    // Bit position over the whole compressed stream: at 32-bit width it wraps
+    // negative once the stream passes 2^28 bytes, and the wrapped value makes the
+    // decode loop below exit immediately, returning an all-zero buffer of the
+    // right length with nothing thrown.
+    var pos = 0L;
 
     // Read follower sets
     var followers = new byte[256][];
@@ -46,12 +50,12 @@ public static class ReduceDecoder {
     }
 
     // Decode the probabilistic stream to get intermediate DLE-encoded bytes
-    var intermediate = new List<byte>(originalSize * 2);
+    var intermediate = new List<byte>((int)Math.Min((long)originalSize * 2, Array.MaxLength));
     byte lastByte = 0;
 
     // We don't know the exact intermediate length, so decode until we've
     // produced enough output after DLE decoding
-    var totalBits = compressed.Length * 8;
+    var totalBits = (long)compressed.Length * 8;
     while (pos < totalBits) {
       byte b;
       if (followers[lastByte].Length == 0) {
@@ -141,11 +145,11 @@ public static class ReduceDecoder {
     return output;
   }
 
-  private static int ReadBits(byte[] data, ref int bitPos, int count) {
+  private static int ReadBits(byte[] data, ref long bitPos, int count) {
     var result = 0;
     for (var i = 0; i < count; ++i) {
       var byteIdx = bitPos / 8;
-      var bitIdx = bitPos % 8;
+      var bitIdx = (int)(bitPos % 8);
       if (byteIdx >= data.Length)
         return result;
       result |= ((data[byteIdx] >> bitIdx) & 1) << i;

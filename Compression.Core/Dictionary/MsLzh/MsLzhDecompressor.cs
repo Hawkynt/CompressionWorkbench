@@ -35,7 +35,9 @@ public sealed class MsLzhDecompressor {
 
     var output = new byte[originalSize];
     var pos = 0;
-    var safety = originalSize * 8 + 1024;
+    // Decode budget, in 64-bit: at 32-bit width this wraps negative for sizes of
+    // 2^28 bytes and up, which stops the symbol loop before it emits anything.
+    var safety = (long)originalSize * 8 + 1024;
 
     while (pos < originalSize) {
       // Block-type bit: 0 = fixed Huffman tables, 1 = dynamic per-block tables.
