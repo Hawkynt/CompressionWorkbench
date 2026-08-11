@@ -23,11 +23,7 @@ internal static class ZopfliBlockCost {
   /// <param name="maxBits">The longest code permitted.</param>
   /// <returns>One code length per symbol, zero for symbols that do not occur.</returns>
   public static int[] BuildCodeLengths(ReadOnlySpan<long> counts, int maxBits) {
-    var weights = new int[counts.Length];
-    for (var i = 0; i < counts.Length; ++i)
-      weights[i] = counts[i] > int.MaxValue ? int.MaxValue : (int)counts[i];
-
-    var lengths = DeterministicHuffman.BuildCodeLengths(weights);
+    var lengths = DeterministicHuffman.BuildCodeLengths(counts);
     HuffmanTree.LimitCodeLengths(lengths, maxBits);
     return lengths;
   }
