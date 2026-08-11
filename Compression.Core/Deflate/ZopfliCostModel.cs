@@ -67,10 +67,12 @@ internal sealed class ZopfliCostModel {
   public long LengthCost(int length) => this._lengthCost[length];
 
   /// <summary>Cost of the distance half of a back-reference, extra bits included.</summary>
+  /// <remarks>
+  /// The two halves are asked for separately because the parser walks every length that
+  /// shares one distance in a row, so the distance's cost is paid for once per run rather
+  /// than once per edge.
+  /// </remarks>
   public long DistanceCost(int distance) => this._distanceCost[DeflateConstants.GetDistanceCode(distance)];
-
-  /// <summary>Cost of coding a back-reference of the given length and distance.</summary>
-  public long MatchCost(int length, int distance) => this.LengthCost(length) + this.DistanceCost(distance);
 
   private static long[] Entropy(ReadOnlySpan<long> counts) {
     var result = new long[counts.Length];
