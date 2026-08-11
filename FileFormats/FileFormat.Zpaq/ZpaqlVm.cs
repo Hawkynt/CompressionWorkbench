@@ -359,16 +359,32 @@ public sealed class ZpaqlVm {
   public uint ArithHigh => _x2;
 
   /// <summary>
+  /// Scales a 16-bit probability of 1 down to the 15-bit weight the split point
+  /// is computed from, keeping it strictly inside the open interval.
+  /// </summary>
+  /// <remarks>
+  /// Clamping the incoming prediction to 1..65534 is not by itself enough: the
+  /// halving takes 1 down to 0, which puts the split exactly on x1, so coding a
+  /// 1 bit would set x2 = x1 and leave an interval of zero width that can no
+  /// longer distinguish anything. Keeping the weight in 1..32767 makes both
+  /// subranges non-empty. No prediction the shipped models produce reaches that
+  /// value - a 64-case fuzz over the block round-trips cleanly either way - so
+  /// this closes a degenerate state rather than a reproduced failure.
+  /// </remarks>
+  /// <param name="prediction">Probability of 1, nominally 1..65534.</param>
+  /// <returns>A weight in 1..32767.</returns>
+  private static uint ScaleProbability(int prediction)
+    => (uint)Math.Clamp(Math.Clamp(prediction, 1, 65534) >> 1, 1, 32767);
+
+  /// <summary>
   /// Encodes a single bit using the arithmetic coder with the given prediction.
   /// </summary>
   /// <param name="bit">The bit to encode (0 or 1).</param>
   /// <param name="prediction">Probability of 1, in range 1..65534.</param>
   /// <param name="output">Action called with each output byte.</param>
   public void ArithEncode(int bit, int prediction, Action<byte> output) {
-    prediction = Math.Clamp(prediction, 1, 65534);
-
     var range = _x2 - _x1;
-    var split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
+    var split = _x1 + (uint)(((ulong)range * ScaleProbability(prediction)) / 32768);
 
     // The subrange below the split is proportional to the prediction, so it is
     // the one a 1 bit must take: the likelier a 1 is, the fewer bits coding it
@@ -395,10 +411,8 @@ public sealed class ZpaqlVm {
   /// <param name="readByte">Function to read the next byte from the compressed stream (-1 on EOF).</param>
   /// <returns>The decoded bit (0 or 1) and the updated code value.</returns>
   public (int Bit, uint Code) ArithDecode(int prediction, uint code, Func<int> readByte) {
-    prediction = Math.Clamp(prediction, 1, 65534);
-
     var range = _x2 - _x1;
-    var split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
+    var split = _x1 + (uint)(((ulong)range * ScaleProbability(prediction)) / 32768);
 
     // Mirror of ArithEncode: the subrange below the split belongs to a 1 bit.
     int bit;
