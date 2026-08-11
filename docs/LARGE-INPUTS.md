@@ -138,10 +138,27 @@ and in 777-byte streaming writes, over inputs from empty to 256 MB.
 | 128 MB | 20.1 s | **1.3 s** |
 | 256 MB | 84.2 s | **2.4 s** |
 
-3. **`Entropy/FseBuildingBlock.cs` stores one `byte` per bit** in a `List<byte>`.
-   A 2^28-byte incompressible input needs 2,147,483,648 elements — 57 more than
-   `Array.MaxLength` — so it throws `OutOfMemoryException` at exactly 256 MB.
-   Flagged, not fixed: it needs a packed accumulator.
+### `FseBuildingBlock` stored one `byte` per bit — fixed
+
+The encoder collected its output in a `List<byte>` holding one element per *bit*. A
+2^28-byte incompressible input needs 2,147,483,648 elements — 57 more than
+`Array.MaxLength` — so it threw `OutOfMemoryException` at exactly 256 MB, and every
+smaller input paid eight bytes of memory per bit of payload.
+
+Bits now go straight into the packed layout the wire format already used, and the
+decoder reads them out of the compressed bytes in place instead of expanding them
+first. The emitted bytes are unchanged.
+
+| Input | Peak RSS before | Peak RSS after |
+|---|---|---|
+| 256 MB English text | 3697 MB | **1178 MB** |
+| 268,000,000 incompressible | 4419 MB | **1529 MB** |
+| 2^28 incompressible | `OutOfMemoryException` | `NotSupportedException`, see below |
+
+The remaining limit is the format's own 32-bit bit count. Above `int.MaxValue` bits —
+about 455 MB of English text, or 2^28 bytes of incompressible input — the count can no
+longer be written, and `Compress` now says so by name instead of wrapping to a negative
+length. Raising it would change the wire format.
 
 ## Running the large-input tests
 
