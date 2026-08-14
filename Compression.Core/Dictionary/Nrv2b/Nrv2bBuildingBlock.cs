@@ -22,20 +22,19 @@ namespace Compression.Core.Dictionary.Nrv2b;
 /// <list type="bullet">
 ///   <item>Control bit <c>1</c> ⇒ emit literal (next byte from byte stream); control bit <c>0</c> ⇒ decode a match.</item>
 ///   <item>Variable-length integer (offsets and lengths): start from 1, repeat <c>v = v*2 + data_bit</c> followed by a continue bit (<c>1</c> = stop, <c>0</c> = keep going). Yields values ≥ 2.</item>
-///   <item>Offset varint value <c>2</c> means "reuse last offset"; otherwise <c>final = (value - 3) * 256 + byte + 1</c> where <c>byte</c> is read inline from the byte stream.</item>
-///   <item>Length: <c>0</c> ⇒ <c>m_len=1</c>; <c>10</c> ⇒ <c>m_len=2</c>; <c>11</c> ⇒ varint+2 ⇒ <c>m_len ≥ 4</c>. Total bytes copied = <c>m_len + 2</c>; an extra <c>+1</c> is added when offset > <c>0xD00</c>.</item>
+///   <item>Offset varint value <c>2</c> means "reuse last offset"; otherwise <c>final = (value - 3) * 256 + byte + 1</c> where <c>byte</c> is read inline from the byte stream. The reuse slot starts at 1.</item>
+///   <item>Length: two bits, most significant first. <c>1</c>, <c>2</c> and <c>3</c> are immediate; <c>0</c> escapes to varint+2, so escaped lengths are ≥ 4. Total bytes copied = <c>m_len + 1</c>; an extra <c>+1</c> is added when offset > <c>0xD00</c>.</item>
 /// </list>
 /// <para>
-/// Emitted match sizes are therefore {3, 4, 6, 7, 8, …} for offsets ≤ 0xD00 and
-/// {4, 5, 7, 8, 9, …} otherwise — match sizes 5 / 6 fall in an unrepresentable
-/// gap and the encoder snaps any candidate match to the next-lower encodable
-/// length.
+/// Every length from 1 upwards is therefore representable, so no candidate match
+/// needs snapping to fit the encoding.
 /// </para>
 /// <para>
-/// Our encoder is spec-faithful and self-consistent but does not match the
-/// reference <c>upx</c> tool byte-for-byte (UPX uses an optimal-parsing match
-/// picker we don't replicate). The decoder will accept any valid NRV2B LE32
-/// stream including UPX's own output.
+/// Our encoder does not match the reference <c>upx</c> tool byte-for-byte — UPX
+/// uses an optimal-parsing match picker we don't replicate — but the streams it
+/// emits decode under UCL's own decompressor, and this decoder reads UPX's
+/// output. Both directions are covered by tests that check against real
+/// UPX-packed binaries rather than only round-tripping against ourselves.
 /// </para>
 /// </remarks>
 public sealed class Nrv2bBuildingBlock : IBuildingBlock {
@@ -117,11 +116,9 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
         head[h] = pos;
       }
 
-      // Large offsets require length ≥ 4 because the decoder's offset-threshold length
-      // bump steals one byte from the encoded m_len (length 3 would need encoded m_len=0,
-      // which isn't part of the encoding). Reject such short matches with far offsets.
-      if (bestLen >= MinEmittedLen && !((uint)bestOff > OffsetLargeThreshold && bestLen < 4)) {
-        bestLen = SnapToEncodable(bestLen, bestOff);
+      // A large offset costs one length unit, because the decoder adds one back;
+      // a match too short to pay that has to be spelt out as literals instead.
+      if (bestLen >= MinEmittedLen && !((uint)bestOff > OffsetLargeThreshold && bestLen < 3)) {
         var reuseLast = (uint)bestOff == lastMatchOffset;
         enc.EmitMatch((uint)bestOff, bestLen, reuseLast);
         lastMatchOffset = (uint)bestOff;
@@ -178,7 +175,10 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
   private static byte[] DecompressCore(ReadOnlySpan<byte> compressed, int targetSize, int refillWidthBytes = 4) {
     var output = new byte[targetSize];
     var reader = new Nrv2bDecoder(compressed, refillWidthBytes);
-    uint lastMatchOffset = 0;
+
+    // The reuse-last-offset slot starts at 1, so a stream may name it before any
+    // match has been emitted; that names the byte immediately behind the cursor.
+    uint lastMatchOffset = 1;
     var op = 0;
 
     while (op < output.Length) {
@@ -191,8 +191,6 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
 
       uint finalOff;
       if (mOff == 2) {
-        if (lastMatchOffset == 0)
-          throw new InvalidDataException("NRV2B: reuse-last-offset before any match emitted.");
         finalOff = lastMatchOffset;
       } else {
         var b = reader.ReadByte();
@@ -202,16 +200,16 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
         lastMatchOffset = finalOff;
       }
 
-      uint mLen;
-      if (reader.ReadBit() == 0) mLen = 1;
-      else if (reader.ReadBit() == 0) mLen = 2;
-      else mLen = reader.ReadVarInt() + 2;
+      // Match length: two bits, most significant first. Zero escapes to a
+      // variable-length count biased by two; one, two and three are immediate.
+      var mLen = (uint)((reader.ReadBit() << 1) | reader.ReadBit());
+      if (mLen == 0) mLen = reader.ReadVarInt() + 2;
 
       if (finalOff > OffsetLargeThreshold) mLen++;
 
       if (finalOff > (uint)op) throw new InvalidDataException("NRV2B: offset points before start of output.");
       var src = op - (int)finalOff;
-      var totalToEmit = (int)mLen + 2;
+      var totalToEmit = (int)mLen + 1;
       for (var i = 0; i < totalToEmit && op < output.Length; i++)
         output[op++] = output[src + i];
     }
@@ -222,17 +220,6 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
   private static int Hash(ReadOnlySpan<byte> d, int pos)
     => ((d[pos] << 8) ^ (d[pos + 1] << 4) ^ d[pos + 2]) & 0xFFFF;
 
-  /// <summary>
-  /// NRV2B length encoding has a gap at <c>m_len=3</c> (emitted size 5 when offset ≤ 0xD00,
-  /// 6 otherwise). Snap any proposed length landing in the gap to the next-lower
-  /// encodable length so the encoder never tries to emit an unrepresentable size.
-  /// </summary>
-  private static int SnapToEncodable(int proposed, int offset) {
-    var effective = offset > OffsetLargeThreshold ? proposed - 1 : proposed;
-    var mLen = effective - 2;
-    if (mLen == 3) return offset > OffsetLargeThreshold ? 5 : 4;
-    return proposed;
-  }
 
   // ── Encoder ──────────────────────────────────────────────────────────────
   //
@@ -288,24 +275,19 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
         this.WriteBit(1); // final continue bit
       }
 
-      // Length encoding.
-      var emitted = length;
-      if (offset > OffsetLargeThreshold) emitted--;
-      var mLen = emitted - 2;
-      switch (mLen) {
-        case 1:
-          this.WriteBit(0);
-          break;
-        case 2:
-          this.WriteBit(1);
-          this.WriteBit(0);
-          break;
-        default:
-          if (mLen < 4) throw new InvalidOperationException("NRV2B: unencodable match length 3 (encoder didn't snap).");
-          this.WriteBit(1);
-          this.WriteBit(1);
-          this.WriteVarInt((uint)(mLen - 2));
-          break;
+      // Length encoding: the decoder copies mLen + 1 bytes and adds one more when
+      // the offset is large, so the coded length backs both of those out.
+      var mLen = length - 1;
+      if (offset > OffsetLargeThreshold) mLen--;
+      if (mLen < 1) throw new InvalidOperationException($"NRV2B: match length {length} is too short to encode at offset {offset}.");
+
+      if (mLen <= 3) {
+        this.WriteBit((mLen >> 1) & 1);
+        this.WriteBit(mLen & 1);
+      } else {
+        this.WriteBit(0);
+        this.WriteBit(0);
+        this.WriteVarInt((uint)(mLen - 2));
       }
     }
 
