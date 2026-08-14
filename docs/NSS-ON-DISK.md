@@ -97,16 +97,33 @@ A flat array of 8-byte pairs `(u32 length, u32 start)` from +56, ascending by
 start and zero-terminated. Allocation reduces a length and advances its start.
 Free space is not a bitmap.
 
+## Working on an image directly
+
+Take the image only after **`nlvm pool deactivate POOL1`**, not merely after
+unmounting the volume. A clean deactivation rewrites the `CKP7` checkpoints
+(blocks 10 and 266) and `PASM`, leaving nothing outstanding.
+
+This matters: an image copied while the pool was active still has journal
+entries to replay, and mounting it replays them — which silently reverts an
+edited `DirH` header while leaving the raw entry bytes in place, so the change
+appears to have been ignored rather than undone.
+
 ## What is not known
 
 Volumes hand-authored from these notes **mount and read correctly**, verified
 cold against Novell's own module — a file written with its own allocation reads
-back byte-exact. They are, however, **read-only in practice**: NSS refuses the
-first write and deactivates the pool.
+back byte-exact, and on a quiesced image it is listed on the first mount. They
+are, however, **read-only in practice**: NSS refuses the first write to them and
+deactivates the pool.
 
-The likeliest reason is that every tree modification is journalled
-(`DBT_logInsertRecord` and its siblings), so an edit made directly to the media
-is invisible to the log and the two disagree. This is consistent with the
-observed behaviour — reads never consult the log, writes do, and journal replay
-on mount will revert a hand-edited directory header while leaving the raw entry
-bytes untouched. It has not been proved.
+The cause is not established. Nine explanations have been tested and ruled out,
+including the record's contents (NSS's own bytes for a file of identical shape
+were transplanted), every header counter, the parent index node (NSS leaves it
+untouched when it adds a record itself), and the journal. Journalling is real —
+`DBT_logInsertRecord` and its siblings log every tree modification, and replay
+is what reverts edits to an unquiesced image — but a quiesced base with a
+correctly placed record still refuses writes, so the log is not the explanation
+either.
+
+Anything produced from these notes should therefore be treated as read-only
+until that is understood.
