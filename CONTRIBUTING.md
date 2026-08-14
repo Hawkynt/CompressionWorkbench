@@ -48,6 +48,26 @@ dotnet test --filter "Category=OsIntegration"
 
 ---
 
+## Branches and pull requests
+
+Changes reach `main` through pull requests, not direct pushes.
+
+1. Branch off current `main`, one branch per feature or issue, named `<kind>/<short-slug>` — `feat/`, `fix/`, `docs/`, `perf/`, `refactor/`, `chore/`.
+2. Keep one concern per branch. A branch that fixes two unrelated things is two branches.
+3. Build and test until green, then commit and push the branch.
+4. Open a pull request. Say what changed and how it was verified; write `Closes #n` so merging closes the issue.
+5. Merge the pull request and delete the branch.
+
+```bash
+git switch -c fix/deflate-block-boundary main
+# ...work, build, test...
+git push -u origin fix/deflate-block-boundary
+gh pr create --fill
+gh pr merge --squash --delete-branch
+```
+
+---
+
 ## Continuous Integration
 
 The repository uses GitHub Actions for build, test, coverage, and release automation. All workflow files live in `.github/workflows/`.

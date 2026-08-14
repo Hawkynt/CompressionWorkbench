@@ -24,16 +24,32 @@ now and get mirrored here.
 - **No AI traces anywhere**: no `Co-Authored-By` AI lines, no "Generated
   with" footers, no agent mentions in messages, comments, or authorship.
 
+## Branches and pull requests
+
+- **Nothing lands on `main` directly.** Every change starts on its own
+  branch, one branch per feature or issue, named `<kind>/<short-slug>` —
+  `feat/`, `fix/`, `docs/`, `perf/`, `refactor/`, `chore/`.
+- **One concern per branch**, the same rule the commit grouping follows: a
+  branch that fixes two unrelated things is two branches.
+- **Merge through a pull request**, never by pushing to `main`. The PR body
+  says what changed and how it was verified; link the issue it closes with
+  `Closes #n` so the merge closes it.
+- **Delete the branch after merge.** A stale branch outlives its reason and
+  starts to look like work in progress.
+
 ## The loop (always, in this order)
 
-1. **Before committing**: build and run the required test tier until green
+1. **Branch** off current `main` (see above).
+2. **Before committing**: build and run the required test tier until green
    (external-tool round-trips, OS integration, polyglot readers and
    wall-clock Performance tests are the advisory tiers — exactly the
    category scheme the house standard adopted from this repo). Tests must
    stay cross-platform: path/separator/case assumptions break the Linux leg.
-2. **Commit** (rules above) and **push**.
-3. **Wait for CI**; on `main` a green CI triggers the nightly (prerelease +
-   GFS prune, same-day replace). Fix and loop until everything is green.
+3. **Commit** (rules above) and **push the branch**.
+4. **Open a pull request** and let CI run against it. Fix and loop until
+   everything is green.
+5. **Merge the PR**, then delete the branch. On `main` a green CI triggers
+   the nightly (prerelease + GFS prune, same-day replace).
 
 Stable releases are **manual** (`gh workflow run release.yml`) — never cut
 one unless explicitly asked.
