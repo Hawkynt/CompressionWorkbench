@@ -195,7 +195,12 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
         8 => Nrv2eBuildingBlock.DecompressRaw(compressed, (int)h.UncompressedSize),
         9 => Nrv2eBuildingBlock.DecompressRawLe16(compressed, (int)h.UncompressedSize),
         10 => Nrv2eBuildingBlock.DecompressRawByte(compressed, (int)h.UncompressedSize),
-        14 => new LzmaBuildingBlock().Decompress(compressed),
+        // UPX stores a bare LZMA stream and carries the output size in its own
+        // header. Our LzmaBuildingBlock expects the container we write ourselves —
+        // five property bytes then a length — so handing it this payload makes it
+        // read a length out of compressed data and try to allocate it.
+        14 => throw new NotSupportedException(
+          "UPX LZMA payloads are a bare stream sized by the PackHeader; decoding them needs a size-driven entry point that is not wired yet."),
         15 => TryDeflate(compressed, (int)h.UncompressedSize),
         _ => throw new NotSupportedException($"Unsupported UPX compression method {h.Method}."),
       };
@@ -254,12 +259,13 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
           8 => Nrv2eBuildingBlock.DecompressRaw(compressed, expectedSize),
           9 => Nrv2eBuildingBlock.DecompressRawLe16(compressed, expectedSize),
           10 => Nrv2eBuildingBlock.DecompressRawByte(compressed, expectedSize),
-          14 => new LzmaBuildingBlock().Decompress(compressed),
+          14 => null, // see the sized-payload path: a bare UPX LZMA stream has no container to read
+
           15 => TryDeflate(compressed, expectedSize),
           _ => throw new NotSupportedException(),
         };
-        if (data.Length == expectedSize)
-          return (data, UpxReader.MethodName(method));
+        if (data is { } decoded && decoded.Length == expectedSize)
+          return (decoded, UpxReader.MethodName(method));
       } catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or NotSupportedException
           or ArgumentException or IndexOutOfRangeException or OverflowException or EndOfStreamException) {
         // Try the next UPX codec variant; a headerless payload has no method byte.

@@ -312,10 +312,14 @@ public sealed class UpxReader {
         var payloadLen = uAdler;
         var compressedLen = cAdler;
         var originalFileLen = filterId;
+        // The payload is the runtime memory image, which routinely runs larger
+        // than the file it was built from — virtual space costs nothing on disk.
+        // Bounding it by the original file length rejects perfectly good headers.
         if (payloadLen != 0 &&
             compressedLen != 0 &&
             compressedLen <= payloadLen &&
-            payloadLen <= originalFileLen &&
+            originalFileLen != 0 &&
+            payloadLen <= 0x10000000 &&
             originalFileLen <= 0x10000000)
           return new PackerHeader(
             Offset: pos,
