@@ -498,6 +498,8 @@ public class ExecutablePackerFrameworkTests {
 
   [Test, Category("HappyPath")]
   public void MPressHandler_LocatesMpressSectionsAsPayloadCandidates() {
+    // The fixture's .MPRESS1 holds random bytes, so its header describes no LZMA stream:
+    // the handler must carve both sections and stop, rather than decode noise.
     var packed = BuildMPressLikePe();
 
     var match = ExecutablePackerHandlers.DetectBest(packed);
@@ -510,7 +512,7 @@ public class ExecutablePackerFrameworkTests {
       Assert.That(result!.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
       Assert.That(result.Artifacts.Any(a => a.Name == "payload_candidates/candidate_000_.MPRESS1.bin"), Is.True);
       Assert.That(result.Artifacts.Any(a => a.Name == "payload_candidates/candidate_001_.MPRESS2.bin"), Is.True);
-      Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
+      Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedPackerVersion), Is.True);
     });
   }
 
@@ -545,12 +547,12 @@ public class ExecutablePackerFrameworkTests {
   }
 
   [Test, Category("HappyPath")]
-  public void MPressHandler_ReportsPreciseRemainingTransform() {
+  public void MPressHandler_ContainerItCannotRead_SaysSoInsteadOfClaimingDecompression() {
     var result = ExecutablePackerHandlers.TryUnpack(BuildMPressLikePe())!;
-    var note = result.Diagnostics.Single(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod).Message;
+    var note = result.Diagnostics.Single(d => d.Code == ExecutableDiagnosticCode.UnsupportedPackerVersion).Message;
     Assert.Multiple(() => {
       Assert.That(note, Does.Contain("LZMA"));
-      Assert.That(note, Does.Contain("E8/E9"));
+      Assert.That(note, Does.Contain("MPRESS 1.x"));
       Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanDecompressPayload), Is.False);
     });
   }
