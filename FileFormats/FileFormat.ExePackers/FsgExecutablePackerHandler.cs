@@ -18,6 +18,59 @@ public sealed class FsgExecutablePackerHandler : AplibSectionPackerHandler {
 
   private static ReadOnlySpan<byte> FsgMagic => "FSG!"u8;
 
+  /// <summary>
+  /// Walks FSG's own block list first — the packer concatenates one bare aPLib
+  /// stream per original section and only the entry-point stub says where they
+  /// start, which no amount of scanning section boundaries will find. Images
+  /// whose stub is not the shape <see cref="FsgImage"/> models fall through to
+  /// the shared aPLib scan.
+  /// </summary>
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    if (!FsgImage.TryRead(packed.OriginalImage, options.MaximumDecompressedSize, out var blocks))
+      return base.Unpack(packed, options);
+
+    var payload = FsgImage.Assemble(packed.OriginalImage, blocks);
+    if (payload.Length == 0)
+      return base.Unpack(packed, options);
+
+    var artifacts = new List<UnpackArtifact> {
+      new("metadata.json", this.BuildMetadataJson(packed), "stored"),
+      new("original_packed.bin", packed.OriginalImage, "stored"),
+      new("decompressed_payload.bin", payload, "fsg-aplib"),
+    };
+
+    var caps = ExecutableUnpackCapabilities.CanDetect |
+      ExecutableUnpackCapabilities.CanLocatePayload |
+      ExecutableUnpackCapabilities.CanDecompressPayload |
+      ExecutableUnpackCapabilities.SupportsPe |
+      ExecutableUnpackCapabilities.SupportsX86;
+
+    var level = ExecutableUnpackLevel.PayloadDecompressed;
+    if (packed.ImageInfo is { Container: ExecutableContainerKind.Pe } info) {
+      try {
+        artifacts.Add(new("reconstructed/reconstructed.exe", PeRebuilder.RebuildSynthetic(info, payload), "stored"));
+        level = ExecutableUnpackLevel.RebuiltExecutable;
+        caps |= ExecutableUnpackCapabilities.CanRebuildExecutable;
+      } catch (Exception ex) when (ex is InvalidDataException or ArgumentException or OverflowException) {
+        // A synthetic rebuild is a bonus; the decoded blocks stand on their own.
+      }
+    }
+
+    var diagnostics = new List<ExecutableDiagnostic> {
+      new(ExecutableDiagnosticCode.RunnableRebuildNotGuaranteed,
+        $"FSG payload decoded: {blocks.Count} aPLib block(s) placed at RVA " +
+        string.Join(", ", blocks.Select(b => $"0x{b.Rva:X}")) + ".",
+        false),
+      new(ExecutableDiagnosticCode.RunnableRebuildNotGuaranteed,
+        "FSG discards the original PE headers and rebuilds imports from its own tables; the decoded image is the mapped section content, not a byte-identical copy of the input file.",
+        false),
+    };
+
+    var result = new UnpackResult(level, caps, artifacts, diagnostics);
+    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
+    return result with { Artifacts = artifacts };
+  }
+
   protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
     var idx = PackerScanner.IndexOfBounded(image, FsgMagic, 0x4000);
     if (idx >= 0)
