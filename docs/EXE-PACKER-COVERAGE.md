@@ -60,6 +60,7 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | UPX | 130 | 130 | 129 |
 | ASPack | 130 | 130 | 130 |
 | Packman | 130 | 130 | 128 |
+| MPRESS | 130 | 129 | 123 |
 | MEW | 130 | 130 | 98 |
 | PECompact | 130 | 130 | 6 |
 | FSG | 130 | 128 | 2 |
@@ -67,13 +68,13 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | eXpressor | 130 | 130 | 0 |
 | JDPack | 130 | 129 | 0 |
 | Molebox | 130 | 130 | 0 |
-| MPRESS | 130 | 129 | 0 |
 | Neolite | 130 | 124 | 0 |
 | PEtite | 130 | 129 | 0 |
 | WinUpack | 130 | 130 | 0 |
 | Yoda's Crypter | 130 | 130 | 0 |
 | Yoda's Protector | 130 | 130 | 0 |
 | **Total** | **2470** | **2465** | **496** |
+| **Total** | **2470** | **2465** | **489** |
 
 Recognition is effectively complete at 99.8%; inflation is at 20%. The gap is
 the honest shape of the *Locate* level — the payload is found and never
@@ -91,6 +92,14 @@ encoder and decoder had drifted into a private dialect that agreed with itself
 and nothing else, and the PackHeader validator rejected any binary whose image
 outgrew the file it came from. Round-trip tests could not see either.
 
+MPRESS moved from 0 to 123 for a different reason: its payload was stock LZMA1
+all along, but with the 13-byte container stripped, so nothing in the codebase
+could be handed the stream. Of the 7 that remain, 6 are MPRESS 1.x samples,
+which pack with another codec, and 1 is not packed at all — it carries neither
+an `.MPRESS` section nor the MPRESS/MATCODE literal, so every 2.x sample in the
+slice decompresses. All 130 are 32-bit; the x86 call-transform pass is applied
+to 64-bit images unverified.
+
 ## Dataset packers
 
 | Packer              | Level   | Core / notes |
@@ -103,7 +112,7 @@ outgrew the file it came from. Round-trip tests could not see either.
 | _(unnamed aPLib)_   | Unpack  | `aplib_pe` generic fallback: any PE whose section inflates to a clean aPLib stream. |
 | _(unnamed NRV)_     | Unpack  | `nrv_pe` generic fallback: any PE whose section inflates as NRV2B/2D/2E to a plausible payload. |
 | MEW                 | Unpack* | MEW section layout is recognized; the sampled corpus path inflates through managed generic payload recovery and emits `reconstructed/reconstructed.exe`. Other MEW variants fall back to payload location. |
-| MPRESS              | Locate  | `.MPRESS1` / `.MPRESS2` payload sections emitted by the `mpress` handler; managed decompression/transform reversal remains. |
+| MPRESS              | Unpack  | 2.x: `.MPRESS1` carries a bare LZMA1 stream behind a 8-byte header of MPRESS's own (page count, packed size, lc/lp/pb), decoded through `BB_Lzma`'s raw entry point; the loader's E8/E9 operand transform is reversed, giving the original address space as `unpacked_image.bin`. Import-table and section-layout rebuild remain. 1.x packs with another codec and stays at payload-located. |
 | NSPack              | Locate  | Named `nspack` handler emits `nsp1`/largest `nsp*` payload sections; managed decompression/transform recovery remains. |
 | PEtite              | Locate  | `.petite` packer section is emitted as `compressed_payload.bin`; custom aPLib-ish recovery remains. |
 | Themida             | Detect/Locate | Runtime protector. The `themida` handler emits the `.boot`/protected section as `protected_section_*.bin` when present; it never runs the generic aPLib/NRV probes and never claims a decompression (runtime-protector diagnostic). |

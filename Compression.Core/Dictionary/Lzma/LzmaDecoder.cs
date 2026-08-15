@@ -68,6 +68,42 @@ public sealed class LzmaDecoder {
   }
 
   /// <summary>
+  /// Initializes a new LZMA decoder for a raw stream whose coding parameters are known
+  /// from the outside instead of from a properties header.
+  /// </summary>
+  /// <remarks>
+  /// Embedders such as executable packers strip the 13-byte LZMA container and keep
+  /// lc/lp/pb and the uncompressed size in a private header of their own, so the
+  /// range-coded data starts right at the first byte of <paramref name="input"/>.
+  /// </remarks>
+  /// <param name="input">The stream positioned at the first range-coder byte.</param>
+  /// <param name="literalContextBits">The number of literal context bits (0-8).</param>
+  /// <param name="literalPositionBits">The number of literal position bits (0-4).</param>
+  /// <param name="positionBits">The number of position bits (0-4).</param>
+  /// <param name="dictionarySize">The dictionary size in bytes.</param>
+  /// <param name="uncompressedSize">The expected uncompressed size, or -1 for end-marker termination.</param>
+  public LzmaDecoder(Stream input, int literalContextBits, int literalPositionBits, int positionBits, int dictionarySize, long uncompressedSize = -1) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentOutOfRangeException.ThrowIfNegative(literalContextBits);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(literalContextBits, 8);
+    ArgumentOutOfRangeException.ThrowIfNegative(literalPositionBits);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(literalPositionBits, 4);
+    ArgumentOutOfRangeException.ThrowIfNegative(positionBits);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(positionBits, 4);
+    ArgumentOutOfRangeException.ThrowIfLessThan(dictionarySize, 1);
+
+    this._input = input;
+    this._uncompressedSize = uncompressedSize;
+    this._dictionarySize = dictionarySize;
+
+    for (var i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
+      this._posSlotDecoder[i] = new(6);
+
+    this.SetProperties(literalContextBits, literalPositionBits, positionBits);
+    this.ResetState();
+  }
+
+  /// <summary>
   /// Initializes a new LZMA decoder for chunk-wise use by <see cref="Lzma2Decoder"/>.
   /// The properties arrive later with the first chunk that carries them.
   /// </summary>
@@ -190,6 +226,10 @@ public sealed class LzmaDecoder {
     var lp = value % 5;
     var pb = value / 5;
 
+    this.SetProperties(lc, lp, pb);
+  }
+
+  private void SetProperties(int lc, int lp, int pb) {
     // lc/lp shape the literal sub-coder table, so only a change reshapes it. Its
     // probabilities need no clearing here: new properties always come with a state reset.
     if (lc != this._lc || lp != this._lp)
