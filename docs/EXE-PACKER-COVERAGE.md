@@ -39,11 +39,58 @@ The packer cluster is unlocked by a small set of raw codecs, all clean-room:
   NRV2B/2D/2E stream only after it inflates to a plausible executable or text
   payload.
 
+## Measured against a corpus
+
+The levels below are per-packer judgements. This table is the other thing: what
+happens when every sample of the
+[chesvectain/PackingData](https://github.com/chesvectain/PackingData) corpus is
+run through `ExecutablePackerHandlers.DetectBest` and unpacked — 130 samples per
+packer, 2470 in all. "Decompressed" counts samples reaching
+`PayloadDecompressed` or better.
+
+| Packer | Samples | Detected | Decompressed |
+|---|---|---|---|
+| UPX | 130 | 130 | 129 |
+| Packman | 130 | 130 | 128 |
+| MEW | 130 | 130 | 98 |
+| PECompact | 130 | 130 | 6 |
+| BeRoEXEPacker | 130 | 130 | 2 |
+| FSG | 130 | 128 | 2 |
+| exe32pack | 130 | 126 | 1 |
+| ASPack | 130 | 130 | 0 |
+| eXpressor | 130 | 130 | 0 |
+| JDPack | 130 | 129 | 0 |
+| Molebox | 130 | 130 | 0 |
+| MPRESS | 130 | 129 | 0 |
+| Neolite | 130 | 124 | 0 |
+| PEtite | 130 | 129 | 0 |
+| RLPack | 130 | 130 | 0 |
+| WinUpack | 130 | 130 | 0 |
+| Yoda's Crypter | 130 | 130 | 0 |
+| Yoda's Protector | 130 | 130 | 0 |
+| **Total** | **2470** | **2465** | **366** |
+
+Recognition is effectively complete at 99.8%; inflation is at 15%. The gap is
+the honest shape of the *Locate* level — the payload is found and never
+decompressed — and the table says so per packer rather than per hand-picked
+sample.
+
+Two caveats on reading it. Byte-exact recovery of the pre-packing original is
+not the bar and no tool meets it: `upx -d` returns 174,911 bytes for an original
+of 174,968 (95.4% identical), because packing rebuilds the PE. And a decompressed
+payload is the runtime memory image, so it does not contain the original file's
+bytes verbatim until the packer's filter is reversed as well.
+
+UPX moved from 45 to 129 of 130 in this measurement's own history: the NRV2B
+encoder and decoder had drifted into a private dialect that agreed with itself
+and nothing else, and the PackHeader validator rejected any binary whose image
+outgrew the file it came from. Round-trip tests could not see either.
+
 ## Dataset packers
 
 | Packer              | Level   | Core / notes |
 |---------------------|---------|--------------|
-| UPX                 | Unpack  | NRV2B/D/E + LZMA; full detect-to-decompress-to-memory-image-to-synthetic rebuild. |
+| UPX                 | Unpack  | NRV2B/D/E + LZMA; full detect-to-decompress-to-memory-image-to-synthetic rebuild. LZMA-mode payloads (method 14) are a bare stream sized by the PackHeader and still need a size-driven entry point; they report that rather than decoding. |
 | FSG                 | Locate* | `FSG!` marker and t/ta/a structural layouts are recognized; structural fixtures and the sampled corpus path emit payload candidates; synthetic aPLib-FSG fixtures unpack. |
 | ASPack              | Locate  | Corpus sample is recognized and emits candidate payloads, but does not expose a clean bare aPLib stream. |
 | PECompact           | Locate  | Corpus sample is recognized and emits candidate payloads; plug-in codec/transform recovery remains. |
