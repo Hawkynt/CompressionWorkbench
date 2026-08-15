@@ -82,6 +82,19 @@ public class PetiteExecutablePackerHandlerTests {
     });
   }
 
+  [Test, Category("HappyPath")]
+  public void Handler_ReversesTheBranchTransformOnTheCodeBlock() {
+    var code = BuildCodePayload(0x2000);
+    var stored = ApplyBranchFilter(code);
+    Assert.That(stored, Is.Not.EqualTo(code).AsCollection);
+    var image = BuildPetitePe(stored, BuildCompressiblePayload(0x800));
+    var handler = new PetiteExecutablePackerHandler();
+
+    var result = handler.Unpack(handler.Parse(image, handler.Detect(image)), new UnpackOptions());
+
+    Assert.That(result.Artifacts.Single(a => a.Name == "sections/rva_00001000.bin").Data, Is.EqualTo(code).AsCollection);
+  }
+
   [Test, Category("EdgeCase")]
   public void Handler_FallsBackAndReportsFailure_WhenBlockTableIsAbsent() {
     var image = BuildPetitePe(BuildCodePayload(0x2000), BuildCompressiblePayload(0x800), corruptTableReference: true);
@@ -110,6 +123,30 @@ public class PetiteExecutablePackerHandlerTests {
       BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(i + 1), 0x20 - 5);
     }
     return payload;
+  }
+
+  /// <summary>The packer-side transform: fold each opcode's own block offset into the branch target.</summary>
+  private static byte[] ApplyBranchFilter(byte[] block) {
+    var copy = (byte[])block.Clone();
+    var i = 0;
+    while (i < copy.Length - 5) {
+      int field;
+      int step;
+      if (copy[i] is 0xE8 or 0xE9) {
+        field = i + 1;
+        step = 5;
+      } else if (copy[i] == 0x0F && copy[i + 1] is >= 0x80 and <= 0x8F) {
+        field = i + 2;
+        step = 6;
+      } else {
+        ++i;
+        continue;
+      }
+
+      BinaryPrimitives.WriteUInt32LittleEndian(copy.AsSpan(field), BinaryPrimitives.ReadUInt32LittleEndian(copy.AsSpan(field)) + (uint)i);
+      i += step;
+    }
+    return copy;
   }
 
   private static byte[] BuildStoredBlock(byte[] payload) {
