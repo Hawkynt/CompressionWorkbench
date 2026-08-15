@@ -436,6 +436,56 @@ public sealed class PetiteExecutablePackerHandler : MinorExecutablePackerHandler
       ? new(true, this.Id, hasPetiteSection ? 0.93 : 0.82, [])
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "PEtite marker was not found.", true)]);
   }
+
+  public override ExecutableUnpackCapabilities Capabilities =>
+    ExecutableUnpackCapabilities.CanDetect |
+    ExecutableUnpackCapabilities.CanLocatePayload |
+    ExecutableUnpackCapabilities.CanDecompressPayload |
+    ExecutableUnpackCapabilities.SupportsPe |
+    ExecutableUnpackCapabilities.SupportsX86;
+
+  /// <summary>
+  /// Expands the PEtite block table (see <see cref="PetiteUnpacker"/>). Each
+  /// original section comes back as its own artifact; imports, relocations and
+  /// the original entry point are not restored, so the result stays at
+  /// <see cref="ExecutableUnpackLevel.PayloadDecompressed"/>.
+  /// </summary>
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    if (!PetiteUnpacker.TryUnpack(packed.OriginalImage, options.MaximumDecompressedSize, out var unpacked, out var failure) || unpacked == null)
+      return AddFailureDiagnostic(base.Unpack(packed, options), failure);
+
+    var artifacts = new List<UnpackArtifact> {
+      new("metadata.json", this.BuildMetadataJson(packed), "stored"),
+    };
+    var code = unpacked.Blocks.FirstOrDefault(b => b.BranchFilterReversed);
+    var payload = code.Data ?? unpacked.Blocks[0].Data;
+    artifacts.Add(new("decompressed_payload.bin", payload, "petite-deflate"));
+    foreach (var block in unpacked.Blocks)
+      artifacts.Add(new(
+        $"sections/rva_{block.DestinationRva:X8}.bin",
+        block.Data,
+        block.BranchFilterReversed ? "petite-deflate+branch" : "petite-deflate"));
+    artifacts.Add(new("memory_image.bin", unpacked.MemoryImage, "petite-deflate"));
+
+    var diagnostics = new List<ExecutableDiagnostic> {
+      new(ExecutableDiagnosticCode.RunnableRebuildNotGuaranteed,
+        $"PEtite: {unpacked.Blocks.Count} block(s) expanded from the table at RVA 0x{unpacked.BlockTableRva:X8}. " +
+        "Imports, relocations and the original entry point are not reconstructed, so no runnable executable is produced."),
+    };
+
+    var caps = this.Capabilities | ExecutableUnpackCapabilities.CanBuildMemoryImage;
+    var result = new UnpackResult(ExecutableUnpackLevel.PayloadDecompressed, caps, artifacts, diagnostics);
+    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
+    return result with { Artifacts = artifacts };
+  }
+
+  private static UnpackResult AddFailureDiagnostic(UnpackResult result, string failure) {
+    if (string.IsNullOrEmpty(failure))
+      return result;
+    var diagnostics = result.Diagnostics.ToList();
+    diagnostics.Add(new(ExecutableDiagnosticCode.DecompressionFailed, failure, true));
+    return result with { Diagnostics = diagnostics };
+  }
 }
 
 public sealed class YodaProtectorExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
