@@ -109,7 +109,13 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
     inputConsumed = 0;
     if (compressed.Length == 0 || maxOutputSize == 0) return [];
 
-    var output = new byte[maxOutputSize];
+    // The output grows on demand rather than being allocated at maxOutputSize up
+    // front. Packer handlers probe candidate payload offsets with a deliberately
+    // loose bound (a section length times the maximum aPLib expansion ratio), and
+    // a stream that is not aPLib at all aborts within a few tokens — so eagerly
+    // allocating that bound turned every rejected offset into a multi-megabyte
+    // zeroing, which dominated the cost of a payload scan.
+    var output = new byte[Math.Min(maxOutputSize, InitialOutputCapacity)];
     var reader = new AplibReader(compressed);
     var op = 0;
 
@@ -118,9 +124,10 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
     var lwm = 0;
     var r0 = 0;
 
-    while (op < output.Length) {
+    while (op < maxOutputSize) {
       if (reader.ReadBit() == 0) {
         // Literal.
+        Grow(ref output, op + 1, maxOutputSize);
         output[op++] = reader.ReadByte();
         lwm = 0;
         continue;
@@ -142,7 +149,7 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
           if (offs < 128) len += 2;
           r0 = offs;
         }
-        CopyMatch(output, ref op, offs, len);
+        CopyMatch(ref output, ref op, offs, len, maxOutputSize);
         lwm = 1;
         continue;
       }
@@ -156,7 +163,7 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
         }
         var len = 2 + (b & 1);
         var offs = b >> 1;
-        CopyMatch(output, ref op, offs, len);
+        CopyMatch(ref output, ref op, offs, len, maxOutputSize);
         r0 = offs;
         lwm = 1;
         continue;
@@ -166,6 +173,7 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
       var shortOffs = 0;
       for (var i = 0; i < 4; i++)
         shortOffs = (shortOffs << 1) + (int)reader.ReadBit();
+      Grow(ref output, op + 1, maxOutputSize);
       if (shortOffs == 0)
         output[op++] = 0;
       else {
@@ -180,10 +188,27 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
     return op == output.Length ? output : output[..op];
   }
 
-  private static void CopyMatch(byte[] output, ref int op, int offs, int len) {
+  /// <summary>Initial output capacity for a decode whose final size is not known up front.</summary>
+  private const int InitialOutputCapacity = 4096;
+
+  /// <summary>
+  /// Ensures <paramref name="output"/> can hold <paramref name="needed"/> bytes,
+  /// doubling its capacity but never growing past <paramref name="max"/>.
+  /// </summary>
+  private static void Grow(ref byte[] output, int needed, int max) {
+    if (needed <= output.Length)
+      return;
+    var capacity = output.Length;
+    while (capacity < needed)
+      capacity = capacity >= max / 2 ? max : capacity * 2;
+    Array.Resize(ref output, capacity);
+  }
+
+  private static void CopyMatch(ref byte[] output, ref int op, int offs, int len, int max) {
     if (offs <= 0 || offs > op) throw new InvalidDataException("aPLib: match offset points before start of output.");
+    Grow(ref output, (int)Math.Min((long)op + len, max), max);
     var src = op - offs;
-    for (var i = 0; i < len && op < output.Length; i++)
+    for (var i = 0; i < len && op < max; i++)
       output[op++] = output[src + i];
   }
 
