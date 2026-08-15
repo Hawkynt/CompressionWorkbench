@@ -84,7 +84,41 @@ public static class YodaCrypterStub {
     }
   }
 
+  /// <summary>Layer budget for images the packer was run over more than once.</summary>
+  private const int _MAX_PASSES = 4;
+
+  /// <summary>
+  /// Peels every Yoda's Crypter layer the image carries. Packing an already
+  /// packed file just appends a second <c>yC</c> section, and the outer walker
+  /// skips <c>yC</c> sections, so the inner stub survives the outer pass intact
+  /// and the same walk applies again.
+  /// </summary>
   public static YodaCrypterStubInfo Unpack(ReadOnlySpan<byte> image) {
+    var info = UnpackOnce(image);
+    var decrypted = new List<string>(info.DecryptedSections);
+    var skipped = new List<string>(info.SkippedSections);
+
+    for (var pass = 1; pass < _MAX_PASSES; ++pass) {
+      YodaCrypterStubInfo next;
+      try {
+        next = UnpackOnce(info.DecryptedImage);
+      } catch (InvalidDataException) {
+        break;
+      } catch (ArgumentOutOfRangeException) {
+        break;
+      }
+
+      foreach (var name in next.DecryptedSections)
+        if (!decrypted.Contains(name)) decrypted.Add(name);
+      foreach (var name in next.SkippedSections)
+        if (!skipped.Contains(name)) skipped.Add(name);
+      info = next with { DecryptedSections = decrypted, SkippedSections = skipped };
+    }
+
+    return info with { DecryptedSections = decrypted, SkippedSections = skipped };
+  }
+
+  private static YodaCrypterStubInfo UnpackOnce(ReadOnlySpan<byte> image) {
     var pe = YodaPeView.Parse(image);
     var stubSection = pe.FindStubSection() ?? throw new InvalidDataException("Yoda's Crypter: no yC section.");
     var stubStartRva = stubSection.VirtualAddress;

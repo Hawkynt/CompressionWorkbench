@@ -192,10 +192,7 @@ public abstract class ProtectorExecutablePackerHandlerBase : MinorExecutablePack
       caps |= ExecutableUnpackCapabilities.CanLocatePayload;
     }
 
-    diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
-      $"{this.DisplayName}: static full unpack not feasible (runtime protector). The original " +
-      "image is reconstructed only by executing the anti-debug / code-virtualization stub, so the " +
-      "handler stops at payload location; no managed decompression is attempted.", true));
+    diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod, this.StaticUnpackObstacle, true));
 
     caps |= ExecutableUnpackCapabilities.SupportsPe;
     if (packed.ImageInfo?.Architecture == CpuArchitecture.X86) caps |= ExecutableUnpackCapabilities.SupportsX86;
@@ -204,6 +201,17 @@ public abstract class ProtectorExecutablePackerHandlerBase : MinorExecutablePack
     artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
     return result with { Artifacts = artifacts };
   }
+
+  /// <summary>
+  /// Why this handler stops at payload location. The default is the honest
+  /// answer for a virtualizing protector; handlers whose obstacle is something
+  /// more specific should say so rather than let a user read "needs emulation"
+  /// where that is not the reason.
+  /// </summary>
+  protected virtual string StaticUnpackObstacle =>
+    $"{this.DisplayName}: static full unpack not feasible (runtime protector). The original " +
+    "image is reconstructed only by executing the anti-debug / code-virtualization stub, so the " +
+    "handler stops at payload location; no managed decompression is attempted.";
 
   /// <summary>An RWX section of a protector still counts as the located protected body.</summary>
   private static bool LooksProtected(PackerScanner.PeSectionRange s) {
@@ -478,11 +486,34 @@ public sealed class PetiteExecutablePackerHandler : MinorExecutablePackerHandler
   }
 }
 
+/// <summary>
+/// Yoda's Protector locates its payload but does not decode it.
+/// </summary>
+/// <remarks>
+/// The obstacle here is not execution. Walking the <c>.yP</c> stub shows the
+/// same construction as its Crypter sibling — a plaintext prologue whose
+/// <c>lodsb</c>/<c>stosb</c> loop decrypts the stub body — and the decrypted
+/// body holds a per-section-class byte cipher plus an LZO1X decompressor
+/// reading a four-byte uncompressed length ahead of the stream. Every step is
+/// static. What is still missing is the source the stub restores the original
+/// section names from: the packed section table is blank while both walkers
+/// dispatch on the original names, so which cipher belongs to which section
+/// cannot yet be decided. Until that is settled the handler locates and says
+/// why, rather than guessing at a decryption.
+/// </remarks>
 public sealed class YodaProtectorExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
   public override string Id => "yodaprotector";
   public override string DisplayName => "Yoda's Protector";
   protected override bool IsPackerSection(string name) => name.Contains("yP", StringComparison.OrdinalIgnoreCase);
   protected override ReadOnlySpan<byte> LiteralSignature => "yoda"u8;
+
+  protected override string StaticUnpackObstacle =>
+    "Yoda's Protector: payload located, not decoded. The stub is layered but static — a plaintext " +
+    "prologue decrypts the stub body, which carries a per-section-class polymorphic byte cipher and " +
+    "an LZO1X decompressor fed a four-byte uncompressed length — so this is not a case that needs " +
+    "emulation. The unresolved step is where the stub restores the original section names from: the " +
+    "packed section table is blank and both stub walkers dispatch on the original names, so the " +
+    "cipher for a given section cannot yet be identified. No decryption is attempted rather than guessed.";
 }
 
 public sealed class YodaCrypterExecutablePackerHandler : MinorExecutablePackerHandlerBase {

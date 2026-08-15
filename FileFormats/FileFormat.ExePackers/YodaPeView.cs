@@ -31,11 +31,22 @@ internal sealed class YodaPeView {
   public required int EntryPointFieldOffset { get; init; }
   public required IReadOnlyList<Section> Sections { get; init; }
 
+  /// <summary>
+  /// Picks the stub section the entry point actually sits in. An image packed
+  /// twice carries one <c>yC</c> section per pass — the outer stub is the one
+  /// holding the entry point, and the inner ones are skipped by its own walker.
+  /// </summary>
   public Section? FindStubSection() {
-    foreach (var section in this.Sections)
-      if (section.Name is "yC" or ".yC")
+    Section? first = null;
+    foreach (var section in this.Sections) {
+      if (section.Name is not ("yC" or ".yC"))
+        continue;
+      first ??= section;
+      var end = section.VirtualAddress + Math.Max(section.VirtualSize, section.RawSize);
+      if (this.EntryPoint >= section.VirtualAddress && this.EntryPoint < end)
         return section;
-    return null;
+    }
+    return first;
   }
 
   public static YodaPeView Parse(ReadOnlySpan<byte> image) {
