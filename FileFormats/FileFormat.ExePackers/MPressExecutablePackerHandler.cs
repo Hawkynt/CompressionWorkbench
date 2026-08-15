@@ -240,7 +240,9 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
   /// <c>v - q</c>, a negative value that <c>q</c> lifts back to non-negative is a
   /// displacement the packer biased and becomes <c>v + limit</c>, and anything else was
   /// left alone when packing. The scan resumes after the operand, so an operand byte can
-  /// never be mistaken for the next opcode.
+  /// never be mistaken for the next opcode. The rule was read off 32-bit loader stubs; the
+  /// operands are 32-bit displacements either way, so the same pass runs over 64-bit
+  /// images, which no sample seen so far has exercised.
   /// </remarks>
   private static void UndoCallTransform(byte[] image) {
     var limit = image.Length - 0x1000;

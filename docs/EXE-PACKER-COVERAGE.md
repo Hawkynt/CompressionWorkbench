@@ -94,9 +94,11 @@ outgrew the file it came from. Round-trip tests could not see either.
 
 MPRESS moved from 0 to 123 for a different reason: its payload was stock LZMA1
 all along, but with the 13-byte container stripped, so nothing in the codebase
-could be handed the stream. The 7 that remain are 6 MPRESS 1.x samples, which
-pack with another codec, and 1 sample carrying the MPRESS literal but no packed
-section at all.
+could be handed the stream. Of the 7 that remain, 6 are MPRESS 1.x samples,
+which pack with another codec, and 1 is not packed at all — it carries neither
+an `.MPRESS` section nor the MPRESS/MATCODE literal, so every 2.x sample in the
+slice decompresses. All 130 are 32-bit; the x86 call-transform pass is applied
+to 64-bit images unverified.
 
 ## Dataset packers
 
