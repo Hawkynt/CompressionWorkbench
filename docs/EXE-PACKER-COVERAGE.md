@@ -61,6 +61,7 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | ASPack | 130 | 130 | 130 |
 | Packman | 130 | 130 | 128 |
 | MPRESS | 130 | 129 | 123 |
+| PEtite | 130 | 129 | 128 |
 | MEW | 130 | 130 | 98 |
 | PECompact | 130 | 130 | 6 |
 | FSG | 130 | 128 | 2 |
@@ -75,6 +76,11 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | Yoda's Protector | 130 | 130 | 0 |
 | **Total** | **2470** | **2465** | **496** |
 | **Total** | **2470** | **2465** | **489** |
+| RLPack | 130 | 130 | 0 |
+| WinUpack | 130 | 130 | 0 |
+| Yoda's Crypter | 130 | 130 | 0 |
+| Yoda's Protector | 130 | 130 | 0 |
+| **Total** | **2470** | **2465** | **494** |
 
 Recognition is effectively complete at 99.8%; inflation is at 20%. The gap is
 the honest shape of the *Locate* level — the payload is found and never
@@ -114,7 +120,7 @@ to 64-bit images unverified.
 | MEW                 | Unpack* | MEW section layout is recognized; the sampled corpus path inflates through managed generic payload recovery and emits `reconstructed/reconstructed.exe`. Other MEW variants fall back to payload location. |
 | MPRESS              | Unpack  | 2.x: `.MPRESS1` carries a bare LZMA1 stream behind a 8-byte header of MPRESS's own (page count, packed size, lc/lp/pb), decoded through `BB_Lzma`'s raw entry point; the loader's E8/E9 operand transform is reversed, giving the original address space as `unpacked_image.bin`. Import-table and section-layout rebuild remain. 1.x packs with another codec and stays at payload-located. |
 | NSPack              | Locate  | Named `nspack` handler emits `nsp1`/largest `nsp*` payload sections; managed decompression/transform recovery remains. |
-| PEtite              | Locate  | `.petite` packer section is emitted as `compressed_payload.bin`; custom aPLib-ish recovery remains. |
+| PEtite              | Unpack  | `petite` handler walks the block table behind the entry stub, replays the block-move records and inflates every block with the PEtite DEFLATE dialect (dynamic Huffman announced as block type 1); code blocks get the absolute-branch-target transform reversed. Imports, relocations and the original entry point are not rebuilt. |
 | Themida             | Detect/Locate | Runtime protector. The `themida` handler emits the `.boot`/protected section as `protected_section_*.bin` when present; it never runs the generic aPLib/NRV probes and never claims a decompression (runtime-protector diagnostic). |
 | Yoda-Crypter        | Locate  | Named `yodacrypter` handler emits the `yC` section as `compressed_payload.bin`; cryptor transform recovery remains. |
 | WinUpack (Ultimate) | Locate  | `.Upack` virtual target plus raw payload section, and the Packing Box `PS...` three-section layout, emitted by the `winupack` handler; managed transform/decompression not yet recovered. |
