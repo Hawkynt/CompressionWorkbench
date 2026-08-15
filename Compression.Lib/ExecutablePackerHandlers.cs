@@ -42,6 +42,7 @@ public static class ExecutablePackerHandlers {
     new WardExecutablePackerHandler(),
     new M0dernP4ckerExecutablePackerHandler(),
     new MidgetPackExecutablePackerHandler(),
+    new PakkeroExecutablePackerHandler(),
 
     // Descriptor-wrapped handlers
     new DescriptorExecutablePackerHandler(new AsProtectFormatDescriptor()),
