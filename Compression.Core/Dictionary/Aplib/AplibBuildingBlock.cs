@@ -7,7 +7,8 @@ namespace Compression.Core.Dictionary.Aplib;
 /// <summary>
 /// aPLib — Jørgen Ibsen's byte-oriented LZ77 with an interleaved single-bit tag
 /// stream, used as the compression core of numerous Win32 PE packers
-/// (ASPack, FSG 2.0, PECompact 2, RLPack, and others).
+/// (FSG 2.0, PECompact 2, RLPack, and others; ASPack is commonly listed here
+/// too but uses a Huffman-coded stream of its own).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -53,7 +54,7 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "aPLib";
   /// <inheritdoc/>
-  public string Description => "aPLib (Ibsen) — byte-oriented LZ77 with interleaved tag-bit stream, the core of ASPack/FSG/PECompact/RLPack";
+  public string Description => "aPLib (Ibsen) — byte-oriented LZ77 with interleaved tag-bit stream, the core of FSG/PECompact/RLPack";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 

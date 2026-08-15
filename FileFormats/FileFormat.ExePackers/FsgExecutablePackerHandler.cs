@@ -37,29 +37,6 @@ public sealed class FsgExecutablePackerHandler : AplibSectionPackerHandler {
 }
 
 /// <summary>
-/// Real unpack handler for ASPack (Solodovnikov, 1998+) — a long-running aPLib-style
-/// Win32 PE compressor whose stub renames a section to <c>.aspack</c> / <c>.adata</c>
-/// and embeds the literal <c>"ASPack"</c> near the start. The shared base attempts an
-/// aPLib decode of the packed section.
-/// </summary>
-public sealed class AsPackExecutablePackerHandler : AplibSectionPackerHandler {
-  public override string Id => "aspack";
-  public override string DisplayName => "ASPack aPLib-packed PE";
-  protected override string PackerLabel => "ASPack";
-
-  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
-    var sections = PackerScanner.GetPeSections(image);
-    var hasSection = sections.Any(s =>
-      s.Name.Equals(".aspack", StringComparison.OrdinalIgnoreCase) ||
-      s.Name.Equals(".adata", StringComparison.OrdinalIgnoreCase));
-    var hasLiteral = PackerScanner.IndexOfBounded(image, "ASPack"u8, 0x10000) >= 0;
-    if (hasSection || hasLiteral)
-      return (true, hasSection && hasLiteral ? 1.0 : 0.85, "");
-    return (false, 0, "ASPack: neither .aspack/.adata section nor 'ASPack' literal found.");
-  }
-}
-
-/// <summary>
 /// Real unpack handler for PECompact 2 (Bitsum) — an aPLib-capable Win32 PE
 /// compressor whose stub carries a <c>"PEC2"</c> marker and typically renames
 /// sections to <c>.pec1</c>/<c>.pec2</c>. The shared base attempts an aPLib decode
