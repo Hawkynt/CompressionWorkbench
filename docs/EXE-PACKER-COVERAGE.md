@@ -55,52 +55,65 @@ The levels below are per-packer judgements. This table is the other thing: what
 happens when every sample of the
 [chesvectain/PackingData](https://github.com/chesvectain/PackingData) corpus is
 run through `ExecutablePackerHandlers.DetectBest` and unpacked — 130 samples per
-packer, 2470 in all. "Decompressed" counts samples reaching
-`PayloadDecompressed` or better.
+packer, 2470 in all.
 
-| Packer | Samples | Detected | Decompressed |
-|---|---|---|---|
-| RLPack | 130 | 130 | 130 |
-| BeRoEXEPacker | 130 | 130 | 130 |
-| UPX | 130 | 130 | 129 |
-| ASPack | 130 | 130 | 130 |
-| Molebox | 130 | 130 | 129 |
-| Packman | 130 | 130 | 128 |
-| MPRESS | 130 | 129 | 123 |
-| PEtite | 130 | 129 | 128 |
-| Yoda's Crypter | 130 | 130 | 129 |
-| MEW | 130 | 130 | 98 |
-| PECompact | 130 | 130 | 6 |
-| FSG | 130 | 128 | 2 |
-| exe32pack | 130 | 126 | 1 |
-| eXpressor | 130 | 130 | 0 |
-| JDPack | 130 | 129 | 0 |
-| Molebox | 130 | 130 | 0 |
-| MPRESS | 130 | 129 | 0 |
-| Neolite | 130 | 124 | 0 |
-| PEtite | 130 | 129 | 0 |
-| WinUpack | 130 | 130 | 0 |
-| Yoda's Protector | 130 | 130 | 0 |
-| **Total** | **2470** | **2465** | **496** |
-| **Total** | **2470** | **2465** | **489** |
-| RLPack | 130 | 130 | 0 |
-| WinUpack | 130 | 130 | 130 |
-| Yoda's Crypter | 130 | 130 | 0 |
-| Yoda's Protector | 130 | 130 | 0 |
-| **Total** | **2470** | **2465** | **494** |
-| **Total** | **2470** | **2465** | **496** |
-| **Total** | **2470** | **2465** | **495** |
+Two columns, because they answer different questions and only the second is
+evidence. *Claimed* counts samples reaching `PayloadDecompressed` or better,
+which is the unpacker's own opinion of itself. *Verified* counts samples where a
+distinctive 32-byte run taken from the original actually appears in what came
+back. A generic probe that inflates loader data scores the first and not the
+second, so a wide gap between the columns is the signal to go looking.
 
-Recognition is effectively complete at 99.8%; inflation is at 20%. The gap is
-the honest shape of the *Locate* level — the payload is found and never
-decompressed — and the table says so per packer rather than per hand-picked
-sample.
+Verification needs the pre-packing original, and only 1562 of the 2470 samples
+have one in the corpus; the *Compared* column says how many that was per packer,
+and *Claimed* is restricted to those so the two columns can be read against each
+other. Detection is measured over all 130.
 
-Two caveats on reading it. Byte-exact recovery of the pre-packing original is
-not the bar and no tool meets it: `upx -d` returns 174,911 bytes for an original
-of 174,968 (95.4% identical), because packing rebuilds the PE. And a decompressed
-payload is the runtime memory image, so it does not contain the original file's
-bytes verbatim until the packer's filter is reversed as well.
+| Packer | Samples | Detected | Compared | Claimed | Verified |
+|---|---|---|---|---|---|
+| ASPack | 130 | 130 | 111 | 111 | 101 |
+| BeRoEXEPacker | 130 | 130 | 127 | 127 | 123 |
+| exe32pack | 130 | 126 | 1 | 1 | 1 |
+| eXpressor | 130 | 130 | 110 | 110 | 39 |
+| FSG | 130 | 128 | 106 | 106 | 100 |
+| JDPack | 130 | 129 | 111 | 111 | 106 |
+| MEW | 130 | 130 | 126 | 126 | 120 |
+| Molebox | 130 | 130 | 104 | 104 | 100 |
+| MPRESS | 130 | 129 | 119 | 119 | 113 |
+| Neolite | 130 | 124 | 0 | 0 | 0 |
+| NSPack | 130 | 130 | 1 | 1 | 0 |
+| Packman | 130 | 130 | 125 | 125 | 42 |
+| PECompact | 130 | 130 | 6 | 6 | 0 |
+| PEtite | 130 | 129 | 55 | 55 | 55 |
+| RLPack | 130 | 130 | 125 | 125 | 115 |
+| UPX | 130 | 130 | 117 | 117 | 58 |
+| WinUpack | 130 | 130 | 108 | 108 | 107 |
+| Yoda's Crypter | 130 | 130 | 110 | 110 | 106 |
+| Yoda's Protector | 130 | 130 | 0 | 0 | 0 |
+| **Total** | **2470** | **2455** | **1562** | **1562** | **1286** |
+
+Recognition is 99.4%. Of the 1562 claims that could be checked, 1286 (82%) carry
+recognisable original code and 276 do not — those 276 are the honest count of
+what still needs looking at, and three packers own most of them: Packman (125
+claimed, 42 verified), UPX (117/58) and eXpressor (110/39).
+
+Read the gap carefully rather than as a bug count. The probe takes its 32-byte
+run from a third of the way into the original *file*, and a decompressed payload
+is the runtime memory *image* — so a sample can be unpacked correctly and still
+fail the probe when that run lands in an import directory or a relocation block
+the loader rebuilds instead of compressing. That is the likely story for UPX,
+whose payload is known-good by other measures. It is a reason to investigate a
+gap, not a reason to dismiss one.
+
+Byte-exact recovery of the pre-packing original is not the bar and no tool meets
+it: `upx -d` returns 174,911 bytes for an original of 174,968 (95.4% identical),
+because packing rebuilds the PE. Measuring against whole-file equality scores
+every packer here at zero and distinguishes nothing, which is why it is not the
+column.
+
+Five packers decompress nothing: Neolite, NSPack, PECompact and Yoda's Protector
+by not getting there at all, and exe32pack with a single sample. PECompact's 6
+claims and NSPack's 1 verify at zero, so they are not partial successes.
 
 UPX moved from 45 to 129 of 130 in this measurement's own history: the NRV2B
 encoder and decoder had drifted into a private dialect that agreed with itself
