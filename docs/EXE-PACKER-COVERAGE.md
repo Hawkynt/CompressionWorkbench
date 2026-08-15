@@ -64,6 +64,7 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | BeRoEXEPacker | 130 | 130 | 130 |
 | UPX | 130 | 130 | 129 |
 | ASPack | 130 | 130 | 130 |
+| Molebox | 130 | 130 | 129 |
 | Packman | 130 | 130 | 128 |
 | MPRESS | 130 | 129 | 123 |
 | PEtite | 130 | 129 | 128 |
@@ -74,6 +75,7 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | eXpressor | 130 | 130 | 0 |
 | JDPack | 130 | 129 | 0 |
 | Molebox | 130 | 130 | 0 |
+| MPRESS | 130 | 129 | 0 |
 | Neolite | 130 | 124 | 0 |
 | PEtite | 130 | 129 | 0 |
 | WinUpack | 130 | 130 | 0 |
@@ -146,7 +148,7 @@ which the stub rebuilds at run time and therefore never compressed.
 | Alienyze            | Locate  | Packer section emitted as payload artifact; transform recovery remains. |
 | Amber               | Locate  | Reflective PE loader. Carves a plaintext embedded PE as `embedded_pe.bin` when the loader stores one in the clear, else locates the (XOR/RC4-obscured) reflective payload; extraction, not decryption — the key lives in the shellcode stub. |
 | Enigma Virtual Box  | Unpack* | Named handler recognizes `.enigma1`/`.enigma2`; sampled corpus path inflates through managed aPLib recovery and emits `reconstructed/reconstructed.exe`. Real target remains bundled file-tree extraction. |
-| Molebox             | Locate  | Bundler/virtualizer section payloads emitted; file-tree extraction remains. |
+| Molebox             | Unpack  | MoleBox 2.x keeps the original section table (names mangled, virtual addresses intact) and replaces each section's raw data. The loader's own chain is replayed: an LCG keystream over an LZSS'd loader blob, an IDEA-protected configuration record, then per-section IDEA decryption and zlib inflation. Every one of the 415 recoverable sections in the corpus comes back byte-identical to the pre-pack original, and the original entry point and image base are recovered in all 104 samples that have one to compare against. Sections the packer drops (raw-data-less `.reloc`/`BSS`/`.tls`) are gone for good, so 63 of the 104 are fully recoverable and the rest are recoverable except for those sections. No corpus sample carries a bundled file tree; the trailer that would hold one (magic `0xCAFEBABE`) is emitted when present. |
 | Eronana Packer      | Unpack  | Static LZ77 + canonical-Huffman decoder validated byte-for-byte against a real packed sample; restores every stripped section and emits `reconstructed/reconstructed.exe` (RVA-mapped synthetic PE; the true OEP and import-directory RVA are reported in `metadata.json`). |
 | TELock              | Detect/Locate | Runtime protector (anti-debug/virtualization). Recognized by the `tElock` literal or a blank entry-bearing last section (FSG-shaped images are excluded so they route to the FSG handler). Emits the protected body as `protected_section_*.bin`; never runs the generic aPLib/NRV probes and never claims a decompression. |
 | Yoda-Protector      | Detect/Locate | Runtime protector. Emits the protected payload section where present; never claims a decompression (runtime-protector diagnostic; dump/emulation required). |
@@ -209,8 +211,8 @@ omitted. The Cyber Verification Program is the documented path for this class of
 ## Notes on the hard cases
 
 Virtualizers such as Themida, cryptors with anti-debug such as TELock and
-Yoda-Protector, and reflective or bundler loaders such as Amber, Enigma, and
-Molebox cannot in general be reduced to a static decompress. For those the
+Yoda-Protector, and reflective or bundler loaders such as Amber and Enigma
+cannot in general be reduced to a static decompress. For those the
 honest target is precise detection, payload or resource location and extraction
 where a container is present, and diagnostics that state a dynamic dump or
 emulation is required, never a false claim of a runnable rebuild.
