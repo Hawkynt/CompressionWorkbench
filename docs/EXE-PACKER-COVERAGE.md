@@ -39,6 +39,11 @@ The packer cluster is unlocked by a small set of raw codecs, all clean-room:
   recency-addressed distances. Decode only; ASPack's own format, reconstructed
   from its stub.
 - **NRV2B/D/E** - `BB_Nrv2b/d/e`, UPX and WinUpack core.
+- **NRV2B/D/E** - `BB_Nrv2b/d/e`, UPX core.
+- **Upack range coder** - `WinUpackStream` (`FileFormat.ExePackers`), the
+  LZMA-idiom binary range coder WinUpack actually uses. It is not NRV,
+  despite the packer's `.Upack` sections sitting next to UPX in every
+  taxonomy.
 - **LZMA** - `BB_Lzma`, MEW / MPRESS / RLPack-LZMA.
 - **Generic NRV PE** - `nrv_pe` fallback: carves PE sections and accepts a bare
   NRV2B/2D/2E stream only after it inflates to a plausible executable or text
@@ -77,10 +82,11 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | **Total** | **2470** | **2465** | **496** |
 | **Total** | **2470** | **2465** | **489** |
 | RLPack | 130 | 130 | 0 |
-| WinUpack | 130 | 130 | 0 |
+| WinUpack | 130 | 130 | 130 |
 | Yoda's Crypter | 130 | 130 | 0 |
 | Yoda's Protector | 130 | 130 | 0 |
 | **Total** | **2470** | **2465** | **494** |
+| **Total** | **2470** | **2465** | **496** |
 
 Recognition is effectively complete at 99.8%; inflation is at 20%. The gap is
 the honest shape of the *Locate* level — the payload is found and never
@@ -105,6 +111,13 @@ which pack with another codec, and 1 is not packed at all — it carries neither
 an `.MPRESS` section nor the MPRESS/MATCODE literal, so every 2.x sample in the
 slice decompresses. All 130 are 32-bit; the x86 call-transform pass is applied
 to 64-bit images unverified.
+WinUpack moved from 0 to 130 of 130 the moment the assumption that it shared
+UPX's NRV core was tested instead of inherited. Its loader stub is plain x86
+sitting in the packed image, and reading it shows an LZMA-idiom range coder.
+On the 108 corpus samples whose original is also in the corpus, 95.4% of the
+mapped image comes back byte for byte and 99 of them reproduce `.text`
+exactly; what is missing is the import directory and the base relocations,
+which the stub rebuilds at run time and therefore never compressed.
 
 ## Dataset packers
 
@@ -123,7 +136,7 @@ to 64-bit images unverified.
 | PEtite              | Unpack  | `petite` handler walks the block table behind the entry stub, replays the block-move records and inflates every block with the PEtite DEFLATE dialect (dynamic Huffman announced as block type 1); code blocks get the absolute-branch-target transform reversed. Imports, relocations and the original entry point are not rebuilt. |
 | Themida             | Detect/Locate | Runtime protector. The `themida` handler emits the `.boot`/protected section as `protected_section_*.bin` when present; it never runs the generic aPLib/NRV probes and never claims a decompression (runtime-protector diagnostic). |
 | Yoda-Crypter        | Locate  | Named `yodacrypter` handler emits the `yC` section as `compressed_payload.bin`; cryptor transform recovery remains. |
-| WinUpack (Ultimate) | Locate  | `.Upack` virtual target plus raw payload section, and the Packing Box `PS...` three-section layout, emitted by the `winupack` handler; managed transform/decompression not yet recovered. |
+| WinUpack (Ultimate) | Unpack  | Upack's own LZMA-idiom range coder plus its call/jump filter, driven by the parameter block the loader stub reads out of the section table. Both container shapes decode — the compressed header that folds the PE headers into the DOS stub, and the plain-header one. The import directory and base relocations are rebuilt by the stub at run time, so the decompressed memory image does not carry them. |
 | Neolite             | Locate* | Custom LZ payload section emitted by minor handler. *aPLib-mode payloads are caught by the generic aPLib fallback. |
 | Packman             | Unpack  | `.PACKMAN` handler uses the shared aPLib PE pipeline and produces decompressed payload plus synthetic rebuilt PE for the corpus sample. |
 | JDPack              | Locate  | `.jdpack` payload section emitted as `compressed_payload.bin`; custom LZ recovery remains. |
