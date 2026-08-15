@@ -37,7 +37,8 @@ public sealed class YodaCrypterFormatDescriptor : IFormatDescriptor, IArchiveFor
   public string Description =>
     "Yoda's Crypter / Yoda's Protector (Ashkbiz Danehkar) Win32 PE crypter — " +
     "surfaces the .yC/yC section table and the embedded \"Yoda's\" copyright. " +
-    "Decompression delegated to Yoda's Crypter Unpacker / generic PE unpackers.";
+    "Static decryption lives in the yodacrypter executable-unpacking handler; " +
+    "this descriptor only exposes the container.";
 
   private static ReadOnlySpan<byte> YodasLiteral => "Yoda's"u8;
 
@@ -88,7 +89,7 @@ public sealed class YodaCrypterFormatDescriptor : IFormatDescriptor, IArchiveFor
     sb.Append(CultureInfo.InvariantCulture, $"section_count = {sections.Count}\n");
     foreach (var (name, chars) in sections)
       sb.Append(CultureInfo.InvariantCulture, $"section = {name} flags=0x{chars:X8}\n");
-    sb.Append("note = decompression delegated to Yoda's Crypter Unpacker / RL!dePacker / QUnpack\n");
+    sb.Append("note = static decryption is performed by the yodacrypter executable-unpacking handler\n");
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 }

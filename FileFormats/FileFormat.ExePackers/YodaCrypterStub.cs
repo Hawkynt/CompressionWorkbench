@@ -39,7 +39,8 @@ public sealed record YodaCrypterStubInfo(
   IReadOnlyList<YodaByteOp> StubCipher,
   IReadOnlyList<YodaByteOp> SectionCipher,
   IReadOnlyList<string> DecryptedSections,
-  IReadOnlyList<string> SkippedSections);
+  IReadOnlyList<string> SkippedSections,
+  uint StubSectionRva);
 
 /// <summary>
 /// Static unpacker for Yoda's Crypter protected Win32 images.
@@ -97,8 +98,16 @@ public static class YodaCrypterStub {
     var info = UnpackOnce(image);
     var decrypted = new List<string>(info.DecryptedSections);
     var skipped = new List<string>(info.SkippedSections);
+    var walked = new HashSet<uint> { info.StubSectionRva };
 
     for (var pass = 1; pass < _MAX_PASSES; ++pass) {
+      // Only a pass that recovered an entry point may be followed by another.
+      // A stub whose entry-point slot could not be read leaves the header still
+      // pointing into that stub, and running the walk again would decrypt every
+      // section a second time and destroy the plaintext just recovered.
+      if (info.OriginalEntryPoint is null)
+        break;
+
       YodaCrypterStubInfo next;
       try {
         next = UnpackOnce(info.DecryptedImage);
@@ -108,11 +117,15 @@ public static class YodaCrypterStub {
         break;
       }
 
+      // Belt and braces: never walk the same stub section twice.
+      if (!walked.Add(next.StubSectionRva))
+        break;
+
       foreach (var name in next.DecryptedSections)
         if (!decrypted.Contains(name)) decrypted.Add(name);
       foreach (var name in next.SkippedSections)
         if (!skipped.Contains(name)) skipped.Add(name);
-      info = next with { DecryptedSections = decrypted, SkippedSections = skipped };
+      info = next;
     }
 
     return info with { DecryptedSections = decrypted, SkippedSections = skipped };
@@ -171,7 +184,7 @@ public static class YodaCrypterStub {
     if (entryPoint is { } rva)
       BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(pe.EntryPointFieldOffset), rva);
 
-    return new(working, entryPoint, stubCipher, sectionCipher, decrypted, skipped);
+    return new(working, entryPoint, stubCipher, sectionCipher, decrypted, skipped, stubStartRva);
   }
 
   /// <summary><c>mov esi, ds:[esi+0xc]</c> / <c>add esi, eax</c> / <c>call rel32</c> — the walker's call into the section cipher.</summary>

@@ -99,6 +99,19 @@ public class YodaCrypterStaticUnpackTests {
     Assert.That(stub, Is.Null);
   }
 
+  [Test, Category("EdgeCase")]
+  public void StaticUnpack_DoesNotDecryptTwiceWhenTheEntryPointSlotIsMissing() {
+    var plaintext = BuildTextSection();
+    // Without a readable entry-point slot the header keeps pointing into the
+    // stub, so a second walk would still match — and would undo the first.
+    var image = BuildPackedImage(plaintext, out _, withEntryPoint: false);
+
+    Assert.That(YodaCrypterStub.TryUnpack(image, out var stub), Is.True);
+    Assert.That(stub!.OriginalEntryPoint, Is.Null);
+    Assert.That(stub.DecryptedImage.AsSpan(_TEXT_RAW, _SECTION_SIZE).ToArray(), Is.EqualTo(plaintext),
+      "the section was decrypted more than once");
+  }
+
   private static byte[] BuildTextSection() {
     var buffer = new byte[_SECTION_SIZE];
     for (var i = 0; i < buffer.Length; ++i)
@@ -107,7 +120,7 @@ public class YodaCrypterStaticUnpackTests {
   }
 
   /// <summary>Builds a yC-packed image and reports the bytes of the section the stub must leave alone.</summary>
-  private static byte[] BuildPackedImage(byte[] textPlaintext, out byte[] rdataUntouched) {
+  private static byte[] BuildPackedImage(byte[] textPlaintext, out byte[] rdataUntouched, bool withEntryPoint = true) {
     var image = new byte[_STUB_RAW + _SECTION_SIZE];
     image[0] = (byte)'M';
     image[1] = (byte)'Z';
@@ -133,7 +146,7 @@ public class YodaCrypterStaticUnpackTests {
     rdataUntouched.CopyTo(image.AsSpan(_RDATA_RAW));
 
     EncryptWith(textPlaintext, _SECTION_CIPHER).CopyTo(image.AsSpan(_TEXT_RAW));
-    BuildStub().CopyTo(image.AsSpan(_STUB_RAW));
+    BuildStub(withEntryPoint).CopyTo(image.AsSpan(_STUB_RAW));
     return image;
   }
 
@@ -149,7 +162,7 @@ public class YodaCrypterStaticUnpackTests {
   }
 
   /// <summary>Assembles the two-layer stub: plaintext prologue, encrypted body.</summary>
-  private static byte[] BuildStub() {
+  private static byte[] BuildStub(bool withEntryPoint) {
     var stubVa = _IMAGE_BASE + _STUB_RVA;
     // The prologue reconstructs `delta` from its own address, exactly as the
     // packer's does; picking K fixes delta and hence the template constants.
@@ -176,13 +189,13 @@ public class YodaCrypterStaticUnpackTests {
     Assert.That(w.Count, Is.LessThanOrEqualTo(_BODY_OFFSET), "prologue overran the body");
     w.CopyTo(stub);
 
-    var body = BuildStubBody(stubVa, delta);
+    var body = BuildStubBody(stubVa, delta, withEntryPoint);
     EncryptWith(body, _STUB_CIPHER).CopyTo(stub.AsSpan(_BODY_OFFSET));
     return stub;
   }
 
   /// <summary>The decrypted stub body: walker anchor, skip table, entry-point slot and the section cipher.</summary>
-  private static byte[] BuildStubBody(uint stubVa, uint delta) {
+  private static byte[] BuildStubBody(uint stubVa, uint delta, bool withEntryPoint) {
     const int cipherAt = 0x40, entryPointAt = 0x60;
     var body = new byte[_BODY_LENGTH];
     var bodyVa = stubVa + _BODY_OFFSET;
@@ -200,14 +213,16 @@ public class YodaCrypterStaticUnpackTests {
     }
 
     // `mov edx,ebp; add edx,<base slot>; mov ebx,[edx]; mov edx,ebp; add edx,<entry slot>; add ebx,[edx]; ror ebx,7`
-    var oep = 0x19;
-    body[oep] = 0x8B; body[oep + 1] = 0xD5; body[oep + 2] = 0x81; body[oep + 3] = 0xC2;
-    BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(oep + 4), _IMAGE_BASE);
-    body[oep + 8] = 0x8B; body[oep + 9] = 0x1A;
-    body[oep + 10] = 0x8B; body[oep + 11] = 0xD5; body[oep + 12] = 0x81; body[oep + 13] = 0xC2;
-    BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(oep + 14), bodyVa + entryPointAt - delta);
-    body[oep + 18] = 0x03; body[oep + 19] = 0x1A;
-    body[oep + 20] = 0xC1; body[oep + 21] = 0xCB; body[oep + 22] = 0x07;
+    if (withEntryPoint) {
+      const int oep = 0x19;
+      body[oep] = 0x8B; body[oep + 1] = 0xD5; body[oep + 2] = 0x81; body[oep + 3] = 0xC2;
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(oep + 4), _IMAGE_BASE);
+      body[oep + 8] = 0x8B; body[oep + 9] = 0x1A;
+      body[oep + 10] = 0x8B; body[oep + 11] = 0xD5; body[oep + 12] = 0x81; body[oep + 13] = 0xC2;
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(oep + 14), bodyVa + entryPointAt - delta);
+      body[oep + 18] = 0x03; body[oep + 19] = 0x1A;
+      body[oep + 20] = 0xC1; body[oep + 21] = 0xCB; body[oep + 22] = 0x07;
+    }
 
     var cipher = new List<byte> { 0xAC };
     cipher.AddRange(EncodeCipher(_SECTION_CIPHER, withJunk: true));

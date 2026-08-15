@@ -557,21 +557,24 @@ public class ExecutablePackerFrameworkTests {
     });
   }
 
-  // ── Runtime protectors: honest Detect/Locate only ──────────────────────
-  // TELock, Yoda's Protector and the Themida fallback are runtime protectors:
-  // the original image is only recoverable by executing the anti-debug /
-  // virtualization stub under emulation. They must never advertise or produce a
-  // decompressed payload, and must carry an explicit runtime-protector diagnostic.
+  // ── Protectors: honest Detect/Locate only ──────────────────────────────
+  // None of these may advertise or produce a decompressed payload, and each
+  // must say why it stopped. TELock and the Themida fallback stop because the
+  // image only exists after the anti-debug / virtualization stub has run, so
+  // they carry the runtime-protector wording. Yoda's Protector stops for a
+  // different reason — its pipeline is static, but the section-name table the
+  // stub walkers dispatch on has not been recovered yet — and asserting the
+  // runtime-protector phrase there would enshrine a wrong explanation.
 
-  private static readonly (string HandlerId, string Section, string? Literal)[] Protectors = [
-    ("telock", "tElock", "tElock"),
-    ("yodaprotector", "yP0", "yoda"),
-    ("themida", "themida", null),
+  private static readonly (string HandlerId, string Section, string? Literal, string Obstacle)[] Protectors = [
+    ("telock", "tElock", "tElock", "runtime protector"),
+    ("yodaprotector", "yP0", "yoda", "section names"),
+    ("themida", "themida", null, "runtime protector"),
   ];
 
   [Test, Category("HappyPath")]
-  public void ProtectorHandlers_StayAtDetectOrLocate_WithRuntimeProtectorDiagnostic(
-      [ValueSource(nameof(Protectors))] (string HandlerId, string Section, string? Literal) p) {
+  public void ProtectorHandlers_StayAtDetectOrLocate_AndStateTheObstacle(
+      [ValueSource(nameof(Protectors))] (string HandlerId, string Section, string? Literal, string Obstacle) p) {
     var image = BuildProtectorLikePe(p.Section, p.Literal);
     var handler = ExecutablePackerHandlers.All.Single(h => h.Id == p.HandlerId);
 
@@ -584,8 +587,9 @@ public class ExecutablePackerFrameworkTests {
       Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanDecompressPayload), Is.False);
       Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanRebuildExecutable), Is.False);
       Assert.That(result.Artifacts.Any(a => a.Name == "decompressed_payload.bin"), Is.False);
-      Assert.That(result.Diagnostics.Any(d => d.Message.Contains("runtime protector", StringComparison.OrdinalIgnoreCase)),
-        Is.True, "must flag runtime-protector status");
+      Assert.That(result.Diagnostics.Any(d => d.IsError), Is.True, "must record why it stopped");
+      Assert.That(result.Diagnostics.Any(d => d.Message.Contains(p.Obstacle, StringComparison.OrdinalIgnoreCase)),
+        Is.True, $"must name its obstacle ({p.Obstacle})");
     });
   }
 
