@@ -428,7 +428,15 @@ public sealed class Nrv2eBuildingBlock : IBuildingBlock {
     private void RefillWord() {
       Span<byte> pad = stackalloc byte[4];
       var take = Math.Min(this._widthBytes, this._data.Length - this._pos);
-      if (take > 0) this._data.Slice(this._pos, take).CopyTo(pad);
+
+      // Running out of input is an error, not a source of infinite zero bits.
+      // The bit-consuming loops below terminate on a set bit, so a reader that
+      // silently padded past the end of the stream would spin forever on a
+      // truncated or misidentified payload instead of failing it.
+      if (take <= 0)
+        throw new InvalidDataException("NRV2E: unexpected end of bit stream.");
+
+      this._data.Slice(this._pos, take).CopyTo(pad);
       this._pos += take;
       uint raw = this._widthBytes switch {
         4 => BinaryPrimitives.ReadUInt32LittleEndian(pad),
