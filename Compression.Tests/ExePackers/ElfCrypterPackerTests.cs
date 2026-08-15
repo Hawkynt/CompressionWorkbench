@@ -336,26 +336,50 @@ public class ElfCrypterPackerTests {
     return s.ToArray();
   }
 
+  /// <summary>
+  /// Builds a sample shaped like a real MidgetPack output: an ELF64 stub whose
+  /// program header table gains an RWX <c>PT_LOAD</c> covering the appended
+  /// payload, with the payload's load address and length also written into the
+  /// stub's data area the way the run-time stub keeps them.
+  /// </summary>
   private static byte[] BuildMidgetPack(byte[] encryptedPayload, uint packType) {
-    // Minimal ELF64 stub carrying the stub_data_64 descriptor, then the payload.
-    const int descOffset = 0x80;
+    const int phoff = 0x40;
+    const int phentsize = 56;
+    const int phnum = 2;
+    const int descOffset = 0x100;
     const int stubLen = 0x200;
-    var stub = new byte[stubLen];
-    stub[0] = 0x7F; stub[1] = (byte)'E'; stub[2] = (byte)'L'; stub[3] = (byte)'F';
-    stub[4] = 2; stub[5] = 1; stub[6] = 1;
-    BinaryPrimitives.WriteUInt16LittleEndian(stub.AsSpan(0x10), 2);
-    BinaryPrimitives.WriteUInt16LittleEndian(stub.AsSpan(0x12), 0x3E);
-
-    // stub_data_64: magic@0 data_base@8 data_len@16 banner_addr@24 banner_len@32 type@36 hash_loops@80
-    BinaryPrimitives.WriteUInt32LittleEndian(stub.AsSpan(descOffset), 0xF00DBEA7);
-    BinaryPrimitives.WriteUInt64LittleEndian(stub.AsSpan(descOffset + 8), 0xDA7A000);
-    BinaryPrimitives.WriteUInt32LittleEndian(stub.AsSpan(descOffset + 16), (uint)encryptedPayload.Length);
-    BinaryPrimitives.WriteUInt32LittleEndian(stub.AsSpan(descOffset + 32), 0);      // banner_len
-    BinaryPrimitives.WriteUInt32LittleEndian(stub.AsSpan(descOffset + 36), packType);
-    BinaryPrimitives.WriteUInt32LittleEndian(stub.AsSpan(descOffset + 80), 20000);  // hash_loops
+    const ulong payloadAddress = 0xDA81380;
 
     var result = new byte[stubLen + encryptedPayload.Length];
-    stub.CopyTo(result.AsSpan());
+    result[0] = 0x7F; result[1] = (byte)'E'; result[2] = (byte)'L'; result[3] = (byte)'F';
+    result[4] = 2; result[5] = 1; result[6] = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(0x10), 2);     // ET_EXEC
+    BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(0x12), 0x3E);  // EM_X86_64
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(0x20), phoff);
+    BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(0x36), phentsize);
+    BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(0x38), phnum);
+
+    // The stub's own read/execute segment.
+    var stubSeg = result.AsSpan(phoff);
+    BinaryPrimitives.WriteUInt32LittleEndian(stubSeg, 1);            // PT_LOAD
+    BinaryPrimitives.WriteUInt32LittleEndian(stubSeg[4..], 5);       // PF_R|PF_X
+    BinaryPrimitives.WriteUInt64LittleEndian(stubSeg[8..], 0);
+    BinaryPrimitives.WriteUInt64LittleEndian(stubSeg[16..], 0x400000);
+    BinaryPrimitives.WriteUInt64LittleEndian(stubSeg[32..], stubLen);
+
+    // The appended payload segment: RWX and reaching exactly end-of-file.
+    var paySeg = result.AsSpan(phoff + phentsize);
+    BinaryPrimitives.WriteUInt32LittleEndian(paySeg, 1);             // PT_LOAD
+    BinaryPrimitives.WriteUInt32LittleEndian(paySeg[4..], 7);        // PF_R|PF_W|PF_X
+    BinaryPrimitives.WriteUInt64LittleEndian(paySeg[8..], stubLen);
+    BinaryPrimitives.WriteUInt64LittleEndian(paySeg[16..], payloadAddress);
+    BinaryPrimitives.WriteUInt64LittleEndian(paySeg[32..], (ulong)encryptedPayload.Length);
+
+    // The stub's copy of the payload address and length, followed by the pack type.
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(descOffset), payloadAddress);
+    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(descOffset + 8), (uint)encryptedPayload.Length);
+    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(descOffset + 12 + 0x10), packType);
+
     encryptedPayload.CopyTo(result.AsSpan(stubLen));
     return result;
   }
