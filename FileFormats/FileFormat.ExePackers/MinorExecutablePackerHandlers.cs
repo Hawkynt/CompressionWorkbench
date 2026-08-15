@@ -348,15 +348,6 @@ public sealed class Exe32packExecutablePackerHandler : MinorExecutablePackerHand
   }
 }
 
-public sealed class ExpressorExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-  public override string Id => "expressor";
-  public override string DisplayName => "EXpressor";
-  protected override bool IsPackerSection(string name) =>
-    name.Contains("exp", StringComparison.OrdinalIgnoreCase) ||
-    name.Contains("ex_", StringComparison.OrdinalIgnoreCase);
-  protected override ReadOnlySpan<byte> LiteralSignature => "EXpressor"u8;
-}
-
 public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandlerBase {
   public override string Id => "molebox";
   public override string DisplayName => "Molebox";

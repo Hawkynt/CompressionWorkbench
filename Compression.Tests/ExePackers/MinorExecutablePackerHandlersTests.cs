@@ -18,7 +18,8 @@ public class MinorExecutablePackerHandlersTests {
   // Only handlers that use the generic MinorExecutablePackerHandlerBase.Unpack
   // path (locate section + generic aPLib/NRV decode + synthetic-PE rebuild).
   // Handlers that override Unpack — JDPack (its own container, see
-  // JdpackExecutablePackerHandlerTests), Amber (reflective carve), the runtime
+  // JdpackExecutablePackerHandlerTests), EXpressor (its own LZMA chain, see
+  // ExpressorExecutablePackerHandlerTests), Amber (reflective carve), the runtime
   // protectors (TELock/Themida/Yoda's Protector), MEW/NSPack/Yoda's Crypter/FSG
   // fallbacks — and the standalone validated unpackers (Eronana/hXOR) are
   // exercised by their own dedicated tests, not this generic-aPLib parametrized
@@ -27,7 +28,6 @@ public class MinorExecutablePackerHandlersTests {
     ("alienyze", "Alienyze", ".alien"),
     ("beroexepacker", "BeRo", "bero"),
     ("exe32pack", "exe32pack", ".c"),
-    ("expressor", "EXpressor", "ex_"),
     ("molebox", "Molebox", "mole"),
     ("neolite", "NeoLite", "neolit"),
     ("petite", "Petite", ".petite"),
