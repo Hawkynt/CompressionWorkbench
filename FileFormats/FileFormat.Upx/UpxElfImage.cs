@@ -117,7 +117,7 @@ public static class UpxElfImage {
     var originalFileSize = BinaryPrimitives.ReadUInt32LittleEndian(image[(p + 4)..]);
     var blockSize = BinaryPrimitives.ReadUInt32LittleEndian(image[(p + 8)..]);
     if (originalFileSize == 0) { error = "UPX ELF p_info reports a zero original file size."; return null; }
-    if (originalFileSize > maximumDecompressedSize) {
+    if (originalFileSize > maximumDecompressedSize || originalFileSize > int.MaxValue) {
       error = "UPX ELF original size exceeds the configured executable unpacking limit.";
       return null;
     }
@@ -128,7 +128,7 @@ public static class UpxElfImage {
     // Block 0 is the original ELF header plus its program headers; everything
     // else about the layout is derived from what it decodes to.
     if (!TryReadBlock(image, ref cursor, out var headerBlock, out error)) return null;
-    if (!TryDecodeBlock(image, headerBlock, out var headerBytes, out error)) return null;
+    if (!TryDecodeBlock(image, headerBlock, originalFileSize, out var headerBytes, out error)) return null;
 
     if (!TryReadProgramHeaderTable(headerBytes, headerBytes[4] == 2, out var ophoff, out var ophentsize, out var ophnum, out error))
       return null;
@@ -148,6 +148,14 @@ public static class UpxElfImage {
       error = "The original ELF image has a first PT_LOAD smaller than its own header.";
       return null;
     }
+    // The segment table comes out of a compressed block, so it is as
+    // attacker-controlled as the rest. Every segment has to lie inside the file
+    // it claims to belong to before its size is used to size a buffer.
+    foreach (var load in loads)
+      if (load.FileOffset < 0 || load.FileSize < 0 || load.FileOffset + load.FileSize > originalFileSize) {
+        error = $"The original ELF image has a PT_LOAD at 0x{load.FileOffset:X} of 0x{load.FileSize:X} bytes that runs past its own {originalFileSize}-byte extent.";
+        return null;
+      }
 
     // Main chain: the header block, the tail of PT_LOAD[0], then one block per
     // remaining PT_LOAD.
@@ -169,7 +177,7 @@ public static class UpxElfImage {
         error = $"UPX ELF block at 0x{block.HeaderOffset:X} reports {block.UncompressedSize} bytes where the program-header table requires {want}.";
         return null;
       }
-      if (!TryDecodeBlock(image, block, out var data, out error)) return null;
+      if (!TryDecodeBlock(image, block, originalFileSize, out var data, out error)) return null;
       blocks.Add(block);
       blockData.Add(data);
     }
@@ -197,7 +205,7 @@ public static class UpxElfImage {
           notes.Add(holeError ?? $"No hole block describing {want} bytes was found where the container places it.");
           break;
         }
-        if (!TryDecodeBlock(image, block, out var data, out holeError)) {
+        if (!TryDecodeBlock(image, block, originalFileSize, out var data, out holeError)) {
           holesComplete = false;
           notes.Add(holeError!);
           break;
@@ -355,10 +363,20 @@ public static class UpxElfImage {
     return true;
   }
 
-  private static bool TryDecodeBlock(ReadOnlySpan<byte> image, Block block, out byte[] data, out string? error) {
+  private static bool TryDecodeBlock(
+      ReadOnlySpan<byte> image, Block block, long maximumBlockSize, out byte[] data, out string? error) {
     data = [];
     error = null;
-    var size = checked((int)block.UncompressedSize);
+
+    // Every block is a slice of the original file, so none of them can be
+    // larger than it. The b_info is attacker-controlled and this value sizes an
+    // allocation, so it has to be bounded before it is believed.
+    if (block.UncompressedSize > maximumBlockSize) {
+      error = $"The UPX ELF block at 0x{block.HeaderOffset:X} claims {block.UncompressedSize} bytes, more than the {maximumBlockSize}-byte image it is part of.";
+      return false;
+    }
+
+    var size = (int)block.UncompressedSize;
 
     if (block.Stored)
       data = image.Slice(block.DataOffset, size).ToArray();
