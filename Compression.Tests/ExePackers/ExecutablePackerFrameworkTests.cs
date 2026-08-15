@@ -19,6 +19,21 @@ namespace Compression.Tests.ExePackers;
 
 [TestFixture]
 public class ExecutablePackerFrameworkTests {
+  /// <summary>
+  /// Handlers that are registered for identification alone, because the format
+  /// they recognise provably keeps nothing recoverable in the file. Claiming any
+  /// payload capability for these would misreport what the handler can deliver,
+  /// so they are exempt from the rule below rather than padded with flags they
+  /// cannot honour. Entries here need evidence, not convenience.
+  /// </summary>
+  private static readonly string[] DetectionOnlyByFormat = [
+    // Pakkero launchers carry random padding instead of the packed program: over
+    // the 200-sample corpus the padding stays inside a 100 KiB band while the
+    // originals span 10 KiB to 8 MiB, and several samples are smaller than the
+    // best possible compression of the program they claim to wrap.
+    "pakkero",
+  ];
+
   [Test, Category("HappyPath")]
   public void RegisteredExecutablePackerHandlers_DoNotAdvertiseDetectionOnlyAsUnpacking() {
     var handlers = ExecutablePackerHandlers.All;
@@ -30,8 +45,32 @@ public class ExecutablePackerFrameworkTests {
       ExecutableUnpackCapabilities.CanRebuildExecutable |
       ExecutableUnpackCapabilities.CanProduceRunnableExecutable;
 
-    foreach (var handler in handlers)
+    foreach (var handler in handlers) {
+      if (DetectionOnlyByFormat.Contains(handler.Id))
+        continue;
       Assert.That(handler.Capabilities & realUnpacking, Is.Not.EqualTo(ExecutableUnpackCapabilities.None), handler.Id);
+    }
+  }
+
+  /// <summary>
+  /// Guards the exemption itself: a handler may only sit on the detection-only
+  /// list while it really advertises no payload capability. If one of them ever
+  /// learns to unpack, this fails and the entry has to go.
+  /// </summary>
+  [Test, Category("EdgeCase")]
+  public void DetectionOnlyHandlers_AdvertiseNoPayloadCapability() {
+    const ExecutableUnpackCapabilities realUnpacking =
+      ExecutableUnpackCapabilities.CanLocatePayload |
+      ExecutableUnpackCapabilities.CanDecompressPayload |
+      ExecutableUnpackCapabilities.CanBuildMemoryImage |
+      ExecutableUnpackCapabilities.CanRebuildExecutable |
+      ExecutableUnpackCapabilities.CanProduceRunnableExecutable;
+
+    foreach (var id in DetectionOnlyByFormat) {
+      var handler = ExecutablePackerHandlers.All.SingleOrDefault(h => h.Id == id);
+      Assert.That(handler, Is.Not.Null, id);
+      Assert.That(handler!.Capabilities & realUnpacking, Is.EqualTo(ExecutableUnpackCapabilities.None), id);
+    }
   }
 
   [Test, Category("HappyPath")]
