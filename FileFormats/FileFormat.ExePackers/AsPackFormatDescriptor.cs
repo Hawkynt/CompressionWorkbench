@@ -11,9 +11,10 @@ namespace FileFormat.ExePackers;
 /// (Solodovnikov, late 1990s) is a long-running Win32 PE compressor whose
 /// unpacker stub renames at least one section to <c>".aspack"</c> or
 /// <c>".adata"</c> and almost always embeds the literal <c>"ASPack"</c>
-/// somewhere in the first 64 KB of the file. The compression core itself is
-/// an aPLib-style LZ77, so an <c>"aPLib"</c> marker is occasionally present
-/// near the entry point as well.
+/// somewhere in the first 64 KB of the file. The compression core is ASPack's
+/// own LZ77-plus-Huffman stream, not aPLib as is widely repeated; see
+/// <see cref="AsPackLzDecoder"/>, which
+/// <see cref="AsPackExecutablePackerHandler"/> uses to unpack the image.
 ///
 /// References:
 /// <list type="bullet">
@@ -38,9 +39,8 @@ public sealed class AsPackFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "ASPack (Solodovnikov, 1998+) Win32 PE compressor — surfaces section " +
-    "table and the embedded \"ASPack\" / aPLib literals. Decompression " +
-    "delegated to the original ASPack tool, AspackDie, or generic PE " +
-    "unpackers (RL!dePacker, QUnpack).";
+    "table and the embedded \"ASPack\" literal. Payload decompression is " +
+    "handled in process by the aspack executable-packer handler.";
 
   private static ReadOnlySpan<byte> AsPackLiteral => "ASPack"u8;
   private static ReadOnlySpan<byte> APLibLiteral => "aPLib"u8;
@@ -94,7 +94,7 @@ public sealed class AsPackFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     sb.Append(CultureInfo.InvariantCulture, $"section_count = {sections.Count}\n");
     foreach (var (name, chars) in sections)
       sb.Append(CultureInfo.InvariantCulture, $"section = {name} flags=0x{chars:X8}\n");
-    sb.Append("note = decompression delegated to the ASPack tool / AspackDie / RL!dePacker\n");
+    sb.Append("note = payload decompression is available through the aspack executable-packer handler\n");
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 }

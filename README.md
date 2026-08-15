@@ -148,7 +148,7 @@ State columns audited against actual `IArchiveCreatable` / `IArchiveModifiable` 
 | **VobSub (DVD)**                       | R                                      | `.idx` metadata + per-entry slices of the sibling `.sub` PES stream                | `FileFormat.VobSub`                                    |
 | **HLS M3U8**                           | R                                      | segment list with per-variant metadata                                             | `FileFormat.M3u8`                                      |
 | **U-Boot uImage, FDT/DTB, UEFI FV**    | R                                      | firmware header metadata + decompressed payload or per-FFS/property entries        | `FileFormat.UImage`, `FileFormat.Dtb`, `FileFormat.UefiFv` |
-| **Device executable packers**          | R                                      | the packer's `metadata.ini` (detection evidence) + `packed_payload.bin`; in-process decompressed body for UPX and the aPLib packers (FSG / ASPack / PECompact / RLPack) — see `docs/EXE-PACKER-COVERAGE.md` | `FileFormat.ExePackers`                                |
+| **Device executable packers**          | R                                      | the packer's `metadata.ini` (detection evidence) + `packed_payload.bin`; in-process decompressed body for UPX, ASPack and the aPLib packers (FSG / PECompact / RLPack) — see `docs/EXE-PACKER-COVERAGE.md` | `FileFormat.ExePackers`                                |
 
 ### Honest failure
 

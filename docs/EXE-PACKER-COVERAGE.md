@@ -29,10 +29,15 @@ registered CW executable-packer handler, and 60 remain unmapped.
 The packer cluster is unlocked by a small set of raw codecs, all clean-room:
 
 - **aPLib** - `BB_Aplib` (`Compression.Core/Dictionary/Aplib`), a bit-exact
-  `aP_depack` decoder. Core of FSG, ASPack, PECompact, and RLPack.
+  `aP_depack` decoder. Core of FSG, PECompact, and RLPack. ASPack is often
+  listed here too and does not belong: its stream is Huffman-coded, not aPLib.
   The older `FileFormat.ApLib`/`ApLibStream` is a separate, non-standard
   self-framed codec that round-trips only against itself and does not decode
   real packer output; `BB_Aplib` is the reference-compatible one.
+- **ASPack LZ** - `AsPackLzDecoder` (`FileFormat.ExePackers`), an LZX-family
+  LZ77 with per-block canonical Huffman codes over a 24-bit code space and three
+  recency-addressed distances. Decode only; ASPack's own format, reconstructed
+  from its stub.
 - **NRV2B/D/E** - `BB_Nrv2b/d/e`, UPX and WinUpack core.
 - **LZMA** - `BB_Lzma`, MEW / MPRESS / RLPack-LZMA.
 - **Generic NRV PE** - `nrv_pe` fallback: carves PE sections and accepts a bare
@@ -51,13 +56,13 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | Packer | Samples | Detected | Decompressed |
 |---|---|---|---|
 | UPX | 130 | 130 | 129 |
+| ASPack | 130 | 130 | 130 |
 | Packman | 130 | 130 | 128 |
 | MEW | 130 | 130 | 98 |
 | PECompact | 130 | 130 | 6 |
 | BeRoEXEPacker | 130 | 130 | 2 |
 | FSG | 130 | 128 | 2 |
 | exe32pack | 130 | 126 | 1 |
-| ASPack | 130 | 130 | 0 |
 | eXpressor | 130 | 130 | 0 |
 | JDPack | 130 | 129 | 0 |
 | Molebox | 130 | 130 | 0 |
@@ -68,9 +73,9 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | WinUpack | 130 | 130 | 0 |
 | Yoda's Crypter | 130 | 130 | 0 |
 | Yoda's Protector | 130 | 130 | 0 |
-| **Total** | **2470** | **2465** | **366** |
+| **Total** | **2470** | **2465** | **496** |
 
-Recognition is effectively complete at 99.8%; inflation is at 15%. The gap is
+Recognition is effectively complete at 99.8%; inflation is at 20%. The gap is
 the honest shape of the *Locate* level — the payload is found and never
 decompressed — and the table says so per packer rather than per hand-picked
 sample.
@@ -92,7 +97,7 @@ outgrew the file it came from. Round-trip tests could not see either.
 |---------------------|---------|--------------|
 | UPX                 | Unpack  | NRV2B/D/E + LZMA; full detect-to-decompress-to-memory-image-to-synthetic rebuild. LZMA-mode payloads (method 14) are a bare stream sized by the PackHeader and still need a size-driven entry point; they report that rather than decoding. |
 | FSG                 | Locate* | `FSG!` marker and t/ta/a structural layouts are recognized; structural fixtures and the sampled corpus path emit payload candidates; synthetic aPLib-FSG fixtures unpack. |
-| ASPack              | Locate  | Corpus sample is recognized and emits candidate payloads, but does not expose a clean bare aPLib stream. |
+| ASPack              | Unpack  | Own LZ77+Huffman core (`AsPackLzDecoder`), not aPLib. The stub's region table drives an in-place restore of every packed section and the E8/E9 call filter is reversed; the resource directory ASPack relocates into its stub section is not put back, so the restored image is not byte-identical to the original file. |
 | PECompact           | Locate  | Corpus sample is recognized and emits candidate payloads; plug-in codec/transform recovery remains. |
 | RLPack              | Locate  | Corpus sample exposes `.RLPack` as `compressed_payload.bin`; aPLib/LZMA transform recovery remains. |
 | _(unnamed aPLib)_   | Unpack  | `aplib_pe` generic fallback: any PE whose section inflates to a clean aPLib stream. |

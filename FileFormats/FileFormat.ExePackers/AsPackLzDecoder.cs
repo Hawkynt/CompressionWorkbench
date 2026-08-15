@@ -66,6 +66,9 @@ internal sealed class AsPackLzDecoder {
   /// <summary>Extra bytes a match may write past the requested output length.</summary>
   internal const int OverrunMargin = 0x10E;
 
+  /// <summary>Bytes the bit reader may consume past the end of the image before the stream is rejected.</summary>
+  private const int LookAhead = 8;
+
   private static readonly int[] LengthBases = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28,
     32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224,
@@ -267,7 +270,19 @@ internal sealed class AsPackLzDecoder {
 
   private void Refill() {
     while (this._consumed >= 8) {
-      var next = this._cursor < this._source.Length ? this._source[this._cursor] : (byte)0;
+      // The stub reads the stream out of mapped memory, where the bytes past a
+      // section's raw data read as zero; the last few bits of a region legitimately
+      // come from that padding, so a short read is padded rather than fatal. Running
+      // any further than the reader's own look-ahead means the stream is not one of
+      // ours and would otherwise spin forever on synthetic zero blocks.
+      byte next;
+      if (this._cursor < this._source.Length)
+        next = this._source[this._cursor];
+      else if (this._cursor < this._source.Length + LookAhead)
+        next = 0;
+      else
+        throw new InvalidDataException("ASPack: stream ran past the end of the image before the region was complete.");
+
       ++this._cursor;
       this._window = (this._window << 8) | next;
       this._consumed -= 8;
