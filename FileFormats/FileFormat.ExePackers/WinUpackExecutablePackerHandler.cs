@@ -13,6 +13,7 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
+    ExecutableUnpackCapabilities.CanDecompressPayload |
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
@@ -69,11 +70,26 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
       artifacts.Add(new("compressed_payload.bin", payload, "winupack"));
       level = ExecutableUnpackLevel.PayloadLocated;
       caps |= ExecutableUnpackCapabilities.CanLocatePayload;
-      diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
-        $"WinUpack payload was located, but the managed transform/decompression path is not yet recoverable. Virtual target size: {targetSize} bytes.",
-        true));
     } else
       diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound, "WinUpack payload section could not be located.", true));
+
+    if (WinUpackLayoutReader.TryRead(packed.OriginalImage, options.MaximumDecompressedSize, out var layout)) {
+      try {
+        var unpacked = WinUpackStream.Decompress(packed.OriginalImage.AsSpan(layout.PayloadOffset), layout.ImageSize);
+        WinUpackStream.UndoBranchFilter(unpacked, layout.ImageVirtualAddress, layout.FilterBase, layout.FilterCount, layout.FilterTag);
+        artifacts.Add(new("decompressed_payload.bin", unpacked, "stored"));
+        level = ExecutableUnpackLevel.PayloadDecompressed;
+        caps |= ExecutableUnpackCapabilities.CanLocatePayload | ExecutableUnpackCapabilities.CanDecompressPayload;
+        diagnostics.Add(new(ExecutableDiagnosticCode.RunnableRebuildNotGuaranteed,
+          $"WinUpack payload decompressed to {unpacked.Length} bytes of mapped image at 0x{layout.ImageVirtualAddress:X8}. " +
+          "The import directory and base relocations are rebuilt by the stub at run time and are therefore not part of this image."));
+      } catch (Exception ex) when (ex is InvalidDataException or IndexOutOfRangeException or ArgumentOutOfRangeException) {
+        diagnostics.Add(new(ExecutableDiagnosticCode.DecompressionFailed, $"WinUpack payload failed to decompress: {ex.Message}", true));
+      }
+    } else
+      diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
+        $"WinUpack parameter block was not recognised, so the payload could not be decompressed. Virtual target size: {targetSize} bytes.",
+        true));
 
     var result = new UnpackResult(level, caps, artifacts, diagnostics);
     artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
@@ -178,7 +194,7 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
     sb.Append("  \"packer\": \"winupack\",\n");
     sb.Append(CultureInfo.InvariantCulture, $"  \"container\": \"{(packed.ImageInfo?.Container.ToString() ?? "unknown").ToLowerInvariant()}\",\n");
     sb.Append(CultureInfo.InvariantCulture, $"  \"architecture\": \"{(packed.ImageInfo?.Architecture.ToString() ?? "unknown").ToLowerInvariant()}\",\n");
-    sb.Append("  \"compressionCore\": \"unknown/upack-transform\",\n");
+    sb.Append("  \"compressionCore\": \"upack-range-coder\",\n");
     sb.Append(CultureInfo.InvariantCulture, $"  \"imageSize\": {packed.OriginalImage.LongLength}\n");
     sb.Append("}\n");
     return Encoding.UTF8.GetBytes(sb.ToString());

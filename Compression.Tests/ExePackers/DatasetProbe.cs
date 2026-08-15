@@ -144,7 +144,7 @@ public class DatasetProbe {
       ("TELock", "telock", ExecutableUnpackLevel.PayloadLocated),
       ("Themida", "themida", ExecutableUnpackLevel.PayloadLocated),
       ("UPX", "upx", ExecutableUnpackLevel.PayloadLocated),
-      ("WinUpack", "winupack", ExecutableUnpackLevel.PayloadLocated),
+      ("WinUpack", "winupack", ExecutableUnpackLevel.PayloadDecompressed),
       ("Yoda-Crypter", "yodacrypter", ExecutableUnpackLevel.PayloadLocated),
       ("Yoda-Protector", "yodaprotector", ExecutableUnpackLevel.PayloadLocated),
     };
