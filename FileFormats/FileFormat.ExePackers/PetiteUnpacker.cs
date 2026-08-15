@@ -19,7 +19,9 @@ namespace FileFormat.ExePackers;
 ///   way of the image that is about to be written over them;</description></item>
 ///   <item><description>any other record is
 ///   <c>{sourceRva, decompressedSize, destinationRva, unused}</c>, 16 bytes, and
-///   expands one original section in place.</description></item>
+///   expands one original section in place. A zero length marks an original
+///   section without initialised data and is skipped; a zero source ends the
+///   table.</description></item>
 /// </list>
 ///
 /// <para>The compressed streams are DEFLATE (RFC 1951) with one deviation: the
@@ -118,8 +120,12 @@ public static class PetiteUnpacker {
       var size = BinaryPrimitives.ReadUInt32LittleEndian(memory.AsSpan((int)cursor + 4));
       var destination = BinaryPrimitives.ReadUInt32LittleEndian(memory.AsSpan((int)cursor + 8));
       cursor += 16;
-      if (first == 0 || size == 0)
+      // A zero length is an original section without initialised data — the
+      // stub skips those and keeps walking; a zero source ends the table.
+      if (first == 0)
         break;
+      if (size == 0)
+        continue;
       if (first >= (uint)memory.Length || size > maximumDecompressedSize ||
           (long)destination + size > memory.Length) {
         error = "PEtite: a block record addresses memory outside the image.";
