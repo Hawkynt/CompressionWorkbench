@@ -140,7 +140,7 @@ public class DatasetProbe {
       ("Packman", "packman", ExecutableUnpackLevel.PayloadLocated),
       ("PECompact", "pecompact", ExecutableUnpackLevel.PayloadLocated),
       ("PEtite", "petite", ExecutableUnpackLevel.PayloadLocated),
-      ("RLPack", "rlpack", ExecutableUnpackLevel.PayloadLocated),
+      ("RLPack", "rlpack", ExecutableUnpackLevel.PayloadDecompressed),
       ("TELock", "telock", ExecutableUnpackLevel.PayloadLocated),
       ("Themida", "themida", ExecutableUnpackLevel.PayloadLocated),
       ("UPX", "upx", ExecutableUnpackLevel.PayloadLocated),

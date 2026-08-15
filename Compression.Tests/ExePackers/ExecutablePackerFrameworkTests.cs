@@ -247,11 +247,12 @@ public class ExecutablePackerFrameworkTests {
     });
   }
 
+  // RLPack is deliberately absent: it carries its own container (a stub-addressed block
+  // table over per-section LZMA/aPLib streams) and is covered by RlPackHandlerTests.
   private static readonly (string HandlerId, string Marker, string Section)[] AplibPackers = [
     ("fsg", "FSG!", ".fsg"),
     ("aspack", "ASPack", ".aspack"),
     ("pecompact", "PEC2", ".pec1"),
-    ("rlpack", "RLPack", ".RLPack"),
     ("packman", "PACKMAN", ".PACKMAN"),
     ("enigmavirtualbox", "VirtualBox", ".enigma2"),
   ];
@@ -308,9 +309,9 @@ public class ExecutablePackerFrameworkTests {
 
   [Test, Category("EdgeCase")]
   public void AplibPackerHandler_EmitsLocatedPayload_WhenCodecDoesNotDecode() {
-    var packed = BuildAplibLikePeWithRawPayload("RLPack", ".RLPack");
+    var packed = BuildAplibLikePeWithRawPayload("PACKMAN", ".PACKMAN");
 
-    var handler = ExecutablePackerHandlers.All.Single(h => h.Id == "rlpack");
+    var handler = ExecutablePackerHandlers.All.Single(h => h.Id == "packman");
     var result = Unpack(handler, packed);
 
     Assert.Multiple(() => {
