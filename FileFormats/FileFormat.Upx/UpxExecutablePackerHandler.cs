@@ -80,6 +80,13 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
     };
     AddLegacySectionArtifacts(info, artifacts);
 
+    // The ELF container keeps its payload in per-segment block chains rather
+    // than in the single PE-style window the code below expects, so it needs
+    // its own path before any of that runs.
+    if (info.Kind == UpxReader.ContainerKind.Elf &&
+        TryUnpackElf(packed, options, artifacts, diagnostics) is { } elfResult)
+      return elfResult;
+
     var level = ExecutableUnpackLevel.DetectionOnly;
     byte[]? compressed = null;
     uint? headerlessExpectedSize = null;
@@ -171,6 +178,74 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
     if (!detection.IsMatch)
       throw new InvalidDataException("UPX: no UPX evidence detected.");
     return handler.Unpack(handler.Parse(image, detection), new());
+  }
+
+  /// <summary>
+  /// Unpacks the ELF flavour of the container. Returns <see langword="null"/>
+  /// when the image does not carry a block chain we can follow, leaving the
+  /// caller to fall back to the generic header-driven path.
+  /// </summary>
+  private static UnpackResult? TryUnpackElf(
+      PackedExecutable packed, UnpackOptions options, List<UnpackArtifact> artifacts, List<ExecutableDiagnostic> diagnostics) {
+    var elf = UpxElfImage.TryRead(packed.OriginalImage, options.MaximumDecompressedSize, out var error);
+    if (elf == null) {
+      diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound,
+        $"The image looks like a UPX ELF container but its block chain could not be followed: {error}", true));
+      return null;
+    }
+
+    artifacts.Add(new("upx_elf_container.ini", BuildElfMetadata(elf), "stored"));
+    for (var i = 0; i < elf.Blocks.Count; i++) {
+      var block = elf.Blocks[i];
+      artifacts.Add(new($"blocks/block_{i:000}.bin", elf.BlockData[i],
+        block.Stored ? "stored" : UpxReader.MethodName(block.Method).ToLowerInvariant()));
+    }
+    for (var i = 0; i < elf.HoleData.Count; i++)
+      artifacts.Add(new($"blocks/gap_{i:000}.bin", elf.HoleData[i], "stored"));
+
+    artifacts.Add(new("decompressed_payload.bin", elf.Payload, "stored"));
+    var level = ExecutableUnpackLevel.PayloadDecompressed;
+
+    if (elf.Original is { } original) {
+      artifacts.Add(new("reconstructed/reconstructed.elf", original, "stored"));
+      level = ExecutableUnpackLevel.RebuiltExecutable;
+    }
+
+    foreach (var note in elf.Notes)
+      diagnostics.Add(new(ExecutableDiagnosticCode.ExecutableRebuildFailed, note));
+
+    var result = new UnpackResult(level, CapabilityForLevel(level, packed.ImageInfo), artifacts, diagnostics);
+    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build("upx", packed.ImageInfo, result), "stored"));
+    return result with { Artifacts = artifacts };
+  }
+
+  private static byte[] BuildElfMetadata(UpxElfImage.Image elf) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[upx_elf]");
+    sb.Append(CultureInfo.InvariantCulture, $"version = {elf.Version}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"format = {elf.Format} ({UpxReader.FormatName(elf.Format)})\n");
+    sb.Append(CultureInfo.InvariantCulture, $"loader_size = {elf.LoaderSize}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"original_file_size = {elf.OriginalFileSize}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"block_size = {elf.BlockSize}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"rebuilt = {elf.Original != null}\n");
+
+    sb.AppendLine();
+    sb.AppendLine("[original_segments]");
+    foreach (var load in elf.OriginalLoads)
+      sb.Append(CultureInfo.InvariantCulture, $"load = offset=0x{load.FileOffset:X} size=0x{load.FileSize:X}\n");
+
+    sb.AppendLine();
+    sb.AppendLine("[blocks]");
+    foreach (var b in elf.Blocks)
+      sb.Append(CultureInfo.InvariantCulture,
+        $"block = at=0x{b.HeaderOffset:X} unpacked={b.UncompressedSize} packed={b.CompressedSize} " +
+        $"method={b.Method} ({UpxReader.MethodName(b.Method)}) filter=0x{b.FilterId:X2} cto=0x{b.FilterCto:X2} stored={b.Stored}\n");
+    foreach (var b in elf.HoleBlocks)
+      sb.Append(CultureInfo.InvariantCulture,
+        $"gap = at=0x{b.HeaderOffset:X} unpacked={b.UncompressedSize} packed={b.CompressedSize} " +
+        $"method={b.Method} ({UpxReader.MethodName(b.Method)}) stored={b.Stored}\n");
+
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static (byte[]? Data, string? Note) TryDecompress(UpxReader.PackerHeader h, byte[] compressed, UnpackOptions options) {
