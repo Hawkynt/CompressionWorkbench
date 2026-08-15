@@ -357,13 +357,6 @@ public sealed class ExpressorExecutablePackerHandler : MinorExecutablePackerHand
   protected override ReadOnlySpan<byte> LiteralSignature => "EXpressor"u8;
 }
 
-public sealed class JdpackExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-  public override string Id => "jdpack";
-  public override string DisplayName => "JDPack";
-  protected override bool IsPackerSection(string name) => name.Contains("jd", StringComparison.OrdinalIgnoreCase);
-  protected override ReadOnlySpan<byte> LiteralSignature => "JDPack"u8;
-}
-
 public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandlerBase {
   public override string Id => "molebox";
   public override string DisplayName => "Molebox";

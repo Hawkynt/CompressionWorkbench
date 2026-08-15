@@ -5,6 +5,28 @@ using Compression.Registry;
 namespace Compression.Core.Dictionary.Aplib;
 
 /// <summary>
+/// Which aPLib bit-stream dialect a decoder should expect.
+/// </summary>
+public enum AplibDialect {
+  /// <summary>
+  /// Ibsen's aPLib as documented: the "10" token's γ-coded offset is biased by the
+  /// last-was-match flag (−3 after a literal, −2 after a match) and the previous
+  /// offset is reused only when the flag is clear and the γ value is exactly 2.
+  /// </summary>
+  Standard = 0,
+
+  /// <summary>
+  /// The simplified dialect emitted by packers whose in-stub depacker never tracks
+  /// last-was-match: the γ offset is always biased by −3 and the reuse case always
+  /// triggers at γ = 2. Streams differ from <see cref="Standard"/> the moment a
+  /// normal match directly follows another match, so the two are not interchangeable.
+  /// Observed in JDPack 1.x stubs (bit layout read off the packed samples' own
+  /// depacker; see <c>JdpackExecutablePackerHandler</c>).
+  /// </summary>
+  NoLastWasMatch = 1,
+}
+
+/// <summary>
 /// aPLib — Jørgen Ibsen's byte-oriented LZ77 with an interleaved single-bit tag
 /// stream, used as the compression core of numerous Win32 PE packers
 /// (FSG 2.0, PECompact 2, RLPack, and others; ASPack is commonly listed here
@@ -104,8 +126,17 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
   /// more likely to be a real payload than random section bytes that happen to
   /// decode without throwing.
   /// </summary>
-  public static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize, out bool endMarkerHit, out int inputConsumed) {
+  public static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize, out bool endMarkerHit, out int inputConsumed) =>
+    DecompressRaw(compressed, maxOutputSize, AplibDialect.Standard, out endMarkerHit, out inputConsumed);
+
+  /// <summary>
+  /// As <see cref="DecompressRaw(ReadOnlySpan{byte},int,out bool,out int)"/>, decoding the
+  /// requested <paramref name="dialect"/>. Packers that embed a hand-written aPLib depacker
+  /// sometimes ship a simplified one; see <see cref="AplibDialect"/>.
+  /// </summary>
+  public static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize, AplibDialect dialect, out bool endMarkerHit, out int inputConsumed) {
     if (maxOutputSize < 0) throw new ArgumentOutOfRangeException(nameof(maxOutputSize));
+    var trackLastWasMatch = dialect == AplibDialect.Standard;
     endMarkerHit = false;
     inputConsumed = 0;
     if (compressed.Length == 0 || maxOutputSize == 0) return [];
@@ -138,6 +169,7 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
         // "10" — normal match.
         var offs = (int)reader.ReadGamma();
         int len;
+        if (!trackLastWasMatch) lwm = 0;
         if (lwm == 0 && offs == 2) {
           offs = r0;
           len = (int)reader.ReadGamma();
@@ -213,8 +245,12 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
       output[op++] = output[src + i];
   }
 
-  /// <summary>Compresses <paramref name="data"/> as a bare aPLib stream with no size prefix.</summary>
-  internal static byte[] CompressBare(ReadOnlySpan<byte> data) {
+  /// <summary>
+  /// Compresses <paramref name="data"/> as a bare aPLib stream with no size prefix, in the
+  /// requested <paramref name="dialect"/>. The encoder never emits the reuse-previous-offset
+  /// token, so the two dialects differ only in the γ offset bias it writes after a match.
+  /// </summary>
+  internal static byte[] CompressBare(ReadOnlySpan<byte> data, AplibDialect dialect = AplibDialect.Standard) {
     var enc = new AplibWriter();
     if (data.Length == 0) return enc.ToArray();
 
@@ -241,7 +277,7 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
         enc.PutByte((byte)(bestOff & 0xFF));
         enc.PutGamma((uint)encodedLen);
         r0 = bestOff;
-        lwm = 1;
+        lwm = dialect == AplibDialect.Standard ? 1 : 0;
 
         var end = pos + bestLen;
         for (var j = pos; j < end && j < data.Length; j++)
