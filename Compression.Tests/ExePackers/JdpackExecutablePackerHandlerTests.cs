@@ -114,8 +114,8 @@ public class JdpackExecutablePackerHandlerTests {
   // ── Synthetic JDPack image ──────────────────────────────────────────────────
 
   private const uint TextRva = 0x1000;
-  private const uint DataRva = 0x2000;
-  private const uint StubRva = 0x3000;
+  private const uint DataRva = 0x3000;
+  private const uint StubRva = 0x5000;
   private const int PeOffset = 0x80;
   private const int OptionalSize = 0xE0;
   private const int SectionTableOffset = PeOffset + 24 + OptionalSize;

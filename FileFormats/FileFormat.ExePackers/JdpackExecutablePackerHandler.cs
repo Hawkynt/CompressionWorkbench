@@ -275,12 +275,19 @@ public sealed class JdpackExecutablePackerHandler : MinorExecutablePackerHandler
     public required IReadOnlyList<PeSection> Sections { get; init; }
     public int StubSectionIndex { get; set; } = -1;
 
+    /// <summary>
+    /// Returns the section owning <paramref name="rva"/>, preferring the one that starts
+    /// latest: a section whose virtual size overruns its successor would otherwise swallow
+    /// addresses that belong to the section after it.
+    /// </summary>
     public PeSection? FindByRva(uint rva) {
+      PeSection? best = null;
       foreach (var s in this.Sections) {
         var span = Math.Max(s.VirtualSize, s.RawSize);
-        if (rva >= s.VirtualAddress && rva < s.VirtualAddress + span) return s;
+        if (rva < s.VirtualAddress || rva >= s.VirtualAddress + span) continue;
+        if (best is null || s.VirtualAddress > best.VirtualAddress) best = s;
       }
-      return null;
+      return best;
     }
 
     public static PeLayout? TryRead(byte[] image) {
