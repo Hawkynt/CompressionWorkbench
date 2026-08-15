@@ -321,16 +321,6 @@ public sealed class AmberExecutablePackerHandler : MinorExecutablePackerHandlerB
   }
 }
 
-public sealed class BeRoExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-  public override string Id => "beroexepacker";
-  public override string DisplayName => "BeRoEXEPacker";
-  protected override bool IsPackerSection(string name) =>
-    name.Contains("bero", StringComparison.OrdinalIgnoreCase) ||
-    name.Equals("gu_idata", StringComparison.Ordinal) ||
-    name.Equals("gu_rsrc", StringComparison.Ordinal);
-  protected override ReadOnlySpan<byte> LiteralSignature => "BeRo"u8;
-}
-
 public sealed class Exe32packExecutablePackerHandler : MinorExecutablePackerHandlerBase {
   public override string Id => "exe32pack";
   public override string DisplayName => "Exe32pack";

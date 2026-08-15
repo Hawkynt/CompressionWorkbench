@@ -56,12 +56,12 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | Packer | Samples | Detected | Decompressed |
 |---|---|---|---|
 | RLPack | 130 | 130 | 130 |
+| BeRoEXEPacker | 130 | 130 | 130 |
 | UPX | 130 | 130 | 129 |
 | ASPack | 130 | 130 | 130 |
 | Packman | 130 | 130 | 128 |
 | MEW | 130 | 130 | 98 |
 | PECompact | 130 | 130 | 6 |
-| BeRoEXEPacker | 130 | 130 | 2 |
 | FSG | 130 | 128 | 2 |
 | exe32pack | 130 | 126 | 1 |
 | eXpressor | 130 | 130 | 0 |
@@ -114,7 +114,7 @@ outgrew the file it came from. Round-trip tests could not see either.
 | JDPack              | Locate  | `.jdpack` payload section emitted as `compressed_payload.bin`; custom LZ recovery remains. |
 | Exe32pack           | Locate  | `.i` / `.f` / `.c` / `.v` / `.h` packer section emitted as `compressed_payload.bin`; custom LZ recovery remains. |
 | EXpressor           | Locate  | Packer section emitted as payload artifact; custom LZ recovery remains. |
-| BeRoEXEPacker       | Locate  | Packer section emitted as payload artifact; LZMA / LZBRR / LZBRS recovery remains. |
+| BeRoEXEPacker       | Unpack  | Entry-point stub parsed for its source/destination/filter immediates; the packed image body is decoded (LZMA in 129 of the 130 corpus samples, aPLib in the remaining one), the E8/E9 call filter is reversed and `reconstructed/reconstructed.exe` is emitted. Byte-identical recovery of the pre-pack *file* is impossible — the packer regenerates the headers and the resource section — but the recovered body matches the originals' section bytes at their virtual addresses (mean 99.5 % over the corpus, the residue being the rebuilt resources and the zeroed import thunks), and the recovered original entry-point RVA matches every sample's. |
 | Alienyze            | Locate  | Packer section emitted as payload artifact; transform recovery remains. |
 | Amber               | Locate  | Reflective PE loader. Carves a plaintext embedded PE as `embedded_pe.bin` when the loader stores one in the clear, else locates the (XOR/RC4-obscured) reflective payload; extraction, not decryption — the key lives in the shellcode stub. |
 | Enigma Virtual Box  | Unpack* | Named handler recognizes `.enigma1`/`.enigma2`; sampled corpus path inflates through managed aPLib recovery and emits `reconstructed/reconstructed.exe`. Real target remains bundled file-tree extraction. |
