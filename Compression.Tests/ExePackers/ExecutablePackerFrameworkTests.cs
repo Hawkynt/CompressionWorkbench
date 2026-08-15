@@ -275,6 +275,123 @@ public class ExecutablePackerFrameworkTests {
   }
 
   [Test, Category("HappyPath")]
+  public void FsgHandler_WalksTheStubsBlockList() {
+    var first = BuildOriginalImagePayload();
+    var second = Enumerable.Range(0, 3000).Select(i => (byte)(i * 11 % 241)).ToArray();
+    var packed = BuildFsgPe(first, second, out var firstRva, out var secondRva, out var baseRva);
+
+    var handler = ExecutablePackerHandlers.All.Single(h => h.Id == "fsg");
+    var detection = handler.Detect(packed);
+    Assert.That(detection.IsMatch, Is.True);
+
+    var result = handler.Unpack(handler.Parse(packed, detection), new UnpackOptions());
+    var payload = result.Artifacts.Single(a => a.Name == "decompressed_payload.bin").Data;
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.GreaterThanOrEqualTo(ExecutableUnpackLevel.PayloadDecompressed));
+      Assert.That(payload.AsSpan((int)(firstRva - baseRva), first.Length).ToArray(), Is.EqualTo(first).AsCollection);
+      Assert.That(payload.AsSpan((int)(secondRva - baseRva), second.Length).ToArray(), Is.EqualTo(second).AsCollection);
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void FsgHandler_ReadsBlockDestinationsAboveTheSixteenBitPageWindow() {
+    // Image bases past 0x0FFFF000 make the stub's 16-bit page numbers wrap;
+    // the RVA only comes back out if the base's own page number wraps with it.
+    var first = BuildOriginalImagePayload();
+    var second = Enumerable.Range(0, 1500).Select(i => (byte)(i * 5 % 233)).ToArray();
+    var packed = BuildFsgPe(first, second, out var firstRva, out var secondRva, out var baseRva, 0x4AD00000);
+
+    var handler = ExecutablePackerHandlers.All.Single(h => h.Id == "fsg");
+    var result = handler.Unpack(handler.Parse(packed, handler.Detect(packed)), new UnpackOptions());
+    var payload = result.Artifacts.Single(a => a.Name == "decompressed_payload.bin").Data;
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.GreaterThanOrEqualTo(ExecutableUnpackLevel.PayloadDecompressed));
+      Assert.That(payload.AsSpan((int)(firstRva - baseRva), first.Length).ToArray(), Is.EqualTo(first).AsCollection);
+      Assert.That(payload.AsSpan((int)(secondRva - baseRva), second.Length).ToArray(), Is.EqualTo(second).AsCollection);
+    });
+  }
+
+  /// <summary>
+  /// Builds a PE shaped like FSG's output: an empty section that receives the
+  /// image, a section holding the concatenated aPLib streams, and the stub whose
+  /// three opening immediates address the destination table, the first
+  /// destination and the first stream.
+  /// </summary>
+  private static byte[] BuildFsgPe(byte[] first, byte[] second, out uint firstRva, out uint secondRva, out uint baseRva, uint imageBase = 0x00400000) {
+    const uint StubTemplateBase = 0x00400000;
+    const int peOffset = 0x80;
+    const int optionalOffset = peOffset + 24;
+    const int optionalSize = 0xE0;
+    const int sectionOffset = optionalOffset + optionalSize;
+    const int tableOffset = sectionOffset + 3 * 40;
+    const int stubRaw = 0x200;
+    const int streamRaw = 0x400;
+
+    firstRva = 0x1000;
+    secondRva = 0x5000;
+    baseRva = 0x1000;
+    const uint outputSize = 0x10000;
+    var streamRva = firstRva + outputSize;
+    var stubRva = streamRva + 0x2000;
+
+    var streams = new MemoryStream();
+    streams.Write(AplibBuildingBlock.CompressBare(first));
+    streams.Write(AplibBuildingBlock.CompressBare(second));
+    var streamBytes = streams.ToArray();
+
+    var image = new byte[streamRaw + streamBytes.Length];
+    image[0] = (byte)'M'; image[1] = (byte)'Z';
+    BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x3C), peOffset);
+
+    "PE\0\0"u8.CopyTo(image.AsSpan(peOffset));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 4), 0x14C);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 6), 3);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 20), optionalSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 22), 0x010F);
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(optionalOffset), 0x10B);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 16), stubRva);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 28), imageBase);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 32), 0x1000);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 36), 0x200);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 56), stubRva + 0x1000);
+
+    void Section(int index, uint virtualAddress, uint virtualSize, uint rawSize, uint rawOffset) {
+      var offset = sectionOffset + index * 40;
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 8), virtualSize);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 12), virtualAddress);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 16), rawSize);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 20), rawOffset);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(offset + 36), 0xE0000020);
+    }
+
+    Section(0, firstRva, outputSize, 0, 0);
+    Section(1, streamRva, 0x2000, (uint)streamBytes.Length, streamRaw);
+    Section(2, stubRva, 0x1000, 0x200, stubRaw);
+
+    // Destination table: the second block's page, then the end marker.
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(tableOffset), (ushort)(((imageBase + secondRva) >> 12) + 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(tableOffset + 2), 2);
+
+    image[stubRaw] = 0xBB;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stubRaw + 1), StubTemplateBase + (uint)tableOffset);
+    image[stubRaw + 5] = 0xBF;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stubRaw + 6), StubTemplateBase + firstRva);
+    image[stubRaw + 10] = 0xBE;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stubRaw + 11), imageBase + streamRva);
+    new byte[] {
+      0x53, 0xE8, 0x0A, 0x00, 0x00, 0x00, 0x02, 0xD2, 0x75, 0x05, 0x8A, 0x16, 0x46, 0x12, 0xD2, 0xC3,
+      0xFC, 0xB2, 0x80, 0xA4, 0x6A, 0x02, 0x5B, 0xFF, 0x14, 0x24,
+    }.CopyTo(image.AsSpan(stubRaw + 15));
+    "FSG!"u8.CopyTo(image.AsSpan(stubRaw + 0x100));
+
+    streamBytes.CopyTo(image.AsSpan(streamRaw));
+    return image;
+  }
+
+  [Test, Category("HappyPath")]
   public void Registry_DetectBest_UnpacksAplibPe(
       [ValueSource(nameof(AplibPackers))] (string HandlerId, string Marker, string Section) packer) {
     var original = BuildOriginalImagePayload();

@@ -253,7 +253,7 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
     name.Contains("pec", StringComparison.OrdinalIgnoreCase) ||
     name.Contains("fsg", StringComparison.OrdinalIgnoreCase);
 
-  private byte[] BuildMetadataJson(PackedExecutable packed) {
+  protected byte[] BuildMetadataJson(PackedExecutable packed) {
     var sb = new StringBuilder();
     sb.Append("{\n");
     sb.Append(CultureInfo.InvariantCulture, $"  \"packer\": \"{this.Id}\",\n");
