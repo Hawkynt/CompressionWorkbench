@@ -68,6 +68,7 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | Packman | 130 | 130 | 128 |
 | MPRESS | 130 | 129 | 123 |
 | PEtite | 130 | 129 | 128 |
+| Yoda's Crypter | 130 | 130 | 129 |
 | MEW | 130 | 130 | 98 |
 | PECompact | 130 | 130 | 6 |
 | FSG | 130 | 128 | 2 |
@@ -79,7 +80,6 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | Neolite | 130 | 124 | 0 |
 | PEtite | 130 | 129 | 0 |
 | WinUpack | 130 | 130 | 0 |
-| Yoda's Crypter | 130 | 130 | 0 |
 | Yoda's Protector | 130 | 130 | 0 |
 | **Total** | **2470** | **2465** | **496** |
 | **Total** | **2470** | **2465** | **489** |
@@ -89,6 +89,7 @@ packer, 2470 in all. "Decompressed" counts samples reaching
 | Yoda's Protector | 130 | 130 | 0 |
 | **Total** | **2470** | **2465** | **494** |
 | **Total** | **2470** | **2465** | **496** |
+| **Total** | **2470** | **2465** | **495** |
 
 Recognition is effectively complete at 99.8%; inflation is at 20%. The gap is
 the honest shape of the *Locate* level — the payload is found and never
@@ -139,6 +140,8 @@ which the stub rebuilds at run time and therefore never compressed.
 | Themida             | Detect/Locate | Runtime protector. The `themida` handler emits the `.boot`/protected section as `protected_section_*.bin` when present; it never runs the generic aPLib/NRV probes and never claims a decompression (runtime-protector diagnostic). |
 | Yoda-Crypter        | Locate  | Named `yodacrypter` handler emits the `yC` section as `compressed_payload.bin`; cryptor transform recovery remains. |
 | WinUpack (Ultimate) | Unpack  | Upack's own LZMA-idiom range coder plus its call/jump filter, driven by the parameter block the loader stub reads out of the section table. Both container shapes decode — the compressed header that folds the PE headers into the DOS stub, and the plain-header one. The import directory and base relocations are rebuilt by the stub at run time, so the decompressed memory image does not carry them. |
+| Yoda-Crypter        | Unpack  | Static stub walker. The packer does not compress — it leaves sections at their original offsets and runs a per-build byte cipher over the ones holding code or writable data. That cipher has to ship as executable instructions, so `YodaCrypterStub` reads it back off the two loop layers, replays it, takes the walker's own name-compare table as the skip list, and restores the original entry point from the slot the stub restores it from. 129 of 130 corpus samples decrypt; the one miss is a UPX-then-yC double pack that routes to the UPX handler on confidence. Byte-identical whole files stay out of reach: the packer overwrites the import directory with its own descriptor format and discards the Authenticode certificate and any overlay. |
+| WinUpack (Ultimate) | Locate  | `.Upack` virtual target plus raw payload section, and the Packing Box `PS...` three-section layout, emitted by the `winupack` handler; managed transform/decompression not yet recovered. |
 | Neolite             | Locate* | Custom LZ payload section emitted by minor handler. *aPLib-mode payloads are caught by the generic aPLib fallback. |
 | Packman             | Unpack  | `.PACKMAN` handler uses the shared aPLib PE pipeline and produces decompressed payload plus synthetic rebuilt PE for the corpus sample. |
 | JDPack              | Locate  | `.jdpack` payload section emitted as `compressed_payload.bin`; custom LZ recovery remains. |
@@ -151,7 +154,7 @@ which the stub rebuilds at run time and therefore never compressed.
 | Molebox             | Unpack  | MoleBox 2.x keeps the original section table (names mangled, virtual addresses intact) and replaces each section's raw data. The loader's own chain is replayed: an LCG keystream over an LZSS'd loader blob, an IDEA-protected configuration record, then per-section IDEA decryption and zlib inflation. Every one of the 415 recoverable sections in the corpus comes back byte-identical to the pre-pack original, and the original entry point and image base are recovered in all 104 samples that have one to compare against. Sections the packer drops (raw-data-less `.reloc`/`BSS`/`.tls`) are gone for good, so 63 of the 104 are fully recoverable and the rest are recoverable except for those sections. No corpus sample carries a bundled file tree; the trailer that would hold one (magic `0xCAFEBABE`) is emitted when present. |
 | Eronana Packer      | Unpack  | Static LZ77 + canonical-Huffman decoder validated byte-for-byte against a real packed sample; restores every stripped section and emits `reconstructed/reconstructed.exe` (RVA-mapped synthetic PE; the true OEP and import-directory RVA are reported in `metadata.json`). |
 | TELock              | Detect/Locate | Runtime protector (anti-debug/virtualization). Recognized by the `tElock` literal or a blank entry-bearing last section (FSG-shaped images are excluded so they route to the FSG handler). Emits the protected body as `protected_section_*.bin`; never runs the generic aPLib/NRV probes and never claims a decompression. |
-| Yoda-Protector      | Detect/Locate | Runtime protector. Emits the protected payload section where present; never claims a decompression (runtime-protector diagnostic; dump/emulation required). |
+| Yoda-Protector      | Detect/Locate | Emits the protected payload section; never claims a decompression. Unlike the other entries in this row, the obstacle is not that execution is required — the stub was walked far enough to show the pipeline is static: the same layered polymorphic byte cipher as Yoda-Crypter (one key per section class, keyed off `.text`/`CODE`, `.data`/`DATA`, `BSS`/`.rdata`, `.idata`), and then an LZO1X stream behind a four-byte uncompressed-length prefix. What is not yet reversed is where the stub restores the original section names from: the packed section table is blank, and the walkers key off the original names. Until that is resolved the handler stays at payload location rather than guessing. |
 
 ## Additional Packing Box packers
 
@@ -213,6 +216,9 @@ omitted. The Cyber Verification Program is the documented path for this class of
 Virtualizers such as Themida, cryptors with anti-debug such as TELock and
 Yoda-Protector, and reflective or bundler loaders such as Amber and Enigma
 cannot in general be reduced to a static decompress. For those the
+Virtualizers such as Themida, cryptors with anti-debug such as TELock, and
+reflective or bundler loaders such as Amber, Enigma, and Molebox cannot in
+general be reduced to a static decompress. For those the
 honest target is precise detection, payload or resource location and extraction
 where a container is present, and diagnostics that state a dynamic dump or
 emulation is required, never a false claim of a runnable rebuild.
