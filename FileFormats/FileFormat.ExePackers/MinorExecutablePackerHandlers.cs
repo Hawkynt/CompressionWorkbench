@@ -338,16 +338,6 @@ public sealed class Exe32packExecutablePackerHandler : MinorExecutablePackerHand
   }
 }
 
-public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-  public override string Id => "molebox";
-  public override string DisplayName => "Molebox";
-  protected override bool IsPackerSection(string name) =>
-    name.Contains("mole", StringComparison.OrdinalIgnoreCase) ||
-    name.Contains("mbx", StringComparison.OrdinalIgnoreCase) ||
-    int.TryParse(name, out _);
-  protected override ReadOnlySpan<byte> LiteralSignature => "Molebox"u8;
-}
-
 public sealed class NeoliteExecutablePackerHandler : MinorExecutablePackerHandlerBase {
   public override string Id => "neolite";
   public override string DisplayName => "Neolite";
