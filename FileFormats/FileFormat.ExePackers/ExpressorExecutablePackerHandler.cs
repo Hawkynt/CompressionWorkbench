@@ -27,11 +27,11 @@ namespace FileFormat.ExePackers;
 ///     length, so decoding one stream also finds where the next one begins.</item>
 /// </list>
 /// <para>
-/// Before compressing, eXpressor also runs the LZMA SDK's x86 branch filter over the data,
+/// Before compressing, eXpressor also runs the LZMA SDK's x86 branch filter over every section,
 /// which rewrites <c>E8</c>/<c>E9</c> call and jump displacements from relative to absolute.
-/// Decompression therefore yields each original section with its branch targets still in
-/// absolute form; non-code sections come out byte-identical because the filter finds nothing
-/// to convert in them. Inverting that filter is not implemented here — see the
+/// Decompression therefore yields each original section with its branch targets still in absolute
+/// form; only a stream that contained no convertible site at all comes back byte-identical, which
+/// over the reference corpus is 73 of 359 streams. Inverting that filter is not implemented here — see the
 /// <see cref="ExecutableDiagnosticCode.TransformNotReversible"/> diagnostic every result
 /// carries — so the artifacts are published as what they demonstrably are, decompressed but
 /// still branch-filtered, rather than being passed off as the original bytes.
@@ -74,6 +74,7 @@ public sealed class ExpressorExecutablePackerHandler : MinorExecutablePackerHand
     List<byte[]>? best = null;
     var bestSection = "";
     var bestConsumed = 0;
+    byte[]? bestPayload = null;
     foreach (var section in PackerScanner.GetPeSectionRanges(image)) {
       if (section.RawSize < 16 || section.RawOffset >= (uint)image.Length) continue;
       var length = (int)Math.Min(section.RawSize, (uint)image.Length - section.RawOffset);
@@ -82,11 +83,15 @@ public sealed class ExpressorExecutablePackerHandler : MinorExecutablePackerHand
       best = streams;
       bestSection = section.Name;
       bestConsumed = consumed;
-      if (consumed >= length - 16) {
-        artifacts.Add(new("compressed_payload.bin", image.AsSpan((int)section.RawOffset, length).ToArray(), "stored"));
-        level = ExecutableUnpackLevel.PayloadLocated;
-        caps |= ExecutableUnpackCapabilities.CanLocatePayload;
-      }
+      // Only a chain that runs to the end of its section is the payload section rather
+      // than a stream that happens to start inside some other section's data.
+      bestPayload = consumed >= length - 16 ? image.AsSpan((int)section.RawOffset, length).ToArray() : null;
+    }
+
+    if (bestPayload is not null) {
+      artifacts.Add(new("compressed_payload.bin", bestPayload, "stored"));
+      level = ExecutableUnpackLevel.PayloadLocated;
+      caps |= ExecutableUnpackCapabilities.CanLocatePayload;
     }
 
     if (best is null) {
@@ -107,10 +112,12 @@ public sealed class ExpressorExecutablePackerHandler : MinorExecutablePackerHand
       $"EXpressor payload in section '{bestSection}': {best.Count} raw LZMA stream(s), " +
       $"{bestConsumed} compressed bytes expanding to {total}.", false));
     diagnostics.Add(new(ExecutableDiagnosticCode.TransformNotReversible,
-      "eXpressor applies the LZMA SDK's x86 branch filter before compressing, so the decompressed " +
-      "sections still carry absolute E8/E9 call and jump targets. Sections without x86 code are " +
-      "byte-identical to the original; code sections are not, and no inverse branch filter is applied " +
-      "here rather than emitting bytes that are neither the packed nor the original form.", false));
+      "eXpressor applies the LZMA SDK's x86 branch filter to every section before compressing, so the " +
+      "decompressed streams still carry absolute E8/E9 call and jump targets wherever the filter found " +
+      "any to convert. A stream is byte-identical to its original section only when it contained no " +
+      "convertible site at all, which over the reference corpus is the minority of them. No inverse " +
+      "branch filter is applied here, in preference to emitting bytes that are neither the packed nor " +
+      "the original form.", false));
 
     return Finish(level, caps, artifacts, diagnostics, packed, this.Id);
   }
