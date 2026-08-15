@@ -70,7 +70,7 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
       });
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
         new(ExecutableDiagnosticCode.PayloadNotFound, "Input exceeds configured executable unpacking size limit.", true),
