@@ -82,27 +82,6 @@ public sealed class PeCompactExecutablePackerHandler : AplibSectionPackerHandler
 }
 
 /// <summary>
-/// Real unpack handler for RLPack (ap0x) — an aPLib/LZMA Win32 PE packer that
-/// embeds the literal <c>"RLPack"</c> and stores the packed image in a
-/// <c>.RLPack</c> / <c>.packed</c> section. The shared base attempts an aPLib decode
-/// (LZMA-mode payloads are reported as located but not aPLib-decodable).
-/// </summary>
-public sealed class RlPackExecutablePackerHandler : AplibSectionPackerHandler {
-  public override string Id => "rlpack";
-  public override string DisplayName => "RLPack aPLib-packed PE";
-  protected override string PackerLabel => "RLPack";
-
-  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
-    var hasLiteral = PackerScanner.IndexOfBounded(image, "RLPack"u8, 0x10000) >= 0;
-    var hasSection = PackerScanner.GetPeSections(image).Any(s =>
-      s.Name.Equals(".RLPack", StringComparison.OrdinalIgnoreCase));
-    if (hasLiteral || hasSection)
-      return (true, hasLiteral && hasSection ? 1.0 : 0.8, "");
-    return (false, 0, "RLPack: no 'RLPack' literal or .RLPack section found.");
-  }
-}
-
-/// <summary>
 /// Real unpack handler for Packman - a Win32 PE compressor that marks its
 /// payload section as <c>.PACKMAN</c>. The shared aPLib base handles the
 /// corpus variant whose section contains a clean aPLib stream.
