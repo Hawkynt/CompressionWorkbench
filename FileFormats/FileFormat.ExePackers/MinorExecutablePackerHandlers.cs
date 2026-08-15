@@ -506,39 +506,77 @@ public sealed class YodaCrypterExecutablePackerHandler : MinorExecutablePackerHa
   }
 
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
-    var generic = base.Unpack(packed, options);
-    if (generic.Level >= ExecutableUnpackLevel.PayloadDecompressed)
-      return generic;
-
     var payload = PackerScanner.GetPeSectionRanges(packed.OriginalImage)
       .Where(s => IsPackerSection(s.Name) && s.RawSize > 0 && s.RawOffset < packed.OriginalImage.Length)
       .OrderByDescending(s => s.RawSize)
       .FirstOrDefault();
-    if (payload.RawSize == 0)
-      return generic;
 
-    var artifacts = generic.Artifacts
-      .Where(a => a.Name != "diagnostics.json" && a.Name != "compressed_payload.bin" && !a.Name.StartsWith("payload_candidates/", StringComparison.Ordinal))
-      .ToList();
-    var len = (int)Math.Min(payload.RawSize, (uint)(packed.OriginalImage.Length - payload.RawOffset));
-    artifacts.Add(new("compressed_payload.bin", packed.OriginalImage.AsSpan((int)payload.RawOffset, len).ToArray(), "yodacrypter-section"));
+    var artifacts = new List<UnpackArtifact> {
+      new("metadata.json", this.BuildMetadataJson(packed), "stored"),
+      new("original_packed.bin", packed.OriginalImage, "stored"),
+    };
+    if (payload.RawSize > 0) {
+      var len = (int)Math.Min(payload.RawSize, (uint)(packed.OriginalImage.Length - payload.RawOffset));
+      artifacts.Add(new("stub_section.bin", packed.OriginalImage.AsSpan((int)payload.RawOffset, len).ToArray(), "yodacrypter-stub"));
+    }
 
-    var caps = ExecutableUnpackCapabilities.CanDetect |
-      ExecutableUnpackCapabilities.CanLocatePayload |
-      ExecutableUnpackCapabilities.SupportsPe;
+    var caps = ExecutableUnpackCapabilities.CanDetect | ExecutableUnpackCapabilities.SupportsPe;
+    if (payload.RawSize > 0)
+      caps |= ExecutableUnpackCapabilities.CanLocatePayload;
     if (packed.ImageInfo?.Architecture == CpuArchitecture.X86)
       caps |= ExecutableUnpackCapabilities.SupportsX86;
     else if (packed.ImageInfo?.Architecture == CpuArchitecture.X64)
       caps |= ExecutableUnpackCapabilities.SupportsX64;
 
-    var diagnostics = new List<ExecutableDiagnostic> {
-      new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
-        $"Yoda's Crypter section '{payload.Name}' was located. Managed decryption and import/entrypoint restoration are not implemented.",
-        true),
-    };
-    var result = new UnpackResult(ExecutableUnpackLevel.PayloadLocated, caps, artifacts, diagnostics);
+    var diagnostics = new List<ExecutableDiagnostic>();
+    var level = payload.RawSize > 0 ? ExecutableUnpackLevel.PayloadLocated : ExecutableUnpackLevel.DetectionOnly;
+
+    // Yoda's Crypter has to leave its per-build byte cipher in the stub in the
+    // clear — the CPU executes it — so the encryption reverses statically.
+    if (YodaCrypterStub.TryUnpack(packed.OriginalImage, out var stub) && stub is not null) {
+      artifacts.Add(new("decrypted_image.bin", stub.DecryptedImage, "yodacrypter"));
+      foreach (var (name, data) in EnumerateDecryptedSections(stub))
+        artifacts.Add(new($"decrypted_sections/{SanitizeSectionName(name)}.bin", data, "yodacrypter"));
+
+      level = ExecutableUnpackLevel.PayloadDecompressed;
+      caps |= ExecutableUnpackCapabilities.CanLocatePayload | ExecutableUnpackCapabilities.CanDecompressPayload;
+
+      diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
+        $"Yoda's Crypter encrypts in place instead of compressing. Sections [{string.Join(", ", stub.DecryptedSections)}] " +
+        $"were decrypted with the {stub.SectionCipher.Count}-operation byte cipher read out of the stub; " +
+        (stub.OriginalEntryPoint is { } entry
+          ? $"the original entry point RVA 0x{entry:X8} was restored into the header. "
+          : "the original entry point slot could not be located. ") +
+        $"Sections [{string.Join(", ", stub.SkippedSections)}] are stored unencrypted."));
+      diagnostics.Add(new(ExecutableDiagnosticCode.ExecutableRebuildFailed,
+        "The result is the original section payload, not a loadable executable: Yoda's Crypter replaces the import " +
+        "directory with its own descriptor format, nibble-swaps the hint/name strings, and discards any Authenticode " +
+        "certificate or overlay, so a runnable rebuild is not attempted."));
+    } else
+      diagnostics.Add(new(ExecutableDiagnosticCode.DecompressionFailed,
+        "The Yoda's Crypter stub could not be walked: the entry-point prologue, the polymorphic cipher loop or the " +
+        "section walker did not match the known layout, so no decryption was attempted.", true));
+
+    var result = new UnpackResult(level, caps, artifacts, diagnostics);
     artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
     return result with { Artifacts = artifacts };
+  }
+
+  private static IEnumerable<(string Name, byte[] Data)> EnumerateDecryptedSections(YodaCrypterStubInfo stub) {
+    foreach (var s in PackerScanner.GetPeSectionRanges(stub.DecryptedImage)) {
+      if (s.RawSize == 0 || !stub.DecryptedSections.Contains(s.Name))
+        continue;
+      if (s.RawOffset + s.RawSize > (uint)stub.DecryptedImage.Length)
+        continue;
+      yield return (s.Name, stub.DecryptedImage.AsSpan((int)s.RawOffset, (int)s.RawSize).ToArray());
+    }
+  }
+
+  private static string SanitizeSectionName(string value) {
+    var sb = new StringBuilder(value.Length);
+    foreach (var c in value)
+      sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_');
+    return sb.Length == 0 ? "section" : sb.ToString();
   }
 }
 
