@@ -1,3 +1,5 @@
+using Compression.Core.Dictionary.Lzma;
+using System.IO;
 using Compression.Core.ExecutableUnpacking;
 using FileFormat.ExePackers;
 using NUnit.Framework;
@@ -223,6 +225,45 @@ public class MinorExecutablePackerHandlersTests {
     });
   }
 
+  [Test, Category("HappyPath")]
+  public void MewHandler_DecodesBothStagesIntoTheOutputSection() {
+    var aplibPart = BuildOriginalImagePayload();
+    var lzmaPart = Enumerable.Range(0, 8192).Select(i => (byte)(i * 7 % 251)).ToArray();
+    var packed = BuildMewPe(aplibPart, lzmaPart, out var aplibRva, out var lzmaRva, out var outputSectionSize);
+    var handler = new MewExecutablePackerHandler();
+
+    var detection = handler.Detect(packed);
+    Assert.That(detection.IsMatch, Is.True);
+
+    var result = handler.Unpack(handler.Parse(packed, detection), new UnpackOptions());
+    var payload = result.Artifacts.Single(a => a.Name == "decompressed_payload.bin").Data;
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.GreaterThanOrEqualTo(ExecutableUnpackLevel.PayloadDecompressed));
+      Assert.That(payload, Has.Length.EqualTo((int)outputSectionSize));
+      Assert.That(payload.AsSpan((int)(aplibRva - 0x1000), aplibPart.Length).ToArray(), Is.EqualTo(aplibPart).AsCollection);
+      Assert.That(payload.AsSpan((int)(lzmaRva - 0x1000), lzmaPart.Length).ToArray(), Is.EqualTo(lzmaPart).AsCollection);
+      Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanDecompressPayload), Is.True);
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void MewHandler_FallsBackToLocatedWhenTheStubIsUnreadable() {
+    var packed = BuildMewPe(BuildOriginalImagePayload(), [], out _, out _, out _);
+    // Break the "mov esi, imm32" that addresses the stage-1 work list.
+    var stub = packed.AsSpan().IndexOf(new byte[] { 0x8B, 0xDE, 0xAD, 0xAD, 0x50, 0xAD, 0x97 });
+    packed[stub - 5] = 0x90;
+    var handler = new MewExecutablePackerHandler();
+
+    var detection = handler.Detect(packed);
+    Assert.That(detection.IsMatch, Is.True);
+
+    var result = handler.Unpack(handler.Parse(packed, detection), new UnpackOptions());
+    // The MEW reader must decline rather than invent a layout; whatever the
+    // shared fallback then makes of the section is not a MEW-decoded payload.
+    Assert.That(result.Artifacts.Any(a => a.Method.StartsWith("mew-aplib", StringComparison.Ordinal)), Is.False);
+  }
+
   [Test, Category("ExternalTool")]
   public void PackingBoxPetiteSample_EmitsPetiteSectionPayload() {
     var root = ExecutablePackerToolCache.GetPackingBoxDatasetPackedRoot();
@@ -344,6 +385,90 @@ public class MinorExecutablePackerHandlersTests {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 16), 0);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 20), 0);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 36), 0xE0000060);
+    return image;
+  }
+
+  /// <summary>
+  /// Builds a PE shaped like MEW's output: an empty "MEW" section that receives
+  /// the unpacked image, and a packed section holding the stage-1 aPLib work list
+  /// followed by the stage-2 LZMA record table.
+  /// </summary>
+  private static byte[] BuildMewPe(byte[] aplibPart, byte[] lzmaPart, out uint aplibRva, out uint lzmaRva, out uint outputSectionSize) {
+    const uint imageBase = 0x00400000;
+    const uint outputRva = 0x1000;
+    const int peOffset = 0x80;
+    const int optionalOffset = peOffset + 24;
+    const int optionalSize = 0xE0;
+    const int sectionOffset = optionalOffset + optionalSize;
+    const int stubOffset = sectionOffset + 80;
+    const int rawOffset = 0x400;
+
+    aplibRva = outputRva;
+    lzmaRva = outputRva + 0x4000;
+    outputSectionSize = 0x10000;
+    var packedRva = outputRva + outputSectionSize;
+
+    var body = new MemoryStream();
+    void U32(uint value) {
+      Span<byte> tmp = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32LittleEndian(tmp, value);
+      body.Write(tmp);
+    }
+
+    U32(imageBase + packedRva + 0x100); // getbit thunk address, unused by the reader
+    U32(imageBase + 0x2000);            // original entry point
+    U32(imageBase + aplibRva);
+    body.Write(AplibBuildingBlock.CompressBare(aplibPart));
+    U32(0);                             // end of the aPLib work list
+
+    U32(imageBase + packedRva + 0x200); // probability-model scratch buffer
+    if (lzmaPart.Length > 0) {
+      var encoded = new MemoryStream();
+      new LzmaEncoder(1 << 16, 4, 0, 2).Encode(encoded, lzmaPart, false);
+      var stream = encoded.ToArray();
+      U32((uint)lzmaPart.Length);
+      U32(imageBase + lzmaRva);
+      U32((uint)stream.Length);
+      body.WriteByte(0);                // filler the stub steps over
+      body.Write(stream);
+    }
+    U32(0);                             // end of the LZMA record table
+
+    var sectionBytes = body.ToArray();
+    var image = new byte[rawOffset + sectionBytes.Length];
+    image[0] = (byte)'M'; image[1] = (byte)'Z';
+    BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x3C), peOffset);
+
+    "PE\0\0"u8.CopyTo(image.AsSpan(peOffset));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 4), 0x14C);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 6), 2);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 20), optionalSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 22), 0x010F);
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(optionalOffset), 0x10B);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 16), packedRva);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 28), imageBase);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 32), 0x1000);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 36), 0x200);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 56), packedRva + 0x10000);
+
+    Encoding.ASCII.GetBytes("MEW").CopyTo(image.AsSpan(sectionOffset, 8));
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 8), outputSectionSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 12), outputRva);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 36), 0xE0000020);
+
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 8), (uint)sectionBytes.Length);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 12), packedRva);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 16), (uint)sectionBytes.Length);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 20), rawOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 36), 0xE0000020);
+
+    image[stubOffset] = 0xBE;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stubOffset + 1), imageBase + packedRva);
+    new byte[] { 0x8B, 0xDE, 0xAD, 0xAD, 0x50, 0xAD, 0x97, 0xB2, 0x80, 0xA4, 0xB6, 0x80, 0xFF, 0x13 }
+      .CopyTo(image.AsSpan(stubOffset + 5));
+
+    sectionBytes.CopyTo(image.AsSpan(rawOffset));
     return image;
   }
 

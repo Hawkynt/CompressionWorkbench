@@ -445,62 +445,6 @@ public sealed class NsPackExecutablePackerHandler : MinorExecutablePackerHandler
   }
 }
 
-public sealed class MewExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-  public override string Id => "mew";
-  public override string DisplayName => "MEW";
-  protected override bool IsPackerSection(string name) =>
-    name.StartsWith("MEW", StringComparison.OrdinalIgnoreCase) ||
-    name.StartsWith(".MEW", StringComparison.OrdinalIgnoreCase);
-  protected override ReadOnlySpan<byte> LiteralSignature => [];
-
-  public override DetectionResult Detect(ReadOnlySpan<byte> image) {
-    if (!PackerScanner.IsPe(image))
-      return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
-
-    var sections = PackerScanner.GetPeSections(image);
-    var hasMewSection = sections.Any(s => IsPackerSection(s.Name));
-    return hasMewSection
-      ? new(true, this.Id, 0.92, [])
-      : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "MEW section marker was not found.", true)]);
-  }
-
-  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
-    var generic = base.Unpack(packed, options);
-    if (generic.Level >= ExecutableUnpackLevel.PayloadLocated)
-      return generic;
-
-    var section = PackerScanner.GetPeSectionRanges(packed.OriginalImage)
-      .Where(s => s.RawSize > 0 && s.RawOffset < packed.OriginalImage.Length)
-      .OrderByDescending(s => s.RawSize)
-      .FirstOrDefault();
-    if (section.RawSize == 0)
-      return generic;
-
-    var artifacts = generic.Artifacts
-      .Where(a => a.Name != "diagnostics.json")
-      .ToList();
-    var len = (int)Math.Min(section.RawSize, (uint)(packed.OriginalImage.Length - section.RawOffset));
-    artifacts.Add(new("compressed_payload.bin", packed.OriginalImage.AsSpan((int)section.RawOffset, len).ToArray(), "mew-section"));
-
-    var caps = ExecutableUnpackCapabilities.CanDetect |
-      ExecutableUnpackCapabilities.CanLocatePayload |
-      ExecutableUnpackCapabilities.SupportsPe;
-    if (packed.ImageInfo?.Architecture == CpuArchitecture.X86)
-      caps |= ExecutableUnpackCapabilities.SupportsX86;
-    else if (packed.ImageInfo?.Architecture == CpuArchitecture.X64)
-      caps |= ExecutableUnpackCapabilities.SupportsX64;
-
-    var diagnostics = new List<ExecutableDiagnostic> {
-      new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
-        "MEW packed section was located, but managed MEW transform/decompression recovery is not implemented yet.",
-        true),
-    };
-    var result = new UnpackResult(ExecutableUnpackLevel.PayloadLocated, caps, artifacts, diagnostics);
-    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
-    return result with { Artifacts = artifacts };
-  }
-}
-
 public sealed class PetiteExecutablePackerHandler : MinorExecutablePackerHandlerBase {
   public override string Id => "petite";
   public override string DisplayName => "PEtite";
