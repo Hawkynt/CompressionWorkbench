@@ -52,17 +52,25 @@ public sealed class AsPackExecutablePackerHandler : AplibSectionPackerHandler {
     var diagnostics = new List<ExecutableDiagnostic>();
     var restored = new List<(AsPackRegion Region, byte[] Data)>();
     var stored = 0;
+    var budget = options.MaximumDecompressedSize;
     foreach (var region in layout.Regions) {
       if (region.IsStored) {
         ++stored;
         continue;
       }
 
+      if (region.OriginalSize > budget) {
+        diagnostics.Add(new(ExecutableDiagnosticCode.DecompressionFailed,
+          $"ASPack region at RVA 0x{region.Rva:X8} would take the restore past the configured decompressed-size limit.", true));
+        continue;
+      }
+
       try {
-        var data = AsPackImage.Restore(packed.OriginalImage, info, layout, region, options.MaximumDecompressedSize);
-        if (data is { Length: > 0 })
+        var data = AsPackImage.Restore(packed.OriginalImage, info, layout, region, budget);
+        if (data is { Length: > 0 }) {
           restored.Add((region, data));
-        else
+          budget -= data.Length;
+        } else
           diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound,
             $"ASPack region at RVA 0x{region.Rva:X8} has no data in the file."));
       } catch (Exception ex) when (ex is InvalidDataException or IndexOutOfRangeException or ArgumentException) {
