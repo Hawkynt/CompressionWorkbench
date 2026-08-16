@@ -134,6 +134,20 @@ Five packers decompress nothing: Neolite, NSPack, PECompact and Yoda's Protector
 by not getting there at all, and exe32pack with a single sample. PECompact's 6
 claims and NSPack's 1 verify at zero, so they are not partial successes.
 
+What blocks PECompact is worth writing down, because it rules out the obvious
+guess. Its first section opens with a dword that is a plausible uncompressed size
+— 770,836 against a virtual size of 790,528 on one sample — so the payload is
+found and framed correctly. But no codec here decodes it: aPLib, NRV2B/D/E and
+LZMA were each tried at every start offset from 0 to 96, on several samples, and
+none produced a cleanly-terminated expansion. The reason appears to be that the
+payload is not one stream. Across 40 samples a `u16` at offset 6 takes only
+512, 1,024, 2,048, 4,096 or 8,192 — block sizes, not a codec parameter — so what
+follows is a series of compressed blocks and feeding the whole region to a
+stream decoder cannot work whatever the codec is. Seventeen of those 40 instead
+share one fixed pair of values at offsets 4 and 6, which is a second layout
+rather than the same one varying. Both need reading before a decoder is written;
+guessing a codec is what has already failed.
+
 UPX moved from 45 to 129 of 130 in this measurement's own history: the NRV2B
 encoder and decoder had drifted into a private dialect that agreed with itself
 and nothing else, and the PackHeader validator rejected any binary whose image
