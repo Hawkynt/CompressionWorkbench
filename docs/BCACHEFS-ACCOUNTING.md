@@ -7,16 +7,25 @@ repeat it.
 
 ## Where this stands
 
-`BcacheFsWriter` writes the alloc, bucket_gens and freespace trees. It does not
-write accounting, backpointers or LRU. `bcachefs fsck -n` returns 0 on such a
-volume with nothing found and nothing fixed, so their absence is not detectable
-by the checker — it rebuilds them without complaint. `bcachefs list -b accounting`
-on one of our images returns no keys, against 936 alloc keys on the same image.
+`BcacheFsWriter` writes the alloc, bucket_gens, freespace, accounting and
+backpointers trees. On a small volume that is
 
-That makes this a fidelity gap rather than a correctness one, and it is the
-reason the trees are not written yet: adding an accounting key whose counters are
-wrong turns a volume the checker accepts into one it rejects. Nothing here should
-be implemented without checking each step against `fsck`.
+```
+alloc: 158   freespace: 2   bucket_gens: 8   accounting: 6   backpointers: 12
+```
+
+with `bcachefs fsck -n` returning 0, nothing found and nothing fixed.
+
+The two halves are checked by different things, and it matters which is which.
+The checker validates backpointers: a key naming the wrong bucket, tree or level
+is refused, so that half is developed against a real signal. It does *not*
+validate the accounting totals — a volume carrying wrong numbers passes exactly
+as one carrying right ones, tested rather than assumed — so those are held to a
+filesystem `mkfs.bcachefs` made and the kernel initialised, which is the only
+thing that will contradict them.
+
+Still missing: accounting's `replicas`, `snapshot` and `btree` types. LRU needs
+nothing; see below.
 
 ## How the key positions are encoded
 
@@ -85,7 +94,10 @@ initialised — `bcachefs list -b lru` returns no keys at all. Ours is empty too
 so there is no difference to close. It is listed here so the next person does not
 go looking for work that is not there.
 
-## Backpointers: the encoding, and why they are not written yet
+## Backpointers
+
+Written now. What follows is what it took, because the shift is the part that
+looks settled and is not.
 
 A real filesystem carries exactly one backpointer per b-tree node — ten keys
 against the ten b-tree buckets on the control image, and nothing else, because
@@ -105,25 +117,30 @@ a `u32` of flags carrying the sub-offset, a `u32` bucket length, and a full
 position — thirty-two bytes, which is the type's stated minimum value size. For a
 node the length is the whole bucket, 128, and the position is `SPOS_MAX`.
 
-Two things stop this being a half-hour change, and both are reasons to do it
-deliberately rather than at the end of a session:
+The shift is not a constant. It is `BCH_SB_EXTENT_BP_SHIFT`, bits 40 to 48 of
+the superblock's `flags[6]`, and it reads as ten when left unset. A formatter
+writes sixteen. The first attempt here wrote keys shifted by sixteen without
+writing the field, so the checker read them back shifted by ten and placed every
+node sixty-four buckets too far along:
 
-- **It is circular in a way the bucket count is not.** The backpointers tree is
-  itself one of the trees being placed, and a backpointer names the bucket its
-  node landed in — so the keys depend on a layout that depends on the keys. The
-  existing fixed point settles how many b-tree buckets there are; this needs
-  which node is in which bucket, which is one level finer.
-- **Every node needs one, not every tree.** The control image has a single node
-  per tree so the two look alike there. A tree that splits has a root and leaves
-  at different levels, and the `level` field has to match the node it points at.
+```
+ours: bucket=0:3136:0 btree=extents ...    backpointer_to_missing_alloc 12
+real: bucket=0:49:0   btree=alloc ...
+```
 
-File data needs them too, keyed by the extent rather than `SPOS_MAX`, and the
-control image cannot show what those look like because it holds no files.
+Writing sixteen into the superblock as well brought the two into line — the
+field was another difference from a formatted filesystem in its own right, since
+ours had been leaving it at zero.
 
-Unlike accounting, `fsck` does check backpointers, so this one can be developed
-against a real signal. That makes it a good next piece of work — and a bad one to
-guess at, since a wrong key turns a volume the checker accepts into one it
-rejects.
+Which node lands in which bucket is decided by the write pass: trees in order,
+each taking as many consecutive buckets as it has nodes, leaves before the root.
+The keys need that assignment before anything is written, so the rule is applied
+in the plan rather than the assignment being carried out of the writer. It is
+circular — the backpointers tree is itself one of the trees being placed — and
+the existing fixed point over the b-tree bucket count already absorbs it.
+
+Unlike accounting, `fsck` does check these, which is how both mistakes above were
+caught rather than shipped.
 
 ## What is not established
 

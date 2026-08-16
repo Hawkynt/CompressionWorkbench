@@ -43,10 +43,18 @@ namespace FileSystem.BcacheFs;
 /// <c>mkfs.bcachefs</c> made and the kernel initialised. Against that, the
 /// superblock and journal rows match to the sector.</para>
 ///
-/// <para>Still not written are the backpointer and LRU trees, and accounting's
-/// own <c>replicas</c>, <c>snapshot</c> and <c>btree</c> types. The checker
-/// rebuilds those without complaint; if that stops being true they belong here
-/// too. See <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
+/// <para>The backpointers tree points the other way: for each b-tree node, from
+/// the space it occupies back to the tree that holds it. Those keys have to know
+/// where each node landed, which is decided by the same rule the write pass
+/// follows — trees in order, each taking as many consecutive buckets as it has
+/// nodes — so the rule is applied here rather than the assignment being threaded
+/// out of the writer.</para>
+///
+/// <para>The LRU tree stays empty, which is what a filesystem
+/// <c>mkfs.bcachefs</c> made and the kernel initialised also has, so there is
+/// nothing there to write. Accounting's <c>replicas</c>, <c>snapshot</c> and
+/// <c>btree</c> types are still missing; the checker rebuilds them without
+/// complaint. See <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
 
@@ -145,10 +153,10 @@ public sealed class BcacheFsWriter {
   private static readonly int[] Btrees = [
     BtreeExtents, BtreeInodes, BtreeDirents,
     BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees, BtreeLoggedOps,
-    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeAccounting,
+    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeAccounting, BtreeBackpointers,
   ];
 
-  private const int BtreeCount = 11;
+  private const int BtreeCount = 12;
 
   /// <summary>Writes the volume.</summary>
   public void WriteTo(Stream output) {
@@ -434,6 +442,7 @@ public sealed class BcacheFsWriter {
     var bucketGens = nodes[8];
     var freespace = nodes[9];
     var accounting = nodes[10];
+    var backpointers = nodes[11];
 
     var firstLastSbBucket = (deviceSectors - SbSlotSectors) / BucketSectors;
     var fileEnd = (long)FirstMetadataBucket + MetadataBuckets;
@@ -484,6 +493,25 @@ public sealed class BcacheFsWriter {
       for (byte type = DataFree; type <= DataUser; ++type)
         if (bucketsOf[type] > 0)
           accounting.Add(DevDataTypeKey(type, bucketsOf[type], sectorsOf[type]));
+
+      // One backpointer per b-tree node, which needs to know where each node
+      // lands. That is not recorded anywhere yet — the nodes are placed as they
+      // are written — but it is decided by the same rule the writer follows:
+      // trees in order, each taking as many consecutive buckets as it has nodes,
+      // leaves before the root. Mirroring it here rather than threading the
+      // assignment out of the write pass keeps one description of the layout.
+      backpointers.Clear();
+      var at = (long)FirstMetadataBucket;
+      foreach (var tree in nodes) {
+        var count = NodeCount(tree);
+        for (var i = 0; i < count; ++i) {
+          // A tree of one node is that node; a tree of several is its leaves and
+          // then its root one level above them.
+          var level = count > 1 && i == count - 1 ? 1 : 0;
+          backpointers.Add(NodeBackpointerKey(at + i, tree.BtreeId, level, BucketSectors));
+        }
+        at += count;
+      }
 
       var settled = nodes.Sum(NodeCount);
       if (settled == btreeBuckets) break;
@@ -799,6 +827,34 @@ public sealed class BcacheFsWriter {
   private static Key NrInodesKey(ulong inodes) => AccountingKey([AccountingNrInodes], inodes);
 
   /// <summary>
+  /// Says what occupies a stretch of the device, pointing back from the space to
+  /// the thing that holds it.
+  /// </summary>
+  /// <remarks>
+  /// <para>The alloc tree says a bucket holds a b-tree node; this says which one.
+  /// The position is where the target sits, shifted up so the low bits can carry
+  /// an offset inside the bucket, and the value names the tree, the node's level
+  /// within it, and how much of the bucket the node takes.</para>
+  ///
+  /// <para>Unlike the accounting totals, <c>fsck</c> checks these: a key naming
+  /// the wrong tree or the wrong level is a volume the checker rejects, so these
+  /// are developed against it rather than against a control image.</para>
+  /// </remarks>
+  private static Key NodeBackpointerKey(long bucket, int btreeId, int level, int sectors) {
+    var value = new byte[32];
+    value[0] = (byte)btreeId;
+    value[1] = (byte)level;
+    value[2] = DataBtree;
+    value[3] = 0;                                                              // bucket_gen
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(4), 0);              // flags, incl. sub-offset
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);  // bucket_len
+    // A node is not an extent, so the position it covers is the top of the space.
+    WriteBpos(value.AsSpan(12), Bpos.Max);
+    return new Key(KeyBackpointer,
+      new Bpos(0, (ulong)(bucket * BucketSectors) << ExtentBpShift, 0), 0, value);
+  }
+
+  /// <summary>
   /// Buckets, live sectors and fragmented sectors, for one kind of content.
   /// </summary>
   /// <remarks>
@@ -930,6 +986,11 @@ public sealed class BcacheFsWriter {
 
     Set(6, 4, 14, 30);                   // write error timeout
     Set(6, 14, 20, 3);                   // checksum error retries
+    // How far a backpointer's position sits above the sector it names. Left
+    // unset it reads as a default of ten, and the backpointers written here
+    // would then name a bucket sixty-four times too far along; a formatter
+    // writes sixteen, and so does this.
+    Set(6, 40, 48, ExtentBpShift);
 
     for (var i = 0; i < 7; ++i)
       BinaryPrimitives.WriteUInt64LittleEndian(flags[(8 * i)..], words[i]);

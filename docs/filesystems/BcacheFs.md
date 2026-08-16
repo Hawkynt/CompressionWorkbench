@@ -77,7 +77,9 @@ The accounting tree carries the totals: how many inodes there are, and per kind 
 
 Accounting is the one part here the checker will not confirm. A volume carrying wrong totals passes fsck exactly as one carrying right ones does — tested, not assumed — so the numbers are held instead to a filesystem mkfs.bcachefs made and the kernel initialised. Against that, the superblock and journal rows match to the sector.
 
-Still not written are the backpointer and LRU trees, and accounting's own replicas, snapshot and btree types. The checker rebuilds those without complaint; if that stops being true they belong here too. See docs/BCACHEFS-ACCOUNTING.md.
+The backpointers tree points the other way: for each b-tree node, from the space it occupies back to the tree that holds it. Those keys have to know where each node landed, which is decided by the same rule the write pass follows — trees in order, each taking as many consecutive buckets as it has nodes — so the rule is applied here rather than the assignment being threaded out of the writer.
+
+The LRU tree stays empty, which is what a filesystem mkfs.bcachefs made and the kernel initialised also has, so there is nothing there to write. Accounting's replicas, snapshot and btree types are still missing; the checker rebuilds them without complaint. See docs/BCACHEFS-ACCOUNTING.md.
 
 ## Parameters
 
