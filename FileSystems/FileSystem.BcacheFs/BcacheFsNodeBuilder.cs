@@ -52,6 +52,14 @@ internal sealed class BcacheFsNodeBuilder {
 
   internal int Count => this._keys.Count;
 
+  /// <summary>Drops every key, so the node can be filled again.</summary>
+  /// <remarks>
+  /// The allocation trees are built more than once: what they say about the
+  /// b-tree buckets depends on how many nodes there turn out to be, which depends
+  /// on the keys. Each attempt starts from empty rather than adding to the last.
+  /// </remarks>
+  internal void Clear() => this._keys.Clear();
+
   /// <summary>How many bytes the node needs, before rounding to whole sectors.</summary>
   internal int Bytes {
     get {

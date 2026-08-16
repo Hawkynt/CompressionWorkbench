@@ -226,11 +226,10 @@ public class BcacheFsVolumeTests {
   /// A volume written for writing is one the kernel will mount read-write.
   /// </summary>
   /// <remarks>
-  /// <para>The two mounts want opposite things of a volume that carries no
-  /// allocation information, and the format has a bit for each. By default the
-  /// volume says it is an image file, which a read-only mount takes as it is;
-  /// asking for the other lets a read-write mount rebuild the allocation
-  /// information on the way in.</para>
+  /// <para>A read-write mount needs allocation information, because it cannot
+  /// decide where to put a write without it. The volume carries it, so there is
+  /// nothing to ask for and no second kind of volume to write: this mounts the
+  /// same image the read-only test mounts.</para>
   ///
   /// <para>Either way the device has to declare a durability, and that field holds
   /// one more than it is so that zero can mean the default. A device that declares
@@ -246,7 +245,6 @@ public class BcacheFsVolumeTests {
     var path = Path.Combine(Path.GetTempPath(), "cwb_bchrw_" + Guid.NewGuid().ToString("N")[..8] + ".bch");
     try {
       var writer = new BcacheFsWriter();
-      writer.SetReadWriteCapable(true);
       foreach (var (name, data) in files) writer.AddFile(name, data);
       using (var output = File.Create(path)) writer.WriteTo(output);
 
