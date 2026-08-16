@@ -74,7 +74,7 @@ other. Detection is measured over all 130.
 | ASPack | 130 | 130 | 111 | 111 | 101 |
 | BeRoEXEPacker | 130 | 130 | 127 | 127 | 123 |
 | exe32pack | 130 | 126 | 1 | 1 | 1 |
-| eXpressor | 130 | 130 | 110 | 110 | 44 |
+| eXpressor | 130 | 130 | 110 | 110 | 57 |
 | FSG | 130 | 128 | 106 | 106 | 100 |
 | JDPack | 130 | 129 | 111 | 111 | 106 |
 | MEW | 130 | 130 | 126 | 126 | 120 |
@@ -86,16 +86,16 @@ other. Detection is measured over all 130.
 | PECompact | 130 | 130 | 6 | 6 | 0 |
 | PEtite | 130 | 129 | 55 | 55 | 55 |
 | RLPack | 130 | 130 | 125 | 125 | 115 |
-| UPX | 130 | 130 | 117 | 117 | 58 |
+| UPX | 130 | 130 | 117 | 117 | 61 |
 | WinUpack | 130 | 130 | 108 | 108 | 107 |
 | Yoda's Crypter | 130 | 130 | 110 | 110 | 106 |
 | Yoda's Protector | 130 | 130 | 0 | 0 | 0 |
-| **Total** | **2470** | **2455** | **1562** | **1562** | **1284** |
+| **Total** | **2470** | **2455** | **1562** | **1562** | **1300** |
 
-Recognition is 99.4%. Of the 1562 claims that could be checked, 1284 (82%) carry
-recognisable original code and 278 do not, and three packers own most of the
-shortfall: Packman (125 claimed, 35 verified), UPX (117/58) and eXpressor
-(110/44).
+Recognition is 99.4%. Of the 1562 claims that could be checked, 1300 (83%) carry
+recognisable original code and 262 do not, and three packers own most of the
+shortfall: Packman (125 claimed, 35 verified), UPX (117/61) and eXpressor
+(110/57).
 
 Read the gap carefully rather than as a bug count. The probe takes its 32-byte
 run from a third of the way into the original *file*, and a decompressed payload
@@ -110,19 +110,31 @@ bytes are genuine and the probe simply sampled elsewhere.
 | Packer | Verified | Plus genuine elsewhere | No original bytes at all |
 |---|---|---|---|
 | Packman | 35 | 65 | 25 of 125 |
-| UPX | 58 | 29 | 30 of 117 |
-| eXpressor | 44 | 33 | 33 of 110 |
+| UPX | 61 | 28 | 28 of 117 |
+| eXpressor | 57 | 27 | 26 of 110 |
 
 So most of what the single probe counts against these three is partial recovery
-rather than wrong recovery, and the number worth chasing is the last column.
+rather than wrong recovery, and the number worth chasing is the last column: 79
+samples, not the 262 the first column implies.
 
-One measurement error is worth recording, because it ran the wrong way. The
-audit picks the largest artifact to compare, and `payload_candidates/`,
-`aplib_payload@` and `compressed_payload.bin` hold the *packed* bytes — a
-section of the input, which can easily be larger than what came out of it.
-Comparing those against the original scored misses on samples that had unpacked
-correctly. Excluding them moved eXpressor from 39 to 44 and Packman from 42 to
-35: the correction does not run one way, which is the point of making it.
+Two measurement errors are worth recording, because between them they moved the
+figure by more than any unpacker change has.
+
+The audit compared the largest artifact, and `payload_candidates/`,
+`aplib_payload@` and `compressed_payload.bin` hold the *packed* bytes — a section
+of the input, which can easily be larger than what came out of it. Comparing
+those against the original scored misses on samples that had unpacked correctly.
+
+Comparing only one artifact was the second, and the worse of the two. A packer
+that chains streams hands the original back in pieces: eXpressor emits
+`stream_000`, `stream_001`, `stream_002`, and the run being looked for is as
+likely to be in the second as the first. Every failing eXpressor sample named
+`stream_000` — which was the audit reading the first piece and calling the
+recovery wrong.
+
+Together the two moved eXpressor from 39 verified to 57 and UPX from 58 to 61,
+while Packman went from 42 to 35. The corrections do not run one way, which is
+the reason to make them rather than assume the flaw was flattering.
 
 Byte-exact recovery of the pre-packing original is not the bar and no tool meets
 it: `upx -d` returns 174,911 bytes for an original of 174,968 (95.4% identical),
