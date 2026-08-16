@@ -1,9 +1,8 @@
 # bcachefs accounting, backpointer and LRU keys
 
-What a volume written here does not yet carry, what those keys look like, and how
-that was established. Written down because the encoding is not obvious from the
-headers alone and cost a day to work out; the next attempt should not have to
-repeat it.
+What a volume written here carries, what is still missing and why, and how each
+encoding was established. Written down because none of it is obvious from the
+headers alone; the next attempt should not have to work it out again.
 
 ## Where this stands
 
@@ -11,7 +10,7 @@ repeat it.
 backpointers trees. On a small volume that is
 
 ```
-alloc: 158   freespace: 2   bucket_gens: 8   accounting: 6   backpointers: 12
+alloc: 158   freespace: 2   bucket_gens: 8   accounting: 20   backpointers: 12
 ```
 
 with `bcachefs fsck -n` returning 0, nothing found and nothing fixed.
@@ -168,17 +167,18 @@ sector total. That part is not the obstacle.
 
 ## What is not established
 
-- The `replicas`, `snapshot` and `btree` accounting types appear in a real
-  filesystem and their positions decode by the rule above, but their counters
-  have not been derived from first principles here.
-- Whether `fsck` accepts a volume carrying *some* accounting types and not
-  others, or recomputes and reports a mismatch, has not been tested. It decides
-  whether this can be done in pieces.
-- Whether `extent_bp_shift` has to be written into the superblock or is derived
-  from the encoded extent maximum. The control filesystem uses 16 and ours agrees
-  by construction, but that is an observation, not a guarantee.
-- `bcachefs fs usage` would be the natural check, and it refuses an unmounted
-  image, so verification has to go through `fsck` or a real mount.
+- Backpointers for file data. A node's are written and checked by the checker;
+  an extent's are keyed by the extent rather than `SPOS_MAX`, and the control
+  filesystem holds no files, so it cannot show what those look like.
+- The `replicas` counters, which need the superblock section above.
+- The `compression`, `inum` and `rebalance_work` accounting types. None appears
+  in the control filesystem, so there is nothing here to check them against.
+
+Two questions that were open have since been answered, and are recorded so they
+are not asked again. `fsck` does accept a volume carrying some accounting types
+and not others — it neither recomputes nor reports a mismatch — which is what
+makes this safe to do in pieces. And `extent_bp_shift` is a superblock field,
+`BCH_SB_EXTENT_BP_SHIFT` in `flags[6]`, not something derived at mount time.
 
 ## References
 
