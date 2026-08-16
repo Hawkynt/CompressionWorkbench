@@ -13,11 +13,11 @@ namespace FileSystem.BcacheFs;
 /// <see cref="BcacheFsReader" /> — which understands both the packed keys
 /// <c>mkfs.bcachefs</c> writes and the plain ones this project does.
 ///
-/// <para>What such a volume does not carry is allocation information: the trees a
-/// running filesystem keeps so it can decide where to write next. bcachefs's own
-/// image tooling leaves them out too, and rebuilds them on the first read-write
-/// mount. Which of the two mounts a volume is written for is an option; the
-/// default is reading. See <see cref="BcacheFsWriter" />.</para>
+/// <para>Such a volume carries its allocation information — what each bucket
+/// holds, every bucket's generation, and the runs of buckets nothing was laid
+/// into — so one volume serves a read-only and a read-write mount alike, and
+/// <c>bcachefs fsck</c> walks it and finds nothing to fix. See
+/// <see cref="BcacheFsWriter" />.</para>
 ///
 /// References:
 /// <list type="bullet">

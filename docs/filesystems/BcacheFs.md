@@ -53,7 +53,7 @@ the bytes that actually move rather than the whole volume.
 
 Descriptor for bcachefs volumes: a superblock at offset 4096, and b-trees under it holding the names, the metadata and the positions of every file's bytes. Volumes written here are read by the kernel driver, and read back by `BcacheFsReader` — which understands both the packed keys `mkfs.bcachefs` writes and the plain ones this project does.
 
-What such a volume does not carry is allocation information: the trees a running filesystem keeps so it can decide where to write next. bcachefs's own image tooling leaves them out too, and rebuilds them on the first read-write mount. Which of the two mounts a volume is written for is an option; the default is reading. See `BcacheFsWriter`.
+Such a volume carries its allocation information — what each bucket holds, every bucket's generation, and the runs of buckets nothing was laid into — so one volume serves a read-only and a read-write mount alike, and bcachefs fsck walks it and finds nothing to fix. See `BcacheFsWriter`.
 
 References:
 
@@ -69,7 +69,11 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 
 bcachefs keeps no directory blocks and no inode table. A file's name is a key in the dirents tree, its metadata a key in the inodes tree, and its bytes are named by keys in the extents tree; a volume is those trees plus a superblock that says where their roots are. Because the volume is written whole and never mounted for writing in between, the roots go in the superblock's clean section, and no journal entries are needed to find them.
 
-What is not written is the allocation information — the alloc, freespace, backpointer and accounting trees a running filesystem keeps so it can decide where to put the next write. A volume written whole does not have them, and the two mounts want opposite things of that: a read-only mount has to be told not to go and build them, because building them is a write, while a read-write mount has to be allowed to, because it cannot allocate without them. The format has a bit for each case and they are mutually exclusive, so which one a volume gets is a choice — see `SetReadWriteCapable`. By default it is the first, because a volume written whole is an image, and such a volume mounts read-only and passes the format's own checker.
+The allocation information is written too: the alloc tree says what each bucket holds and how much of it is used, the bucket_gens tree gives every bucket's generation, and the freespace tree covers the runs of buckets nothing has been laid into. What each bucket holds has to agree with what the extents say, and the count of b-tree buckets feeds itself — those keys are themselves keys, so adding them can want another node — which is why the description is settled by repetition rather than worked out once.
+
+It used to be left out, and the volume claimed no_alloc_info and small_image to be let past the check that would have built it. No formatter sets either, so the volume could be told from one by the bits alone, and a read-write mount was refused outright. Neither is claimed now.
+
+Still not written are the backpointer, LRU and accounting trees. The checker rebuilds those without complaint; if that stops being true they belong here too.
 
 ## Parameters
 
