@@ -160,6 +160,23 @@ share one fixed pair of values at offsets 4 and 6, which is a second layout
 rather than the same one varying. Both need reading before a decoder is written;
 guessing a codec is what has already failed.
 
+Neolite is stuck for an unrelated reason and wants a different first move. It
+keeps the ordinary section names — `.text`, `.rdata`, `.data`, `.rsrc`,
+`.reloc` — and `.text` opens with the loader rather than the payload: `push 0`,
+`push 0`, `mov ecx, 0x45328c`, `call`. Probing the first section therefore only
+ever reads stub code, which is why every codec is refused. Nor is the payload
+simply elsewhere in the file as a dense blob: the highest entropy in any section
+of the samples measured is 6.65 and most sit between 4 and 5, where compressed
+data would be near 8. Whatever Neolite does is lighter than a single compressed
+image, and the stub has to be read to find out what.
+
+Seven of its 110 comparable samples are byte-identical to the original — the
+packer left them alone, and no amount of unpacking will produce a difference.
+They are counted here as failures because the handler does not notice a file is
+unpacked and say so. That is worth fixing on its own, and it is the only place
+in the corpus where it happens: every other packer's samples all differ from
+their originals, which was checked rather than assumed.
+
 UPX moved from 45 to 129 of 130 in this measurement's own history: the NRV2B
 encoder and decoder had drifted into a private dialect that agreed with itself
 and nothing else, and the PackHeader validator rejected any binary whose image
