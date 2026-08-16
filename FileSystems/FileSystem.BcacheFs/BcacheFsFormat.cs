@@ -111,6 +111,7 @@ internal static class BcacheFsFormat {
   internal const int BtreeSubvolumes = 8;
   internal const int BtreeSnapshots = 9;
   internal const int BtreeFreespace = 11;
+  internal const int BtreeAccounting = 20;
   internal const int BtreeNeedDiscard = 12;
   internal const int BtreeBucketGens = 14;
   internal const int BtreeSnapshotTrees = 15;
@@ -127,6 +128,7 @@ internal static class BcacheFsFormat {
   internal const byte KeyAllocV4 = 27;
   internal const byte KeyInodeV3 = 29;
   internal const byte KeyBucketGens = 30;
+  internal const byte KeyAccounting = 34;
   internal const byte KeySnapshotTree = 31;
   internal const byte KeyInodeAllocCursor = 35;
 
@@ -136,6 +138,10 @@ internal static class BcacheFsFormat {
   internal const byte DataJournal = 2;
   internal const byte DataBtree = 3;
   internal const byte DataUser = 4;
+
+  /// <summary>Accounting key types, as the type tag that opens the position.</summary>
+  internal const byte AccountingNrInodes = 0;
+  internal const byte AccountingDevDataType = 3;
 
   /// <summary>How many buckets one bucket_gens key covers.</summary>
   internal const int BucketGensNr = 256;

@@ -31,9 +31,22 @@ namespace FileSystem.BcacheFs;
 /// formatter sets either, so the volume could be told from one by the bits alone,
 /// and a read-write mount was refused outright. Neither is claimed now.</para>
 ///
-/// <para>Still not written are the backpointer, LRU and accounting trees. The
-/// checker rebuilds those without complaint; if that stops being true they belong
-/// here too.</para>
+/// <para>The accounting tree carries the totals: how many inodes there are, and
+/// per kind of content how many buckets, how many live sectors and how many
+/// sectors sit unused inside used buckets. They come off the same walk as the
+/// alloc keys, because they are the same facts added up, and counting them
+/// separately is how the two come to disagree.</para>
+///
+/// <para>Accounting is the one part here the checker will not confirm. A volume
+/// carrying wrong totals passes <c>fsck</c> exactly as one carrying right ones
+/// does — tested, not assumed — so the numbers are held instead to a filesystem
+/// <c>mkfs.bcachefs</c> made and the kernel initialised. Against that, the
+/// superblock and journal rows match to the sector.</para>
+///
+/// <para>Still not written are the backpointer and LRU trees, and accounting's
+/// own <c>replicas</c>, <c>snapshot</c> and <c>btree</c> types. The checker
+/// rebuilds those without complaint; if that stops being true they belong here
+/// too. See <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
 
@@ -132,10 +145,10 @@ public sealed class BcacheFsWriter {
   private static readonly int[] Btrees = [
     BtreeExtents, BtreeInodes, BtreeDirents,
     BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees, BtreeLoggedOps,
-    BtreeAlloc, BtreeBucketGens, BtreeFreespace,
+    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeAccounting,
   ];
 
-  private const int BtreeCount = 10;
+  private const int BtreeCount = 11;
 
   /// <summary>Writes the volume.</summary>
   public void WriteTo(Stream output) {
@@ -420,6 +433,7 @@ public sealed class BcacheFsWriter {
     var alloc = nodes[7];
     var bucketGens = nodes[8];
     var freespace = nodes[9];
+    var accounting = nodes[10];
 
     var firstLastSbBucket = (deviceSectors - SbSlotSectors) / BucketSectors;
     var fileEnd = (long)FirstMetadataBucket + MetadataBuckets;
@@ -438,12 +452,22 @@ public sealed class BcacheFsWriter {
     for (var attempt = 0; attempt < 8; ++attempt) {
       alloc.Clear();
       freespace.Clear();
+      accounting.Clear();
       var runStart = -1L;
+
+      // The same walk answers both questions: what each bucket holds, key by
+      // key, and how much of each kind there is in total. Counting them
+      // separately is how the two come to disagree.
+      var bucketsOf = new ulong[DataUser + 1];
+      var sectorsOf = new ulong[DataUser + 1];
+
       for (long b = 0; b <= buckets; ++b) {
         var free = b < buckets;
         if (free) {
           var (type, sectors) = this.BucketContents(b, files, fileEnd, firstLastSbBucket, btreeBuckets);
           free = type == DataFree;
+          ++bucketsOf[type];
+          sectorsOf[type] += sectors;
           if (!free) alloc.Add(AllocKey(b, type, sectors));
         }
 
@@ -455,6 +479,11 @@ public sealed class BcacheFsWriter {
         if (runStart >= 0) freespace.Add(FreespaceKey(runStart, b));
         runStart = -1;
       }
+
+      accounting.Add(NrInodesKey((ulong)(1 + directories.Count + files.Count)));
+      for (byte type = DataFree; type <= DataUser; ++type)
+        if (bucketsOf[type] > 0)
+          accounting.Add(DevDataTypeKey(type, bucketsOf[type], sectorsOf[type]));
 
       var settled = nodes.Sum(NodeCount);
       if (settled == btreeBuckets) break;
@@ -734,8 +763,61 @@ public sealed class BcacheFsWriter {
   /// Every bucket here is on its first use, so every generation is zero and the
   /// key is a run of zero bytes. It is written even so: the tree is what the
   /// checker walks to learn a bucket's generation, and a missing key does not
-  /// read as zero, it reads as a hole to be repaired.
+  /// <summary>
+  /// An accounting key: a counter, positioned by what it counts.
+  /// </summary>
+  /// <remarks>
+  /// <para>The position is not an ordinary triple. It is a
+  /// <c>disk_accounting_pos</c> — a type-tagged union laid over the twenty bytes
+  /// of a position and treated as one twenty-byte integer, so that every key of
+  /// a type sorts together. The overlay is byte-reversed against the struct: the
+  /// type tag is the struct's first byte and lands in the most significant byte
+  /// of the inode field, while multi-byte fields inside the struct keep their
+  /// native little-endian order.</para>
+  ///
+  /// <para>Which is why this takes the struct's bytes and folds them, rather
+  /// than writing the fields into a position directly. See
+  /// <c>docs/BCACHEFS-ACCOUNTING.md</c> for how the layout was read off a real
+  /// filesystem.</para>
   /// </remarks>
+  private static Key AccountingKey(ReadOnlySpan<byte> position, params ulong[] counters) {
+    Span<byte> s = stackalloc byte[20];
+    s.Clear();
+    position.CopyTo(s);
+
+    var inode = BinaryPrimitives.ReadUInt64BigEndian(s);
+    var offset = BinaryPrimitives.ReadUInt64BigEndian(s[8..]);
+    var snapshot = BinaryPrimitives.ReadUInt32BigEndian(s[16..]);
+
+    var value = new byte[8 * counters.Length];
+    for (var i = 0; i < counters.Length; ++i)
+      BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8 * i), counters[i]);
+    return new Key(KeyAccounting, new Bpos(inode, offset, snapshot), 0, value);
+  }
+
+  /// <summary>How many inodes the volume holds.</summary>
+  private static Key NrInodesKey(ulong inodes) => AccountingKey([AccountingNrInodes], inodes);
+
+  /// <summary>
+  /// Buckets, live sectors and fragmented sectors, for one kind of content.
+  /// </summary>
+  /// <remarks>
+  /// <para>Fragmented is what a used bucket holds that the content does not: the
+  /// bucket is counted whole, so the difference between its sectors and the live
+  /// ones is space inside it that carries nothing. A free bucket has none — it is
+  /// not partly used, it is unused — and a real filesystem records zero there
+  /// rather than the whole bucket.</para>
+  ///
+  /// <para><c>fsck</c> does not check these counters: a volume with the wrong
+  /// number here is accepted exactly as one with the right number is, which was
+  /// tested rather than assumed. The values are held to a filesystem that
+  /// <c>mkfs.bcachefs</c> made and the kernel initialised, because that is the
+  /// only thing that will contradict them.</para>
+  /// </remarks>
+  private static Key DevDataTypeKey(byte dataType, ulong buckets, ulong sectors) =>
+    AccountingKey([AccountingDevDataType, 0, dataType],
+      buckets, sectors, dataType == DataFree ? 0 : buckets * BucketSectors - sectors);
+
   private static Key BucketGensKey(long first) =>
     new(KeyBucketGens, new Bpos(0, (ulong)(first / BucketGensNr), 0), 0, new byte[BucketGensNr]);
 
