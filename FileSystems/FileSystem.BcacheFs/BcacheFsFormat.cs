@@ -107,8 +107,12 @@ internal static class BcacheFsFormat {
   internal const int BtreeExtents = 0;
   internal const int BtreeInodes = 1;
   internal const int BtreeDirents = 2;
+  internal const int BtreeAlloc = 4;
   internal const int BtreeSubvolumes = 8;
   internal const int BtreeSnapshots = 9;
+  internal const int BtreeFreespace = 11;
+  internal const int BtreeNeedDiscard = 12;
+  internal const int BtreeBucketGens = 14;
   internal const int BtreeSnapshotTrees = 15;
   internal const int BtreeLoggedOps = 17;
 
@@ -119,9 +123,22 @@ internal static class BcacheFsFormat {
   internal const byte KeyBtreePtrV2 = 18;
   internal const byte KeySubvolume = 21;
   internal const byte KeySnapshot = 22;
+  internal const byte KeySet = 25;
+  internal const byte KeyAllocV4 = 27;
   internal const byte KeyInodeV3 = 29;
+  internal const byte KeyBucketGens = 30;
   internal const byte KeySnapshotTree = 31;
   internal const byte KeyInodeAllocCursor = 35;
+
+  /// <summary>What a bucket holds, as the alloc key records it.</summary>
+  internal const byte DataFree = 0;
+  internal const byte DataSb = 1;
+  internal const byte DataJournal = 2;
+  internal const byte DataBtree = 3;
+  internal const byte DataUser = 4;
+
+  /// <summary>How many buckets one bucket_gens key covers.</summary>
+  internal const int BucketGensNr = 256;
 
   /// <summary>A bkey header is five 64-bit words before the value starts.</summary>
   internal const int BkeyU64s = 5;

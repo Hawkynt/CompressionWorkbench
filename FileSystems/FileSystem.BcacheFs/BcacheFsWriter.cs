@@ -18,16 +18,22 @@ namespace FileSystem.BcacheFs;
 /// and never mounted for writing in between, the roots go in the superblock's
 /// clean section, and no journal entries are needed to find them.</para>
 ///
-/// <para>What is not written is the allocation information — the alloc, freespace,
-/// backpointer and accounting trees a running filesystem keeps so it can decide
-/// where to put the next write. A volume written whole does not have them, and the
-/// two mounts want opposite things of that: a read-only mount has to be told not
-/// to go and build them, because building them is a write, while a read-write
-/// mount has to be allowed to, because it cannot allocate without them. The format
-/// has a bit for each case and they are mutually exclusive, so which one a volume
-/// gets is a choice — see <see cref="SetReadWriteCapable" />. By default it is the
-/// first, because a volume written whole is an image, and such a volume mounts
-/// read-only and passes the format's own checker.</para>
+/// <para>The allocation information is written too: the alloc tree says what each
+/// bucket holds and how much of it is used, the bucket_gens tree gives every
+/// bucket's generation, and the freespace tree covers the runs of buckets nothing
+/// has been laid into. What each bucket holds has to agree with what the extents
+/// say, and the count of b-tree buckets feeds itself — those keys are themselves
+/// keys, so adding them can want another node — which is why the description is
+/// settled by repetition rather than worked out once.</para>
+///
+/// <para>It used to be left out, and the volume claimed <c>no_alloc_info</c> and
+/// <c>small_image</c> to be let past the check that would have built it. No
+/// formatter sets either, so the volume could be told from one by the bits alone,
+/// and a read-write mount was refused outright. Neither is claimed now.</para>
+///
+/// <para>Still not written are the backpointer, LRU and accounting trees. The
+/// checker rebuilds those without complaint; if that stops being true they belong
+/// here too.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
 
@@ -68,7 +74,6 @@ public sealed class BcacheFsWriter {
   private Guid _internalUuid = Guid.NewGuid();
   private Guid _userUuid = Guid.NewGuid();
   private ulong _seed = 0x9E3779B97F4A7C15UL;
-  private bool _readWriteCapable;
 
   /// <summary>Sets the volume label; it is truncated into the superblock's 32-byte field.</summary>
   public void SetLabel(string label) {
@@ -81,25 +86,6 @@ public sealed class BcacheFsWriter {
 
   /// <summary>Overrides the user-facing UUID.</summary>
   public void SetUserUuid(Guid uuid) => this._userUuid = uuid;
-
-  /// <summary>
-  /// Chooses which mount a volume is written for.
-  /// </summary>
-  /// <remarks>
-  /// <para>A volume written whole carries no allocation information — the trees a
-  /// running filesystem keeps so it can decide where to write next — and the two
-  /// mounts want opposite things of that. A read-only mount needs to be told not to
-  /// go and build them, because building them is a write; a read-write mount needs
-  /// to be allowed to, because it cannot allocate without them.</para>
-  ///
-  /// <para>The format has a bit for each case and they are mutually exclusive. By
-  /// default the volume says it is an image file that was never sized to a device,
-  /// which is what it is, and a kernel mounts it read-only without stopping.
-  /// Setting this instead lets a read-write mount rebuild the allocation
-  /// information on the way in — at the cost of the read-only mount, which then has
-  /// nothing to stop it trying the same thing and failing.</para>
-  /// </remarks>
-  public void SetReadWriteCapable(bool readWriteCapable) => this._readWriteCapable = readWriteCapable;
 
   /// <summary>Sets the total volume size in bytes.</summary>
   public void SetImageSize(long bytes) {
@@ -146,9 +132,10 @@ public sealed class BcacheFsWriter {
   private static readonly int[] Btrees = [
     BtreeExtents, BtreeInodes, BtreeDirents,
     BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees, BtreeLoggedOps,
+    BtreeAlloc, BtreeBucketGens, BtreeFreespace,
   ];
 
-  private const int BtreeCount = 7;
+  private const int BtreeCount = 10;
 
   /// <summary>Writes the volume.</summary>
   public void WriteTo(Stream output) {
@@ -281,6 +268,9 @@ public sealed class BcacheFsWriter {
     internal required List<PlannedFile> Files { get; init; }
     internal required long[] SuperblockSectors { get; init; }
     internal required long Buckets { get; init; }
+
+    /// <summary>How many buckets the b-trees occupy, starting at the first of them.</summary>
+    internal required long BtreeBuckets { get; init; }
   }
 
   private ulong NextSeed() {
@@ -422,10 +412,60 @@ public sealed class BcacheFsWriter {
     nodes[5].Add(SnapshotTreeKey());
     nodes[6].Add(InodeAllocCursorKey(nextInode));
 
+    // ── What each bucket holds ────────────────────────────────────────────
+    // Said once here, for the alloc tree, and again as free-or-not for the
+    // freespace tree. The two have to agree with each other and with the
+    // extents, so both are driven off the same walk rather than written twice
+    // from the same assumptions.
+    var alloc = nodes[7];
+    var bucketGens = nodes[8];
+    var freespace = nodes[9];
+
+    var firstLastSbBucket = (deviceSectors - SbSlotSectors) / BucketSectors;
+    var fileEnd = (long)FirstMetadataBucket + MetadataBuckets;
+    foreach (var file in files)
+      fileEnd += (file.Length + BucketBytes - 1) / BucketBytes;
+
+    for (long b = 0; b < buckets; b += BucketGensNr)
+      bucketGens.Add(BucketGensKey(b));
+
+    // How many b-tree buckets get used depends on how many keys there are, and
+    // the alloc keys are themselves keys — so the count feeds itself. Settle it
+    // by counting the nodes the current keys would occupy, describing the buckets
+    // on that basis, and counting again; adding or dropping alloc keys can push a
+    // node over a boundary, which changes the count once and then stops.
+    var btreeBuckets = (long)Btrees.Length;
+    for (var attempt = 0; attempt < 8; ++attempt) {
+      alloc.Clear();
+      freespace.Clear();
+      var runStart = -1L;
+      for (long b = 0; b <= buckets; ++b) {
+        var free = b < buckets;
+        if (free) {
+          var (type, sectors) = this.BucketContents(b, files, fileEnd, firstLastSbBucket, btreeBuckets);
+          free = type == DataFree;
+          if (!free) alloc.Add(AllocKey(b, type, sectors));
+        }
+
+        if (free) {
+          if (runStart < 0) runStart = b;
+          continue;
+        }
+
+        if (runStart >= 0) freespace.Add(FreespaceKey(runStart, b));
+        runStart = -1;
+      }
+
+      var settled = nodes.Sum(NodeCount);
+      if (settled == btreeBuckets) break;
+      btreeBuckets = settled;
+    }
+
     return new Plan {
       Nodes = nodes,
       Files = files,
       Buckets = buckets,
+      BtreeBuckets = btreeBuckets,
       SuperblockSectors = [
         PrimarySbSector,
         PrimarySbSector + SbSlotSectors,
@@ -593,6 +633,123 @@ public sealed class BcacheFsWriter {
     return new Key(KeySnapshotTree, new Bpos(0, 1, 0), 0, value);
   }
 
+  /// <summary>How many buckets a tree will occupy once written.</summary>
+  /// <remarks>
+  /// The same split <see cref="WriteTree" /> performs, counted rather than laid
+  /// down: a tree that fits in one node is one bucket, and a tree that does not
+  /// is one bucket per leaf plus one for the root. It has to agree with that
+  /// method exactly, because what it counts is what the alloc keys then claim.
+  /// </remarks>
+  private static int NodeCount(BcacheFsNodeBuilder tree) {
+    if (tree.Bytes <= BucketBytes) return 1;
+
+    var leaves = 0;
+    var bytes = BcacheFsNodeBuilder.KeysOffset;
+    var any = false;
+    foreach (var key in tree.Keys.OrderBy(k => k, Comparer<Key>.Create((a, b) => Compare(a.Position, b.Position)))) {
+      if (any && bytes + key.Bytes > BucketBytes) {
+        ++leaves;
+        bytes = BcacheFsNodeBuilder.KeysOffset;
+      }
+      bytes += key.Bytes;
+      any = true;
+    }
+    if (any) ++leaves;
+    return leaves + 1;
+  }
+
+  /// <summary>Which of the volume's regions a bucket falls in, and how much of it is used.</summary>
+  /// <remarks>
+  /// The layout is fixed by <see cref="Plan" />: two superblock slots at the
+  /// front, the journal, a fixed reservation for the b-trees, then the files in
+  /// order, then a third superblock slot in the last bucket. Only the tail bucket
+  /// of a file is partly used; everything else a volume written whole touches, it
+  /// fills.
+  /// </remarks>
+  private (byte Type, uint Sectors) BucketContents(
+    long bucket, List<PlannedFile> files, long fileEnd, long firstLastSbBucket, long btreeBuckets) {
+    // The two front superblock slots run to sector PrimarySbSector + 2 * SbSlotSectors,
+    // which is not a bucket boundary: the bucket it ends in is partly used, and
+    // saying it is wholly used is as wrong as saying it is free.
+    var sbEndSector = PrimarySbSector + 2L * SbSlotSectors;
+    if (bucket < sbEndSector / BucketSectors) return (DataSb, BucketSectors);
+    if (bucket == sbEndSector / BucketSectors) return (DataSb, (uint)(sbEndSector % BucketSectors));
+
+    // The trailing slot is a whole slot, so it spans several buckets, not one.
+    if (bucket >= firstLastSbBucket) return (DataSb, BucketSectors);
+
+    if (bucket < FirstMetadataBucket) return (DataJournal, BucketSectors);
+
+    var firstDataBucket = (long)FirstMetadataBucket + MetadataBuckets;
+    // Only the b-tree buckets actually laid into are b-tree buckets; the rest of
+    // the reservation is free, and claiming otherwise is a discrepancy the
+    // checker finds by walking the trees it can see.
+    if (bucket < FirstMetadataBucket + btreeBuckets) return (DataBtree, BucketSectors);
+    if (bucket < firstDataBucket) return (DataFree, 0);
+    if (bucket >= fileEnd) return (DataFree, 0);
+
+    // Inside the files: find the one this bucket belongs to, and give the tail
+    // bucket only the sectors the file actually reaches into it.
+    var at = firstDataBucket;
+    foreach (var file in files) {
+      var span = (file.Length + BucketBytes - 1) / BucketBytes;
+      if (bucket < at + span) {
+        var into = (bucket - at) * BucketBytes;
+        var remaining = file.Length - into;
+        var sectors = (remaining + SectorSize - 1) / SectorSize;
+        return (DataUser, (uint)Math.Min(sectors, BucketSectors));
+      }
+      at += span;
+    }
+    return (DataFree, 0);
+  }
+
+  /// <summary>
+  /// What one bucket holds, as the alloc tree records it.
+  /// </summary>
+  /// <remarks>
+  /// The value is a <c>bch_alloc_v4</c>: forty-eight bytes, of which a volume
+  /// written whole needs only the generation, the data type and the sector count.
+  /// A bucket written once has never been reused, so its generation is zero and
+  /// its oldest generation is zero with it, and neither io_time matters because
+  /// nothing has read or rewritten it. A full bucket carries the whole bucket in
+  /// dirty sectors; the tail bucket of a file carries only what the file reaches
+  /// into it, because the checker adds these up and compares the total against
+  /// what the extents say.
+  /// </remarks>
+  private static Key AllocKey(long bucket, byte dataType, uint dirtySectors) {
+    var value = new byte[48];
+    // journal_seq_nonempty and flags stay zero: nothing here waits on a flush,
+    // and a bucket that was never emptied needs neither discard nor a new gen.
+    value[12] = 0;                                                             // generation
+    value[13] = 0;                                                             // oldest_gen
+    value[14] = dataType;
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(16), dirtySectors);
+    // cached_sectors, io_time, stripe and backpointer counts stay zero.
+    return new Key(KeyAllocV4, new Bpos(0, (ulong)bucket, 0), 0, value);
+  }
+
+  /// <summary>The generations of one run of 256 buckets.</summary>
+  /// <remarks>
+  /// Every bucket here is on its first use, so every generation is zero and the
+  /// key is a run of zero bytes. It is written even so: the tree is what the
+  /// checker walks to learn a bucket's generation, and a missing key does not
+  /// read as zero, it reads as a hole to be repaired.
+  /// </remarks>
+  private static Key BucketGensKey(long first) =>
+    new(KeyBucketGens, new Bpos(0, (ulong)(first / BucketGensNr), 0), 0, new byte[BucketGensNr]);
+
+  /// <summary>Marks a run of free buckets, in the freespace tree.</summary>
+  /// <remarks>
+  /// The freespace tree is an extents tree, so a key covers a range rather than a
+  /// single position: it is keyed by where the run ends and carries its length as
+  /// the key's size. A key per bucket would have size zero, which an extents tree
+  /// rejects — a run of free buckets is one key, however long it is. The value is
+  /// empty; a bare <c>KEY_TYPE_set</c> is the whole fact.
+  /// </remarks>
+  private static Key FreespaceKey(long firstBucket, long endBucket) =>
+    new(KeySet, new Bpos(0, (ulong)endBucket, 0), (uint)(endBucket - firstBucket), []);
+
   private static Key InodeAllocCursorKey(ulong next) {
     var value = new byte[24];
     BinaryPrimitives.WriteUInt64LittleEndian(value, 2147483648UL);             // min
@@ -634,11 +791,12 @@ public sealed class BcacheFsWriter {
     var features = FeatureNewSiphash | FeatureNewExtentOverwrite | FeatureBtreePtrV2
       | FeatureExtentsAboveBtreeUpdates | FeatureBtreeUpdatesJournalled | FeatureNewVarint
       | FeatureJournalNoFlush | FeatureAllocV2 | FeatureExtentsAcrossBtreeNodes
-      | FeatureIncompatVersionField | FeatureNoAllocInfo;
-    // Saying the volume is an unresized image is what lets a read-only mount past
-    // the allocation information it has not got. A volume meant to be mounted
-    // read-write must not say it, or the kernel refuses to go read-write at all.
-    if (!this._readWriteCapable) features |= FeatureSmallImage;
+      | FeatureIncompatVersionField;
+    // Neither no_alloc_info nor small_image is claimed any more. They were how a
+    // volume without allocation information asked to be let past the check that
+    // would have built it, and no volume a formatter writes says either — which
+    // made ours answerable by the bit alone. The alloc, bucket_gens and freespace
+    // trees are written now, so there is nothing to be let past.
     BinaryPrimitives.WriteUInt64LittleEndian(span[208..], features);
     BinaryPrimitives.WriteUInt64LittleEndian(span[224..],
       CompatAllocInfo | CompatAllocMetadata | CompatExtentsAboveBtreeUpdatesDone
@@ -723,6 +881,23 @@ public sealed class BcacheFsWriter {
       | (1UL << 32) | (1UL << 33);       // rotational, and that we know it
     BinaryPrimitives.WriteUInt64LittleEndian(member[40..], flags);
     BinaryPrimitives.WriteUInt64LittleEndian(member[112..], 1);                // seq
+
+    // Which parts of the device hold b-tree nodes, as sixty-four bits covering
+    // the device between them. The shift is the smallest that brings the last
+    // b-tree sector inside those sixty-four bits, which is how a kernel widening
+    // the bitmap picks it — pick a wider one and the bits land elsewhere than the
+    // checker recomputes them.
+    var btreeEndSector = (FirstMetadataBucket + plan.BtreeBuckets) * BucketSectors;
+    var shift = 0;
+    while ((64L << shift) < btreeEndSector) ++shift;
+    var bitmap = 0UL;
+    for (var b = (long)FirstMetadataBucket; b < FirstMetadataBucket + plan.BtreeBuckets; ++b) {
+      var first = b * BucketSectors >> shift;
+      var last = ((b + 1) * BucketSectors - 1) >> shift;
+      for (var bit = first; bit <= last; ++bit) bitmap |= 1UL << (int)bit;
+    }
+    member[28] = (byte)shift;
+    BinaryPrimitives.WriteUInt64LittleEndian(member[128..], bitmap);
     return section;
   }
 

@@ -32,24 +32,22 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   /// <summary>
   /// What the writer can be asked for. <c>VolumeLabel</c> is the superblock's
-  /// 32-byte label; <c>ImageSize</c> is the volume's capacity and must leave room
-  /// for the superblock copies; <c>MountFor</c> chooses which of the two mounts the
-  /// volume is written for. The 512-byte block size is fixed, so it is not offered.
+  /// 32-byte label and <c>ImageSize</c> is the volume's capacity, which must leave
+  /// room for the superblock copies. The 512-byte block size is fixed, so it is not
+  /// offered.
   /// </summary>
+  /// <remarks>
+  /// There was a third, <c>MountFor</c>, choosing whether the volume was written to
+  /// be mounted read-only or read-write. It existed because a volume written whole
+  /// carried no allocation information and had to ask to be let past the check that
+  /// would have built it, and the two mounts wanted opposite bits set for that. The
+  /// allocation trees are written now, so one volume serves both and there is
+  /// nothing left to choose.
+  /// </remarks>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
     FilesystemSchemaPresets.ImageSize(["128 MB", "256 MB", "512 MB"],
       description: "Total image capacity. Must be at least 128 MB so the superblock copies fit."),
-    new FormatOptionDescriptor(
-      Key: "MountFor",
-      DisplayName: "Mount for",
-      Kind: FormatOptionKind.Enum,
-      Default: "Reading",
-      AllowedValues: ["Reading", "Writing"],
-      Description: "A volume written whole has no allocation information, and the two mounts "
-        + "want opposite things of that. Reading: the volume says it is an image file, and a "
-        + "read-only mount takes it as it is. Writing: a read-write mount rebuilds the "
-        + "allocation information on the way in, and a read-only mount no longer works."),
   ];
 
   public string Id => "BcacheFs";
@@ -173,9 +171,6 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
       w.SetLabel(label);
-
-    w.SetReadWriteCapable(
-      string.Equals(options?.GetOption("MountFor", "Reading"), "Writing", StringComparison.OrdinalIgnoreCase));
 
     var sizes = new List<long>();
     foreach (var i in inputs) {

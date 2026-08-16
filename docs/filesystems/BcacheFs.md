@@ -76,7 +76,6 @@ What is not written is the allocation information — the alloc, freespace, back
 | Key | Kind | Default | Allowed | Meaning |
 |---|---|---|---|---|
 | `ImageSize` | Enum | `Auto (fit to files)` | `Auto (fit to files)`, `128 MB`, `256 MB`, `512 MB` | Total image capacity. Must be at least 128 MB so the superblock copies fit. |
-| `MountFor` | Enum | `Reading` | `Reading`, `Writing` | A volume written whole has no allocation information, and the two mounts want opposite things of that. Reading: the volume says it is an image file, and a read-only mount takes it as it is. Writing: a read-write mount rebuilds the allocation information on the way in, and a read-only mount no longer works. |
 | `VolumeLabel` | String | `` | any | Volume name shown by file managers (max 31 chars). |
 
 ## Storage methods
