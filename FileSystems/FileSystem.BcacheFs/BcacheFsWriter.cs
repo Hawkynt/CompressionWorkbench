@@ -57,11 +57,12 @@ namespace FileSystem.BcacheFs;
 ///
 /// <para>The LRU tree stays empty, which is what a filesystem
 /// <c>mkfs.bcachefs</c> made and the kernel initialised also has, so there is
-/// nothing there to write. Accounting's <c>replicas</c> counters are not
-/// written: a counter naming a set of devices needs that set declared in the
-/// superblock's replicas section first, and without it the checker refuses the
-/// volume outright. That section is a difference from a formatted filesystem in
-/// its own right and belongs with those counters, not before them. See
+/// nothing there to write.</para>
+///
+/// <para>The replicas counters say how many sectors of each kind of content
+/// there are per set of devices holding a copy of it, and the superblock's
+/// replicas section declares those sets. The two go together: a counter naming
+/// a set the section does not declare is refused, and the volume with it. See
 /// <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
@@ -525,8 +526,12 @@ public sealed class BcacheFsWriter {
       // off the trees themselves, so they cannot describe a volume other than
       // the one being written. The accounting tree measures itself here too:
       // adding these keys can grow it, which the loop settles.
-      foreach (var tree in nodes)
-        accounting.Add(BtreeAccountingKey(tree.BtreeId, (ulong)NodeCount(tree)));
+      ulong btreeSectors = 0;
+      foreach (var tree in nodes) {
+        var count = (ulong)NodeCount(tree);
+        btreeSectors += count * BucketSectors;
+        accounting.Add(BtreeAccountingKey(tree.BtreeId, count));
+      }
 
       foreach (var tree in new[] { nodes[0], nodes[1], nodes[2] }) {
         if (tree.Count == 0) continue;
@@ -536,12 +541,11 @@ public sealed class BcacheFsWriter {
           tree.BtreeId == BtreeExtents ? sectorsOf[DataUser] : 0));
       }
 
-      // The replicas counters are not written. They name a set of devices, and a
-      // set a counter names has to be declared in the superblock's replicas
-      // section first — "accounting not marked in superblock replicas" is what
-      // the checker says otherwise, and it refuses the volume. That section is a
-      // difference from a formatted filesystem in its own right and belongs with
-      // this, not before it.
+      // Both of these name the one device, and both sets are declared in the
+      // superblock's replicas section; a counter naming a set that is not
+      // declared there is refused.
+      accounting.Add(ReplicasKey(DataBtree, btreeSectors));
+      if (sectorsOf[DataUser] > 0) accounting.Add(ReplicasKey(DataUser, sectorsOf[DataUser]));
 
       var settled = nodes.Sum(NodeCount);
       if (settled == btreeBuckets) break;
@@ -856,6 +860,20 @@ public sealed class BcacheFsWriter {
   /// <summary>How many inodes the volume holds.</summary>
   private static Key NrInodesKey(ulong inodes) => AccountingKey([AccountingNrInodes], inodes);
 
+  /// <summary>
+  /// How many sectors of one kind of content there are, per set of devices
+  /// holding a copy of it.
+  /// </summary>
+  /// <remarks>
+  /// The position is a <c>bch_replicas_entry_v1</c> — what the content is, how
+  /// many devices carry it, how many are needed, and which. One device here, so
+  /// the list is a single zero. Every set named by one of these has to be
+  /// declared in the superblock's replicas section as well, or the checker
+  /// refuses the volume; see <see cref="ReplicasV0Section" />.
+  /// </remarks>
+  private static Key ReplicasKey(byte dataType, ulong sectors) =>
+    AccountingKey([AccountingReplicas, dataType, 1, 1, 0], sectors);
+
   /// <summary>What one b-tree costs: its sectors, its nodes, and its inner nodes.</summary>
   private static Key BtreeAccountingKey(int btreeId, ulong nodes) {
     Span<byte> position = stackalloc byte[5];
@@ -958,6 +976,7 @@ public sealed class BcacheFsWriter {
   private byte[] BuildSuperblock(Plan plan, List<(int Btree, int Level, Key Pointer)> roots) {
     var sections = new List<byte[]> {
       this.MembersSection(plan),
+      ReplicasV0Section(),
       JournalSection(),
       CleanSection(roots),
       ExtSection(),
@@ -1057,6 +1076,27 @@ public sealed class BcacheFsWriter {
     var section = new byte[8 + (payloadBytes + 7) / 8 * 8];
     BinaryPrimitives.WriteUInt32LittleEndian(section, (uint)(section.Length / 8));
     BinaryPrimitives.WriteUInt32LittleEndian(section.AsSpan(4), type);
+    return section;
+  }
+
+  /// <summary>
+  /// Which sets of devices hold a copy of what, as the superblock declares them.
+  /// </summary>
+  /// <remarks>
+  /// An accounting counter may only name a set that appears here, so this and
+  /// those counters have to be written together: the checker reads the counters,
+  /// looks each set up in this section, and refuses the volume when one is
+  /// missing. The v0 entry is the content type, how many devices carry it, and
+  /// which — there being one device here, that is a single zero.
+  /// </remarks>
+  private static byte[] ReplicasV0Section() {
+    byte[] types = [DataBtree, DataUser];
+    var section = Section(FieldReplicasV0, 3 * types.Length);
+    for (var i = 0; i < types.Length; ++i) {
+      section[8 + 3 * i] = types[i];
+      section[9 + 3 * i] = 1;                                                  // nr_devs
+      section[10 + 3 * i] = 0;                                                 // the one device
+    }
     return section;
   }
 

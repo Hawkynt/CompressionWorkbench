@@ -62,6 +62,7 @@ internal static class BcacheFsFormat {
 
   // Superblock section types.
   internal const uint FieldJournal = 0;
+  internal const uint FieldReplicasV0 = 3;
   internal const uint FieldClean = 6;
   internal const uint FieldJournalV2 = 9;
   internal const uint FieldMembersV2 = 11;

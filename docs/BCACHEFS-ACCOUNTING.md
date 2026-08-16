@@ -27,7 +27,8 @@ Accounting's `btree` and `snapshot` types are written as well: what each tree
 costs in sectors, nodes and inner nodes, and how many keys of each snapshot sit
 in each tree with their total key bytes. Both are read off the trees themselves.
 
-Still missing: the `replicas` counters, for the reason below. LRU needs nothing.
+The `replicas` counters are written too, together with the superblock section
+that has to declare the device sets they name. LRU needs nothing.
 
 ## How the key positions are encoded
 
@@ -144,33 +145,41 @@ the existing fixed point over the b-tree bucket count already absorbs it.
 Unlike accounting, `fsck` does check these, which is how both mistakes above were
 caught rather than shipped.
 
-## Replicas needs a superblock section first
+## Replicas needs its superblock section written with it
 
 A `replicas` counter names a set of devices holding a copy of some content, and
 that set has to be declared in the superblock before a counter may refer to it.
-Writing the counters without the section is refused:
+Writing the counters alone is refused, and the volume that had been passing
+cleanly stops passing:
 
 ```
 accounting_read... accounting not marked in superblock replicas
   accounting_replicas_not_marked  2
 ```
 
-and the volume that had been passing cleanly stops passing. A formatted
-filesystem carries a `replicas_v0` section — ours carries none, which is a
-difference from a formatter in its own right, and the counters belong with it
-rather than before it.
+So the two are written together. The section is `replicas_v0`, superblock field
+type 3, holding entries of `{u8 data_type, u8 nr_devs, u8 devs[]}` — three bytes
+each here, there being one device. A formatted filesystem carries the same
+section, which ours had been missing on its own account.
 
-The position encoding is known: a `bch_replicas_entry_v1` laid out as
+The counter's position is a `bch_replicas_entry_v1`,
 `[2, data_type, nr_devs, nr_required, dev…]`, so one device holding b-tree data
-is `[2, 3, 1, 1, 0]`, matching the control filesystem exactly. The counter is the
-sector total. That part is not the obstacle.
+is `[2, 3, 1, 1, 0]`. That comes out at the same position the control filesystem
+uses, to the byte:
+
+```
+ours:    144960716812582912 : replicas btree: 1/1 [0] 1536
+control: 144960716812582912 : replicas btree: 1/1 [0] 1280
+```
+
+with a second entry for user data that the control has no counterpart for,
+holding no files.
 
 ## What is not established
 
 - Backpointers for file data. A node's are written and checked by the checker;
   an extent's are keyed by the extent rather than `SPOS_MAX`, and the control
   filesystem holds no files, so it cannot show what those look like.
-- The `replicas` counters, which need the superblock section above.
 - The `compression`, `inum` and `rebalance_work` accounting types. None appears
   in the control filesystem, so there is nothing here to check them against.
 

@@ -81,7 +81,9 @@ The backpointers tree points the other way: for each b-tree node, from the space
 
 Accounting also carries what each tree costs and what each snapshot holds in it. Both are read off the trees themselves, so they cannot come to describe a volume other than the one being written, and the accounting tree measures itself among them.
 
-The LRU tree stays empty, which is what a filesystem mkfs.bcachefs made and the kernel initialised also has, so there is nothing there to write. Accounting's replicas counters are not written: a counter naming a set of devices needs that set declared in the superblock's replicas section first, and without it the checker refuses the volume outright. That section is a difference from a formatted filesystem in its own right and belongs with those counters, not before them. See docs/BCACHEFS-ACCOUNTING.md.
+The LRU tree stays empty, which is what a filesystem mkfs.bcachefs made and the kernel initialised also has, so there is nothing there to write.
+
+The replicas counters say how many sectors of each kind of content there are per set of devices holding a copy of it, and the superblock's replicas section declares those sets. The two go together: a counter naming a set the section does not declare is refused, and the volume with it. See docs/BCACHEFS-ACCOUNTING.md.
 
 ## Parameters
 
