@@ -78,6 +78,53 @@ same per-bucket walk that produces the alloc keys.
 That is the argument for doing this: the numbers are not new information, only a
 second statement of information the volume already carries.
 
+## LRU needs nothing
+
+The LRU tree is empty on a filesystem `mkfs.bcachefs` made and the kernel
+initialised — `bcachefs list -b lru` returns no keys at all. Ours is empty too,
+so there is no difference to close. It is listed here so the next person does not
+go looking for work that is not there.
+
+## Backpointers: the encoding, and why they are not written yet
+
+A real filesystem carries exactly one backpointer per b-tree node — ten keys
+against the ten b-tree buckets on the control image, and nothing else, because
+that filesystem holds no file data.
+
+The position is
+
+```
+inode  = device index
+offset = (bucket * bucket_sectors) << extent_bp_shift
+```
+
+with `extent_bp_shift` 16 on this filesystem: bucket 49 is sector 6272, and
+6272 << 16 is 411041792, which is the position the control image shows. The
+value is a `bch_backpointer` — `btree_id`, `level`, `data_type`, `bucket_gen`,
+a `u32` of flags carrying the sub-offset, a `u32` bucket length, and a full
+position — thirty-two bytes, which is the type's stated minimum value size. For a
+node the length is the whole bucket, 128, and the position is `SPOS_MAX`.
+
+Two things stop this being a half-hour change, and both are reasons to do it
+deliberately rather than at the end of a session:
+
+- **It is circular in a way the bucket count is not.** The backpointers tree is
+  itself one of the trees being placed, and a backpointer names the bucket its
+  node landed in — so the keys depend on a layout that depends on the keys. The
+  existing fixed point settles how many b-tree buckets there are; this needs
+  which node is in which bucket, which is one level finer.
+- **Every node needs one, not every tree.** The control image has a single node
+  per tree so the two look alike there. A tree that splits has a root and leaves
+  at different levels, and the `level` field has to match the node it points at.
+
+File data needs them too, keyed by the extent rather than `SPOS_MAX`, and the
+control image cannot show what those look like because it holds no files.
+
+Unlike accounting, `fsck` does check backpointers, so this one can be developed
+against a real signal. That makes it a good next piece of work — and a bad one to
+guess at, since a wrong key turns a volume the checker accepts into one it
+rejects.
+
 ## What is not established
 
 - The `replicas`, `snapshot` and `btree` accounting types appear in a real
@@ -86,8 +133,9 @@ second statement of information the volume already carries.
 - Whether `fsck` accepts a volume carrying *some* accounting types and not
   others, or recomputes and reports a mismatch, has not been tested. It decides
   whether this can be done in pieces.
-- The backpointer and LRU trees have not been looked at beyond confirming they
-  are empty in our images.
+- Whether `extent_bp_shift` has to be written into the superblock or is derived
+  from the encoded extent maximum. The control filesystem uses 16 and ours agrees
+  by construction, but that is an observation, not a guarantee.
 - `bcachefs fs usage` would be the natural check, and it refuses an unmounted
   image, so verification has to go through `fsck` or a real mount.
 
