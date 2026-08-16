@@ -43,10 +43,27 @@ namespace FileSystem.BcacheFs;
 /// <c>mkfs.bcachefs</c> made and the kernel initialised. Against that, the
 /// superblock and journal rows match to the sector.</para>
 ///
-/// <para>Still not written are the backpointer and LRU trees, and accounting's
-/// own <c>replicas</c>, <c>snapshot</c> and <c>btree</c> types. The checker
-/// rebuilds those without complaint; if that stops being true they belong here
-/// too. See <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
+/// <para>The backpointers tree points the other way: for each b-tree node, from
+/// the space it occupies back to the tree that holds it. Those keys have to know
+/// where each node landed, which is decided by the same rule the write pass
+/// follows — trees in order, each taking as many consecutive buckets as it has
+/// nodes — so the rule is applied here rather than the assignment being threaded
+/// out of the writer.</para>
+///
+/// <para>Accounting also carries what each tree costs and what each snapshot
+/// holds in it. Both are read off the trees themselves, so they cannot come to
+/// describe a volume other than the one being written, and the accounting tree
+/// measures itself among them.</para>
+///
+/// <para>The LRU tree stays empty, which is what a filesystem
+/// <c>mkfs.bcachefs</c> made and the kernel initialised also has, so there is
+/// nothing there to write.</para>
+///
+/// <para>The replicas counters say how many sectors of each kind of content
+/// there are per set of devices holding a copy of it, and the superblock's
+/// replicas section declares those sets. The two go together: a counter naming
+/// a set the section does not declare is refused, and the volume with it. See
+/// <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
 
@@ -145,10 +162,10 @@ public sealed class BcacheFsWriter {
   private static readonly int[] Btrees = [
     BtreeExtents, BtreeInodes, BtreeDirents,
     BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees, BtreeLoggedOps,
-    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeAccounting,
+    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeAccounting, BtreeBackpointers,
   ];
 
-  private const int BtreeCount = 11;
+  private const int BtreeCount = 12;
 
   /// <summary>Writes the volume.</summary>
   public void WriteTo(Stream output) {
@@ -434,6 +451,7 @@ public sealed class BcacheFsWriter {
     var bucketGens = nodes[8];
     var freespace = nodes[9];
     var accounting = nodes[10];
+    var backpointers = nodes[11];
 
     var firstLastSbBucket = (deviceSectors - SbSlotSectors) / BucketSectors;
     var fileEnd = (long)FirstMetadataBucket + MetadataBuckets;
@@ -484,6 +502,50 @@ public sealed class BcacheFsWriter {
       for (byte type = DataFree; type <= DataUser; ++type)
         if (bucketsOf[type] > 0)
           accounting.Add(DevDataTypeKey(type, bucketsOf[type], sectorsOf[type]));
+
+      // One backpointer per b-tree node, which needs to know where each node
+      // lands. That is not recorded anywhere yet — the nodes are placed as they
+      // are written — but it is decided by the same rule the writer follows:
+      // trees in order, each taking as many consecutive buckets as it has nodes,
+      // leaves before the root. Mirroring it here rather than threading the
+      // assignment out of the write pass keeps one description of the layout.
+      backpointers.Clear();
+      var at = (long)FirstMetadataBucket;
+      foreach (var tree in nodes) {
+        var count = NodeCount(tree);
+        for (var i = 0; i < count; ++i) {
+          // A tree of one node is that node; a tree of several is its leaves and
+          // then its root one level above them.
+          var level = count > 1 && i == count - 1 ? 1 : 0;
+          backpointers.Add(NodeBackpointerKey(at + i, tree.BtreeId, level, BucketSectors));
+        }
+        at += count;
+      }
+
+      // What each tree costs, and what each snapshot holds in it. Both are read
+      // off the trees themselves, so they cannot describe a volume other than
+      // the one being written. The accounting tree measures itself here too:
+      // adding these keys can grow it, which the loop settles.
+      ulong btreeSectors = 0;
+      foreach (var tree in nodes) {
+        var count = (ulong)NodeCount(tree);
+        btreeSectors += count * BucketSectors;
+        accounting.Add(BtreeAccountingKey(tree.BtreeId, count));
+      }
+
+      foreach (var tree in new[] { nodes[0], nodes[1], nodes[2] }) {
+        if (tree.Count == 0) continue;
+        var keyBytes = (ulong)tree.Keys.Sum(k => k.Bytes);
+        accounting.Add(SnapshotAccountingKey(SnapshotIdMax, tree.BtreeId,
+          (ulong)tree.Count, keyBytes,
+          tree.BtreeId == BtreeExtents ? sectorsOf[DataUser] : 0));
+      }
+
+      // Both of these name the one device, and both sets are declared in the
+      // superblock's replicas section; a counter naming a set that is not
+      // declared there is refused.
+      accounting.Add(ReplicasKey(DataBtree, btreeSectors));
+      if (sectorsOf[DataUser] > 0) accounting.Add(ReplicasKey(DataUser, sectorsOf[DataUser]));
 
       var settled = nodes.Sum(NodeCount);
       if (settled == btreeBuckets) break;
@@ -799,6 +861,75 @@ public sealed class BcacheFsWriter {
   private static Key NrInodesKey(ulong inodes) => AccountingKey([AccountingNrInodes], inodes);
 
   /// <summary>
+  /// How many sectors of one kind of content there are, per set of devices
+  /// holding a copy of it.
+  /// </summary>
+  /// <remarks>
+  /// The position is a <c>bch_replicas_entry_v1</c> — what the content is, how
+  /// many devices carry it, how many are needed, and which. One device here, so
+  /// the list is a single zero. Every set named by one of these has to be
+  /// declared in the superblock's replicas section as well, or the checker
+  /// refuses the volume; see <see cref="ReplicasV0Section" />.
+  /// </remarks>
+  private static Key ReplicasKey(byte dataType, ulong sectors) =>
+    AccountingKey([AccountingReplicas, dataType, 1, 1, 0], sectors);
+
+  /// <summary>What one b-tree costs: its sectors, its nodes, and its inner nodes.</summary>
+  private static Key BtreeAccountingKey(int btreeId, ulong nodes) {
+    Span<byte> position = stackalloc byte[5];
+    position[0] = AccountingBtree;
+    BinaryPrimitives.WriteUInt32LittleEndian(position[1..], (uint)btreeId);
+    // A tree of one node is that node and nothing above it; a tree of several
+    // carries one root over its leaves, which is the only non-leaf here.
+    return AccountingKey(position, nodes * BucketSectors, nodes, nodes > 1 ? 1UL : 0);
+  }
+
+  /// <summary>
+  /// What one snapshot holds in one tree: how many keys, how many bytes of key,
+  /// and how many sectors of data outside the tree they name.
+  /// </summary>
+  /// <remarks>
+  /// The last is only ever nonzero for the extents tree, because only an extent
+  /// names bytes that live somewhere else.
+  /// </remarks>
+  private static Key SnapshotAccountingKey(uint snapshot, int btreeId,
+    ulong keys, ulong keyBytes, ulong externalSectors) {
+    Span<byte> position = stackalloc byte[9];
+    position[0] = AccountingSnapshot;
+    BinaryPrimitives.WriteUInt32LittleEndian(position[1..], snapshot);
+    BinaryPrimitives.WriteUInt32LittleEndian(position[5..], (uint)btreeId);
+    return AccountingKey(position, keys, keyBytes, externalSectors);
+  }
+
+  /// <summary>
+  /// Says what occupies a stretch of the device, pointing back from the space to
+  /// the thing that holds it.
+  /// </summary>
+  /// <remarks>
+  /// <para>The alloc tree says a bucket holds a b-tree node; this says which one.
+  /// The position is where the target sits, shifted up so the low bits can carry
+  /// an offset inside the bucket, and the value names the tree, the node's level
+  /// within it, and how much of the bucket the node takes.</para>
+  ///
+  /// <para>Unlike the accounting totals, <c>fsck</c> checks these: a key naming
+  /// the wrong tree or the wrong level is a volume the checker rejects, so these
+  /// are developed against it rather than against a control image.</para>
+  /// </remarks>
+  private static Key NodeBackpointerKey(long bucket, int btreeId, int level, int sectors) {
+    var value = new byte[32];
+    value[0] = (byte)btreeId;
+    value[1] = (byte)level;
+    value[2] = DataBtree;
+    value[3] = 0;                                                              // bucket_gen
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(4), 0);              // flags, incl. sub-offset
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);  // bucket_len
+    // A node is not an extent, so the position it covers is the top of the space.
+    WriteBpos(value.AsSpan(12), Bpos.Max);
+    return new Key(KeyBackpointer,
+      new Bpos(0, (ulong)(bucket * BucketSectors) << ExtentBpShift, 0), 0, value);
+  }
+
+  /// <summary>
   /// Buckets, live sectors and fragmented sectors, for one kind of content.
   /// </summary>
   /// <remarks>
@@ -845,6 +976,7 @@ public sealed class BcacheFsWriter {
   private byte[] BuildSuperblock(Plan plan, List<(int Btree, int Level, Key Pointer)> roots) {
     var sections = new List<byte[]> {
       this.MembersSection(plan),
+      ReplicasV0Section(),
       JournalSection(),
       CleanSection(roots),
       ExtSection(),
@@ -930,6 +1062,11 @@ public sealed class BcacheFsWriter {
 
     Set(6, 4, 14, 30);                   // write error timeout
     Set(6, 14, 20, 3);                   // checksum error retries
+    // How far a backpointer's position sits above the sector it names. Left
+    // unset it reads as a default of ten, and the backpointers written here
+    // would then name a bucket sixty-four times too far along; a formatter
+    // writes sixteen, and so does this.
+    Set(6, 40, 48, ExtentBpShift);
 
     for (var i = 0; i < 7; ++i)
       BinaryPrimitives.WriteUInt64LittleEndian(flags[(8 * i)..], words[i]);
@@ -939,6 +1076,27 @@ public sealed class BcacheFsWriter {
     var section = new byte[8 + (payloadBytes + 7) / 8 * 8];
     BinaryPrimitives.WriteUInt32LittleEndian(section, (uint)(section.Length / 8));
     BinaryPrimitives.WriteUInt32LittleEndian(section.AsSpan(4), type);
+    return section;
+  }
+
+  /// <summary>
+  /// Which sets of devices hold a copy of what, as the superblock declares them.
+  /// </summary>
+  /// <remarks>
+  /// An accounting counter may only name a set that appears here, so this and
+  /// those counters have to be written together: the checker reads the counters,
+  /// looks each set up in this section, and refuses the volume when one is
+  /// missing. The v0 entry is the content type, how many devices carry it, and
+  /// which — there being one device here, that is a single zero.
+  /// </remarks>
+  private static byte[] ReplicasV0Section() {
+    byte[] types = [DataBtree, DataUser];
+    var section = Section(FieldReplicasV0, 3 * types.Length);
+    for (var i = 0; i < types.Length; ++i) {
+      section[8 + 3 * i] = types[i];
+      section[9 + 3 * i] = 1;                                                  // nr_devs
+      section[10 + 3 * i] = 0;                                                 // the one device
+    }
     return section;
   }
 

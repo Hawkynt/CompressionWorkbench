@@ -62,6 +62,7 @@ internal static class BcacheFsFormat {
 
   // Superblock section types.
   internal const uint FieldJournal = 0;
+  internal const uint FieldReplicasV0 = 3;
   internal const uint FieldClean = 6;
   internal const uint FieldJournalV2 = 9;
   internal const uint FieldMembersV2 = 11;
@@ -111,6 +112,7 @@ internal static class BcacheFsFormat {
   internal const int BtreeSubvolumes = 8;
   internal const int BtreeSnapshots = 9;
   internal const int BtreeFreespace = 11;
+  internal const int BtreeBackpointers = 13;
   internal const int BtreeAccounting = 20;
   internal const int BtreeNeedDiscard = 12;
   internal const int BtreeBucketGens = 14;
@@ -128,6 +130,7 @@ internal static class BcacheFsFormat {
   internal const byte KeyAllocV4 = 27;
   internal const byte KeyInodeV3 = 29;
   internal const byte KeyBucketGens = 30;
+  internal const byte KeyBackpointer = 28;
   internal const byte KeyAccounting = 34;
   internal const byte KeySnapshotTree = 31;
   internal const byte KeyInodeAllocCursor = 35;
@@ -141,7 +144,20 @@ internal static class BcacheFsFormat {
 
   /// <summary>Accounting key types, as the type tag that opens the position.</summary>
   internal const byte AccountingNrInodes = 0;
+  internal const byte AccountingReplicas = 2;
   internal const byte AccountingDevDataType = 3;
+  internal const byte AccountingSnapshot = 5;
+  internal const byte AccountingBtree = 6;
+
+  /// <summary>
+  /// How far a backpointer's position is shifted above the sector it names.
+  /// </summary>
+  /// <remarks>
+  /// A backpointer is keyed by where in the device its target sits, with room
+  /// below for an offset inside the bucket, so the sector is shifted up and the
+  /// low bits carry that offset.
+  /// </remarks>
+  internal const int ExtentBpShift = 16;
 
   /// <summary>How many buckets one bucket_gens key covers.</summary>
   internal const int BucketGensNr = 256;

@@ -1,22 +1,34 @@
 # bcachefs accounting, backpointer and LRU keys
 
-What a volume written here does not yet carry, what those keys look like, and how
-that was established. Written down because the encoding is not obvious from the
-headers alone and cost a day to work out; the next attempt should not have to
-repeat it.
+What a volume written here carries, what is still missing and why, and how each
+encoding was established. Written down because none of it is obvious from the
+headers alone; the next attempt should not have to work it out again.
 
 ## Where this stands
 
-`BcacheFsWriter` writes the alloc, bucket_gens and freespace trees. It does not
-write accounting, backpointers or LRU. `bcachefs fsck -n` returns 0 on such a
-volume with nothing found and nothing fixed, so their absence is not detectable
-by the checker — it rebuilds them without complaint. `bcachefs list -b accounting`
-on one of our images returns no keys, against 936 alloc keys on the same image.
+`BcacheFsWriter` writes the alloc, bucket_gens, freespace, accounting and
+backpointers trees. On a small volume that is
 
-That makes this a fidelity gap rather than a correctness one, and it is the
-reason the trees are not written yet: adding an accounting key whose counters are
-wrong turns a volume the checker accepts into one it rejects. Nothing here should
-be implemented without checking each step against `fsck`.
+```
+alloc: 158   freespace: 2   bucket_gens: 8   accounting: 20   backpointers: 12
+```
+
+with `bcachefs fsck -n` returning 0, nothing found and nothing fixed.
+
+The two halves are checked by different things, and it matters which is which.
+The checker validates backpointers: a key naming the wrong bucket, tree or level
+is refused, so that half is developed against a real signal. It does *not*
+validate the accounting totals — a volume carrying wrong numbers passes exactly
+as one carrying right ones, tested rather than assumed — so those are held to a
+filesystem `mkfs.bcachefs` made and the kernel initialised, which is the only
+thing that will contradict them.
+
+Accounting's `btree` and `snapshot` types are written as well: what each tree
+costs in sectors, nodes and inner nodes, and how many keys of each snapshot sit
+in each tree with their total key bytes. Both are read off the trees themselves.
+
+The `replicas` counters are written too, together with the superblock section
+that has to declare the device sets they name. LRU needs nothing.
 
 ## How the key positions are encoded
 
@@ -85,7 +97,10 @@ initialised — `bcachefs list -b lru` returns no keys at all. Ours is empty too
 so there is no difference to close. It is listed here so the next person does not
 go looking for work that is not there.
 
-## Backpointers: the encoding, and why they are not written yet
+## Backpointers
+
+Written now. What follows is what it took, because the shift is the part that
+looks settled and is not.
 
 A real filesystem carries exactly one backpointer per b-tree node — ten keys
 against the ten b-tree buckets on the control image, and nothing else, because
@@ -105,39 +120,74 @@ a `u32` of flags carrying the sub-offset, a `u32` bucket length, and a full
 position — thirty-two bytes, which is the type's stated minimum value size. For a
 node the length is the whole bucket, 128, and the position is `SPOS_MAX`.
 
-Two things stop this being a half-hour change, and both are reasons to do it
-deliberately rather than at the end of a session:
+The shift is not a constant. It is `BCH_SB_EXTENT_BP_SHIFT`, bits 40 to 48 of
+the superblock's `flags[6]`, and it reads as ten when left unset. A formatter
+writes sixteen. The first attempt here wrote keys shifted by sixteen without
+writing the field, so the checker read them back shifted by ten and placed every
+node sixty-four buckets too far along:
 
-- **It is circular in a way the bucket count is not.** The backpointers tree is
-  itself one of the trees being placed, and a backpointer names the bucket its
-  node landed in — so the keys depend on a layout that depends on the keys. The
-  existing fixed point settles how many b-tree buckets there are; this needs
-  which node is in which bucket, which is one level finer.
-- **Every node needs one, not every tree.** The control image has a single node
-  per tree so the two look alike there. A tree that splits has a root and leaves
-  at different levels, and the `level` field has to match the node it points at.
+```
+ours: bucket=0:3136:0 btree=extents ...    backpointer_to_missing_alloc 12
+real: bucket=0:49:0   btree=alloc ...
+```
 
-File data needs them too, keyed by the extent rather than `SPOS_MAX`, and the
-control image cannot show what those look like because it holds no files.
+Writing sixteen into the superblock as well brought the two into line — the
+field was another difference from a formatted filesystem in its own right, since
+ours had been leaving it at zero.
 
-Unlike accounting, `fsck` does check backpointers, so this one can be developed
-against a real signal. That makes it a good next piece of work — and a bad one to
-guess at, since a wrong key turns a volume the checker accepts into one it
-rejects.
+Which node lands in which bucket is decided by the write pass: trees in order,
+each taking as many consecutive buckets as it has nodes, leaves before the root.
+The keys need that assignment before anything is written, so the rule is applied
+in the plan rather than the assignment being carried out of the writer. It is
+circular — the backpointers tree is itself one of the trees being placed — and
+the existing fixed point over the b-tree bucket count already absorbs it.
+
+Unlike accounting, `fsck` does check these, which is how both mistakes above were
+caught rather than shipped.
+
+## Replicas needs its superblock section written with it
+
+A `replicas` counter names a set of devices holding a copy of some content, and
+that set has to be declared in the superblock before a counter may refer to it.
+Writing the counters alone is refused, and the volume that had been passing
+cleanly stops passing:
+
+```
+accounting_read... accounting not marked in superblock replicas
+  accounting_replicas_not_marked  2
+```
+
+So the two are written together. The section is `replicas_v0`, superblock field
+type 3, holding entries of `{u8 data_type, u8 nr_devs, u8 devs[]}` — three bytes
+each here, there being one device. A formatted filesystem carries the same
+section, which ours had been missing on its own account.
+
+The counter's position is a `bch_replicas_entry_v1`,
+`[2, data_type, nr_devs, nr_required, dev…]`, so one device holding b-tree data
+is `[2, 3, 1, 1, 0]`. That comes out at the same position the control filesystem
+uses, to the byte:
+
+```
+ours:    144960716812582912 : replicas btree: 1/1 [0] 1536
+control: 144960716812582912 : replicas btree: 1/1 [0] 1280
+```
+
+with a second entry for user data that the control has no counterpart for,
+holding no files.
 
 ## What is not established
 
-- The `replicas`, `snapshot` and `btree` accounting types appear in a real
-  filesystem and their positions decode by the rule above, but their counters
-  have not been derived from first principles here.
-- Whether `fsck` accepts a volume carrying *some* accounting types and not
-  others, or recomputes and reports a mismatch, has not been tested. It decides
-  whether this can be done in pieces.
-- Whether `extent_bp_shift` has to be written into the superblock or is derived
-  from the encoded extent maximum. The control filesystem uses 16 and ours agrees
-  by construction, but that is an observation, not a guarantee.
-- `bcachefs fs usage` would be the natural check, and it refuses an unmounted
-  image, so verification has to go through `fsck` or a real mount.
+- Backpointers for file data. A node's are written and checked by the checker;
+  an extent's are keyed by the extent rather than `SPOS_MAX`, and the control
+  filesystem holds no files, so it cannot show what those look like.
+- The `compression`, `inum` and `rebalance_work` accounting types. None appears
+  in the control filesystem, so there is nothing here to check them against.
+
+Two questions that were open have since been answered, and are recorded so they
+are not asked again. `fsck` does accept a volume carrying some accounting types
+and not others — it neither recomputes nor reports a mismatch — which is what
+makes this safe to do in pieces. And `extent_bp_shift` is a superblock field,
+`BCH_SB_EXTENT_BP_SHIFT` in `flags[6]`, not something derived at mount time.
 
 ## References
 
