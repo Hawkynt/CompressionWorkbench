@@ -176,18 +176,30 @@ of the three. Every one of the 130 samples has exactly two sections, `nsp0` and
 bytes of loader; `nsp1` holds everything else.
 
 What stops a decoder is that `nsp1` is not one thing. On the sample measured it
-runs: a structured table from the start of the section to about `0x1C00` into it,
-entropy between 1.5 and 2.9 and full of what read as addresses and flags; then
-x86 — `56 52 56 6a 04 68 00 01 00 00 52 ff 95 ec fc ff`, which is
-`push esi; push edx; push esi; push 4; push 0x100; push edx; call [ebp-0x314]`,
-so a second stage of the loader living inside the payload section; and only then
-the compressed data, whose entropy passes 7.5 and stays there for the rest of the
-section.
+runs in three parts:
 
-So the payload does not start where the section starts, and where it does start
-has to come out of that table rather than be guessed at — which is why probing
-the section head finds nothing whatever codec is tried. The table is the thing to
-read next.
+- a structured table from the start of the section, entropy between 1.5 and 2.9
+  and full of what read as addresses and flags;
+- x86 code, a second stage of the loader living inside the payload section —
+  `56 52 56 6a 04 68 00 01 00 00 52 ff 95 ec fc ff` is
+  `push esi; push edx; push esi; push 4; push 0x100; push edx; call [ebp-0x314]`
+  at `0x1C00` into the section, and it is still code at `0x1DC0`, where
+  `ff 72 f2 c3 5d c2 08 00 6a 00 ff 95 f8 fc ff ff` reads as
+  `push [edx-0x0e]; ret; pop ebp; ret 8; push 0; call [ebp-0x308]`;
+- the compressed data, which holds above entropy 7.5 for the rest of the
+  section.
+
+The boundaries between the three are approximate. Entropy separates the table
+from the rest cleanly, but it does not separate dense x86 from compressed data:
+code here measures 5 to 6.5 against the payload's 7.9, and a threshold set low
+enough to catch the transition also fires inside the code. The two offsets above
+were confirmed by disassembling what is at them, which is the only reliable way
+to tell those two apart.
+
+What is certain is that the payload does not start where the section starts, and
+where it does start has to come out of that table rather than be guessed at —
+which is why probing the section head finds nothing whatever codec is tried. The
+table is the thing to read next.
 
 Seven of its 110 comparable samples are byte-identical to the original — the
 packer left them alone, and no amount of unpacking will produce a difference.
