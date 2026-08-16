@@ -170,6 +170,37 @@ of the samples measured is 6.65 and most sit between 4 and 5, where compressed
 data would be near 8. Whatever Neolite does is lighter than a single compressed
 image, and the stub has to be read to find out what.
 
+NSPack is stuck at a different point again, and its layout is the most regular
+of the three. Every one of the 130 samples has exactly two sections, `nsp0` and
+`nsp1` — checked across all of them, not sampled. `nsp0` is a couple of hundred
+bytes of loader; `nsp1` holds everything else.
+
+What stops a decoder is that `nsp1` is not one thing. On the sample measured it
+runs in three parts:
+
+- a structured table from the start of the section, entropy between 1.5 and 2.9
+  and full of what read as addresses and flags;
+- x86 code, a second stage of the loader living inside the payload section —
+  `56 52 56 6a 04 68 00 01 00 00 52 ff 95 ec fc ff` is
+  `push esi; push edx; push esi; push 4; push 0x100; push edx; call [ebp-0x314]`
+  at `0x1C00` into the section, and it is still code at `0x1DC0`, where
+  `ff 72 f2 c3 5d c2 08 00 6a 00 ff 95 f8 fc ff ff` reads as
+  `push [edx-0x0e]; ret; pop ebp; ret 8; push 0; call [ebp-0x308]`;
+- the compressed data, which holds above entropy 7.5 for the rest of the
+  section.
+
+The boundaries between the three are approximate. Entropy separates the table
+from the rest cleanly, but it does not separate dense x86 from compressed data:
+code here measures 5 to 6.5 against the payload's 7.9, and a threshold set low
+enough to catch the transition also fires inside the code. The two offsets above
+were confirmed by disassembling what is at them, which is the only reliable way
+to tell those two apart.
+
+What is certain is that the payload does not start where the section starts, and
+where it does start has to come out of that table rather than be guessed at —
+which is why probing the section head finds nothing whatever codec is tried. The
+table is the thing to read next.
+
 Seven of its 110 comparable samples are byte-identical to the original — the
 packer left them alone, and no amount of unpacking will produce a difference.
 They are counted here as failures because the handler does not notice a file is
