@@ -196,6 +196,30 @@ enough to catch the transition also fires inside the code. The two offsets above
 were confirmed by disassembling what is at them, which is the only reliable way
 to tell those two apart.
 
+Four more things hold across the corpus, counted rather than sampled:
+
+| claim | samples |
+|---|---|
+| the entry point lies inside `nsp0` | 130 of 130 |
+| `nsp0`'s virtual size is more than ten times its raw size | 130 of 130 |
+| `nsp1` opens with four or more repeats of `0x10000` among its first `0x800` bytes | 125 of 130 |
+| `nsp0` and `nsp1` raw ranges overlap in the file | 63 of 130 |
+
+The first two together say what `nsp0` is: a destination. It is almost empty on
+disk and large in memory — on one sample 233 bytes of file against 167,936 bytes
+of image, where the pre-packing original is 174,968 — so the loader unpacks into
+it, and the entry point sits there because that is where control ends up. The
+repeating `0x10000` is a record table, each record pairing that constant with a
+rising address.
+
+One hypothesis was tested here and is wrong, which is worth recording so it is
+not tried twice. `nsp0`'s raw bytes are not the original PE's section table. On
+one sample the string `.text` appears there followed by a plausible virtual size
+and address, which reads convincingly; across all 130 samples, none contains
+every section name of its own original, and the commonest case is one name out
+of four or five — which is what coincidence looks like when the names are
+`.text` and `.rdata`.
+
 What is certain is that the payload does not start where the section starts, and
 where it does start has to come out of that table rather than be guessed at —
 which is why probing the section head finds nothing whatever codec is tried. The
