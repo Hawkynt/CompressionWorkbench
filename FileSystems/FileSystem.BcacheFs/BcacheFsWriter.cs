@@ -43,8 +43,9 @@ namespace FileSystem.BcacheFs;
 /// <c>mkfs.bcachefs</c> made and the kernel initialised. Against that, the
 /// superblock and journal rows match to the sector.</para>
 ///
-/// <para>The backpointers tree points the other way: for each b-tree node, from
-/// the space it occupies back to the tree that holds it. Those keys have to know
+/// <para>The backpointers tree points the other way: from a stretch of the
+/// device back to what occupies it — one key per b-tree node, and one per file
+/// extent. Those keys have to know
 /// where each node landed, which is decided by the same rule the write pass
 /// follows — trees in order, each taking as many consecutive buckets as it has
 /// nodes — so the rule is applied here rather than the assignment being threaded
@@ -301,6 +302,12 @@ public sealed class BcacheFsWriter {
 
     /// <summary>How many buckets the b-trees occupy, starting at the first of them.</summary>
     internal required long BtreeBuckets { get; init; }
+
+    /// <summary>
+    /// Each extent key's value, in the order the write pass reaches them, so the
+    /// checksum can be stamped in once the bytes it covers have been read.
+    /// </summary>
+    internal required List<byte[]> ExtentValues { get; init; }
   }
 
   private ulong NextSeed() {
@@ -321,9 +328,31 @@ public sealed class BcacheFsWriter {
   /// included, so the bytes are hashed on their way to the volume rather than read
   /// back afterwards — a file that is streamed in is only ever read once.
   /// </remarks>
+  /// <summary>Where one file's extents fall: each one's first sector and length.</summary>
+  /// <remarks>
+  /// Both the plan and the write pass need this, and they have to agree: the plan
+  /// sizes the b-trees from the keys it expects, and a key the write pass adds
+  /// that the plan did not count can push a tree into another node than the one
+  /// the volume was laid out for. Which is exactly what happened while extents
+  /// were added only while writing — past about nine hundred extents the
+  /// backpointers tree outgrew its node and the volume described b-tree buckets
+  /// its own alloc tree had never heard of.
+  /// </remarks>
+  private static IEnumerable<(long Placed, int Sectors)> ExtentSpans(long length) {
+    var placed = 0L;
+    var remaining = length;
+    while (remaining > 0) {
+      var want = (int)Math.Min(MaxExtentSectors * SectorSize, remaining);
+      var sectors = (want + SectorSize - 1) / SectorSize;
+      yield return (placed, sectors);
+      placed += sectors;
+      remaining -= want;
+    }
+  }
+
   private static void WriteFileData(Stream output, Plan plan) {
-    var extents = plan.Nodes[0];
     var buffer = new byte[MaxExtentSectors * SectorSize];
+    var next = 0;
 
     foreach (var file in plan.Files) {
       if (file.Length == 0) continue;
@@ -348,8 +377,9 @@ public sealed class BcacheFsWriter {
         Array.Clear(buffer, got, sectors * SectorSize - got);
         output.Write(buffer, 0, sectors * SectorSize);
 
-        extents.Add(ExtentKey(file, placed, sectors,
-          DataChecksum(buffer.AsSpan(0, sectors * SectorSize))));
+        // The key already exists; only its checksum waited on the bytes.
+        BinaryPrimitives.WriteUInt64LittleEndian(plan.ExtentValues[next++],
+          ExtentCrc32(sectors, DataChecksum(buffer.AsSpan(0, sectors * SectorSize))));
         placed += sectors;
         remaining -= got;
       }
@@ -447,6 +477,8 @@ public sealed class BcacheFsWriter {
     // freespace tree. The two have to agree with each other and with the
     // extents, so both are driven off the same walk rather than written twice
     // from the same assumptions.
+    var extents = nodes[0];
+    var extentValues = new List<byte[]>();
     var alloc = nodes[7];
     var bucketGens = nodes[8];
     var freespace = nodes[9];
@@ -471,6 +503,7 @@ public sealed class BcacheFsWriter {
       alloc.Clear();
       freespace.Clear();
       accounting.Clear();
+      backpointers.Clear();
       var runStart = -1L;
 
       // The same walk answers both questions: what each bucket holds, key by
@@ -498,6 +531,19 @@ public sealed class BcacheFsWriter {
         runStart = -1;
       }
 
+      extents.Clear();
+      extentValues.Clear();
+      foreach (var file in files)
+        foreach (var (placed, sectors) in ExtentSpans(file.Length)) {
+          // The checksum is not known until the bytes are read; the key is, and
+          // the plan has to count it or the trees are sized for a volume that
+          // does not exist.
+          var extent = ExtentKey(file, placed, sectors, 0);
+          extents.Add(extent);
+          extentValues.Add(extent.Value);
+          backpointers.Add(ExtentBackpointerKey(file.FirstSector + placed, sectors, extent.Position));
+        }
+
       accounting.Add(NrInodesKey((ulong)(1 + directories.Count + files.Count)));
       for (byte type = DataFree; type <= DataUser; ++type)
         if (bucketsOf[type] > 0)
@@ -509,7 +555,6 @@ public sealed class BcacheFsWriter {
       // trees in order, each taking as many consecutive buckets as it has nodes,
       // leaves before the root. Mirroring it here rather than threading the
       // assignment out of the write pass keeps one description of the layout.
-      backpointers.Clear();
       var at = (long)FirstMetadataBucket;
       foreach (var tree in nodes) {
         var count = NodeCount(tree);
@@ -557,6 +602,7 @@ public sealed class BcacheFsWriter {
       Files = files,
       Buckets = buckets,
       BtreeBuckets = btreeBuckets,
+      ExtentValues = extentValues,
       SuperblockSectors = [
         PrimarySbSector,
         PrimarySbSector + SbSlotSectors,
@@ -855,6 +901,26 @@ public sealed class BcacheFsWriter {
     for (var i = 0; i < counters.Length; ++i)
       BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8 * i), counters[i]);
     return new Key(KeyAccounting, new Bpos(inode, offset, snapshot), 0, value);
+  }
+
+  /// <summary>Points back from a stretch of file data to the extent naming it.</summary>
+  /// <remarks>
+  /// The same shape as a node's backpointer, and positioned the same way, but
+  /// keyed by the sector the data starts at rather than the start of a bucket —
+  /// several extents share a bucket — and carrying the extent key's own position
+  /// rather than the top of the space, because here there is a key to point at.
+  /// </remarks>
+  private static Key ExtentBackpointerKey(long firstSector, int sectors, Bpos extent) {
+    var value = new byte[32];
+    value[0] = (byte)BtreeExtents;
+    value[1] = 0;                                                              // level
+    value[2] = DataUser;
+    value[3] = 0;                                                              // bucket_gen
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(4), 0);              // flags
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
+    WriteBpos(value.AsSpan(12), extent);
+    return new Key(KeyBackpointer,
+      new Bpos(0, (ulong)firstSector << ExtentBpShift, 0), 0, value);
   }
 
   /// <summary>How many inodes the volume holds.</summary>

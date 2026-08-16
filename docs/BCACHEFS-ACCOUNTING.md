@@ -142,8 +142,35 @@ in the plan rather than the assignment being carried out of the writer. It is
 circular — the backpointers tree is itself one of the trees being placed — and
 the existing fixed point over the b-tree bucket count already absorbs it.
 
-Unlike accounting, `fsck` does check these, which is how both mistakes above were
-caught rather than shipped.
+Extents get one each too, keyed by the sector the data starts at rather than the
+start of a bucket — several extents share a bucket — and carrying the extent
+key's own position rather than the top of the space, because here there is a key
+to point at. `check_extents_to_backpointers` is the pass that confirms them.
+
+Unlike accounting, `fsck` does check all of this, which is how every mistake here
+was caught rather than shipped — including one that was not mine to make.
+
+## The volume was broken above about 57 MB of data, and nothing noticed
+
+Extent keys used to be created while writing the file data, after the plan had
+already sized the b-trees. Below a thousand or so extents that is invisible,
+because every tree fits in one node either way. Above it the extents and
+backpointers trees need a second node, the plan did not allow for it, and the
+alloc tree ends up describing b-tree buckets that are not where the b-trees are:
+
+```
+bucket 0:65 data type btree ptr gen 0 missing in alloc btree
+```
+
+`fsck` refused such a volume, and at 120 MB aborted outright. Every test wrote a
+few kilobytes, so nothing saw it.
+
+Extents are planned now rather than discovered while writing — where they fall
+follows from the file lengths alone, and only the checksum needs the bytes, so
+the key is made during planning and its checksum stamped in later. The fixed
+point that already settles the b-tree bucket count then covers them too.
+`BcacheFs_ManyExtents_PassesFsck` writes 96 MB and holds it; on the previous
+code that volume fails.
 
 ## Replicas needs its superblock section written with it
 
