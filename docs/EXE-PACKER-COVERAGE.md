@@ -170,6 +170,25 @@ of the samples measured is 6.65 and most sit between 4 and 5, where compressed
 data would be near 8. Whatever Neolite does is lighter than a single compressed
 image, and the stub has to be read to find out what.
 
+NSPack is stuck at a different point again, and its layout is the most regular
+of the three. Every one of the 130 samples has exactly two sections, `nsp0` and
+`nsp1` — checked across all of them, not sampled. `nsp0` is a couple of hundred
+bytes of loader; `nsp1` holds everything else.
+
+What stops a decoder is that `nsp1` is not one thing. On the sample measured it
+runs: a structured table from the start of the section to about `0x1C00` into it,
+entropy between 1.5 and 2.9 and full of what read as addresses and flags; then
+x86 — `56 52 56 6a 04 68 00 01 00 00 52 ff 95 ec fc ff`, which is
+`push esi; push edx; push esi; push 4; push 0x100; push edx; call [ebp-0x314]`,
+so a second stage of the loader living inside the payload section; and only then
+the compressed data, whose entropy passes 7.5 and stays there for the rest of the
+section.
+
+So the payload does not start where the section starts, and where it does start
+has to come out of that table rather than be guessed at — which is why probing
+the section head finds nothing whatever codec is tried. The table is the thing to
+read next.
+
 Seven of its 110 comparable samples are byte-identical to the original — the
 packer left them alone, and no amount of unpacking will produce a difference.
 They are counted here as failures because the handler does not notice a file is
