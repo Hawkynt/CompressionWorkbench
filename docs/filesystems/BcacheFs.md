@@ -79,7 +79,9 @@ Accounting is the one part here the checker will not confirm. A volume carrying 
 
 The backpointers tree points the other way: for each b-tree node, from the space it occupies back to the tree that holds it. Those keys have to know where each node landed, which is decided by the same rule the write pass follows — trees in order, each taking as many consecutive buckets as it has nodes — so the rule is applied here rather than the assignment being threaded out of the writer.
 
-The LRU tree stays empty, which is what a filesystem mkfs.bcachefs made and the kernel initialised also has, so there is nothing there to write. Accounting's replicas, snapshot and btree types are still missing; the checker rebuilds them without complaint. See docs/BCACHEFS-ACCOUNTING.md.
+Accounting also carries what each tree costs and what each snapshot holds in it. Both are read off the trees themselves, so they cannot come to describe a volume other than the one being written, and the accounting tree measures itself among them.
+
+The LRU tree stays empty, which is what a filesystem mkfs.bcachefs made and the kernel initialised also has, so there is nothing there to write. Accounting's replicas counters are not written: a counter naming a set of devices needs that set declared in the superblock's replicas section first, and without it the checker refuses the volume outright. That section is a difference from a formatted filesystem in its own right and belongs with those counters, not before them. See docs/BCACHEFS-ACCOUNTING.md.
 
 ## Parameters
 

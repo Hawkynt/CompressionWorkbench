@@ -50,11 +50,19 @@ namespace FileSystem.BcacheFs;
 /// nodes — so the rule is applied here rather than the assignment being threaded
 /// out of the writer.</para>
 ///
+/// <para>Accounting also carries what each tree costs and what each snapshot
+/// holds in it. Both are read off the trees themselves, so they cannot come to
+/// describe a volume other than the one being written, and the accounting tree
+/// measures itself among them.</para>
+///
 /// <para>The LRU tree stays empty, which is what a filesystem
 /// <c>mkfs.bcachefs</c> made and the kernel initialised also has, so there is
-/// nothing there to write. Accounting's <c>replicas</c>, <c>snapshot</c> and
-/// <c>btree</c> types are still missing; the checker rebuilds them without
-/// complaint. See <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
+/// nothing there to write. Accounting's <c>replicas</c> counters are not
+/// written: a counter naming a set of devices needs that set declared in the
+/// superblock's replicas section first, and without it the checker refuses the
+/// volume outright. That section is a difference from a formatted filesystem in
+/// its own right and belongs with those counters, not before them. See
+/// <c>docs/BCACHEFS-ACCOUNTING.md</c>.</para>
 /// </remarks>
 public sealed class BcacheFsWriter {
 
@@ -513,6 +521,28 @@ public sealed class BcacheFsWriter {
         at += count;
       }
 
+      // What each tree costs, and what each snapshot holds in it. Both are read
+      // off the trees themselves, so they cannot describe a volume other than
+      // the one being written. The accounting tree measures itself here too:
+      // adding these keys can grow it, which the loop settles.
+      foreach (var tree in nodes)
+        accounting.Add(BtreeAccountingKey(tree.BtreeId, (ulong)NodeCount(tree)));
+
+      foreach (var tree in new[] { nodes[0], nodes[1], nodes[2] }) {
+        if (tree.Count == 0) continue;
+        var keyBytes = (ulong)tree.Keys.Sum(k => k.Bytes);
+        accounting.Add(SnapshotAccountingKey(SnapshotIdMax, tree.BtreeId,
+          (ulong)tree.Count, keyBytes,
+          tree.BtreeId == BtreeExtents ? sectorsOf[DataUser] : 0));
+      }
+
+      // The replicas counters are not written. They name a set of devices, and a
+      // set a counter names has to be declared in the superblock's replicas
+      // section first — "accounting not marked in superblock replicas" is what
+      // the checker says otherwise, and it refuses the volume. That section is a
+      // difference from a formatted filesystem in its own right and belongs with
+      // this, not before it.
+
       var settled = nodes.Sum(NodeCount);
       if (settled == btreeBuckets) break;
       btreeBuckets = settled;
@@ -825,6 +855,33 @@ public sealed class BcacheFsWriter {
 
   /// <summary>How many inodes the volume holds.</summary>
   private static Key NrInodesKey(ulong inodes) => AccountingKey([AccountingNrInodes], inodes);
+
+  /// <summary>What one b-tree costs: its sectors, its nodes, and its inner nodes.</summary>
+  private static Key BtreeAccountingKey(int btreeId, ulong nodes) {
+    Span<byte> position = stackalloc byte[5];
+    position[0] = AccountingBtree;
+    BinaryPrimitives.WriteUInt32LittleEndian(position[1..], (uint)btreeId);
+    // A tree of one node is that node and nothing above it; a tree of several
+    // carries one root over its leaves, which is the only non-leaf here.
+    return AccountingKey(position, nodes * BucketSectors, nodes, nodes > 1 ? 1UL : 0);
+  }
+
+  /// <summary>
+  /// What one snapshot holds in one tree: how many keys, how many bytes of key,
+  /// and how many sectors of data outside the tree they name.
+  /// </summary>
+  /// <remarks>
+  /// The last is only ever nonzero for the extents tree, because only an extent
+  /// names bytes that live somewhere else.
+  /// </remarks>
+  private static Key SnapshotAccountingKey(uint snapshot, int btreeId,
+    ulong keys, ulong keyBytes, ulong externalSectors) {
+    Span<byte> position = stackalloc byte[9];
+    position[0] = AccountingSnapshot;
+    BinaryPrimitives.WriteUInt32LittleEndian(position[1..], snapshot);
+    BinaryPrimitives.WriteUInt32LittleEndian(position[5..], (uint)btreeId);
+    return AccountingKey(position, keys, keyBytes, externalSectors);
+  }
 
   /// <summary>
   /// Says what occupies a stretch of the device, pointing back from the space to

@@ -24,8 +24,11 @@ as one carrying right ones, tested rather than assumed — so those are held to 
 filesystem `mkfs.bcachefs` made and the kernel initialised, which is the only
 thing that will contradict them.
 
-Still missing: accounting's `replicas`, `snapshot` and `btree` types. LRU needs
-nothing; see below.
+Accounting's `btree` and `snapshot` types are written as well: what each tree
+costs in sectors, nodes and inner nodes, and how many keys of each snapshot sit
+in each tree with their total key bytes. Both are read off the trees themselves.
+
+Still missing: the `replicas` counters, for the reason below. LRU needs nothing.
 
 ## How the key positions are encoded
 
@@ -141,6 +144,27 @@ the existing fixed point over the b-tree bucket count already absorbs it.
 
 Unlike accounting, `fsck` does check these, which is how both mistakes above were
 caught rather than shipped.
+
+## Replicas needs a superblock section first
+
+A `replicas` counter names a set of devices holding a copy of some content, and
+that set has to be declared in the superblock before a counter may refer to it.
+Writing the counters without the section is refused:
+
+```
+accounting_read... accounting not marked in superblock replicas
+  accounting_replicas_not_marked  2
+```
+
+and the volume that had been passing cleanly stops passing. A formatted
+filesystem carries a `replicas_v0` section — ours carries none, which is a
+difference from a formatter in its own right, and the counters belong with it
+rather than before it.
+
+The position encoding is known: a `bch_replicas_entry_v1` laid out as
+`[2, data_type, nr_devs, nr_required, dev…]`, so one device holding b-tree data
+is `[2, 3, 1, 1, 0]`, matching the control filesystem exactly. The counter is the
+sector total. That part is not the obstacle.
 
 ## What is not established
 

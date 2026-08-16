@@ -143,7 +143,10 @@ internal static class BcacheFsFormat {
 
   /// <summary>Accounting key types, as the type tag that opens the position.</summary>
   internal const byte AccountingNrInodes = 0;
+  internal const byte AccountingReplicas = 2;
   internal const byte AccountingDevDataType = 3;
+  internal const byte AccountingSnapshot = 5;
+  internal const byte AccountingBtree = 6;
 
   /// <summary>
   /// How far a backpointer's position is shifted above the sector it names.
