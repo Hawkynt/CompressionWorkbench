@@ -1910,6 +1910,47 @@ public class ExternalFsInteropTests {
   /// subvolume and snapshot keys that root them — and the checker walks all of
   /// them and finds nothing to say.
   /// </remarks>
+  /// <summary>
+  /// <c>bcachefs fsck</c> accepts a volume big enough to need several b-tree
+  /// nodes, not just one.
+  /// </summary>
+  /// <remarks>
+  /// Every other check here writes a volume of a few kilobytes, where every tree
+  /// fits in a single node — and a whole class of fault cannot show itself at
+  /// that size. The writer plans the layout from the keys it expects and then
+  /// writes them; a key it did not count can push a tree into a node the volume
+  /// was not laid out for, and the alloc tree then describes b-tree buckets that
+  /// are not where the b-trees actually are. That is what happened once extents
+  /// went past about nine hundred: <c>fsck</c> reported buckets "missing in alloc
+  /// btree" and gave up. Nothing caught it, because nothing wrote enough data.
+  /// </remarks>
+  [Test]
+  public void BcacheFs_ManyExtents_PassesFsck() {
+    RequireWslTool("bcachefs", "bcachefs-tools");
+    var w = new FileSystem.BcacheFs.BcacheFsWriter();
+    w.SetLabel("cwb-bcachefs-many");
+
+    // Enough extents that the extents and backpointers trees each need more than
+    // one node: an extent covers at most 64 KB, so this is well past a thousand.
+    var chunk = new byte[1 << 20];
+    for (var i = 0; i < chunk.Length; ++i) chunk[i] = (byte)(i * 31);
+    for (var i = 0; i < 96; ++i) w.AddFile($"bulk/f{i:000}.bin", chunk);
+
+    var imgPath = Path.Combine(this._tmpDir, "bcachefs_many.img");
+    using (var fs = File.Create(imgPath))
+      w.WriteTo(fs);
+    var wslImg = FsInteropToolbox.WinToWsl(imgPath);
+
+    var result = FsInteropToolbox.RunWsl($"bcachefs fsck -n {wslImg}");
+    var combined = (result.StdOut ?? "") + "\n" + (result.StdErr ?? "");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"bcachefs fsck rejected our multi-node volume:\n{combined}");
+    Assert.That(combined, Does.Not.Contain("missing in alloc btree"),
+      $"the b-trees are not where the alloc tree says they are:\n{combined}");
+    Assert.That(combined, Does.Not.Contain(", fixing"),
+      $"fsck should have found nothing to repair:\n{combined}");
+  }
+
   [Test]
   public void BcacheFs_OurImage_PassesFsck() {
     RequireWslTool("bcachefs", "bcachefs-tools");

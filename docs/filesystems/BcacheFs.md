@@ -77,7 +77,7 @@ The accounting tree carries the totals: how many inodes there are, and per kind 
 
 Accounting is the one part here the checker will not confirm. A volume carrying wrong totals passes fsck exactly as one carrying right ones does — tested, not assumed — so the numbers are held instead to a filesystem mkfs.bcachefs made and the kernel initialised. Against that, the superblock and journal rows match to the sector.
 
-The backpointers tree points the other way: for each b-tree node, from the space it occupies back to the tree that holds it. Those keys have to know where each node landed, which is decided by the same rule the write pass follows — trees in order, each taking as many consecutive buckets as it has nodes — so the rule is applied here rather than the assignment being threaded out of the writer.
+The backpointers tree points the other way: from a stretch of the device back to what occupies it — one key per b-tree node, and one per file extent. Those keys have to know where each node landed, which is decided by the same rule the write pass follows — trees in order, each taking as many consecutive buckets as it has nodes — so the rule is applied here rather than the assignment being threaded out of the writer.
 
 Accounting also carries what each tree costs and what each snapshot holds in it. Both are read off the trees themselves, so they cannot come to describe a volume other than the one being written, and the accounting tree measures itself among them.
 
