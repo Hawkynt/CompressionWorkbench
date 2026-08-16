@@ -73,7 +73,11 @@ The allocation information is written too: the alloc tree says what each bucket 
 
 It used to be left out, and the volume claimed no_alloc_info and small_image to be let past the check that would have built it. No formatter sets either, so the volume could be told from one by the bits alone, and a read-write mount was refused outright. Neither is claimed now.
 
-Still not written are the backpointer, LRU and accounting trees. The checker rebuilds those without complaint; if that stops being true they belong here too.
+The accounting tree carries the totals: how many inodes there are, and per kind of content how many buckets, how many live sectors and how many sectors sit unused inside used buckets. They come off the same walk as the alloc keys, because they are the same facts added up, and counting them separately is how the two come to disagree.
+
+Accounting is the one part here the checker will not confirm. A volume carrying wrong totals passes fsck exactly as one carrying right ones does — tested, not assumed — so the numbers are held instead to a filesystem mkfs.bcachefs made and the kernel initialised. Against that, the superblock and journal rows match to the sector.
+
+Still not written are the backpointer and LRU trees, and accounting's own replicas, snapshot and btree types. The checker rebuilds those without complaint; if that stops being true they belong here too. See docs/BCACHEFS-ACCOUNTING.md.
 
 ## Parameters
 
