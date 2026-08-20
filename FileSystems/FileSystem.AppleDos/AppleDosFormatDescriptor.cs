@@ -68,7 +68,12 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     foreach (var (name, data) in FilesOnly(inputs)) {
       AppleDosModifier.RemoveFile(archive, name, wipeData: true);
-      AppleDosModifier.AddFile(archive, name, data);
+      // The same four bytes Create writes. A file added without them is stored
+      // as a binary file whose length field is the first two bytes of its own
+      // payload, so it reads back truncated to whatever those happened to say —
+      // one file of 3,169 bytes came back as 225, which is exactly what its
+      // third and fourth bytes spell.
+      AppleDosModifier.AddFile(archive, name, WithBinaryHeader(data), BinaryFileType);
     }
   }
 
