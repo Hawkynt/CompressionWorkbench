@@ -32,8 +32,29 @@ internal static class Gfs1ExtentMap {
     try {
       image.Position = 0;
       var reader = new Gfs1Reader(image);
-      // Surface root dir + inode table block.
-      result.Add(new DefragBlockInfo(inodeStart, Gfs1Writer.BlockSize, DefragBlockKind.MetadataReserved, "inode_table"));
+      // Everything between the superblock and the first block any file occupies
+      // is the volume's own: the inode table and the root directory, whose sizes
+      // are not recorded anywhere a reader can consult. Claiming a fixed one
+      // block for the table and one for the root left the rest looking free, and
+      // a wipe zeroed it — on a volume of twenty-eight files that cost every
+      // file at once while the file data itself was never touched.
+      //
+      // Counting the inodes currently present does not work either: the table is
+      // sized when the volume is written and does not shrink when files are
+      // removed, so a count taken afterwards puts the root directory a block
+      // short of where it is. The first file block is a fact about the volume;
+      // an inode count is a fact about its history.
+      var firstFileBlock = long.MaxValue;
+      foreach (var e in reader.Entries)
+        if (e.FirstBlock > 0 && e.FirstBlock < firstFileBlock) firstFileBlock = e.FirstBlock;
+
+      var ownEnd = firstFileBlock == long.MaxValue
+        ? inodeStart + Gfs1Writer.BlockSize          // nothing stored; the table is all there is
+        : firstFileBlock * Gfs1Writer.BlockSize;
+      if (ownEnd > inodeStart && ownEnd <= image.Length)
+        result.Add(new DefragBlockInfo(inodeStart, ownEnd - inodeStart,
+          DefragBlockKind.MetadataReserved, "inode_table"));
+
       foreach (var e in reader.Entries) {
         if (e.FirstBlock == 0) continue;
         var blocks = e.IsDirectory ? 1
@@ -43,12 +64,6 @@ internal static class Gfs1ExtentMap {
           e.IsDirectory ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used,
           e.IsDirectory ? null : e.Name));
       }
-      // Root dir (inode 2) is not yielded by reader.Entries — surface it too.
-      // Its first block sits at inodeStart + BlockSize.
-      var rootDirStart = inodeStart + Gfs1Writer.BlockSize;
-      if (rootDirStart < image.Length)
-        result.Add(new DefragBlockInfo(rootDirStart, Gfs1Writer.BlockSize,
-          DefragBlockKind.MetadataReserved, "root_dir"));
     } catch { /* tolerate */ }
     return result;
   }
