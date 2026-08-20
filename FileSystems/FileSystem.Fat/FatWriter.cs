@@ -211,6 +211,25 @@ public sealed class FatWriter {
       firstDataSector = reservedSectors + fatCount * fatSize;
     }
 
+    // A nine-sector FAT12 table is the 1.44 MB floppy convention, and it names
+    // 3,070 clusters — nine sectors of 512 bytes is 4,608, which at twelve bits
+    // an entry is 3,072 entries, less the two the format reserves. A volume with
+    // more clusters than that has data the table cannot name: the writer places
+    // those clusters, the table has no entries for them, and every file that
+    // lands past the boundary is silently lost. Auto-sizing allows up to 4,084
+    // clusters before it moves to FAT16, so the gap is reachable and was.
+    //
+    // The convention is kept where it still fits, so that a real floppy image is
+    // unchanged; only a volume that needs a longer table gets one.
+    if (fatType == 12) {
+      var fat12Needed = SizeFatTable(12, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                                     sectorsPerCluster, bytesPerSector);
+      if (fat12Needed > fatSize) {
+        fatSize = fat12Needed;
+        firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+      }
+    }
+
     // Validate forced-type upper-bound constraints after the layout is finalised.
     // Upper bounds (FAT12 < 4085, FAT16 < 65525) are hard rules of the on-disk
     // format — exceeding them produces an image no FAT driver can interpret
@@ -474,6 +493,25 @@ public sealed class FatWriter {
       var dataClustersEstimate = dataSectorsEstimate / sectorsPerCluster;
       fatSize = (int)(((long)dataClustersEstimate * 4 + bytesPerSector - 1) / bytesPerSector);
       firstDataSector = reservedSectors + fatCount * fatSize;
+    }
+
+    // A nine-sector FAT12 table is the 1.44 MB floppy convention, and it names
+    // 3,070 clusters — nine sectors of 512 bytes is 4,608, which at twelve bits
+    // an entry is 3,072 entries, less the two the format reserves. A volume with
+    // more clusters than that has data the table cannot name: the writer places
+    // those clusters, the table has no entries for them, and every file that
+    // lands past the boundary is silently lost. Auto-sizing allows up to 4,084
+    // clusters before it moves to FAT16, so the gap is reachable and was.
+    //
+    // The convention is kept where it still fits, so that a real floppy image is
+    // unchanged; only a volume that needs a longer table gets one.
+    if (fatType == 12) {
+      var fat12Needed = SizeFatTable(12, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                                     sectorsPerCluster, bytesPerSector);
+      if (fat12Needed > fatSize) {
+        fatSize = fat12Needed;
+        firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+      }
     }
 
     if (forcedFatType != 0) {
