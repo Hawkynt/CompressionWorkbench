@@ -344,11 +344,12 @@ public static class DefragRebuilder {
       DefragOptions options,
       System.Func<System.IO.Stream, System.Collections.Generic.IEnumerable<(string Name, byte[] Data)>> readEntries,
       long originalLength) {
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
-      foreach (var entry in readEntries(archive))
-        yield return entry;
-      yield break;
-    }
+    // Every mode spills to temp files first and hands the entries back in size
+    // order. Streaming them straight through in the order the reader found them
+    // was cheaper, and it packed badly enough to matter: a set that fits a
+    // volume when the long runs are placed first needed half again the room in
+    // reader order, and the writer then had files it could not place. Order is
+    // not cosmetic here — it decides whether the rebuild fits at all.
 
     var spilled = new System.Collections.Generic.List<(string Name, long Length, string Path)>();
     try {

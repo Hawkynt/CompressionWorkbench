@@ -282,8 +282,44 @@ public sealed class NtfsWriter {
   /// <returns>Complete NTFS image as byte array.</returns>
   public byte[] BuildAutoSized(int requestedClusterSize = 0, int requestedMftRecordSize = 0) {
     var (total, clusterSize, mftRecordSize) = this.PlanAutoSize(requestedClusterSize, requestedMftRecordSize);
+    total = this.FitAutoSize(total, clusterSize, mftRecordSize);
     return this.Build((int)Math.Min(total, int.MaxValue), clusterSize, mftRecordSize);
   }
+
+  /// <summary>
+  /// Grows an auto-sized estimate until the layout accepts it, and returns the
+  /// size that fit.
+  /// </summary>
+  /// <remarks>
+  /// The estimate models the volume's overhead — log file, upcase table, MFT,
+  /// and a fixed sixteen clusters for the boot sector, the bitmaps and the
+  /// mirror — and adds a tenth for slack. What it cannot model cheaply is what
+  /// the layout does when a run would straddle $MFTMirr: the run is pushed
+  /// wholly past it, and everything between the cursor and the mirror is
+  /// stranded. How much that costs depends on the order the files arrive in, so
+  /// the estimate is sometimes a couple of per cent short — and a couple of per
+  /// cent short is a volume the layout cannot fill.
+  ///
+  /// <para>Rather than model the stranding a second time and have the two
+  /// descriptions drift apart, the layout is asked. It reports the shortfall
+  /// exactly, so the size grows by that much and is tried again. Two models of
+  /// one fact is how the estimate and the layout came to disagree in the first
+  /// place.</para>
+  /// </remarks>
+  private long FitAutoSize(long total, int clusterSize, int mftRecordSize) {
+    for (var attempt = 0; attempt < 8; ++attempt) {
+      try {
+        this.BuildCore(total, clusterSize, mftRecordSize, planOnly: true);
+        return total;
+      } catch (InvalidOperationException e) when (e.Data["NeededClusters"] is long needed) {
+        var grown = (needed + 16) * clusterSize;
+        if (grown <= total) return total;    // not a shortfall we can grow out of
+        total = grown;
+      }
+    }
+    return total;
+  }
+
 
   /// <summary>
   /// Volume size, cluster size and MFT-record size an auto-sized build would use
@@ -440,7 +476,11 @@ public sealed class NtfsWriter {
     output.Flush();
   }
 
-  private byte[] BuildCore(long totalSize, int clusterSize, int mftRecordSize) {
+  /// <param name="planOnly">
+  /// Lay the volume out and report whether it fits, without materialising it.
+  /// Auto-sizing uses this to try a candidate size cheaply.
+  /// </param>
+  private byte[] BuildCore(long totalSize, int clusterSize, int mftRecordSize, bool planOnly = false) {
     ValidateGeometry(clusterSize, mftRecordSize);
     this._clusterSize = clusterSize;
     this._sectorsPerCluster = clusterSize / BytesPerSector;
@@ -528,9 +568,7 @@ public sealed class NtfsWriter {
     nextCluster += attrDefClusters;
 
     // Skip over the $MFTMirr region if we've grown into it.
-    if (nextCluster > mftMirrCluster && nextCluster <= mftMirrCluster + mftMirrClusters) {
-      nextCluster = mftMirrCluster + mftMirrClusters;
-    }
+    SkipMftMirror(ref nextCluster, 1, mftMirrCluster, mftMirrClusters);
 
     // Reserve clusters for user file data (non-resident only). Directories own
     // no $DATA, so only file nodes consume clusters; small files stay resident
@@ -557,9 +595,7 @@ public sealed class NtfsWriter {
 
       var clusters = (int)((effLen + this._clusterSize - 1) / this._clusterSize);
       // Skip over the mirror region if necessary.
-      if (nextCluster < mftMirrCluster && nextCluster + clusters > mftMirrCluster) {
-        nextCluster = mftMirrCluster + mftMirrClusters;
-      }
+      SkipMftMirror(ref nextCluster, clusters, mftMirrCluster, mftMirrClusters);
       node.Resident = false;
       node.StartCluster = nextCluster;
       node.ClusterCount = clusters;
@@ -580,13 +616,33 @@ public sealed class NtfsWriter {
       if (!dir.IndexSpilled) continue;
 
       var clusters = (dir.IndexAllocationBytes!.Length + this._clusterSize - 1) / this._clusterSize;
-      if (nextCluster < mftMirrCluster && nextCluster + clusters > mftMirrCluster)
-        nextCluster = mftMirrCluster + mftMirrClusters;
+      SkipMftMirror(ref nextCluster, clusters, mftMirrCluster, mftMirrClusters);
       dir.IndexAllocStartCluster = nextCluster;
       lastInlineCluster = Math.Max(lastInlineCluster, nextCluster + clusters);
       dir.IndexAllocClusterCount = clusters;
       nextCluster += clusters;
     }
+
+    // Every cluster is now placed, so whether it all fit is knowable here — and
+    // has to be checked here, because nothing downstream will notice. A run laid
+    // past the end of the volume is not written and not complained about: the
+    // file keeps its length in the MFT record and reads back as zeros or as
+    // whatever else was placed there, which is data loss that looks like a
+    // successful write. FAT refuses a volume it cannot fill and says by how much;
+    // this does the same rather than emitting one that reads back wrong.
+    if (nextCluster > totalClusters) {
+      var shortfall = new InvalidOperationException(
+        $"NTFS: the files need {nextCluster:N0} clusters "
+        + $"({(long)nextCluster * this._clusterSize:N0} bytes) but the volume holds "
+        + $"{totalClusters:N0} ({totalClusters * this._clusterSize:N0} bytes).");
+      shortfall.Data["NeededClusters"] = (long)nextCluster;
+      throw shortfall;
+    }
+
+    // Sizing asks the layout whether a candidate size fits; it does not need the
+    // volume built to find out, and building one it is about to discard is the
+    // expensive half of the answer.
+    if (planOnly) return [];
 
     // Every cluster is now placed, so the volume's populated region ends at
     // nextCluster. Materialise only that: $MFTMirr sits at the volume midpoint and
@@ -1003,6 +1059,7 @@ public sealed class NtfsWriter {
     // materialise the whole thing, capping an auto-sized volume at 2 GB even
     // though every other step of this path is streaming.
     var (total, clusterSize, mftRecordSize) = this.PlanAutoSize();
+    total = this.FitAutoSize(total, clusterSize, mftRecordSize);
     this.BuildToStreaming(output, total, clusterSize, mftRecordSize);
   }
 
@@ -1138,8 +1195,7 @@ public sealed class NtfsWriter {
   // Advances nextCluster past the $MFTMirr reserved region if placing `count`
   // clusters there would collide with it.
   private static void EnsureNotInMirror(ref int nextCluster, int count, long mftMirrCluster, int mftMirrClusters) {
-    if (nextCluster < mftMirrCluster && nextCluster + count > mftMirrCluster)
-      nextCluster = (int)mftMirrCluster + mftMirrClusters;
+    SkipMftMirror(ref nextCluster, count, (int)mftMirrCluster, mftMirrClusters);
   }
 
   // Yields the cumulative directory paths a slashed file name implies, e.g.
@@ -2299,5 +2355,24 @@ public sealed class NtfsWriter {
     var offset = (long)startCluster * this._clusterSize;
     if (offset + data.Length > disk.Length) return;
     data.CopyTo(disk, (int)offset);
+  }
+
+  /// <summary>
+  /// Moves <paramref name="nextCluster" /> past $MFTMirr when a run of
+  /// <paramref name="clusters" /> clusters placed there would touch it.
+  /// </summary>
+  /// <remarks>
+  /// Two ranges overlap when each starts before the other ends, and nothing
+  /// weaker will do. Testing only whether the run <em>starts below</em> the
+  /// mirror and reaches it misses the run that starts inside the mirror — and,
+  /// exactly on the boundary, the run that starts at its first cluster. Such a
+  /// run was written straight over the mirror, and the file then read back as
+  /// MFT records: whoever extracted it got bytes beginning "FILE".
+  /// </remarks>
+  private static void SkipMftMirror(ref int nextCluster, int clusters, int mirrorCluster, int mirrorClusters) {
+    if (clusters <= 0 || mirrorClusters <= 0) return;
+    var mirrorEnd = mirrorCluster + mirrorClusters;
+    if (nextCluster < mirrorEnd && nextCluster + clusters > mirrorCluster)
+      nextCluster = mirrorEnd;
   }
 }
