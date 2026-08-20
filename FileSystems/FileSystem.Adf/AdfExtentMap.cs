@@ -101,7 +101,15 @@ public static class AdfExtentMap {
       if (!isFfs) {
         var nextData = ReadUInt32BE(data, headerBase + FirstDataOffset);
         var visited = new HashSet<int>();
-        while (nextData != 0 && nextData < TotalSectors && visited.Add((int)nextData)) {
+        // Stop at a block another file already owns. A block belongs to exactly
+        // one file, so reaching one that is spoken for means the chain has left
+        // this file's — a stale "next" pointer in a data block header walks
+        // straight into the neighbouring file, and the map then reported the
+        // same blocks under both names. Two files appeared to share space on a
+        // volume where both read back correctly, which is the signature of a
+        // map that is wrong rather than a volume that is.
+        while (nextData != 0 && nextData < TotalSectors
+               && !owned[nextData] && visited.Add((int)nextData)) {
           dataBlocks.Add((int)nextData);
           var dBase = (int)nextData * SectorSize;
           nextData = ReadUInt32BE(data, dBase + 16);
@@ -115,6 +123,7 @@ public static class AdfExtentMap {
       var prev = -1;
       foreach (var b in blocks) {
         if (b == prev || b < 0 || b >= TotalSectors) continue;
+        if (owned[b]) continue;          // already another file's
         distinct.Add(b);
         prev = b;
       }
