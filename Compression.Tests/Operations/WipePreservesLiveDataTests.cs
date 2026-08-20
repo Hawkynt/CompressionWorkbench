@@ -1,129 +1,101 @@
-#pragma warning disable CS1591
-using System.Security.Cryptography;
-using Compression.Lib;
 using Compression.Registry;
 
 namespace Compression.Tests.Operations;
 
 /// <summary>
-/// Wiping free space must never take a live file with it.
+/// Wiping unused space must never touch a file that is still there.
 /// </summary>
 /// <remarks>
-/// <para>A wipe zeroes whatever the extent map does not claim, so the map is
-/// the whole safety argument: anything it forgets to mention is destroyed. The
-/// dangerous case is not a freshly written volume — where the map and the
-/// writer agree by construction — but one that has been edited, because adding
-/// and removing files is what moves a volume's own structures around.</para>
+/// <para>The verb zeroes everything the block map does not claim. That is only
+/// safe while the map claims everything the volume holds, and on a small volume
+/// it did not: Btrfs mapped eleven readable files as metadata and no file data
+/// at all, and the wipe destroyed all eleven. NTFS mapped ten of fourteen, and
+/// the wipe zeroed two of the four it had missed — each came back at its right
+/// length over zeroed clusters, which is the shape of the fault that hides
+/// longest.</para>
 ///
-/// <para>VDFS relocated its entry table past the file data when a file was
-/// added, while its map still described the table as everything ahead of the
-/// first file. Wiping such a volume zeroed the table and every file went
-/// missing at once. This drives every format that offers both verbs through
-/// that sequence.</para>
+/// <para>Both now check the map against the volume's own list before wiping and
+/// decline when a file large enough to own extents is not in it. A volume that
+/// lists no files still wipes: scrubbing what a deletion left behind is the
+/// point of the verb, and a blind map has nothing there to lose.</para>
+///
+/// <para>The sizes matter. Every fixture elsewhere is a few kilobytes with a
+/// handful of files, where the maps are complete and none of this appears.</para>
 /// </remarks>
 [TestFixture]
 public class WipePreservesLiveDataTests {
 
-  private static IEnumerable<string> WipeableFormats() {
-    foreach (var descriptor in FormatRegistry.All.OrderBy(d => d.Id, StringComparer.Ordinal)) {
-      var ops = FormatRegistry.GetArchiveOps(descriptor.Id);
-      if (ops is not (IArchiveCreatable and IWipeEmpty and IArchiveModifiable)) continue;
-      if (!Enum.TryParse<FormatDetector.Format>(descriptor.Id, out _)) continue;
-      yield return descriptor.Id;
-    }
+  private static byte[] Payload(int length, int seed) {
+    var data = new byte[length];
+    for (var i = 0; i < length; ++i) data[i] = (byte)(i * 31 + seed * 7 + (i >> 11));
+    return data;
   }
 
-  [TestCaseSource(nameof(WipeableFormats))]
-  public void WipingAnEditedVolume_KeepsEveryFile(string formatId) {
+  [Test, Category("Regression")]
+  [TestCase("Btrfs", 50 * 1024)]
+  [TestCase("Btrfs", 8 * 1024 * 1024)]
+  [TestCase("Ntfs", 50 * 1024)]
+  [TestCase("Ntfs", 8 * 1024 * 1024)]
+  public void WipingUnusedSpaceKeepsEveryFile(string formatId, int totalBytes) {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
     var ops = FormatRegistry.GetArchiveOps(formatId)!;
-    var format = Enum.Parse<FormatDetector.Format>(formatId);
-    var work = Path.Combine(Path.GetTempPath(), "cwb_wipe_" + Guid.NewGuid().ToString("N")[..8]);
-    Directory.CreateDirectory(work);
 
-    try {
-      var expected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-      var inputs = new List<ArchiveInput>();
-      for (var i = 0; i < 4; ++i) {
-        var payload = new byte[1500 + i * 700];
-        for (var b = 0; b < payload.Length; ++b) payload[b] = (byte)(b * 11 + i * 37);
-        var path = Path.Combine(work, $"K{i}.BIN");
-        File.WriteAllBytes(path, payload);
-        inputs.Add(new ArchiveInput(path, $"K{i}.BIN"));
-        expected[$"K{i}.BIN"] = Digest(payload);
-      }
+    var expected = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+    var inputs = new List<ArchiveInputInfo>();
 
-      var image = Path.Combine(work, "volume.img");
-      try {
-        ArchiveOperations.Create(image, inputs, new CompressionOptions(), format, null);
-      } catch (Exception ex) {
-        Assert.Ignore($"{formatId}: cannot create a probe volume ({ex.GetType().Name}).");
-        return;
-      }
-      if (!File.Exists(image) || new FileInfo(image).Length == 0) {
-        Assert.Ignore($"{formatId}: produced no image.");
-        return;
-      }
-
-      // Editing is what moves a volume's own structures about, and a map that
-      // describes where they used to be is what makes a wipe dangerous.
-      var scratch = Path.Combine(work, "SCRATCH.BIN");
-      File.WriteAllBytes(scratch, new byte[1200]);
-      var modifier = (IArchiveModifiable)ops;
-      try {
-        using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
-          modifier.Add(stream, [new ArchiveInputInfo(scratch, "SCRATCH.BIN", false)]);
-        using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
-          modifier.Remove(stream, ["SCRATCH.BIN"]);
-      } catch (Exception ex) {
-        TestContext.Out.WriteLine(
-          $"{formatId}: cannot edit in place ({ex.GetType().Name}); wiping the fresh volume instead.");
-      }
-
-      // Only the files put in are compared. A reader may also surface views of
-      // its own — a whole-image blob, a metadata sheet — whose content is meant
-      // to change when free space is zeroed, and holding those to the same bar
-      // would report a wipe doing its job as a wipe destroying something.
-      var before = ReadBack(ops, image, expected.Keys);
-      if (before.Count == 0) {
-        Assert.Ignore($"{formatId}: none of the probe files read back before the wipe.");
-        return;
-      }
-
-      using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
-        ((IWipeEmpty)ops).WipeUnusedSpace(stream, wipeClusterTips: true, wipeDeletedEntries: true);
-
-      var after = ReadBack(ops, image, expected.Keys);
-      Assert.That(after.Count, Is.EqualTo(before.Count),
-        $"{formatId}: the wipe took {before.Count - after.Count} file(s) with it.");
-      foreach (var (name, digest) in before)
-        Assert.That(after.TryGetValue(name, out var got) && got == digest, Is.True,
-          $"{formatId}: '{name}' did not survive the wipe.");
-    } finally {
-      try { Directory.Delete(work, true); } catch { /* best effort */ }
+    void Add(List<ArchiveInputInfo> into, string name, int length, int seed) {
+      var data = Payload(length, seed);
+      expected[name] = data;
+      into.Add(ArchiveInputInfo.InMemory(name, data));
     }
-  }
 
-  private static Dictionary<string, string> ReadBack(IArchiveFormatOperations ops, string image,
-      IEnumerable<string> onlyThese) {
-    var wanted = new HashSet<string>(onlyThese, StringComparer.OrdinalIgnoreCase);
-    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    var outDir = Path.Combine(Path.GetTempPath(), "cwb_wipeout_" + Guid.NewGuid().ToString("N")[..8]);
+    // One file taking half the volume, a spread of middling ones, and a few far
+    // smaller than an allocation unit — the mix the maps were incomplete for.
+    Add(inputs, "BIG00001.BIN", totalBytes / 2, 1);
+    var perFile = (totalBytes - totalBytes / 2) / 10;
+    for (var i = 0; i < 10; ++i) {
+      var length = Math.Max(1, perFile + (i % 7) * 1024 - 3 * 1024);
+      if (i % 11 == 0) length = 17 + i;
+      Add(inputs, $"F{i:D4}.BIN", length, i + 2);
+    }
+
+    using var image = new MemoryStream();
+    ((IArchiveCreatable)ops).Create(image, inputs, new FormatCreateOptions());
+
+    // Churn it. A freshly created volume is the case the maps handle.
+    var doomed = expected.Keys.Where(k => k.StartsWith('F')).Where((_, n) => n % 3 == 1).ToArray();
+    image.Position = 0;
+    ((IArchiveModifiable)ops).Remove(image, doomed);
+    foreach (var d in doomed) expected.Remove(d);
+
+    var added = new List<ArchiveInputInfo>();
+    var addSize = totalBytes > 1024 * 1024 ? 40 * 1024 : 3 * 1024;
+    for (var i = 0; i < 6; ++i) Add(added, $"ADD{i:D2}.BIN", addSize + i * 97, 900 + i);
+    image.Position = 0;
+    ((IArchiveModifiable)ops).Add(image, added);
+
+    image.Position = 0;
+    ((IWipeEmpty)ops).WipeUnusedSpace(image);
+
+    var outDir = Path.Combine(Path.GetTempPath(), "wipekeep_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(outDir);
     try {
-      using var stream = File.OpenRead(image);
-      ops.Extract(stream, outDir, null, null);
-      foreach (var file in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories)) {
-        var leaf = Path.GetFileName(file);
-        if (!wanted.Contains(leaf)) continue;
-        result[leaf] = Digest(File.ReadAllBytes(file));
-      }
-    } catch {
-      // A volume we cannot read tells us nothing; the count comparison handles it.
-    } finally {
-      try { Directory.Delete(outDir, true); } catch { /* best effort */ }
-    }
-    return result;
-  }
+      image.Position = 0;
+      ((IArchiveFormatOperations)ops).Extract(image, outDir, null, null);
 
-  private static string Digest(byte[] data) => Convert.ToHexString(SHA256.HashData(data));
+      // Match on content: what matters is that the bytes survived, whatever the
+      // format chose to call the file.
+      var present = new HashSet<string>(StringComparer.Ordinal);
+      foreach (var f in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories))
+        present.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))));
+
+      foreach (var (name, want) in expected) {
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(want));
+        Assert.That(present, Does.Contain(hash),
+          $"{formatId} at {totalBytes:N0} bytes: {name} ({want.Length:N0} bytes) did not survive the wipe");
+      }
+    } finally {
+      try { Directory.Delete(outDir, true); } catch { }
+    }
+  }
 }

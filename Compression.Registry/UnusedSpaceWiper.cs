@@ -53,6 +53,7 @@ public static class UnusedSpaceWiper {
     if (live.Count == 0)
       return 0;
 
+
     var totalWiped = 0L;
     var cursor = 0L;
     var zeroBuf = new byte[64 * 1024]; // pre-zeroed by CLR

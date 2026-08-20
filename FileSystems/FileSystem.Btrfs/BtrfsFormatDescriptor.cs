@@ -405,6 +405,12 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// byte-exact with no allocation slack — but the reserved DATA chunk and any
   /// gaps between metadata blocks are free and get zero-filled here.
   /// </summary>
+  /// <summary>
+  /// At or above this a file is stored as its own extent rather than inside the
+  /// FS-tree leaf, so the block map has to name it.
+  /// </summary>
+  private const long InlineCeilingBytes = 4096;
+
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
@@ -414,7 +420,39 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // metadata leaf with byte-exact length. Pass no size lookup so the wiper
     // only reclaims free regions (the DATA chunk and inter-block gaps).
     image.Position = 0;
-    var extents = BtrfsExtentMap.Enumerate(image);
-    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+    var mapped = BtrfsExtentMap.Enumerate(image).ToList();
+
+    // Do not wipe against a map that demonstrably does not cover the volume.
+    // Everything the map does not claim is treated as free and zeroed, so a file
+    // the map has not seen is a file the wipe erases — silently, leaving an
+    // entry of the right length over zeroed space. A volume of eleven readable
+    // files was mapped as metadata only, and the wipe destroyed all eleven.
+    //
+    // A volume that lists no files is a different case and still wipes: scrubbing
+    // what a deletion left behind is the point of the verb, and there is nothing
+    // there for a blind map to lose.
+    try {
+      var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var ex in mapped)
+        if (ex.Kind == DefragBlockKind.Used && ex.FileName != null)
+          named.Add(Path.GetFileName(ex.FileName));
+
+      image.Position = 0;
+      using var reader = new BtrfsReader(image);
+      foreach (var entry in reader.Entries) {
+        // A file below the inline threshold is stored inside the FS-tree leaf
+        // and rightly has no extent of its own; its bytes sit in metadata the
+        // map does claim. Only a file large enough to own extents proves the
+        // map incomplete by being absent from it.
+        if (entry.Size < InlineCeilingBytes) continue;
+        if (!named.Contains(Path.GetFileName(entry.Name)))
+          return 0;
+      }
+    } catch {
+      return 0;   // the volume could not be read back; wiping it is not safe either
+    }
+
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, mapped, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }
