@@ -175,6 +175,30 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       return;
     }
 
+    // Refuse the whole plan before any of it is carried out. An exFAT directory
+    // entry describes one contiguous run, so a file whose destination is not
+    // contiguous cannot be expressed — and the mover says so, but it says it
+    // while relinking, which is after the data has been moved. The caller then
+    // falls back to rebuilding from a volume that is already half-migrated, and
+    // rebuilds the damage faithfully: files came back at full length holding
+    // other files' bytes.
+    //
+    // The executor has a check of its own for an owner that arrives in several
+    // moves. This is the other half of the same rule: one move can still land on
+    // clusters that are not consecutive.
+    foreach (var owner in moves.Where(m => !string.IsNullOrEmpty(m.FileName))
+                               .GroupBy(m => m.FileName, StringComparer.OrdinalIgnoreCase)) {
+      if (mover.RelocatableMetadata.Contains(owner.Key)) continue;   // repointed, not relinked
+      var destinations = owner.OrderBy(m => m.SrcOffset)
+                              .Select(m => (Start: m.DstOffset, End: m.DstOffset + m.Length))
+                              .ToList();
+      for (var i = 1; i < destinations.Count; ++i)
+        if (destinations[i].Start != destinations[i - 1].End)
+          throw new NotSupportedException(
+            $"exFAT: '{owner.Key}' would end up in {destinations.Count} runs that are not "
+            + "consecutive, which its directory entry cannot describe; rebuild the volume instead.");
+    }
+
     // VBR doesn't change during defrag — no per-move re-init needed.
     DefragPlannerExecutor.Execute(archive, options, mover, moves, volumeSize,
       reinitAfterMove: null, metadataMover: mover);
