@@ -138,4 +138,58 @@ public class AppleDosModifierTests {
       BytesWritten += count;
     }
   }
+
+  /// <summary>
+  /// A file added to an existing volume must read back whole.
+  /// </summary>
+  /// <remarks>
+  /// A DOS 3.3 binary file begins with a two-byte load address and a two-byte
+  /// length, and that length is how the catalog's reader knows where the file
+  /// ends. Creating a volume wrote those four bytes; adding to one did not, and
+  /// stored the payload under the same binary file type. The reader then took
+  /// the payload's own third and fourth bytes for a length: a file of 3,169
+  /// bytes came back as 225, which is exactly what those bytes spell.
+  /// </remarks>
+  [Test, Category("Regression")]
+  public void AddedFilesKeepTheirBinaryHeader() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps("AppleDos")!;
+
+    byte[] Payload(int length, int seed) {
+      var data = new byte[length];
+      for (var i = 0; i < length; ++i) data[i] = (byte)(i * 31 + seed * 7 + (i >> 11));
+      return data;
+    }
+
+    var first = Payload(2048, 1);
+    using var image = new MemoryStream();
+    ((Compression.Registry.IArchiveCreatable)ops).Create(image,
+      [Compression.Registry.ArchiveInputInfo.InMemory("FIRST.BIN", first)],
+      new Compression.Registry.FormatCreateOptions());
+
+    // Lengths whose own third and fourth bytes say something far shorter, which
+    // is what made the truncation visible rather than subtle.
+    var added = new Dictionary<string, byte[]> {
+      ["ADD01.BIN"] = Payload(3169, 901),
+      ["ADD02.BIN"] = Payload(3266, 902),
+    };
+    image.Position = 0;
+    ((Compression.Registry.IArchiveModifiable)ops).Add(image,
+      [.. added.Select(kv => Compression.Registry.ArchiveInputInfo.InMemory(kv.Key, kv.Value))]);
+
+    var outDir = Path.Combine(Path.GetTempPath(), "adosadd_" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(outDir);
+    try {
+      image.Position = 0;
+      ((Compression.Registry.IArchiveFormatOperations)ops).Extract(image, outDir, null, null);
+      foreach (var (name, want) in added) {
+        var path = Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories)
+          .FirstOrDefault(f => string.Equals(Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase));
+        Assert.That(path, Is.Not.Null, $"{name} is missing after being added");
+        Assert.That(File.ReadAllBytes(path!), Is.EqualTo(want), $"{name} did not read back whole");
+      }
+    } finally {
+      try { Directory.Delete(outDir, true); } catch { }
+    }
+  }
 }
