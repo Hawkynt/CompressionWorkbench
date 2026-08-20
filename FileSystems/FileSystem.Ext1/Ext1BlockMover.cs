@@ -147,6 +147,75 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
     }
   }
 
+  /// <summary>
+  /// Applies a whole old-to-new block mapping in one pass over a file's
+  /// pointers, so no pointer is rewritten twice.
+  /// </summary>
+  /// <remarks>
+  /// Patching run by run looks equivalent and is not. Each call rewrites every
+  /// pointer that falls inside the run's <em>old</em> range, so when a later
+  /// run's old range is where an earlier run was just moved to, the earlier
+  /// run's pointers are moved a second time and the file's blocks end up in the
+  /// wrong order. It reads back at its right length with one of its own blocks
+  /// in the place of another — which is what consolidating towards the start
+  /// produced, while consolidating towards the end, where the new ranges do not
+  /// land on anything still to be read, did not.
+  /// </remarks>
+  private void PatchInodeBlockPointersStream(Stream image, SectorCache cache, string fileName,
+      IReadOnlyDictionary<uint, uint> remap) {
+    if (remap.Count == 0) return;
+    var files = new List<(uint inode, string name)>();
+    WalkDirStream(cache, RootInode, "", files, new HashSet<uint>());
+
+    foreach (var (inode, name) in files) {
+      if (!name.Equals(fileName, StringComparison.OrdinalIgnoreCase) &&
+          !fileName.Equals("*", StringComparison.Ordinal)) continue;
+
+      var inodeData = ReadInodeStream(cache, inode);
+      if (inodeData == null) continue;
+
+      var changed = false;
+      for (var i = 0; i < 12; i++) {
+        var ptr = BinaryPrimitives.ReadUInt32LittleEndian(inodeData.AsSpan(40 + i * 4));
+        if (ptr == 0) break;
+        if (!remap.TryGetValue(ptr, out var moved)) continue;
+        BinaryPrimitives.WriteUInt32LittleEndian(inodeData.AsSpan(40 + i * 4), moved);
+        changed = true;
+      }
+
+      for (var level = 0; level < 3; level++) {
+        var indPtr = BinaryPrimitives.ReadUInt32LittleEndian(inodeData.AsSpan(88 + level * 4));
+        if (indPtr != 0) PatchIndirectStream(image, cache, indPtr, remap, level + 1);
+      }
+      if (changed) WriteInodeStream(image, cache, inode, inodeData);
+    }
+  }
+
+  private void PatchIndirectStream(Stream image, SectorCache cache, uint blockNum,
+      IReadOnlyDictionary<uint, uint> remap, int level) {
+    var off = (long)blockNum * _blockSize;
+    if (off + _blockSize > cache.Length) return;
+    var block = cache.Read(off, _blockSize);
+    var per = _blockSize / 4;
+    var changed = false;
+    for (var i = 0; i < per; i++) {
+      var ptr = BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(i * 4));
+      if (ptr == 0) break;
+      if (level == 1) {
+        if (!remap.TryGetValue(ptr, out var moved)) continue;
+        BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(i * 4), moved);
+        changed = true;
+      } else {
+        PatchIndirectStream(image, cache, ptr, remap, level - 1);
+      }
+    }
+    if (changed) {
+      image.Position = off;
+      image.Write(block, 0, _blockSize);
+      cache.Invalidate(off, _blockSize);
+    }
+  }
+
   private void PatchDirectBlockPointersStream(Stream image, SectorCache cache, byte[] inodeData,
       uint inodeNum, uint oldFirst, uint newFirst, int blockCount) {
     var changed = false;
@@ -307,12 +376,18 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
     // One patch per contiguous stretch: the existing remap walks the inode's
     // direct pointers and every indirect block, replacing whatever falls inside
     // the old range.
-    foreach (var (oldStart, newStart, count) in ContiguousRuns(oldBlockOffsets, newBlockOffsets, _blockSize)) {
-      PatchInodeBlockPointersStream(image, cache, fileName,
-        OffsetToBlock(oldStart), OffsetToBlock(newStart), (int)count);
-      image.Flush();
-      cache.InvalidateAll();
+    // One mapping, one pass. Patching each run separately rewrote pointers a
+    // second time whenever a later run's old range was where an earlier run had
+    // just been put, and the file's blocks came back out of order.
+    var remap = new Dictionary<uint, uint>(newBlockOffsets.Count);
+    for (var i = 0; i < newBlockOffsets.Count; ++i) {
+      var from = OffsetToBlock(oldBlockOffsets[i]);
+      var to = OffsetToBlock(newBlockOffsets[i]);
+      if (from != to) remap[from] = to;
     }
+    PatchInodeBlockPointersStream(image, cache, fileName, remap);
+    image.Flush();
+    cache.InvalidateAll();
 
     // Release only what nothing else has taken.
     var claimed = new HashSet<long>(newBlockOffsets);
