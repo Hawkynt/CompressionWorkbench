@@ -98,6 +98,12 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// the coalesced extent map cannot pinpoint per-extent, so such files are
   /// omitted from the tip pass to avoid clobbering live clusters.
   /// </summary>
+  /// <summary>
+  /// Above this a file cannot live inside its MFT record, so the block map has
+  /// to name it. One kilobyte is the record size this writer uses.
+  /// </summary>
+  private const long ResidentCeilingBytes = 1024;
+
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
@@ -105,6 +111,37 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     image.Position = 0;
     var extents = NtfsExtentMap.Enumerate(image).ToList();
+
+    // Do not wipe against a map that demonstrably does not cover the volume.
+    // Everything the map does not claim is treated as free and zeroed, so a file
+    // the map has not seen is a file the wipe erases — and it erases it without
+    // complaint, leaving an entry of the right length over zeroed clusters.
+    //
+    // A file smaller than an MFT record lives inside that record and rightly has
+    // no extent of its own; its bytes are inside metadata the map does claim. A
+    // file of a cluster or more cannot be resident, so if the map does not name
+    // it, the map is incomplete and nothing it says about free space can be
+    // relied on. Two files of three and a half kilobytes were zeroed exactly
+    // this way.
+    try {
+      var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var ex in extents)
+        if (ex.Kind == DefragBlockKind.Used && ex.FileName != null)
+          named.Add(Path.GetFileName(ex.FileName));
+
+      image.Position = 0;
+      var reader = new NtfsReader(image);
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory || entry.Size < ResidentCeilingBytes) continue;
+        if (!named.Contains(Path.GetFileName(entry.Name)))
+          return 0;
+      }
+    } catch {
+      return 0;   // the volume could not be read back; wiping it is not safe either
+    }
+
+    image.Position = 0;
+    extents = NtfsExtentMap.Enumerate(image).ToList();
 
     // Build a cluster-tip lookup keyed by the extent-map file name (the MFT
     // record's $FILE_NAME leaf). Only single-run files are eligible: the
