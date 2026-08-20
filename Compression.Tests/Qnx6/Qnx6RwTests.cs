@@ -126,7 +126,10 @@ public class Qnx6RwTests {
     // Single-block root dir = 32 dirents. Create() fills with 32 entries
     // (writer caps at the same limit), then Add of a 33rd must throw.
     var initial = new List<ArchiveInputInfo>();
-    for (var i = 0; i < 32; i++)
+    // Fill the root exactly. This used to ask for thirty-two and rely on the
+    // writer keeping thirty and dropping two without a word — which is the
+    // silent loss the writer now refuses, so the setup says what it means.
+    for (var i = 0; i < FileSystem.Qnx6.Qnx6Writer.MaxFiles; i++)
       initial.Add(MakeInput($"f{i:D2}.txt", [(byte)i]));
 
     using var image = new MemoryStream();

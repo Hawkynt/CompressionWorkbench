@@ -61,7 +61,7 @@ public sealed class Qnx6Writer {
   /// free: they cost two of the entries a directory block holds.
   /// </summary>
   private const int DotEntries = 2;
-  internal const int MaxFiles = MaxDirents - DotEntries;
+  public const int MaxFiles = MaxDirents - DotEntries;
 
   /// <summary>Pointers an inode holds before it has to point at a block of them.</summary>
   private const int DirectPointers = 16;
@@ -133,9 +133,19 @@ public sealed class Qnx6Writer {
       if (slash >= 0) leaf = leaf.Substring(slash + 1);
       if (string.IsNullOrEmpty(leaf)) continue;
       var nameBytes = Encoding.ASCII.GetByteCount(leaf);
+      // A name past the ceiling is skipped on purpose: the reader gates at the
+      // same length, and the spec's long-name dirent form is not decoded here.
+      // Qnx6WormTests.Create_SkipsNamesLongerThan27Chars fixes that as intended.
       if (nameBytes is 0 or > MaxNameLen) continue;
+
+      // Running out of directory slots is different, and was not intended. The
+      // writer used to stop here and say nothing: the caller was told the write
+      // succeeded, the volume read back clean, and the files past the limit were
+      // simply not in it. Three of a set of thirty-three went that way.
+      if (accepted.Count >= MaxFiles)
+        throw new InvalidOperationException(
+          $"QNX6: the volume's directory holds {MaxFiles} files and {files.Count:N0} were given.");
       accepted.Add((leaf, d));
-      if (accepted.Count >= MaxFiles) break;
     }
 
     // Inode layout:
