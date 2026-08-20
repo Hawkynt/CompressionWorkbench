@@ -96,19 +96,70 @@ public static class BtrfsExtentMap {
     yield return new DefragBlockInfo(fsTreePhys, nodeSize, DefragBlockKind.MetadataReserved,
       FileName: "Btrfs fs tree");
 
-    // Load the fs-tree leaf once (it's only nodeSize bytes — 4-64 KB), then
-    // do all subsequent item walks against this buffer. Reusing the same
-    // buffer avoids re-reading the leaf for every item.
-    var fsLeaf = new byte[nodeSize];
-    cache.Read(fsTreePhys, fsLeaf);
+    // An fs tree is one leaf only while it is small. Past roughly fourteen files
+    // it grows a level, and the node the root points at then holds key pointers
+    // rather than items — so reading that one node found no file at all and the
+    // volume was reported as holding nothing. Every consumer of this map reads
+    // that as free space.
+    var leaves = new List<long>();
+    CollectFsLeaves(cache, fsTreePhys, chunkMap, nodeSize, leaves, 0);
 
-    // Collect (inode → name) map by scanning DIR_INDEX items in the fs tree leaf.
+    // Names first, across every leaf: a file's name and its extents need not be
+    // in the same one.
     var inodeNames = new Dictionary<long, string>();
-    CollectDirNamesBuf(fsLeaf, FirstFreeObjectId, "", inodeNames);
+    var buffer = new byte[nodeSize];
+    foreach (var leaf in leaves) {
+      cache.Read(leaf, buffer);
+      CollectDirNamesBuf(buffer, FirstFreeObjectId, "", inodeNames);
+    }
 
-    // Walk EXTENT_DATA items in the fs tree leaf and yield per-file runs.
-    foreach (var ext in WalkExtentDataItemsBuf(fsLeaf, fsTreePhys, inodeNames, chunkMap, nodeSize, image.Length))
-      yield return ext;
+    foreach (var leaf in leaves) {
+      // The leaf itself is metadata wherever it sits.
+      if (leaf != fsTreePhys)
+        yield return new DefragBlockInfo(leaf, nodeSize, DefragBlockKind.MetadataReserved,
+          FileName: "Btrfs fs tree");
+
+      var leafBuf = new byte[nodeSize];
+      cache.Read(leaf, leafBuf);
+      foreach (var ext in WalkExtentDataItemsBuf(leafBuf, leaf, inodeNames, chunkMap, nodeSize, image.Length))
+        yield return ext;
+    }
+  }
+
+  /// <summary>
+  /// Every leaf under <paramref name="nodePhys" />, which is the node itself
+  /// when the tree has not grown past one.
+  /// </summary>
+  /// <remarks>
+  /// A node says which it is: level zero holds items, anything above holds
+  /// pointers to children. Walking only the node the root names works until the
+  /// tree gains a level and then finds nothing, because what it reads is no
+  /// longer items.
+  /// </remarks>
+  private static void CollectFsLeaves(SectorCache cache, long nodePhys,
+      List<(long logical, long physical, long length)> chunkMap, uint nodeSize,
+      List<long> sink, int depth) {
+    if (depth > 8 || nodePhys < 0 || nodePhys + nodeSize > cache.Length) return;
+    if (sink.Count > 4096) return;                 // a malformed tree must not spin
+
+    var node = new byte[nodeSize];
+    cache.Read(nodePhys, node);
+    if (node.Length < 101) return;
+
+    var level = node[100];
+    if (level == 0) {
+      if (!sink.Contains(nodePhys)) sink.Add(nodePhys);
+      return;
+    }
+
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(96));
+    for (uint i = 0; i < nritems && i < 1000; ++i) {
+      var itemOff = 101 + (int)i * 33;
+      if (itemOff + 33 > node.Length) break;
+      var childLogical = BinaryPrimitives.ReadInt64LittleEndian(node.AsSpan(itemOff + 17));
+      var childPhys = LogicalToPhysical(chunkMap, childLogical, cache.Length, nodeSize);
+      if (childPhys >= 0) CollectFsLeaves(cache, childPhys, chunkMap, nodeSize, sink, depth + 1);
+    }
   }
 
   private static long LogicalToPhysical(List<(long logical, long physical, long length)> chunkMap,
