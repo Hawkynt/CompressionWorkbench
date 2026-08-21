@@ -385,9 +385,18 @@ public sealed class SquashFsReader : IDisposable {
         var fragment     = ReadMetaU32(ref cursor);
         var fragOffset   = ReadMetaU32(ref cursor);
         var fileSize     = ReadMetaU32(ref cursor);
-        var blockCount   = (int)Math.Ceiling((double)fileSize / _sb.BlockSize);
-        if (fragment != SquashFsConstants.NoFragment && fileSize % _sb.BlockSize == 0)
-          blockCount = (int)(fileSize / _sb.BlockSize); // exact multiple — fragment holds remainder
+        // A file that has a fragment keeps only its WHOLE blocks in the block
+        // list; the tail -- whatever is left over -- lives in the fragment. So
+        // the count is a floor, not a ceiling. Rounding up and then correcting
+        // only when the size was an exact multiple corrected the one case where
+        // rounding up made no difference, and got every other one wrong: a five
+        // kilobyte file in an image with 128 KB blocks claimed one block, read a
+        // block size that was not there, and ran off the end of the image. Small
+        // files live in fragments in every image mksquashfs writes, so this was
+        // most of the files in most real images.
+        var blockCount = fragment != SquashFsConstants.NoFragment
+          ? (int)(fileSize / _sb.BlockSize)
+          : (int)Math.Ceiling((double)fileSize / _sb.BlockSize);
         var blockSizes = new uint[blockCount];
         for (var i = 0; i < blockCount; ++i)
           blockSizes[i] = ReadMetaU32(ref cursor);
@@ -415,9 +424,11 @@ public sealed class SquashFsReader : IDisposable {
         var fragment     = ReadMetaU32(ref cursor);
         var fragOffset   = ReadMetaU32(ref cursor);
         var xattrIdx     = ReadMetaU32(ref cursor);
-        var blockCount   = (int)Math.Ceiling((double)fileSize / _sb.BlockSize);
-        if (fragment != SquashFsConstants.NoFragment && fileSize % (ulong)_sb.BlockSize == 0)
-          blockCount = (int)(fileSize / (ulong)_sb.BlockSize);
+        // The same rule for the extended inode: a fragment means the block list
+        // holds whole blocks only.
+        var blockCount = fragment != SquashFsConstants.NoFragment
+          ? (int)(fileSize / (ulong)_sb.BlockSize)
+          : (int)Math.Ceiling((double)fileSize / _sb.BlockSize);
         var blockSizes = new uint[blockCount];
         for (var i = 0; i < blockCount; ++i)
           blockSizes[i] = ReadMetaU32(ref cursor);
