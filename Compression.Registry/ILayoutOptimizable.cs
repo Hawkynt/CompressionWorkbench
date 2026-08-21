@@ -41,6 +41,17 @@ public interface ILayoutOptimizable {
   }
 
   /// <summary>
+  /// What this format can reclaim when asked, beyond moving its data about.
+  /// </summary>
+  /// <remarks>
+  /// Defaulted to <see cref="LayoutReclaim.None" />, which is the honest answer
+  /// for a format nobody has taught to punch holes or share inodes. A caller reads
+  /// this to know what is worth asking for; asking anyway raises rather than
+  /// returning a volume that is exactly as large as it was.
+  /// </remarks>
+  LayoutReclaim ReclaimSupport => LayoutReclaim.None;
+
+  /// <summary>
   /// Applies metadata-only changes (volume label, serial number, geometry CHS
   /// fields, etc.) by seeking directly to the relevant superblock offsets.
   /// Throws <see cref="NotSupportedException"/> for changes that would require
@@ -166,8 +177,57 @@ public sealed class LayoutRebuildOptions {
   public IReadOnlyDictionary<string, string>? Parameters { get; init; }
 
   /// <summary>
+  /// Store runs of zeros as holes, where the filesystem can say so.
+  /// </summary>
+  /// <remarks>
+  /// <para>A file's zero bytes do not have to occupy anything. Most filesystems
+  /// can record a block of a file as absent rather than allocated — ext writes a
+  /// zero block pointer, and a reader hands back zeros for it — so a rebuild that
+  /// notices which blocks are entirely zero can leave them out and size the volume
+  /// for what is left. What comes back is the same file, byte for byte and length
+  /// for length; only the room it takes is smaller.</para>
+  ///
+  /// <para>Asking a format that cannot express a hole raises rather than quietly
+  /// producing a volume that is no smaller, so a caller is never told a saving it
+  /// did not get. Ask <see cref="ILayoutOptimizable.ReclaimSupport" /> first.</para>
+  /// </remarks>
+  public bool MakeSparse { get; init; }
+
+  /// <summary>
+  /// Store one copy of files that are byte-for-byte identical and point the rest
+  /// at it, where the filesystem has hard links.
+  /// </summary>
+  /// <remarks>
+  /// <para>Two names for one file is what a hard link is, and a filesystem that
+  /// counts links can carry the same content under several names while storing it
+  /// once. On a volume with repeated content that is the difference between paying
+  /// for it once and paying for it every time.</para>
+  ///
+  /// <para>Only files whose bytes are identical are linked, and a link is not a
+  /// copy: writing through one name would be seen through the others. That is what
+  /// a hard link means on the systems that have them, and it is why this is asked
+  /// for rather than done by default.</para>
+  /// </remarks>
+  public bool DeduplicateWithLinks { get; init; }
+
+  /// <summary>
   /// Optional progress callback: (bytesRead, totalBytes). Called after each
   /// cluster or metadata region is processed.
   /// </summary>
   public Action<long, long>? OnProgress { get; init; }
+}
+
+/// <summary>
+/// What a format can be asked to reclaim beyond re-laying its data out.
+/// </summary>
+[Flags]
+public enum LayoutReclaim {
+  /// <summary>Neither holes nor links; a rebuild only moves what is there.</summary>
+  None = 0,
+
+  /// <summary>Runs of zeros can be recorded as absent rather than allocated.</summary>
+  Sparse = 1,
+
+  /// <summary>Identical files can share one copy under several names.</summary>
+  HardLinks = 2,
 }

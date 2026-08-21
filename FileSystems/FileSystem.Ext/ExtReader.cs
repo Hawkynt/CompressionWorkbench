@@ -140,14 +140,40 @@ public sealed class ExtReader : IDisposable {
       ReadBlockPointers(inode, sizelow, destination);
   }
 
+  /// <summary>
+  /// Emits the zeros a hole stands for, and counts them against what is left.
+  /// </summary>
+  /// <remarks>
+  /// A zero block pointer in ext does not mean the file stops there. It means the
+  /// file has nothing in that block, and every reader of the format hands back
+  /// zeros for it and carries on. Stopping instead returned a file cut off at its
+  /// first hole -- a 400 KB file beginning with one block of data came back as
+  /// that one block -- which is also how a volume left sparse by mke2fs, or by
+  /// anything else that writes ext, would have been read here.
+  /// </remarks>
+  private static void ReadHole(Stream ms, ref long remaining, long bytes) {
+    var toWrite = Math.Min(remaining, bytes);
+    if (toWrite <= 0) return;
+
+    var zeros = new byte[Math.Min(toWrite, 64 * 1024)];
+    while (toWrite > 0) {
+      var chunk = (int)Math.Min(zeros.Length, toWrite);
+      ms.Write(zeros, 0, chunk);
+      toWrite -= chunk;
+      remaining -= chunk;
+    }
+  }
+
   private void ReadBlockPointers(byte[] inode, uint size, Stream ms) {
     var remaining = (long)size;
+    var pointersPerBlock = (long)(_blockSize / 4);
 
     // 12 direct block pointers at inode offset 40
     for (var i = 0; i < 12 && remaining > 0; i++) {
       var blockNum = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(40 + i * 4));
-      if (blockNum == 0) break;
       var toRead = (int)Math.Min(remaining, _blockSize);
+      if (blockNum == 0) { ReadHole(ms, ref remaining, toRead); continue; }
+
       var offset = (long)blockNum * _blockSize;
       if (offset + toRead > _data.Length) break;
       _data.CopyTo(offset, ms, toRead);
@@ -157,22 +183,22 @@ public sealed class ExtReader : IDisposable {
     // Indirect block (block pointer #12, at inode offset 40 + 48 = 88)
     if (remaining > 0) {
       var indirectBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(88));
-      if (indirectBlock != 0)
-        ReadIndirectBlock(indirectBlock, ms, ref remaining, 1);
+      if (indirectBlock != 0) ReadIndirectBlock(indirectBlock, ms, ref remaining, 1);
+      else ReadHole(ms, ref remaining, pointersPerBlock * _blockSize);   // a zero root is a hole the width of the level
     }
 
     // Double-indirect block (block pointer #13, at inode offset 92)
     if (remaining > 0) {
       var dindirectBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(92));
-      if (dindirectBlock != 0)
-        ReadIndirectBlock(dindirectBlock, ms, ref remaining, 2);
+      if (dindirectBlock != 0) ReadIndirectBlock(dindirectBlock, ms, ref remaining, 2);
+      else ReadHole(ms, ref remaining, pointersPerBlock * pointersPerBlock * _blockSize);   // a zero root is a hole the width of the level
     }
 
     // Triple-indirect block (block pointer #14, at inode offset 96)
     if (remaining > 0) {
       var tindirectBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(96));
-      if (tindirectBlock != 0)
-        ReadIndirectBlock(tindirectBlock, ms, ref remaining, 3);
+      if (tindirectBlock != 0) ReadIndirectBlock(tindirectBlock, ms, ref remaining, 3);
+      else ReadHole(ms, ref remaining, pointersPerBlock * pointersPerBlock * pointersPerBlock * _blockSize);   // a zero root is a hole the width of the level
     }
   }
 
@@ -186,14 +212,19 @@ public sealed class ExtReader : IDisposable {
     for (var i = 0; i < pointersPerBlock && remaining > 0; i++) {
       var ptr = BinaryPrimitives.ReadUInt32LittleEndian(
         _data.Read(offset + i * 4, 4).AsSpan());
-      if (ptr == 0) break;
-
       if (level == 1) {
         var toRead = (int)Math.Min(remaining, _blockSize);
+        if (ptr == 0) { ReadHole(ms, ref remaining, toRead); continue; }
+
         var dataOff = (long)ptr * _blockSize;
         if (dataOff + toRead > _data.Length) break;
         _data.CopyTo(dataOff, ms, toRead);
         remaining -= toRead;
+      } else if (ptr == 0) {
+        // Everything this pointer would have addressed is hole.
+        var span = (long)_blockSize;
+        for (var l = 1; l < level; ++l) span *= pointersPerBlock;
+        ReadHole(ms, ref remaining, span);
       } else {
         ReadIndirectBlock(ptr, ms, ref remaining, level - 1);
       }

@@ -25,7 +25,120 @@ public sealed class ExtWriter {
   /// </summary>
   private List<(IReadOnlyList<int> Blocks, long Size, Func<Stream> Opener)>? _streamingSink;
 
+  /// <summary>
+  /// Store a file's runs of zeros as holes rather than allocating blocks for them.
+  /// </summary>
+  /// <remarks>
+  /// ext records an absent block as a zero pointer in the block map, and a reader
+  /// hands back zeros for it. So a block that is entirely zero need not be
+  /// allocated at all: the file keeps its length and every one of its bytes, and
+  /// the volume is sized for what was actually written. The map itself is
+  /// unchanged in shape — a hole still occupies a slot in it, so the indirect
+  /// blocks that address the file's tail are still needed and still counted.
+  /// </remarks>
+  public bool MakeSparse { get; set; }
+
+  /// <summary>Which of a file's blocks are entirely zero, per block size.</summary>
+  private readonly Dictionary<(int Index, int BlockSize), bool[]> _holeCache = [];
+
+  /// <summary>
+  /// Store one copy of files whose bytes are identical and give the rest a second
+  /// name for it.
+  /// </summary>
+  /// <remarks>
+  /// That is what a hard link is: one inode, one set of blocks, and a count of how
+  /// many directory entries point at it. ext keeps that count in the inode, and
+  /// e2fsck checks it against the entries it finds, so linking is a matter of
+  /// naming the same inode twice and saying so. The content is stored once
+  /// however many names it has.
+  /// </remarks>
+  public bool DeduplicateWithLinks { get; set; }
+
+  /// <summary>A file's contents, as a key that two identical files share.</summary>
+  private readonly Dictionary<int, string> _contentKeys = [];
+
+  private string ContentKey(int index) {
+    if (this._contentKeys.TryGetValue(index, out var cached)) return cached;
+
+    var entry = this._files[index];
+    byte[] digest;
+    if (entry.StreamOpener != null) {
+      using var source = entry.StreamOpener();
+      digest = System.Security.Cryptography.SHA256.HashData(source);
+    } else {
+      digest = System.Security.Cryptography.SHA256.HashData(entry.Data);
+    }
+
+    // The length goes in the key as well: a digest is what says two files are the
+    // same, and the length is what makes saying so cheap to be sure of.
+    var length = entry.StreamingSize ?? (long)entry.Data.Length;
+    var key = length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+      + ":" + Convert.ToHexString(digest);
+    this._contentKeys[index] = key;
+    return key;
+  }
+
   public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
+
+  /// <summary>
+  /// Reads a file once and says which of its blocks hold nothing but zeros.
+  /// </summary>
+  /// <remarks>
+  /// Empty when holes are not wanted, so every caller can ask without checking.
+  /// The answer depends on the block size, which is not settled until the volume
+  /// is planned, so it is cached per size rather than computed per use — the
+  /// planner and the writer have to agree about it exactly or the volume is sized
+  /// for one layout and written with another.
+  /// </remarks>
+  private bool[] HoleMap(int index, int blockSize) {
+    if (!this.MakeSparse) return [];
+    if (this._holeCache.TryGetValue((index, blockSize), out var cached)) return cached;
+
+    var entry = this._files[index];
+    var length = entry.StreamingSize ?? (long)entry.Data.Length;
+    var count = length <= 0 ? 0 : (int)((length + blockSize - 1) / blockSize);
+    var holes = new bool[count];
+
+    if (count > 0) {
+      if (entry.StreamOpener != null) {
+        using var source = entry.StreamOpener();
+        var buffer = new byte[blockSize];
+        for (var b = 0; b < count; ++b) {
+          var want = (int)Math.Min(blockSize, length - (long)b * blockSize);
+          var read = 0;
+          while (read < want) {
+            var n = source.Read(buffer, read, want - read);
+            if (n <= 0) break;
+            read += n;
+          }
+          holes[b] = !buffer.AsSpan(0, read).ContainsAnyExcept((byte)0);
+        }
+      } else {
+        for (var b = 0; b < count; ++b) {
+          var at = (long)b * blockSize;
+          var want = (int)Math.Min(blockSize, entry.Data.Length - at);
+          holes[b] = want <= 0 || !entry.Data.AsSpan((int)at, want).ContainsAnyExcept((byte)0);
+        }
+      }
+    }
+
+    this._holeCache[(index, blockSize)] = holes;
+    return holes;
+  }
+
+  /// <summary>How many blocks a file actually occupies once its holes are left out.</summary>
+  private long AllocatedBlocks(int index, int blockSize) {
+    var length = this._files[index].StreamingSize ?? (long)this._files[index].Data.Length;
+    if (length <= 0) return 0;
+
+    var total = (length + blockSize - 1) / blockSize;
+    var holes = this.HoleMap(index, blockSize);
+    if (holes.Length == 0) return total;
+
+    var absent = 0L;
+    foreach (var hole in holes) if (hole) ++absent;
+    return total - absent;
+  }
 
   /// <summary>
   /// Adds a streaming file: <paramref name="size"/> drives extent + inode
@@ -122,7 +235,19 @@ public sealed class ExtWriter {
     // Inode table must hold the reserved inodes, every directory and every file.
     var inodeCount = ChooseInodeCount(dirPaths.Count + _files.Count);
     var inodeTableBlocks = ((long)inodeCount * Math.Max(128, inodeSize) + blockSize - 1) / blockSize;
-    var dataBlocks = fileSizes.Sum(s => s <= 0 ? 0L : (s + blockSize - 1) / blockSize);
+    // What the files occupy once their holes are left out. Sizing from the
+    // logical lengths instead would leave the volume exactly as large as before
+    // and the space reclaimed as free room inside it, which is not what asking
+    // for a smaller image means.
+    var dataBlocks = 0L;
+    var countedContent = new HashSet<string>(StringComparer.Ordinal);
+    for (var i = 0; i < this._files.Count; ++i) {
+      // A file that will be a second name for another one costs no blocks, so
+      // sizing the volume as though it did would give back an image no smaller
+      // than before and call the difference free space.
+      if (this.DeduplicateWithLinks && !countedContent.Add(this.ContentKey(i))) continue;
+      dataBlocks += this.AllocatedBlocks(i, blockSize);
+    }
 
     // Pointer blocks for the single/double/triple-indirect map. A file needing n
     // data blocks past the first twelve costs roughly n/ptrs level-1 blocks plus
@@ -487,7 +612,15 @@ public sealed class ExtWriter {
       new DirNode { Inode = lostAndFoundInode, Parent = RootInode, Name = "lost+found" };
 
     var fileInodes = new List<(uint Inode, DirNode Parent, string LeafName, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)>();
+    // When identical files are to share one copy, the first of them gets the
+    // inode and the blocks; every later one gets a directory entry naming that
+    // same inode and nothing else. The inode's link count is how many names it
+    // ends up with, and e2fsck checks that against the entries it finds.
+    var inodeOfContent = new Dictionary<string, uint>(StringComparer.Ordinal);
+    var linksOfInode = new Dictionary<uint, int>();
+    var fileOrdinalForContent = -1;
     foreach (var (name, data, streamingSize, opener) in _files) {
+      ++fileOrdinalForContent;
       var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segments.Length == 0) continue;
 
@@ -502,7 +635,25 @@ public sealed class ExtWriter {
       }
 
       var leaf = segments[^1];
+
+      if (this.DeduplicateWithLinks) {
+        var key = this.ContentKey(fileOrdinalForContent);
+        if (inodeOfContent.TryGetValue(key, out var shared)) {
+          dir.Files.Add((leaf, shared));
+          linksOfInode[shared] = linksOfInode.GetValueOrDefault(shared) + 1;
+          continue;
+        }
+
+        var firstInode = nextInode++;
+        inodeOfContent[key] = firstInode;
+        linksOfInode[firstInode] = 1;
+        fileInodes.Add((firstInode, dir, leaf, data, streamingSize, opener));
+        dir.Files.Add((leaf, firstInode));
+        continue;
+      }
+
       var fileInode = nextInode++;
+      linksOfInode[fileInode] = 1;
       fileInodes.Add((fileInode, dir, leaf, data, streamingSize, opener));
       dir.Files.Add((leaf, fileInode));
     }
@@ -648,15 +799,20 @@ public sealed class ExtWriter {
     // Files use up to 12 direct block pointers, then the classic single /
     // double / triple indirect map. Pointer blocks count toward i_blocks
     // (e2fsck tallies them in the 512-byte sector count).
+    var fileOrdinal = -1;
     foreach (var (fileInode, _, _, data, streamingSize, streamOpener) in fileInodes) {
+      ++fileOrdinal;
       var fileInodeOffset = InodeOffset(fileInode);
       var effectiveLength = streamingSize ?? (long)data.Length;
 
       var blocksNeeded = effectiveLength == 0 ? 0 : (int)((effectiveLength + blockSize - 1) / blockSize);
 
+      // A hole keeps its slot in the map and costs no block: the pointer is zero,
+      // and ext hands back zeros for it.
+      var holes = this.HoleMap(fileOrdinal, blockSize);
       var fileBlocks = new List<int>(blocksNeeded);
       for (var b = 0; b < blocksNeeded; ++b)
-        fileBlocks.Add(AllocBlock());
+        fileBlocks.Add(b < holes.Length && holes[b] ? 0 : AllocBlock());
 
       // Streaming entries leave their data blocks unwritten; BuildToStreaming
       // post-fills them from the source. Block tail past `effectiveLength`
@@ -668,12 +824,13 @@ public sealed class ExtWriter {
         var written = 0;
         foreach (var fb in fileBlocks) {
           var toWrite = Math.Min(blockSize, data.Length - written);
-          if (toWrite > 0) data.AsSpan(written, toWrite).CopyTo(img.Block(fb));
+          if (toWrite > 0 && fb != 0) data.AsSpan(written, toWrite).CopyTo(img.Block(fb));
           written += toWrite;
         }
       }
 
-      var fileAllocatedBlocks = fileBlocks.Count;
+      var fileAllocatedBlocks = 0;
+      foreach (var fb in fileBlocks) if (fb != 0) ++fileAllocatedBlocks;
 
       var ino = img.At(fileInodeOffset, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(ino, 0x8000 | 0x01A4);           // i_mode: regular file, 0644
@@ -681,7 +838,11 @@ public sealed class ExtWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(ino[8..], now);                  // i_atime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[12..], now);                 // i_ctime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[16..], now);                 // i_mtime
-      BinaryPrimitives.WriteUInt16LittleEndian(ino[26..], 1);                   // i_links_count
+      // How many directory entries name this inode. e2fsck counts the entries it
+      // finds and compares: an inode that five names point at while claiming one
+      // is a volume it reports as damaged and offers to repair.
+      BinaryPrimitives.WriteUInt16LittleEndian(ino[26..],
+        (ushort)Math.Max(1, linksOfInode.GetValueOrDefault(fileInode, 1)));     // i_links_count
       fileAllocatedBlocks += WriteInodeBlockMap(img, fileInodeOffset, fileBlocks, blockSize, AllocBlock);
       BinaryPrimitives.WriteUInt32LittleEndian(
         img.At(fileInodeOffset + 28, 4), (uint)(fileAllocatedBlocks * sectorsPerBlock)); // i_blocks, incl. pointer blocks
@@ -1178,8 +1339,24 @@ public sealed class ExtWriter {
 
       var runStart = 0;
       while (runStart < blocks.Count && remaining > 0) {
+        // A hole has no block to write to — block zero is the volume's own start,
+        // and writing a file's bytes there would put them over the superblock. The
+        // source still has to be walked past the bytes the hole stands for.
+        if (blocks[runStart] == 0) {
+          var skip = (int)Math.Min(remaining, blockSize);
+          remaining -= skip;
+          while (skip > 0) {
+            var n = src.Read(buf, 0, Math.Min(buf.Length, skip));
+            if (n <= 0) break;
+            skip -= n;
+          }
+          ++runStart;
+          continue;
+        }
+
         var runEnd = runStart;
-        while (runEnd + 1 < blocks.Count && blocks[runEnd + 1] == blocks[runEnd] + 1) ++runEnd;
+        while (runEnd + 1 < blocks.Count && blocks[runEnd + 1] != 0
+               && blocks[runEnd + 1] == blocks[runEnd] + 1) ++runEnd;
 
         var runBytes = Math.Min(remaining, (long)(runEnd - runStart + 1) * blockSize);
         output.Position = (long)blocks[runStart] * blockSize;
