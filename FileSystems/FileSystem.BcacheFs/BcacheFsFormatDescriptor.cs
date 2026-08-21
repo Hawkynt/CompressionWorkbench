@@ -348,6 +348,13 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     // b-tree node, under one checksum.
     mover.Settle(archive);
 
+    // And the volume's second account of the same facts -- which bucket holds
+    // what, which hold nothing, and what points back at each run -- is brought
+    // up to where the data actually is. Without this the extents point into
+    // buckets the alloc tree has never heard of, which reads back correctly and
+    // fails the format's own checker.
+    mover.SettleAllocation(archive);
+
     archive.Position = 0;
     var postExtents = this.EnumerateExtents(archive).ToList();
     options.OnProgress?.Invoke(new DefragProgressEvent(
