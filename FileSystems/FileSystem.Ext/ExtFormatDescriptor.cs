@@ -503,6 +503,13 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// ext records an absent block as a zero pointer, so runs of zeros need not be
+  /// allocated at all; and it counts the directory entries naming an inode, so
+  /// identical files can share one copy under several names.
+  /// </summary>
+  public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
+
   /// <inheritdoc />
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
@@ -510,7 +517,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(options);
     if (source.CanSeek) source.Position = 0;
     var reader = new ExtReader(source, leaveOpen: true);
-    var w = new ExtWriter();
+    var w = new ExtWriter {
+      MakeSparse = options.MakeSparse,
+      DeduplicateWithLinks = options.DeduplicateWithLinks,
+    };
     // Each entry is spilled to scratch and pulled back while the volume is laid
     // out, so neither the file nor the image is held in memory — building it in
     // an array refused any volume past the array limit.
