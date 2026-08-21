@@ -38,6 +38,10 @@ namespace FileFormat.Cdi;
 /// </summary>
 public static class CdiInPlaceModifier {
 
+  /// <summary>How this format names itself when it has to refuse something.</summary>
+  private const string Label = "CDI";
+
+
   private const int Iso9660SectorSize = 2048;
   private const int RawSectorSize = 2352;
   private const int SectorSize2336 = 2336;
@@ -279,7 +283,7 @@ public static class CdiInPlaceModifier {
   /// Routes each input through the sector-rewrite path. Inputs whose
   /// <c>ArchiveName</c> matches <c>sector-NNNNNN.bin</c> are written at the
   /// fixed LBA byte offset. Inputs whose <c>ArchiveName</c> doesn't match
-  /// the schema are silently skipped — inner ISO 9660 directory mutation is
+  /// the schema are refused — inner ISO 9660 directory mutation is
   /// delegated to <c>FileSystem.Iso</c>.
   /// </summary>
   public static void AddOrReplaceSectors(Stream image, IEnumerable<(string ArchiveName, byte[] Data)> inputs) {
@@ -287,7 +291,15 @@ public static class CdiInPlaceModifier {
     ArgumentNullException.ThrowIfNull(inputs);
     var geom = DetectGeometry(image);
     foreach (var (name, data) in inputs) {
-      if (!TryParseSectorEntryName(name, out var lba)) continue;
+      // A name this cannot place is not a name to pass over. These images list
+      // the ISO 9660 files inside them, so a caller has every reason to hand one
+      // back -- and skipping it wrote nothing, raised nothing, and reported the
+      // add as done. Six files added, six files gone, no error anywhere.
+      if (!TryParseSectorEntryName(name, out var lba))
+        throw new NotSupportedException(
+          $"{Label}: '{name}' cannot be added. This image is edited a sector at a time, so an "
+          + "entry has to be named 'sector-NNNN.bin' for the sector it replaces. Adding a file to "
+          + "the ISO 9660 filesystem inside the image is not something this supports.");
       if (data.Length != Iso9660SectorSize)
         throw new ArgumentException(
           $"Sector entry '{name}' must carry exactly {Iso9660SectorSize} bytes; got {data.Length}.",
@@ -301,7 +313,7 @@ public static class CdiInPlaceModifier {
 
   /// <summary>
   /// Zeros each named <c>sector-NNNNNN.bin</c>. Names that don't match the
-  /// schema are silently skipped; sectors past the data-area EOF are likewise
+  /// schema are refused; sectors past the data-area EOF are still
   /// skipped. The framing bytes of an existing sector — sync/address/mode/EDC
   /// — and the trailing CDI footer are preserved.
   /// </summary>
@@ -310,7 +322,11 @@ public static class CdiInPlaceModifier {
     ArgumentNullException.ThrowIfNull(entryNames);
     var geom = DetectGeometry(image);
     foreach (var name in entryNames) {
-      if (!TryParseSectorEntryName(name, out var lba)) continue;
+      if (!TryParseSectorEntryName(name, out var lba))
+        throw new NotSupportedException(
+          $"{Label}: '{name}' cannot be removed. This image is edited a sector at a time, so an "
+          + "entry has to be named 'sector-NNNN.bin' for the sector it clears. Removing a file from "
+          + "the ISO 9660 filesystem inside the image is not something this supports.");
       ZeroSector(image, lba, geom);
     }
   }

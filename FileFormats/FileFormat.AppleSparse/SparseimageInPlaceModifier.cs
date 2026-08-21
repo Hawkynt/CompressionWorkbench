@@ -296,9 +296,21 @@ public static class SparseimageInPlaceModifier {
     ArgumentNullException.ThrowIfNull(inputs);
     var geom = ReadGeometry(image);
     foreach (var (name, data) in inputs) {
-      if (!TryParseBandEntryName(name, out var logicalBand)) continue;
-      if (logicalBand >= geom.NumBands) continue;
-      if (data.Length != geom.BandSize) continue;
+      if (!TryParseBandEntryName(name, out var logicalBand))
+        throw new NotSupportedException(
+          $"Sparseimage: '{name}' cannot be added. A sparse image is edited a band at a "
+          + "time, so an entry has to be named for the band it covers. Adding a file to the "
+          + "filesystem inside the image is not something this supports.");
+      // A band past the end, or one the wrong size, is as unwritable as a name
+      // that names no band — and passing over it reports a write that did not
+      // happen just the same.
+      if (logicalBand >= geom.NumBands)
+        throw new ArgumentOutOfRangeException(nameof(inputs),
+          $"Sparseimage: '{name}' names band {logicalBand}, and the image has {geom.NumBands}.");
+      if (data.Length != geom.BandSize)
+        throw new ArgumentException(
+          $"Sparseimage: '{name}' must carry exactly {geom.BandSize} bytes, one whole band; "
+          + $"got {data.Length}.", nameof(inputs));
       WriteBand(image, logicalBand, data, geom);
     }
   }
@@ -313,7 +325,11 @@ public static class SparseimageInPlaceModifier {
     ArgumentNullException.ThrowIfNull(entryNames);
     var geom = ReadGeometry(image);
     foreach (var name in entryNames) {
-      if (!TryParseBandEntryName(name, out var logicalBand)) continue;
+      if (!TryParseBandEntryName(name, out var logicalBand))
+        throw new NotSupportedException(
+          $"Sparseimage: '{name}' cannot be removed. A sparse image is edited a band at a "
+          + "time, so an entry has to be named for the band it clears. Removing a file from the "
+          + "filesystem inside the image is not something this supports.");
       RemoveBand(image, logicalBand, geom);
     }
   }
