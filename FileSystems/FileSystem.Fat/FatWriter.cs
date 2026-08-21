@@ -179,55 +179,90 @@ public sealed class FatWriter {
     // Adjust parameters for each FAT type.
     // requestedRootEntries overrides the per-type default (224/512) for FAT12/16.
     // DMF distribution disks used 16 entries; zero means "use the type's default".
-    if (fatType == 16) {
-      if (requestedClusterSize <= 0) sectorsPerCluster = 4;
-      rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
-      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
-      fatSize = SizeFatTable(16, totalSectors, reservedSectors, fatCount, rootDirSectors,
-                             sectorsPerCluster, bytesPerSector);
-      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
-    } else if (fatType == 12 && requestedRootEntries > 0) {
-      // FAT12 custom root entry count: recompute rootDirSectors and firstDataSector.
-      rootEntryCount = requestedRootEntries;
-      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
-      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
-    } else if (fatType == 32) {
-      reservedSectors = 32; // FAT32 requires >=1 but convention is 32 (leaves room for FSInfo+BackupBoot)
-      rootEntryCount = 0;   // FAT32 root is in the cluster chain, not a fixed area
-      rootDirSectors = 0;
-      if (requestedClusterSize <= 0) {
-        // Sectors-per-cluster heuristic from FATGEN103 table.
-        sectorsPerCluster = totalSectors < 66600 ? 1
-          : totalSectors < 532480 ? 1      // up to 260 MB, 512-byte clusters ⇒ 1 spc
-          : totalSectors < 16777216 ? 8    // up to 8 GB ⇒ 4 KB clusters
-          : totalSectors < 33554432 ? 16
-          : totalSectors < 67108864 ? 32
-          : 64;
-      }
-      // Estimate FAT size: (data sectors / spc) entries × 4 bytes each, rounded up.
-      var dataSectorsEstimate = totalSectors - reservedSectors;
-      var dataClustersEstimate = dataSectorsEstimate / sectorsPerCluster;
-      fatSize = (dataClustersEstimate * 4 + bytesPerSector - 1) / bytesPerSector;
-      firstDataSector = reservedSectors + fatCount * fatSize;
-    }
-
-    // A nine-sector FAT12 table is the 1.44 MB floppy convention, and it names
-    // 3,070 clusters — nine sectors of 512 bytes is 4,608, which at twelve bits
-    // an entry is 3,072 entries, less the two the format reserves. A volume with
-    // more clusters than that has data the table cannot name: the writer places
-    // those clusters, the table has no entries for them, and every file that
-    // lands past the boundary is silently lost. Auto-sizing allows up to 4,084
-    // clusters before it moves to FAT16, so the gap is reachable and was.
     //
-    // The convention is kept where it still fits, so that a real floppy image is
-    // unchanged; only a volume that needs a longer table gets one.
-    if (fatType == 12) {
-      var fat12Needed = SizeFatTable(12, totalSectors, reservedSectors, fatCount, rootDirSectors,
-                                     sectorsPerCluster, bytesPerSector);
-      if (fat12Needed > fatSize) {
-        fatSize = fat12Needed;
+    // The type and the geometry decide each other, so they are settled against
+    // one another rather than derived once: see the matching loop in BuildTo for
+    // why a single pass declared FAT16 over a heap only FAT12 can name.
+    const int settleLimit = 64;
+    var extraReserved = 0;
+    for (var pass = 0; ; ++pass) {
+      reservedSectors = 1 + extraReserved;
+      rootEntryCount = 224;
+      fatSize = requestedFatSize > 0 ? requestedFatSize : 9;
+      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+
+      if (fatType == 16) {
+        if (requestedClusterSize <= 0) sectorsPerCluster = 4;
+        rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
+        rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+        fatSize = SizeFatTable(16, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                               sectorsPerCluster, bytesPerSector);
         firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+      } else if (fatType == 12 && requestedRootEntries > 0) {
+        // FAT12 custom root entry count: recompute rootDirSectors and firstDataSector.
+        rootEntryCount = requestedRootEntries;
+        rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+        firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+      } else if (fatType == 32) {
+        reservedSectors = 32 + extraReserved; // FAT32 requires >=1 but convention is 32 (leaves room for FSInfo+BackupBoot)
+        rootEntryCount = 0;   // FAT32 root is in the cluster chain, not a fixed area
+        rootDirSectors = 0;
+        if (requestedClusterSize <= 0) {
+          // Sectors-per-cluster heuristic from FATGEN103 table.
+          sectorsPerCluster = totalSectors < 66600 ? 1
+            : totalSectors < 532480 ? 1      // up to 260 MB, 512-byte clusters ⇒ 1 spc
+            : totalSectors < 16777216 ? 8    // up to 8 GB ⇒ 4 KB clusters
+            : totalSectors < 33554432 ? 16
+            : totalSectors < 67108864 ? 32
+            : 64;
+        }
+        // Estimate FAT size: (data sectors / spc) entries × 4 bytes each, rounded up.
+        var dataSectorsEstimate = totalSectors - reservedSectors;
+        var dataClustersEstimate = dataSectorsEstimate / sectorsPerCluster;
+        fatSize = (dataClustersEstimate * 4 + bytesPerSector - 1) / bytesPerSector;
+        firstDataSector = reservedSectors + fatCount * fatSize;
       }
+
+      // A nine-sector FAT12 table is the 1.44 MB floppy convention, and it names
+      // 3,070 clusters — nine sectors of 512 bytes is 4,608, which at twelve bits
+      // an entry is 3,072 entries, less the two the format reserves. A volume with
+      // more clusters than that has data the table cannot name: the writer places
+      // those clusters, the table has no entries for them, and every file that
+      // lands past the boundary is silently lost. Auto-sizing allows up to 4,084
+      // clusters before it moves to FAT16, so the gap is reachable and was.
+      //
+      // The convention is kept where it still fits, so that a real floppy image is
+      // unchanged; only a volume that needs a longer table gets one.
+      if (fatType == 12) {
+        var fat12Needed = SizeFatTable(12, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                                       sectorsPerCluster, bytesPerSector);
+        if (fat12Needed > fatSize) {
+          fatSize = fat12Needed;
+          firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+        }
+      }
+
+      var settledClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
+      var impliedType = settledClusters < 4085 ? 12 : settledClusters < 65525 ? 16 : 32;
+      if (forcedFatType != 0 || impliedType == fatType || pass > settleLimit) break;
+      if (pass < 2) { fatType = impliedType; continue; }
+
+      // Some sector counts have no self-consistent type at all: the FAT12
+      // geometry names more clusters than FAT12 may have, and the FAT16 geometry
+      // -- a 512-entry root and a wider table -- names fewer than FAT16 may, so
+      // each type keeps implying the other and the passes above would swap
+      // between them for ever. Pin the narrower of the two, then take sectors
+      // out of the heap until its own count sits inside its own ceiling.
+      // Reserved sectors are the free variable for that: the format allows any
+      // number of them (mkfs.fat ships four), and spending one costs a sector
+      // while leaving the volume's declared size and the caller's cluster size
+      // exactly as they were asked for.
+      var pinnedType = Math.Min(fatType, impliedType);
+      if (fatType != pinnedType) { fatType = pinnedType; continue; }
+      var clusterCeiling = fatType == 12 ? 4085L : 65525L;
+      extraReserved += (int)Math.Max(1,
+        totalSectors - (clusterCeiling - 1) * sectorsPerCluster - firstDataSector);
     }
 
     // Validate forced-type upper-bound constraints after the layout is finalised.
@@ -466,52 +501,99 @@ public sealed class FatWriter {
       ? forcedFatType
       : (totalDataClusters < 4085 ? 12 : totalDataClusters < 65525 ? 16 : 32);
 
-    if (fatType == 16) {
-      if (requestedClusterSize <= 0) sectorsPerCluster = 4;
-      rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
-      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
-      fatSize = SizeFatTable(16, totalSectors, reservedSectors, fatCount, rootDirSectors,
-                             sectorsPerCluster, bytesPerSector);
-      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
-    } else if (fatType == 12 && requestedRootEntries > 0) {
-      rootEntryCount = requestedRootEntries;
-      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
-      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
-    } else if (fatType == 32) {
-      reservedSectors = 32;
-      rootEntryCount = 0;
-      rootDirSectors = 0;
-      if (requestedClusterSize <= 0) {
-        sectorsPerCluster = totalSectors < 66600 ? 1
-          : totalSectors < 532480 ? 1
-          : totalSectors < 16777216 ? 8
-          : totalSectors < 33554432 ? 16
-          : totalSectors < 67108864 ? 32
-          : 64;
-      }
-      var dataSectorsEstimate = totalSectors - reservedSectors;
-      var dataClustersEstimate = dataSectorsEstimate / sectorsPerCluster;
-      fatSize = (int)(((long)dataClustersEstimate * 4 + bytesPerSector - 1) / bytesPerSector);
-      firstDataSector = reservedSectors + fatCount * fatSize;
-    }
-
-    // A nine-sector FAT12 table is the 1.44 MB floppy convention, and it names
-    // 3,070 clusters — nine sectors of 512 bytes is 4,608, which at twelve bits
-    // an entry is 3,072 entries, less the two the format reserves. A volume with
-    // more clusters than that has data the table cannot name: the writer places
-    // those clusters, the table has no entries for them, and every file that
-    // lands past the boundary is silently lost. Auto-sizing allows up to 4,084
-    // clusters before it moves to FAT16, so the gap is reachable and was.
+    // Nothing on a FAT volume records its type in a way a reader trusts: every
+    // reader counts the data clusters itself and calls the volume FAT12 below
+    // 4,085 and FAT16 below 65,525. That count follows from the geometry, and
+    // the geometry follows from the type — choosing FAT16 moves an auto-sized
+    // volume to four-sector clusters and a 512-entry root, which on a volume of
+    // a few megabytes drops the count back under FAT16's own floor. Deriving the
+    // type once, from the provisional one-sector-per-cluster count, left an 8 MB
+    // volume declaring FAT16 over a heap of 3,937 clusters: every reader made
+    // that FAT12 and decoded the 16-bit table twelve bits at a time, so chains
+    // ran into one another and the files read back short.
     //
-    // The convention is kept where it still fits, so that a real floppy image is
-    // unchanged; only a volume that needs a longer table gets one.
-    if (fatType == 12) {
-      var fat12Needed = SizeFatTable(12, totalSectors, reservedSectors, fatCount, rootDirSectors,
-                                     sectorsPerCluster, bytesPerSector);
-      if (fat12Needed > fatSize) {
-        fatSize = fat12Needed;
+    // Settle the two against each other instead. The cluster size a pass commits
+    // to carries into the next one — it is what the volume is now sized for, and
+    // putting it back would only swing the count over the boundary again, which
+    // is an oscillation rather than a fixed point. A forced type keeps the
+    // geometry it asked for, and is validated separately below.
+    const int settleLimit = 64;
+    var extraReserved = 0;
+    for (var pass = 0; ; ++pass) {
+      reservedSectors = 1 + extraReserved;
+      rootEntryCount = 224;
+      fatSize = 9;
+      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+
+      if (fatType == 16) {
+        if (requestedClusterSize <= 0) sectorsPerCluster = 4;
+        rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
+        rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+        fatSize = SizeFatTable(16, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                               sectorsPerCluster, bytesPerSector);
         firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+      } else if (fatType == 12 && requestedRootEntries > 0) {
+        rootEntryCount = requestedRootEntries;
+        rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+        firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+      } else if (fatType == 32) {
+        reservedSectors = 32 + extraReserved;
+        rootEntryCount = 0;
+        rootDirSectors = 0;
+        if (requestedClusterSize <= 0) {
+          sectorsPerCluster = totalSectors < 66600 ? 1
+            : totalSectors < 532480 ? 1
+            : totalSectors < 16777216 ? 8
+            : totalSectors < 33554432 ? 16
+            : totalSectors < 67108864 ? 32
+            : 64;
+        }
+        var dataSectorsEstimate = totalSectors - reservedSectors;
+        var dataClustersEstimate = dataSectorsEstimate / sectorsPerCluster;
+        fatSize = (int)(((long)dataClustersEstimate * 4 + bytesPerSector - 1) / bytesPerSector);
+        firstDataSector = reservedSectors + fatCount * fatSize;
       }
+
+      // A nine-sector FAT12 table is the 1.44 MB floppy convention, and it names
+      // 3,070 clusters — nine sectors of 512 bytes is 4,608, which at twelve bits
+      // an entry is 3,072 entries, less the two the format reserves. A volume with
+      // more clusters than that has data the table cannot name: the writer places
+      // those clusters, the table has no entries for them, and every file that
+      // lands past the boundary is silently lost. Auto-sizing allows up to 4,084
+      // clusters before it moves to FAT16, so the gap is reachable and was.
+      //
+      // The convention is kept where it still fits, so that a real floppy image is
+      // unchanged; only a volume that needs a longer table gets one.
+      if (fatType == 12) {
+        var fat12Needed = SizeFatTable(12, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                                       sectorsPerCluster, bytesPerSector);
+        if (fat12Needed > fatSize) {
+          fatSize = fat12Needed;
+          firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+        }
+      }
+
+      var settledClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
+      var impliedType = settledClusters < 4085 ? 12 : settledClusters < 65525 ? 16 : 32;
+      if (forcedFatType != 0 || impliedType == fatType || pass > settleLimit) break;
+      if (pass < 2) { fatType = impliedType; continue; }
+
+      // Some sector counts have no self-consistent type at all: the FAT12
+      // geometry names more clusters than FAT12 may have, and the FAT16 geometry
+      // -- a 512-entry root and a wider table -- names fewer than FAT16 may, so
+      // each type keeps implying the other and the passes above would swap
+      // between them for ever. Pin the narrower of the two, then take sectors
+      // out of the heap until its own count sits inside its own ceiling.
+      // Reserved sectors are the free variable for that: the format allows any
+      // number of them (mkfs.fat ships four), and spending one costs a sector
+      // while leaving the volume's declared size and the caller's cluster size
+      // exactly as they were asked for.
+      var pinnedType = Math.Min(fatType, impliedType);
+      if (fatType != pinnedType) { fatType = pinnedType; continue; }
+      var clusterCeiling = fatType == 12 ? 4085L : 65525L;
+      extraReserved += (int)Math.Max(1,
+        totalSectors - (clusterCeiling - 1) * sectorsPerCluster - firstDataSector);
     }
 
     if (forcedFatType != 0) {
