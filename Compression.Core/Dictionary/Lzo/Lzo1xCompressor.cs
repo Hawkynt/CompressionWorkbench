@@ -19,9 +19,14 @@ public static class Lzo1xCompressor {
   /// <param name="data">The input data to compress.</param>
   /// <param name="level">The compression level.</param>
   /// <returns>A byte array containing the compressed data.</returns>
+  /// <remarks>
+  /// Every level writes the same stream format; what a level changes is how hard
+  /// the encoder looks for matches, never what a decoder has to understand. That
+  /// is also true of the real LZO1X-1 and LZO1X-999, which is why lzop can label
+  /// all three with different method bytes and read them with one decoder.
+  /// </remarks>
   public static byte[] Compress(ReadOnlySpan<byte> data, LzoCompressionLevel level) {
-    if (level == LzoCompressionLevel.Best)
-      return Lzo1x999Compressor.Compress(data);
+    _ = level;
     return Compress(data);
   }
 
@@ -30,125 +35,7 @@ public static class Lzo1xCompressor {
   /// </summary>
   /// <param name="data">The input data to compress.</param>
   /// <returns>A byte array containing the compressed data.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data) {
-    if (data.IsEmpty)
-      return [];
-
-    // Worst case: every byte is a literal. Allocate generously to avoid mid-stream
-    // resizing. The bound is taken in 64-bit and refused explicitly when it does not
-    // fit an array, rather than wrapping to a negative length.
-    var bound = (long)data.Length + data.Length / 255 + 32;
-    if (bound > Array.MaxLength)
-      throw new NotSupportedException(
-        $"LZO1X: an input of {data.Length} bytes needs a {bound}-byte worst-case output buffer, which exceeds the {Array.MaxLength}-element array limit.");
-
-    var output = new byte[bound];
-    var outPos = 0;
-
-    var hashTable = new int[Lzo1xCompressor.HashSize];
-    hashTable.AsSpan().Fill(-1); // -1 = empty
-
-    var anchor = 0; // start of pending literal run
-    var pos = 0;
-
-    // We need MinMatch bytes ahead to form a hash key.
-    var limit = data.Length - Lzo1xCompressor.MinMatch;
-
-    while (pos <= limit) {
-      var hash = Hash4(data, pos);
-      var matchPos = hashTable[hash];
-      hashTable[hash] = pos;
-
-      // Check match validity: correct bytes, non-negative offset, within max distance
-      // TODO: maybe we can compare 4 items at once
-      if (matchPos >= 0
-          && (pos - matchPos) <= Lzo1xCompressor.MaxDistance
-          && data[pos]     == data[matchPos]
-          && data[pos + 1] == data[matchPos + 1]
-          && data[pos + 2] == data[matchPos + 2]
-          && data[pos + 3] == data[matchPos + 3]) {
-
-        // Extend match as far as possible
-        var matchLen = Lzo1xCompressor.MinMatch;
-        var maxMatchLen = data.Length - pos;
-        while (matchLen < maxMatchLen && data[pos + matchLen] == data[matchPos + matchLen])
-          ++matchLen;
-
-        var literalLen = pos - anchor;
-        var matchExtra = matchLen - Lzo1xCompressor.MinMatch;
-        var distance = pos - matchPos;
-
-        // Encode: [token] [lit_len_ext...] [literals] [dist_lo] [dist_hi] [match_len_ext...]
-        // Token byte: high nibble = clipped literal length, low nibble = clipped match extra
-        var litNibble = Math.Min(literalLen, 15);
-        var matchNibble = Math.Min(matchExtra, 15);
-        output[outPos++] = (byte)((litNibble << 4) | matchNibble);
-
-        // Literal-length extension bytes (if litLen >= 15)
-        if (litNibble == 15) {
-          var remaining = literalLen - 15;
-          while (remaining >= 255) {
-            output[outPos++] = 255;
-            remaining -= 255;
-          }
-          output[outPos++] = (byte)remaining;
-        }
-
-        // Literal bytes
-        data.Slice(anchor, literalLen).CopyTo(output.AsSpan(outPos));
-        outPos += literalLen;
-
-        // 2-byte LE offset
-        output[outPos++] = (byte)(distance & 0xFF);
-        output[outPos++] = (byte)(distance >> 8);
-
-        // Match-length extension bytes (if matchExtra >= 15)
-        if (matchNibble == 15) {
-          var remaining = matchExtra - 15;
-          while (remaining >= 255) {
-            output[outPos++] = 255;
-            remaining -= 255;
-          }
-          output[outPos++] = (byte)remaining;
-        }
-
-        // Update hash for positions skipped inside the match
-        for (var i = 1; i < matchLen; ++i) {
-          var skipped = pos + i;
-          if (skipped > limit)
-            break;
-          var h = Hash4(data, skipped);
-          hashTable[h] = skipped;
-        }
-
-        pos += matchLen;
-        anchor = pos;
-      } else
-        ++pos;
-    }
-
-    // Emit the final literal run (from anchor to end of input).
-    // The final token has low nibble = 0 and is NOT followed by an offset.
-    var finalLiteralLen = data.Length - anchor;
-    var finalLitNibble = Math.Min(finalLiteralLen, 15);
-    output[outPos++] = (byte)(finalLitNibble << 4); // low nibble = 0 → end marker
-
-    // Final literal-length extension if needed
-    if (finalLitNibble == 15) {
-      var remaining = finalLiteralLen - 15;
-      while (remaining >= 255) {
-        output[outPos++] = 255;
-        remaining -= 255;
-      }
-      output[outPos++] = (byte)remaining;
-    }
-
-    // Final literal bytes
-    data.Slice(anchor, finalLiteralLen).CopyTo(output.AsSpan(outPos));
-    outPos += finalLiteralLen;
-
-    return output[..outPos];
-  }
+  public static byte[] Compress(ReadOnlySpan<byte> data) => Lzo1xEncoder.Compress(data);
 
   // 4-byte hash using a multiply-shift scheme; returns index in [0, HashSize).
   private static int Hash4(ReadOnlySpan<byte> data, int pos) {

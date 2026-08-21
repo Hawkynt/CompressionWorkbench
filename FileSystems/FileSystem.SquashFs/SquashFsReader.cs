@@ -626,7 +626,9 @@ public sealed class SquashFsReader : IDisposable {
   }
 
   private static byte[] DecompressLzo(byte[] data, int maxOutput) {
-    return Lzo1xDecompressor.Decompress(data, maxOutput);
+    // squashfs says how big a block may be, never how big it is, so the size is a
+    // ceiling and not a promise.
+    return Lzo1xDecompressor.DecompressUpTo(data, maxOutput);
   }
 
   private static byte[] DecompressXz(byte[] data) {

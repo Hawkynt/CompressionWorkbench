@@ -56,7 +56,12 @@ public sealed class LzopReader {
 
     // method (u8)
     var method = ReadU8(this._stream, checksumBuffer);
-    if (method != LzopConstants.MethodLzo1X1)
+    // All three of lzop's methods put ordinary LZO1X on the wire -- they differ
+    // in how hard they look for matches, not in what they emit -- so one decoder
+    // reads all of them. Accepting only the first refused everything lzop -1 or
+    // lzop -7 and above ever wrote, which is most of what people have.
+    if (method is not (LzopConstants.MethodLzo1X1
+        or LzopConstants.MethodLzo1X115 or LzopConstants.MethodLzo1X999))
       throw new InvalidDataException($"Unsupported LZOP compression method: {method}.");
 
     // level (u8)
