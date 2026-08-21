@@ -77,7 +77,15 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
     if (newOffset + length > this._volume!.ImageLength)
       throw new NotSupportedException("NSS: a file cannot reach past the end of the container.");
 
-    if (!this._offsetField.Remove(oldOffset, out var field))
+    // Keyed by where the run STARTED, and never re-keyed. The pass names a run by
+    // its original address even for one it lifted out and put back later, and by
+    // the time it does something else has very likely been laid down there. Moving
+    // the key to the run's new address made this index answer "who lives here now"
+    // instead of "who started here": a run that landed on another's old address
+    // took over that other's record, and the two files swapped contents. It only
+    // shows when files are the same length, because that is when the layout has
+    // reason to put one where another was.
+    if (!this._offsetField.TryGetValue(oldOffset, out var field))
       throw new InvalidOperationException(
         $"NSS: the directory names no file at {oldOffset}, so '{fileName}' cannot be repointed.");
 
@@ -86,7 +94,6 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
     image.Position = field;
     image.Write(value);
 
-    this._offsetField[newOffset] = field;
     image.Flush();
   }
 }

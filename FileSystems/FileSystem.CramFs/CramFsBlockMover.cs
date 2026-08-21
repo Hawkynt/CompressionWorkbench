@@ -16,9 +16,13 @@ namespace FileSystem.CramFs;
 /// entry — the first block's start is implied by where the table ends, so it
 /// follows on its own.</para>
 ///
-/// <para>The inode is found by the offset it still names rather than by the
-/// file's path, so two entries pointing at the same table cannot send the wrong
-/// one somewhere.</para>
+/// <para>Which inode belongs to which run is settled once, before anything
+/// moves, and keyed by where the run started. Searching the live image for the
+/// inode that still names an address looks safer and is not: the pass names a run
+/// by where it began, and by the time a run is repointed another may already have
+/// been laid down where it used to be — so the search finds that other file's
+/// inode and sends it somewhere it never went. Two files of one length then come
+/// back holding each other's bytes, at the right length, with nothing raised.</para>
 ///
 /// <para>The superblock carries a checksum over the whole image. Restamping it
 /// per move would cost a pass over the image each time, so the caller does it
@@ -31,10 +35,14 @@ public sealed class CramFsBlockMover : IFilesystemBlockMover {
 
   private long _firstDataByte;
 
-  /// <summary>Finds where the first file's table starts.</summary>
+  /// <summary>Where each run started, and the inode that names it.</summary>
+  private readonly Dictionary<long, (int InodeOffset, int Blocks)> _inodeOf = [];
+
+  /// <summary>Finds where the first file's table starts, and indexes the inodes.</summary>
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
+    this._inodeOf.Clear();
     image.Position = 0;
     var reader = new CramFsReader(image);
     var first = image.Length;
@@ -42,6 +50,7 @@ public sealed class CramFsBlockMover : IFilesystemBlockMover {
       if (!entry.IsRegularFile) continue;
       var (offset, length) = reader.DataExtent(entry);
       if (length > 0) first = Math.Min(first, offset);
+      this._inodeOf[entry.DataOffset] = (entry.InodeOffset, CramFsReader.BlockCount(entry));
     }
     this._firstDataByte = first;
   }
@@ -86,24 +95,12 @@ public sealed class CramFsBlockMover : IFilesystemBlockMover {
       throw new NotSupportedException(
         $"CramFS: {newOffset} is past what an inode's 26-bit offset field holds.");
 
-    int inodeOffset;
-    int blocks;
-    {
-      image.Position = 0;
-      var reader = new CramFsReader(image);
-      inodeOffset = -1;
-      blocks = 0;
-      foreach (var entry in reader.Entries) {
-        if (!entry.IsRegularFile || entry.DataOffset != oldOffset) continue;
-        inodeOffset = entry.InodeOffset;
-        blocks = CramFsReader.BlockCount(entry);
-        break;
-      }
-    }
-
-    if (inodeOffset < 0)
+    if (this._inodeOf.Count == 0) this.Init(image);
+    if (!this._inodeOf.TryGetValue(oldOffset, out var record))
       throw new InvalidOperationException(
-        $"CramFS: no inode names {oldOffset}, so '{fileName}' cannot be repointed.");
+        $"CramFS: no inode started at {oldOffset}, so '{fileName}' cannot be repointed.");
+
+    var (inodeOffset, blocks) = record;
 
     // The inode's third word packs the name length into its low six bits and
     // the start offset, divided by four, into the rest.

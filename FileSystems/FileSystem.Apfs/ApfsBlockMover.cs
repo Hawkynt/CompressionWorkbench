@@ -89,7 +89,15 @@ public sealed class ApfsBlockMover : IFilesystemBlockMover {
     var newBlock = (ulong)(newOffset / blockSize);
     if (oldBlock == newBlock) return;
 
-    if (!this._extentOf.Remove(oldBlock, out var extent))
+    // Keyed by where the run STARTED, and never re-keyed. The pass names a run by
+    // its original address even for one it lifted out and put back later, and by
+    // the time it does something else has very likely been laid down there. Moving
+    // the key to the run's new address made this index answer "who lives here now"
+    // instead of "who started here": a run that landed on another's old address
+    // took over that other's record, and the two files swapped contents. It only
+    // shows when files are the same length, because that is when the layout has
+    // reason to put one where another was.
+    if (!this._extentOf.TryGetValue(oldBlock, out var extent))
       throw new InvalidOperationException(
         $"APFS: no extent record names block {oldBlock}, so '{fileName}' cannot be repointed.");
 
@@ -99,7 +107,6 @@ public sealed class ApfsBlockMover : IFilesystemBlockMover {
     image.Write(field);
 
     this.RewriteChecksum(image, extent.LeafBlock);
-    this._extentOf[newBlock] = extent;
     image.Flush();
   }
 
