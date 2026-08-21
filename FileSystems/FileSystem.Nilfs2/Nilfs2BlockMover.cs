@@ -92,7 +92,15 @@ public sealed class Nilfs2BlockMover : IFilesystemBlockMover {
         "Nilfs2: a payload cannot reach past the next segment's header, which the reader finds by " +
         "carrying on from where these payloads end.");
 
-    if (!this._offsetField.Remove(oldOffset, out var field))
+    // Keyed by where the run STARTED, and never re-keyed. The pass names a run by
+    // its original address even for one it lifted out and put back later, and by
+    // the time it does something else has very likely been laid down there. Moving
+    // the key to the run's new address made this index answer "who lives here now"
+    // instead of "who started here": a run that landed on another's old address
+    // took over that other's record, and the two files swapped contents. It only
+    // shows when files are the same length, because that is when the layout has
+    // reason to put one where another was.
+    if (!this._offsetField.TryGetValue(oldOffset, out var field))
       throw new InvalidOperationException(
         $"Nilfs2: the directory names no payload at {oldOffset}, so '{fileName}' cannot be repointed.");
 
@@ -101,7 +109,6 @@ public sealed class Nilfs2BlockMover : IFilesystemBlockMover {
     image.Position = field;
     image.Write(value);
 
-    this._offsetField[newOffset] = field;
     image.Flush();
   }
 }

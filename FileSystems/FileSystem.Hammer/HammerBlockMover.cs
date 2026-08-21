@@ -27,6 +27,9 @@ namespace FileSystem.Hammer;
 /// </remarks>
 public sealed class HammerBlockMover : IFilesystemBlockMover {
 
+  /// <summary>Where each run started, and the B-tree element that names it.</summary>
+  private readonly Dictionary<long, (long ElementOffset, long NodeOffset)> _elementOf = [];
+
   /// <summary>Offset of the data offset inside a B-tree leaf element.</summary>
   private const int ElementDataOffset = 48;
 
@@ -54,9 +57,17 @@ public sealed class HammerBlockMover : IFilesystemBlockMover {
 
     this._volumeBufferStart = reader.VolumeBufferStart;
 
+    // Which element names which run is settled here, before anything moves, and
+    // keyed by where the run started. Searching the live volume for the element
+    // that still points at an address finds whatever has since been laid down
+    // there instead, and repoints that other file: two files of one length come
+    // back holding each other's bytes, right length, nothing raised.
+    this._elementOf.Clear();
     var first = long.MaxValue;
-    foreach (var extent in reader.EnumerateDataExtents())
+    foreach (var extent in reader.EnumerateDataExtents()) {
       if (extent.Length > 0) first = Math.Min(first, extent.Offset);
+      this._elementOf[extent.Offset] = (extent.ElementOffset, extent.NodeOffset);
+    }
     this._firstDataByte = first == long.MaxValue ? this._volumeBufferStart : first;
 
     // How far the freemap accounts for the volume: each big-block it hands to a
@@ -120,17 +131,12 @@ public sealed class HammerBlockMover : IFilesystemBlockMover {
         "HAMMER: the destination is past what the freemap accounts for, and the freemap is not " +
         "rewritten here.");
 
+    if (this._elementOf.Count == 0) this.Init(image);
     long elementOffset = -1;
     long nodeOffset = -1;
-    {
-      image.Position = 0;
-      using var reader = HammerReader.Open(image);
-      foreach (var extent in reader.EnumerateDataExtents()) {
-        if (extent.Offset != oldOffset) continue;
-        elementOffset = extent.ElementOffset;
-        nodeOffset = extent.NodeOffset;
-        break;
-      }
+    if (this._elementOf.TryGetValue(oldOffset, out var record)) {
+      elementOffset = record.ElementOffset;
+      nodeOffset = record.NodeOffset;
     }
 
     if (elementOffset < 0)

@@ -35,6 +35,19 @@ public sealed class AmigaPfsBlockMover : IFilesystemBlockMover {
 
   private int _blockSize;
   private readonly List<long> _directoryBlocks = [];
+
+  /// <summary>
+  /// Where in the directory each anode number is written down, read before
+  /// anything moves.
+  /// </summary>
+  /// <remarks>
+  /// The pass names a run by the anode it started at. Searching the live
+  /// directory for the entry that still holds that number finds whatever has
+  /// since been laid down there — another file, already repointed — and sends
+  /// that one somewhere it never went. Two files of one length then come back
+  /// holding each other's bytes, at the right length, with nothing raised.
+  /// </remarks>
+  private readonly Dictionary<uint, long> _entryOfAnode = [];
   private long _firstDataByte;
 
   /// <summary>Reads the geometry and walks the dirblock chain.</summary>
@@ -125,6 +138,21 @@ public sealed class AmigaPfsBlockMover : IFilesystemBlockMover {
     var newAnode = (uint)(newOffset / this._blockSize);
     if (oldAnode == newAnode) return;
 
+    if (this._entryOfAnode.Count == 0) this.IndexDirectoryEntries(image);
+    if (!this._entryOfAnode.TryGetValue(oldAnode, out var fieldAt))
+      throw new InvalidOperationException(
+        $"AmigaPFS: no directory entry started at anode {oldAnode}, so '{fileName}' cannot be repointed.");
+
+    Span<byte> field = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32BigEndian(field, newAnode);
+    image.Position = fieldAt;
+    image.Write(field);
+    image.Flush();
+  }
+
+  /// <summary>Reads where every anode number is written down, once, before any move.</summary>
+  private void IndexDirectoryEntries(Stream image) {
+    this._entryOfAnode.Clear();
     var dirBlock = new byte[this._blockSize];
     foreach (var at in this._directoryBlocks) {
       image.Position = at;
@@ -137,20 +165,10 @@ public sealed class AmigaPfsBlockMover : IFilesystemBlockMover {
         if (entryOffset + entryLength > this._blockSize) break;
         if (entryLength < 17) { entryOffset += entryLength; continue; }
 
-        if (BinaryPrimitives.ReadUInt32BigEndian(dirBlock.AsSpan(entryOffset + EntryAnodeOffset)) == oldAnode) {
-          Span<byte> field = stackalloc byte[4];
-          BinaryPrimitives.WriteUInt32BigEndian(field, newAnode);
-          image.Position = at + entryOffset + EntryAnodeOffset;
-          image.Write(field);
-          image.Flush();
-          return;
-        }
-
+        var anode = BinaryPrimitives.ReadUInt32BigEndian(dirBlock.AsSpan(entryOffset + EntryAnodeOffset));
+        this._entryOfAnode[anode] = at + entryOffset + EntryAnodeOffset;
         entryOffset += entryLength;
       }
     }
-
-    throw new InvalidOperationException(
-      $"AmigaPFS: no directory entry names anode {oldAnode}, so '{fileName}' cannot be repointed.");
   }
 }

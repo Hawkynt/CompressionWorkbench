@@ -45,12 +45,26 @@ public sealed class SharWriter {
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Whether this content has to be uuencoded rather than written as text.
+  /// </summary>
+  /// <remarks>
+  /// <para>The here-document path puts the bytes through
+  /// <see cref="Encoding.UTF8" />, so anything that is not valid UTF-8 does not
+  /// survive it: an invalid byte decodes to the replacement character and comes
+  /// back as the three bytes that encode it. A file of one repeated 0xA1 came
+  /// back three times its length and made of 0xEF 0xBF 0xBD, which is every byte
+  /// of it lost while the archive was written and read without an error.</para>
+  ///
+  /// <para>So any byte with the high bit set counts as binary, not merely the
+  /// control characters. And the whole file is looked at rather than the first
+  /// eight kilobytes of it — a file that is text at the top and binary further in
+  /// was written as text and mangled from there on.</para>
+  /// </remarks>
   private static bool IsBinary(byte[] data) {
-    for (var i = 0; i < Math.Min(data.Length, 8192); ++i) {
-      var b = data[i];
-      if (b == 0 || (b < 0x20 && b != '\t' && b != '\n' && b != '\r'))
+    foreach (var b in data)
+      if (b == 0 || b >= 0x80 || (b < 0x20 && b != '\t' && b != '\n' && b != '\r'))
         return true;
-    }
     return false;
   }
 

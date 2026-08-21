@@ -47,6 +47,22 @@ public sealed class HpfsBlockMover : IFilesystemBlockMover {
 
     var bitmapLba = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(24));
     this._bitmapLba = bitmapLba == 0 ? DefaultBitmapLba : bitmapLba;
+
+    // Which fnode owns which run is settled here, before anything moves, and
+    // keyed by where the run started. Asking the live volume which fnode still
+    // names an LBA finds whatever has since been laid down there and repoints
+    // that file instead — two files of one length then come back holding each
+    // other's bytes, at the right length, with nothing raised.
+    this._fnodeOf.Clear();
+    image.Position = 0;
+    using (var reader = new HpfsReader(image)) {
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory || entry.IsBtreeFile) continue;
+        if (entry.FnodeLba == 0) continue;
+        this._fnodeOf[entry.DataLba] = entry.FnodeLba;
+      }
+    }
+
     this._initialised = true;
   }
 
@@ -93,7 +109,7 @@ public sealed class HpfsBlockMover : IFilesystemBlockMover {
     var newLba = (uint)(newOffset / LbaSize);
     if (oldLba == newLba) return;
 
-    var fnodeLba = this.FindFnodeNaming(image, oldLba);
+    var fnodeLba = this._fnodeOf.GetValueOrDefault(oldLba);
     if (fnodeLba == 0)
       throw new InvalidOperationException(
         $"HPFS: no fnode names LBA {oldLba}, so '{fileName}' cannot be repointed.");
@@ -117,16 +133,13 @@ public sealed class HpfsBlockMover : IFilesystemBlockMover {
     image.Flush();
   }
 
-  /// <summary>The fnode whose allocation entry still starts at <paramref name="lba" />, or zero.</summary>
+  /// <summary>The fnode whose allocation entry started at each LBA, as read before any move.</summary>
+  private readonly Dictionary<uint, uint> _fnodeOf = [];
+
+  /// <summary>Kept for callers that want the pre-move owner of an LBA.</summary>
   private uint FindFnodeNaming(Stream image, uint lba) {
-    image.Position = 0;
-    using var reader = new HpfsReader(image);
-    foreach (var entry in reader.Entries) {
-      if (entry.IsDirectory || entry.IsBtreeFile) continue;
-      if (entry.FnodeLba == 0 || entry.DataLba != lba) continue;
-      return entry.FnodeLba;
-    }
-    return 0;
+    if (!this._initialised) this.Init(image);
+    return this._fnodeOf.GetValueOrDefault(lba);
   }
 
   /// <summary>
