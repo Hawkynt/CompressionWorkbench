@@ -180,14 +180,37 @@ public static class FatPlusModifier {
     var totalDataClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
     var fatType = totalDataClusters < 4085 ? 12 : totalDataClusters < 65525 ? 16 : 32;
 
-    var rootDirOffset = fatType == 32
-      ? (firstDataSector + (BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(44)) - 2) * sectorsPerCluster) * bytesPerSector
-      : (reservedSectors + fatCount * fatSize) * bytesPerSector;
-    var rootDirCapacity = fatType == 32 ? clusterSize : rootEntryCount * 32;
-
-    var (entryIndex, firstLfnIndex) = FindEntry(image, rootDirOffset, rootDirCapacity, fileName);
-    if (entryIndex < 0)
-      throw new FileNotFoundException($"File '{fileName}' not found in FAT+ root directory.");
+    int rootDirOffset, rootDirCapacity, entryIndex, firstLfnIndex;
+    if (fatType == 32) {
+      // A FAT32 root directory is a cluster chain, not a cluster. Searching only
+      // the first one hid every entry past it — with a one-sector cluster that
+      // is sixteen files, after which a file that lists perfectly cannot be
+      // removed because the search never reaches its half of the directory.
+      var rootFirstCluster = BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(44));
+      rootDirOffset = -1;
+      rootDirCapacity = clusterSize;
+      entryIndex = -1;
+      firstLfnIndex = -1;
+      foreach (var cluster in WalkChain(image, rootFirstCluster, reservedSectors, bytesPerSector,
+                                        fatType, totalDataClusters)) {
+        var clusterOffset = (firstDataSector + (cluster - 2) * sectorsPerCluster) * bytesPerSector;
+        if (clusterOffset < 0 || clusterOffset + clusterSize > image.Length) continue;
+        var (index, lfn) = FindEntry(image, clusterOffset, clusterSize, fileName);
+        if (index < 0) continue;
+        rootDirOffset = clusterOffset;
+        entryIndex = index;
+        firstLfnIndex = lfn;
+        break;
+      }
+      if (entryIndex < 0)
+        throw new FileNotFoundException($"File '{fileName}' not found in FAT+ root directory.");
+    } else {
+      rootDirOffset = (reservedSectors + fatCount * fatSize) * bytesPerSector;
+      rootDirCapacity = rootEntryCount * 32;
+      (entryIndex, firstLfnIndex) = FindEntry(image, rootDirOffset, rootDirCapacity, fileName);
+      if (entryIndex < 0)
+        throw new FileNotFoundException($"File '{fileName}' not found in FAT+ root directory.");
+    }
 
     var entryOffset = rootDirOffset + entryIndex * 32;
     var firstClusterLow = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(entryOffset + 26));
