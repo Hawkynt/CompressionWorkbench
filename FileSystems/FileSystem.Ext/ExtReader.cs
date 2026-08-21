@@ -241,10 +241,32 @@ public sealed class ExtReader : IDisposable {
     var ehEntries = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(42));
     var ehDepth = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(46));
 
-    ReadExtentNode(inode.AsSpan(40, 60).ToArray(), 0, ehEntries, ehDepth, ms, ref remaining);
+    var logicalBlock = 0L;
+    ReadExtentNode(inode.AsSpan(40, 60).ToArray(), 0, ehEntries, ehDepth, ms,
+      ref remaining, ref logicalBlock);
   }
 
-  private void ReadExtentNode(byte[] nodeData, int headerOffset, int entries, int depth, Stream ms, ref long remaining) {
+  /// <summary>
+  /// Walks an extent tree, keeping track of where in the file it has got to.
+  /// </summary>
+  /// <remarks>
+  /// <para>An extent says which logical block of the file it starts at, and that
+  /// is not the same as the order the extents come in. A file with a hole in it
+  /// simply has no extent covering it: the next extent's ee_block jumps past the
+  /// gap. Concatenating the extents and ignoring ee_block gives back the
+  /// allocated blocks only, packed together -- so a two-hundred-kilobyte file
+  /// with something at each end came back as eight kilobytes, its two ends
+  /// touching, at the wrong length and with the data in the wrong place.</para>
+  ///
+  /// <para>ext4 is what mke2fs writes by default and what sparse files on Linux
+  /// mostly live on, so this is the common case rather than a corner of one.</para>
+  ///
+  /// <para>An extent flagged uninitialised is allocated and never written, and
+  /// reads as zeros. Copying the blocks it names would hand back whatever those
+  /// blocks happen to hold, which is somebody else's deleted data.</para>
+  /// </remarks>
+  private void ReadExtentNode(byte[] nodeData, int headerOffset, int entries, int depth, Stream ms,
+      ref long remaining, ref long logicalBlock) {
     if (depth == 0) {
       // Leaf node - read extents
       for (var i = 0; i < entries && remaining > 0; i++) {
@@ -252,21 +274,35 @@ public sealed class ExtReader : IDisposable {
         if (extOffset + 12 > nodeData.Length) break;
 
         // Extent: ee_block(4), ee_len(2), ee_start_hi(2), ee_start_lo(4)
+        var eeBlock = BinaryPrimitives.ReadUInt32LittleEndian(nodeData.AsSpan(extOffset));
         var len = BinaryPrimitives.ReadUInt16LittleEndian(nodeData.AsSpan(extOffset + 4));
         var startHi = BinaryPrimitives.ReadUInt16LittleEndian(nodeData.AsSpan(extOffset + 6));
         var startLo = BinaryPrimitives.ReadUInt32LittleEndian(nodeData.AsSpan(extOffset + 8));
         var startBlock = ((long)startHi << 32) | startLo;
 
-        // Uninitialized extent flag: top bit of len
-        var actualLen = len & 0x7FFF;
+        // Whatever lies between where the file has got to and where this extent
+        // begins is a hole, and has to be given back as the zeros it stands for.
+        if (eeBlock > logicalBlock) {
+          ReadHole(ms, ref remaining, (eeBlock - logicalBlock) * _blockSize);
+          logicalBlock = eeBlock;
+          if (remaining <= 0) break;
+        }
+
+        // A length over 32768 marks an extent that is allocated and unwritten.
+        var uninitialised = len > 32768;
+        var actualLen = uninitialised ? len - 32768 : len;
 
         for (var b = 0; b < actualLen && remaining > 0; b++) {
+          var toRead = (int)Math.Min(remaining, _blockSize);
+          if (uninitialised) { ReadHole(ms, ref remaining, toRead); continue; }
+
           var blockOff = (startBlock + b) * _blockSize;
           if (blockOff + _blockSize > _data.Length) break;
-          var toRead = (int)Math.Min(remaining, _blockSize);
           _data.CopyTo(blockOff, ms, toRead);
           remaining -= toRead;
         }
+
+        logicalBlock += actualLen;
       }
     } else {
       // Internal node - read index entries and recurse
@@ -289,7 +325,7 @@ public sealed class ExtReader : IDisposable {
         var childEntries = BinaryPrimitives.ReadUInt16LittleEndian(childNode.AsSpan(2));
         var childDepth = BinaryPrimitives.ReadUInt16LittleEndian(childNode.AsSpan(6));
 
-        ReadExtentNode(childNode, 0, childEntries, childDepth, ms, ref remaining);
+        ReadExtentNode(childNode, 0, childEntries, childDepth, ms, ref remaining, ref logicalBlock);
       }
     }
   }
