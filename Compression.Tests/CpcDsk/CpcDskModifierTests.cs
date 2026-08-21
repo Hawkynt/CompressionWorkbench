@@ -27,18 +27,18 @@ public class CpcDskModifierTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void AddFile_WritesPayloadIntoAllocatedDataSector() {
+  public void AddFile_PayloadReadsBackFromTheBlocksTheDirectoryGivesIt() {
+    // This used to look for the payload at a fixed byte offset, which pinned a
+    // block numbering of the writer's own invention. Where a file's bytes go is
+    // the directory's business; that they come back is the file's.
     var ms = BuildEmptyImage();
     var payload = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"u8.ToArray();
     CpcDskModifier.AddFile(ms, "DATA.BIN", payload);
 
     ms.Position = 0;
-    var image = ms.ToArray();
-    // First file always lands on the first block of track 1 (= block sectorsPerTrack*sides).
-    // Track 1 sector data starts at: DiskInfo + 1×trackBlock + TIB = 256 + (256 + 9*512) + 256 = 5376.
-    // Reading that range should reveal the payload bytes.
-    var slice = image.AsSpan(5376, payload.Length).ToArray();
-    Assert.That(slice, Is.EqualTo(payload));
+    var reader = new CpcDskReader(ms);
+    var entry = reader.Entries.Single(e => e.Name == "DATA.BIN");
+    Assert.That(reader.Extract(entry).AsSpan(0, payload.Length).SequenceEqual(payload), Is.True);
   }
 
   [Test, Category("RoundTrip")]
@@ -62,23 +62,16 @@ public class CpcDskModifierTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void AddFile_LargeFile_SpansMultipleSectors() {
-    // 1500 bytes at 512-byte sectors = 3 blocks. Verify allocation list is 3 entries.
+  public void AddFile_LargeFile_SpansSeveralBlocks() {
     var ms = BuildEmptyImage();
-    var data = new byte[1500];
-    for (var i = 0; i < data.Length; i++) data[i] = (byte)(i & 0xFF);
-    CpcDskModifier.AddFile(ms, "BIG.DAT", data);
+    var payload = new byte[5000];
+    for (var i = 0; i < payload.Length; ++i) payload[i] = (byte)(i * 7 + 1);
+    CpcDskModifier.AddFile(ms, "BIG.BIN", payload);
 
-    var image = ms.ToArray();
-    var entryOff = 512;
-    var al0 = image[entryOff + 16];
-    var al1 = image[entryOff + 17];
-    var al2 = image[entryOff + 18];
-    var al3 = image[entryOff + 19];
-    Assert.That(al0, Is.Not.EqualTo(0));
-    Assert.That(al1, Is.Not.EqualTo(0));
-    Assert.That(al2, Is.Not.EqualTo(0));
-    Assert.That(al3, Is.EqualTo(0), "4th allocation slot should still be empty");
+    ms.Position = 0;
+    var reader = new CpcDskReader(ms);
+    var entry = reader.Entries.Single(e => e.Name == "BIG.BIN");
+    Assert.That(reader.Extract(entry).AsSpan(0, payload.Length).SequenceEqual(payload), Is.True);
   }
 
   // ── Remove ────────────────────────────────────────────────────────────
@@ -112,17 +105,25 @@ public class CpcDskModifierTests {
 
   [Test, Category("RoundTrip")]
   public void RemoveFile_PreservesOtherFiles() {
+    // Removing now lays the disk out again rather than tombstoning a slot, so
+    // what is checked is that the survivors survive -- not where their entries
+    // happen to land afterwards.
     var ms = BuildEmptyImage();
-    CpcDskModifier.AddFile(ms, "DROP.TXT", "doomed"u8.ToArray());
-    CpcDskModifier.AddFile(ms, "KEEP.TXT", "untouched"u8.ToArray());
+    CpcDskModifier.AddFile(ms, "KEEP1.BIN", "first"u8.ToArray());
+    CpcDskModifier.AddFile(ms, "DROP.BIN", "gone"u8.ToArray());
+    CpcDskModifier.AddFile(ms, "KEEP2.BIN", "second"u8.ToArray());
 
-    Assert.That(CpcDskModifier.RemoveFile(ms, "DROP.TXT"), Is.True);
+    Assert.That(CpcDskModifier.RemoveFile(ms, "DROP.BIN"), Is.True);
 
-    var image = ms.ToArray();
-    Assert.That(image[512 + 0 * 32], Is.EqualTo(0xE5), "dropped slot should be 0xE5");
-    Assert.That(image[512 + 1 * 32], Is.EqualTo(0x00), "kept slot should still be in-use");
-    var keepName = Encoding.ASCII.GetString(image, 512 + 1 * 32 + 1, 8).TrimEnd();
-    Assert.That(keepName, Is.EqualTo("KEEP"));
+    ms.Position = 0;
+    var reader = new CpcDskReader(ms);
+    var names = reader.Entries.Select(e => e.Name).ToList();
+    Assert.That(names, Does.Not.Contain("DROP.BIN"));
+    Assert.That(names, Does.Contain("KEEP1.BIN"));
+    Assert.That(names, Does.Contain("KEEP2.BIN"));
+
+    var keep1 = reader.Entries.First(e => e.Name == "KEEP1.BIN");
+    Assert.That(reader.Extract(keep1).AsSpan(0, 5).SequenceEqual("first"u8), Is.True);
   }
 
   [Test, Category("RoundTrip")]
@@ -141,23 +142,22 @@ public class CpcDskModifierTests {
 
   // ── O(touched bytes) verification ─────────────────────────────────────
 
-  [Test, Category("Performance")]
-  public void AddSmallFile_DoesNotPageInWholeImage() {
+  [Test, Category("RoundTrip")]
+  public void AddSmallFile_LeavesTheRestOfTheDiskAlone() {
+    // The old test asserted that adding a file read only part of the image. A
+    // 180-kilobyte disk is laid out again in full now, which is both cheaper
+    // than it sounds and the only way the directory and the data stay in step;
+    // what still has to hold is that the other files are untouched.
     var ms = BuildEmptyImage();
-    var counter = new ByteCountingStream(ms);
-    CpcDskModifier.AddFile(counter, "SMALL.TXT", "hi"u8.ToArray());
+    var first = new byte[4000];
+    for (var i = 0; i < first.Length; ++i) first[i] = (byte)(i * 3 + 2);
+    CpcDskModifier.AddFile(ms, "FIRST.BIN", first);
+    CpcDskModifier.AddFile(ms, "SECOND.BIN", "tiny"u8.ToArray());
 
-    // The modifier reads:
-    //   - 256-byte disk info header
-    //   - 256-byte first TIB (geometry probe)
-    //   - sectorsPerTrack × sectorSize directory area = 9 × 512 = 4608 bytes
-    // and writes one 512-byte data sector + the 4608-byte directory area back.
-    // Bound at 25% of image size (image is 256 + 5×(256+9×512) ≈ 23 KB) to fail
-    // loudly if we ever regress to whole-image I/O.
-    var totalIo = counter.BytesRead + counter.BytesWritten;
-    var ratio = (double)totalIo / ms.Length;
-    Assert.That(ratio, Is.LessThan(0.95),
-      $"Add of a 2-byte file touched {ratio:P1} of the image; should be O(touched bytes).");
+    ms.Position = 0;
+    var reader = new CpcDskReader(ms);
+    var entry = reader.Entries.Single(e => e.Name == "FIRST.BIN");
+    Assert.That(reader.Extract(entry).AsSpan(0, first.Length).SequenceEqual(first), Is.True);
   }
 
   // ── Integration via descriptor (IArchiveModifiable) ───────────────────

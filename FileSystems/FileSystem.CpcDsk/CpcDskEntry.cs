@@ -2,19 +2,30 @@
 namespace FileSystem.CpcDsk;
 
 /// <summary>
-/// Represents a single sector in a CPC DSK disk image.
+/// One file on an Amstrad CPC disk, as its AMSDOS directory entry describes it.
 /// </summary>
 public sealed class CpcDskEntry {
-  /// <summary>Display name, formatted as "T{track:D2}S{side}_{sectorId:X2}".</summary>
+  /// <summary>The file's name, in CP/M's eight-and-three.</summary>
   public string Name { get; init; } = "";
-  /// <summary>Physical track number (0-based).</summary>
+
+  /// <summary>Track its first block starts on (0-based).</summary>
   public int Track { get; init; }
-  /// <summary>Physical side number (0 or 1).</summary>
+
+  /// <summary>Side its first block starts on (0 or 1).</summary>
   public int Side { get; init; }
-  /// <summary>Sector ID byte as stored in the sector info block (not necessarily 1-based).</summary>
+
+  /// <summary>Id of the sector its first block starts at; DATA-format disks run from &amp;C1.</summary>
   public byte SectorId { get; init; }
-  /// <summary>Size of the sector data in bytes.</summary>
+
+  /// <summary>
+  /// The file's length in bytes, which CP/M records only as a count of 128-byte
+  /// records — so it is the written length rounded up to the next record.
+  /// </summary>
   public int Size { get; init; }
-  /// <summary>Absolute byte offset of the sector data within the DSK stream.</summary>
+
+  /// <summary>Absolute byte offset of the file's first block within the DSK stream.</summary>
   internal long DataOffset { get; init; }
+
+  /// <summary>The allocation blocks the directory gives it, in file order.</summary>
+  internal IReadOnlyList<int> Blocks { get; init; } = [];
 }
