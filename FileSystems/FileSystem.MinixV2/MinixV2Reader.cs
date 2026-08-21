@@ -116,22 +116,53 @@ public sealed class MinixV2Reader : IDisposable {
     return ReadZones(zones, size);
   }
 
+
+  /// <summary>
+  /// Emits the zeros a hole stands for, and counts them against what is left.
+  /// </summary>
+  /// <remarks>
+  /// A zero pointer in one of these block maps does not mean the file ends there.
+  /// It means the file holds nothing in that block, and every reader of the format
+  /// hands back zeros for it and carries on. Stopping instead cut a file off at
+  /// its first hole -- which is how a volume any of the reference tools left
+  /// sparse would have been read here, not merely one this project wrote.
+  /// </remarks>
+  private static void AppendHole(Stream ms, ref long remaining, long bytes) {
+    var toWrite = Math.Min(remaining, bytes);
+    if (toWrite <= 0) return;
+
+    var zeros = new byte[Math.Min(toWrite, 64 * 1024)];
+    while (toWrite > 0) {
+      var chunk = (int)Math.Min(zeros.Length, toWrite);
+      ms.Write(zeros, 0, chunk);
+      toWrite -= chunk;
+      remaining -= chunk;
+    }
+  }
+
   private byte[] ReadZones(uint[] zones, uint size) {
     if (size == 0) return [];
     using var ms = new MemoryStream();
     var remaining = (long)size;
 
     for (var i = 0; i < 7 && remaining > 0; i++) {
-      if (zones[i] == 0) break;
+      // A zero zone is a hole the width of one block, not the end of the file.
+      if (zones[i] == 0) { AppendHole(ms, ref remaining, BlockSize); continue; }
       AppendZone(ms, zones[i], ref remaining);
     }
 
-    if (remaining > 0 && zones[7] != 0)
-      ReadIndirect(ms, zones[7], ref remaining, 1);
-    if (remaining > 0 && zones[8] != 0)
-      ReadIndirect(ms, zones[8], ref remaining, 2);
-    if (remaining > 0 && zones[9] != 0)
-      ReadIndirect(ms, zones[9], ref remaining, 3);
+    if (remaining > 0) {
+      if (zones[7] != 0) ReadIndirect(ms, zones[7], ref remaining, 1);
+      else AppendHole(ms, ref remaining, (long)(BlockSize / 4) * BlockSize);
+    }
+    if (remaining > 0) {
+      if (zones[8] != 0) ReadIndirect(ms, zones[8], ref remaining, 2);
+      else AppendHole(ms, ref remaining, (long)(BlockSize / 4) * BlockSize * (BlockSize / 4));
+    }
+    if (remaining > 0) {
+      if (zones[9] != 0) ReadIndirect(ms, zones[9], ref remaining, 3);
+      else AppendHole(ms, ref remaining, (long)(BlockSize / 4) * BlockSize * (BlockSize / 4) * (BlockSize / 4));
+    }
 
     return ms.ToArray();
   }
@@ -243,11 +274,15 @@ public sealed class MinixV2Reader : IDisposable {
     var ptrsPerBlock = BlockSize / 4; // 32-bit zone pointers in V2
     for (var i = 0; i < ptrsPerBlock && remaining > 0; i++) {
       var ptr = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan((int)offset + i * 4));
-      if (ptr == 0) break;
-      if (level == 1)
-        AppendZone(ms, ptr, ref remaining);
-      else
-        ReadIndirect(ms, ptr, ref remaining, level - 1);
+      if (ptr == 0) {
+        // Everything this pointer would have addressed is hole.
+        var span = (long)BlockSize;
+        for (var l = 1; l < level; ++l) span *= ptrsPerBlock;
+        AppendHole(ms, ref remaining, span);
+        continue;
+      }
+      if (level == 1) AppendZone(ms, ptr, ref remaining);
+      else ReadIndirect(ms, ptr, ref remaining, level - 1);
     }
   }
 

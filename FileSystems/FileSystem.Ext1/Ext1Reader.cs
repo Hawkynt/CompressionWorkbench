@@ -121,14 +121,40 @@ public sealed class Ext1Reader : IDisposable {
     this.ReadBlockPointers(inode, sizelow, destination);
   }
 
+
+  /// <summary>
+  /// Emits the zeros a hole stands for, and counts them against what is left.
+  /// </summary>
+  /// <remarks>
+  /// A zero pointer in one of these block maps does not mean the file ends there.
+  /// It means the file holds nothing in that block, and every reader of the format
+  /// hands back zeros for it and carries on. Stopping instead cut a file off at
+  /// its first hole -- which is how a volume any of the reference tools left
+  /// sparse would have been read here, not merely one this project wrote.
+  /// </remarks>
+  private static void AppendHole(Stream ms, ref long remaining, long bytes) {
+    var toWrite = Math.Min(remaining, bytes);
+    if (toWrite <= 0) return;
+
+    var zeros = new byte[Math.Min(toWrite, 64 * 1024)];
+    while (toWrite > 0) {
+      var chunk = (int)Math.Min(zeros.Length, toWrite);
+      ms.Write(zeros, 0, chunk);
+      toWrite -= chunk;
+      remaining -= chunk;
+    }
+  }
+
   private void ReadBlockPointers(byte[] inode, uint size, Stream ms) {
     var remaining = (long)size;
 
     // 12 direct block pointers at inode offset 40
     for (var i = 0; i < 12 && remaining > 0; i++) {
       var blockNum = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(40 + i * 4));
-      if (blockNum == 0) break;
       var toRead = (int)Math.Min(remaining, this._blockSize);
+      // A zero pointer is a hole, not the end of the file.
+      if (blockNum == 0) { AppendHole(ms, ref remaining, toRead); continue; }
+
       var offset = (long)blockNum * this._blockSize;
       if (offset + toRead > this._data.Length) break;
       this._data.CopyTo(offset, ms, toRead);
@@ -137,20 +163,23 @@ public sealed class Ext1Reader : IDisposable {
 
     if (remaining > 0) {
       var indirectBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(88));
-      if (indirectBlock != 0)
-        this.ReadIndirectBlock(indirectBlock, ms, ref remaining, 1);
+      if (indirectBlock != 0) this.ReadIndirectBlock(indirectBlock, ms, ref remaining, 1);
+      // A zero root is a hole as wide as the level addresses, not a stop.
+      else AppendHole(ms, ref remaining, (long)(this._blockSize / 4) * this._blockSize);
     }
 
     if (remaining > 0) {
       var dindirectBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(92));
-      if (dindirectBlock != 0)
-        this.ReadIndirectBlock(dindirectBlock, ms, ref remaining, 2);
+      if (dindirectBlock != 0) this.ReadIndirectBlock(dindirectBlock, ms, ref remaining, 2);
+      // A zero root is a hole as wide as the level addresses, not a stop.
+      else AppendHole(ms, ref remaining, (long)(this._blockSize / 4) * this._blockSize * (this._blockSize / 4));
     }
 
     if (remaining > 0) {
       var tindirectBlock = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(96));
-      if (tindirectBlock != 0)
-        this.ReadIndirectBlock(tindirectBlock, ms, ref remaining, 3);
+      if (tindirectBlock != 0) this.ReadIndirectBlock(tindirectBlock, ms, ref remaining, 3);
+      // A zero root is a hole as wide as the level addresses, not a stop.
+      else AppendHole(ms, ref remaining, (long)(this._blockSize / 4) * this._blockSize * (this._blockSize / 4) * (this._blockSize / 4));
     }
   }
 
@@ -162,7 +191,13 @@ public sealed class Ext1Reader : IDisposable {
     var pointersPerBlock = this._blockSize / 4;
     for (var i = 0; i < pointersPerBlock && remaining > 0; i++) {
       var ptr = this._data.ReadUInt32(offset + i * 4);
-      if (ptr == 0) break;
+      if (ptr == 0) {
+        // Everything this pointer would have addressed is hole.
+        var span = (long)this._blockSize;
+        for (var l = 1; l < level; ++l) span *= pointersPerBlock;
+        AppendHole(ms, ref remaining, span);
+        continue;
+      }
       if (level == 1) {
         var toRead = (int)Math.Min(remaining, this._blockSize);
         var dataOff = (long)ptr * this._blockSize;

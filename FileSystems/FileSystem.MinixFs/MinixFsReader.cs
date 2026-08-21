@@ -224,23 +224,55 @@ public sealed class MinixFsReader : IDisposable {
 
     // Direct zones
     for (var i = 0; i < directCount && remaining > 0; i++) {
-      if (zones[i] == 0) break;
+      // A zero zone is a hole the width of one block, not the end of the file.
+      if (zones[i] == 0) { AppendHole(ms, ref remaining, _blockSize); continue; }
       AppendZone(ms, zones[i], ref remaining);
     }
 
     // Single indirect
-    if (remaining > 0 && indirectIdx < zones.Length && zones[indirectIdx] != 0)
-      ReadIndirect(ms, zones[indirectIdx], ref remaining, 1);
+    if (remaining > 0 && indirectIdx < zones.Length) {
+      if (zones[indirectIdx] != 0) ReadIndirect(ms, zones[indirectIdx], ref remaining, 1);
+      else AppendHole(ms, ref remaining, (long)(_blockSize / 4) * _blockSize);
+    }
 
     // Double indirect
-    if (remaining > 0 && dindirectIdx < zones.Length && zones[dindirectIdx] != 0)
-      ReadIndirect(ms, zones[dindirectIdx], ref remaining, 2);
+    if (remaining > 0 && dindirectIdx < zones.Length) {
+      if (zones[dindirectIdx] != 0) ReadIndirect(ms, zones[dindirectIdx], ref remaining, 2);
+      else AppendHole(ms, ref remaining, (long)(_blockSize / 4) * _blockSize * (_blockSize / 4));
+    }
 
     // Triple indirect (V3 only)
-    if (remaining > 0 && tindirectIdx >= 0 && tindirectIdx < zones.Length && zones[tindirectIdx] != 0)
-      ReadIndirect(ms, zones[tindirectIdx], ref remaining, 3);
+    if (remaining > 0 && tindirectIdx >= 0 && tindirectIdx < zones.Length) {
+      if (zones[tindirectIdx] != 0) ReadIndirect(ms, zones[tindirectIdx], ref remaining, 3);
+      else AppendHole(ms, ref remaining,
+        (long)(_blockSize / 4) * _blockSize * (_blockSize / 4) * (_blockSize / 4));
+    }
 
     return ms.ToArray();
+  }
+
+
+  /// <summary>
+  /// Emits the zeros a hole stands for, and counts them against what is left.
+  /// </summary>
+  /// <remarks>
+  /// A zero pointer in one of these block maps does not mean the file ends there.
+  /// It means the file holds nothing in that block, and every reader of the format
+  /// hands back zeros for it and carries on. Stopping instead cut a file off at
+  /// its first hole -- which is how a volume any of the reference tools left
+  /// sparse would have been read here, not merely one this project wrote.
+  /// </remarks>
+  private static void AppendHole(Stream ms, ref long remaining, long bytes) {
+    var toWrite = Math.Min(remaining, bytes);
+    if (toWrite <= 0) return;
+
+    var zeros = new byte[Math.Min(toWrite, 64 * 1024)];
+    while (toWrite > 0) {
+      var chunk = (int)Math.Min(zeros.Length, toWrite);
+      ms.Write(zeros, 0, chunk);
+      toWrite -= chunk;
+      remaining -= chunk;
+    }
   }
 
   private void AppendZone(MemoryStream ms, uint zone, ref long remaining) {
@@ -259,7 +291,13 @@ public sealed class MinixFsReader : IDisposable {
     var ptrsPerBlock = _blockSize / 4;
     for (var i = 0; i < ptrsPerBlock && remaining > 0; i++) {
       var ptr = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan((int)offset + i * 4));
-      if (ptr == 0) break;
+      if (ptr == 0) {
+        // Everything this pointer would have addressed is hole.
+        var span = (long)_blockSize;
+        for (var l = 1; l < level; ++l) span *= ptrsPerBlock;
+        AppendHole(ms, ref remaining, span);
+        continue;
+      }
       if (level == 1)
         AppendZone(ms, ptr, ref remaining);
       else
