@@ -219,55 +219,13 @@ public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
 
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      archive.Position = 0;
-      using var snapshot = new MemoryStream();
-      archive.CopyTo(snapshot);
-      try {
-        archive.Position = 0;
-        DefragmentWithPlanner(archive, options);
-        return;
-      } catch {
-        archive.Position = 0;
-        snapshot.Position = 0;
-        snapshot.CopyTo(archive);
-        archive.SetLength(snapshot.Length);
-        archive.Position = 0;
-      }
-    }
-
+    // Every mode lays the disk out again. A CP/M directory names a file by the
+    // allocation blocks it holds, and those blocks straddle the Track-Info blocks
+    // an image puts between its tracks -- so there is no run of bytes a planner
+    // could move that the directory could then describe. Laying it out again
+    // reallocates the blocks in order, which is what defragmenting a CP/M disk
+    // is, and on 180 kilobytes it costs nothing. See CpcDskBlockMover.
     DefragmentWithRebuild(archive, options);
-  }
-
-  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
-    archive.Position = 0;
-    var imageSize = archive.Length;
-
-    var mover = new CpcDskBlockMover();
-    mover.Init(archive);
-
-    var extents = CpcDskExtentMap.Enumerate(archive).ToList();
-    options.OnProgress?.Invoke(new DefragProgressEvent(
-      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
-      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
-
-    var moves = Compression.Core.Layout.DefragPlanner.Plan(
-      extents, mover.BlockToOffset(mover.FirstDataBlock), imageSize, mover.SectorSize,
-      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
-
-    if (moves.Count == 0) {
-      options.OnProgress?.Invoke(new DefragProgressEvent(
-        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
-        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
-      return;
-    }
-
-    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize, () => mover.Init(archive));
-
-    var postExtents = CpcDskExtentMap.Enumerate(archive).ToList();
-    options.OnProgress?.Invoke(new DefragProgressEvent(
-      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
-      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
   }
 
   private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
