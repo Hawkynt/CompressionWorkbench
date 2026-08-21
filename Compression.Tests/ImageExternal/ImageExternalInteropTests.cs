@@ -58,7 +58,28 @@ public class ImageExternalInteropTests {
     if (!FsInteropToolbox.WslHasTool(tool))
       Assert.Ignore($"WSL tool '{tool}' not installed. Install via "
                     + "`sudo apt install -y imagemagick exiftool webp libavif-bin`.");
+
+    // Being on the PATH is not the same as being able to run. `exiftool` is a
+    // Perl script, and where another Perl shadows the system one it is found,
+    // started, and dies before it ever opens the file — every invocation exits
+    // non-zero with nothing on stdout. Read as a verdict that is "the tool
+    // rejected our image", which is a defect report against a file the tool
+    // never looked at. A checker that cannot start has no opinion to record.
+    var smoke = FsInteropToolbox.RunWsl($"{tool} --version 2>&1; {tool} -ver 2>&1");
+    foreach (var symptom in BrokenToolSymptoms)
+      if (smoke.StdOut.Contains(symptom, StringComparison.Ordinal))
+        Assert.Ignore($"'{tool}' is on the PATH but cannot run here ({symptom}); "
+                      + "it has no verdict to give about our output.");
   }
+
+  /// <summary>What a tool that never started says instead of what it thinks.</summary>
+  private static readonly string[] BrokenToolSymptoms = [
+    "Can't locate",                          // a Perl script whose modules are not on this interpreter's path
+    "ModuleNotFoundError",                   // the same in Python
+    "error while loading shared libraries",  // a binary missing a library
+    "command not found",                     // a wrapper naming an interpreter that is not here
+    "No such file or directory",
+  ];
 
   /// <summary>
   /// Mints a 4x4 solid-colour reference image of the given file via ImageMagick
