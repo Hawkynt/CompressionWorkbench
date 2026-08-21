@@ -260,7 +260,13 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (input.IsDirectory) continue;
       var name = input.ArchiveName.Replace('\\', '/');
       var idx = ParseBlockIndex(name);
-      if (idx < 0) continue;
+      // A name this cannot place is not a name to pass over: writing nothing and
+      // raising nothing reports an add that did not happen.
+      if (idx < 0)
+        throw new NotSupportedException(
+          $"CSO: '{input.ArchiveName}' cannot be added. A compressed ISO is edited a block at a "
+          + "time, so an entry has to be named 'block_NNNNN.bin' for the block it replaces. "
+          + "Adding a file to the ISO 9660 filesystem inside it is not something this supports.");
       CsoInPlaceModifier.WriteBlock(archive, idx, input.ReadContent());
     }
   }
@@ -278,7 +284,11 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var name in entryNames) {
       var clean = name.Replace('\\', '/');
       var idx = ParseBlockIndex(clean);
-      if (idx < 0) continue;
+      if (idx < 0)
+        throw new NotSupportedException(
+          $"CSO: '{name}' cannot be removed. A compressed ISO is edited a block at a time, so an "
+          + "entry has to be named 'block_NNNNN.bin' for the block it clears. Removing a file from "
+          + "the ISO 9660 filesystem inside it is not something this supports.");
       CsoInPlaceModifier.WriteBlock(archive, idx, zero);
     }
   }

@@ -439,22 +439,24 @@ public class SparseimageInPlaceModifyTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void Descriptor_Add_NonBandEntries_SilentlySkipped() {
+  public void Descriptor_Add_NonBandEntries_IsRefused() {
+    // The image being unchanged was the whole assertion, and it held because the
+    // entry was quietly discarded. Leaving the image alone is correct; doing it
+    // in silence let a caller believe a band had been written.
     var img = BuildThreeBandImage(out var bandA, out _);
     var original = (byte[])img.Clone();
     using var ms = new MemoryStream(img, writable: true);
 
     var desc = new SparseimageFormatDescriptor();
-    // Mismatched name: not a band-*.bin → ignored.
-    desc.Add(ms, [
+    Assert.Throws<NotSupportedException>(() => desc.Add(ms, [
       ArchiveInputInfo.InMemory("HELLO.TXT", "world"u8.ToArray()),
-    ]);
-    // Wrong payload size: ignored.
-    desc.Add(ms, [
-      ArchiveInputInfo.InMemory(SparseimageInPlaceModifier.FormatBandEntryName(0), new byte[BandSize - 1]),
-    ]);
+    ]), "a name that names no band should be refused");
 
-    Assert.That(img, Is.EqualTo(original));
+    Assert.Throws<ArgumentException>(() => desc.Add(ms, [
+      ArchiveInputInfo.InMemory(SparseimageInPlaceModifier.FormatBandEntryName(0), new byte[BandSize - 1]),
+    ]), "a band that is not a whole band should be refused");
+
+    Assert.That(img, Is.EqualTo(original), "a refused add must leave the image as it was");
 
     ms.Position = 0;
     using var reader = new SparseimageReader(ms, leaveOpen: true);

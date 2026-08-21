@@ -406,16 +406,21 @@ public class CdiInPlaceModifyTests {
   }
 
   [Test, Category("Boundary")]
-  public void Descriptor_Add_NonSectorEntry_NoOpAndPreservesImage() {
+  public void Descriptor_Add_NonSectorEntry_IsRefusedAndPreservesImage() {
+    // This used to assert the image was untouched, and it was -- because the
+    // entry was dropped on the floor. Leaving the image alone is right; doing it
+    // without a word is not, and it made the shared "a fresh volume takes one
+    // more file" check pass on a volume that had taken nothing.
     var image = BuildRawMode1Cdi();
     var original = (byte[])image.Clone();
     using var ms = new MemoryStream(image, writable: true);
 
-    ((IArchiveModifiable)new CdiFormatDescriptor()).Add(ms, [
-      ArchiveInputInfo.InMemory("readme.txt", "hello"u8.ToArray()),
-    ]);
+    Assert.Throws<NotSupportedException>(() =>
+      ((IArchiveModifiable)new CdiFormatDescriptor()).Add(ms, [
+        ArchiveInputInfo.InMemory("readme.txt", "hello"u8.ToArray()),
+      ]));
 
-    Assert.That(image, Is.EqualTo(original));
+    Assert.That(image, Is.EqualTo(original), "a refused add must leave the image as it was");
   }
 
   [Test, Category("Boundary")]

@@ -30,6 +30,10 @@ namespace FileFormat.BinCue;
 /// </summary>
 public static class BinCueInPlaceModifier {
 
+  /// <summary>How this format names itself when it has to refuse something.</summary>
+  private const string Label = "BIN/CUE";
+
+
   private const int Iso9660SectorSize = 2048;
   private const int RawSectorSize = 2352;
   private const int SectorSize2336 = 2336;
@@ -207,7 +211,8 @@ public static class BinCueInPlaceModifier {
   /// <summary>
   /// Parses a synthetic <c>sector-NNNN.bin</c> entry name and returns the
   /// embedded sector LBA. Names that don't match the schema return
-  /// <c>false</c> so the caller can ignore them rather than throwing.
+  /// <c>false</c>. The callers refuse such a name rather than passing over it:
+  /// an entry that cannot be placed is not an entry to discard quietly.
   /// </summary>
   public static bool TryParseSectorEntryName(string entryName, out int lba) {
     lba = -1;
@@ -234,7 +239,7 @@ public static class BinCueInPlaceModifier {
   /// <c>ArchiveName</c> matches <c>sector-NNNN.bin</c> are written at the
   /// fixed LBA byte offset (existing sector → in-place rewrite, EOF-past
   /// sector → append). Inputs whose <c>ArchiveName</c> doesn't match the
-  /// schema are silently skipped — they would belong to an inner ISO 9660
+  /// schema are refused — they would belong to an inner ISO 9660
   /// directory entry, and ISO 9660 directory mutation is delegated to
   /// <c>FileSystem.Iso</c>.
   /// </summary>
@@ -243,7 +248,15 @@ public static class BinCueInPlaceModifier {
     ArgumentNullException.ThrowIfNull(inputs);
     var geom = DetectGeometry(image);
     foreach (var (name, data) in inputs) {
-      if (!TryParseSectorEntryName(name, out var lba)) continue;
+      // A name this cannot place is not a name to pass over. These images list
+      // the ISO 9660 files inside them, so a caller has every reason to hand one
+      // back -- and skipping it wrote nothing, raised nothing, and reported the
+      // add as done. Six files added, six files gone, no error anywhere.
+      if (!TryParseSectorEntryName(name, out var lba))
+        throw new NotSupportedException(
+          $"{Label}: '{name}' cannot be added. This image is edited a sector at a time, so an "
+          + "entry has to be named 'sector-NNNN.bin' for the sector it replaces. Adding a file to "
+          + "the ISO 9660 filesystem inside the image is not something this supports.");
       if (data.Length != Iso9660SectorSize)
         throw new ArgumentException(
           $"Sector entry '{name}' must carry exactly {Iso9660SectorSize} bytes; got {data.Length}.",
@@ -254,7 +267,7 @@ public static class BinCueInPlaceModifier {
 
   /// <summary>
   /// Zeros each named <c>sector-NNNN.bin</c>. Names that don't match the
-  /// schema are silently skipped; sectors past EOF are likewise skipped
+  /// schema are refused; sectors past EOF are still skipped
   /// (there's nothing to remove). The framing bytes of an existing
   /// sector — sync/address/mode/EDC — are preserved.
   /// </summary>
@@ -263,7 +276,11 @@ public static class BinCueInPlaceModifier {
     ArgumentNullException.ThrowIfNull(entryNames);
     var geom = DetectGeometry(image);
     foreach (var name in entryNames) {
-      if (!TryParseSectorEntryName(name, out var lba)) continue;
+      if (!TryParseSectorEntryName(name, out var lba))
+        throw new NotSupportedException(
+          $"{Label}: '{name}' cannot be removed. This image is edited a sector at a time, so an "
+          + "entry has to be named 'sector-NNNN.bin' for the sector it clears. Removing a file from "
+          + "the ISO 9660 filesystem inside the image is not something this supports.");
       ZeroSector(image, lba, geom);
     }
   }
