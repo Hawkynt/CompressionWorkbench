@@ -95,9 +95,6 @@ public class TheirWriterOurReaderTests {
     ["SquashFs (zstd)"] =
       "our zstd decoder cannot decode Huffman-coded literals, which is what a real encoder "
       + "emits for anything but tiny or incompressible input; raw-literal frames read correctly",
-    ["SquashFs (lzo)"] =
-      "what this calls LZO1X is a private encoding of the same name: lzop cannot read what we "
-      + "write and we cannot read what lzop writes",
     ["Jffs2"] = "files on a volume mkfs.jffs2 writes come back empty",
     ["Ubifs"] = "files on a volume mkfs.ubifs writes are not found at all",
   };

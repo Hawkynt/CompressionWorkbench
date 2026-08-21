@@ -29,6 +29,19 @@ public static class LzopConstants {
   /// </summary>
   public const byte MethodLzo1X1 = 1;
 
+  /// <summary>What lzop -1 writes: LZO1X-1 with a fifteen-bit hash.</summary>
+  /// <remarks>
+  /// A different way of choosing matches, not a different stream: the bytes it
+  /// emits are ordinary LZO1X and any LZO1X decoder reads them.
+  /// </remarks>
+  public const byte MethodLzo1X115 = 2;
+
+  /// <summary>What lzop -7 and above write: LZO1X-999.</summary>
+  /// <remarks>
+  /// Also ordinary LZO1X on the wire; it simply searches harder for matches.
+  /// </remarks>
+  public const byte MethodLzo1X999 = 3;
+
   /// <summary>
   /// Default compression level.
   /// </summary>
