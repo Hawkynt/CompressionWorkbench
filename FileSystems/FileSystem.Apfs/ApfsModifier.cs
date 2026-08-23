@@ -96,6 +96,24 @@ internal static class ApfsModifier {
   /// Removes a single file by name (full path, '/' or '\\' separators).
   /// Sibling entries are preserved. The removed file's data blocks are zeroed.
   /// </summary>
+  /// <summary>
+  /// Re-derives everything that follows from where a volume's blocks are, without
+  /// changing what it holds.
+  /// </summary>
+  /// <remarks>
+  /// A layout pass moves file data and repoints the extent record naming it, but
+  /// the extent-reference tree is keyed by the block itself — so once anything
+  /// has moved, that tree names runs no file occupies any more. Rebuilding it
+  /// from the filesystem tree afterwards is what makes the two agree again.
+  /// </remarks>
+  public static void RefreshDerivedState(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanSeek || !archive.CanRead || !archive.CanWrite) return;
+
+    var ctx = ReadContext(archive);
+    Persist(ctx, archive);
+  }
+
   public static void Remove(Stream archive, string name) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(name);
@@ -135,6 +153,13 @@ internal static class ApfsModifier {
 
     // Rebuild FS-tree on the original block 8 (writer-fixed root location).
     var fsTreeRootBlock = (long)ctx.FsTreeRootBlock;
+    // Every node of the filesystem tree below its root is virtual too, so each
+    // one needs naming in the volume's map — without that a split tree has
+    // children nothing can resolve, and the volume reads as a single file.
+    var fsTreeNodes = new List<(ulong Oid, ulong Block)>();
+    // Every node below a root, across all three trees. The volume's block count
+    // is its five roots, these, and the blocks its files occupy.
+    var extraNodes = new List<(ulong Oid, ulong Block)>();
     ApfsBtreeOps.RebuildBtreeOnFixedRoot(
       ref ctx.Image, ctx.Allocator,
       rootBlock: fsTreeRootBlock,
@@ -142,13 +167,18 @@ internal static class ApfsModifier {
       type: ctx.FsTreeType,
       xid: newXid,
       records: ctx.FsRecords,
-      keyComparer: ApfsBtreeOps.CompareFsKeys);
+      keyComparer: ApfsBtreeOps.CompareFsKeys,
+      virtualNodes: fsTreeNodes,
+      subtype: OBJECT_TYPE_FSTREE);
 
-    // Volume OMAP: only one record (FS-tree virtual OID → fsTreeRootBlock).
+    // Volume OMAP: the FS-tree root, and every node beneath it.
     var volOmapTreeBlock = (long)ctx.VolOmapTreeBlock;
     var volOmapRecs = new List<ApfsBtreeOps.Record> {
       ApfsBtreeOps.BuildOmapRecord(ctx.FsTreeVirtOid, newXid, (ulong)fsTreeRootBlock),
     };
+    foreach (var (oid, block) in fsTreeNodes)
+      volOmapRecs.Add(ApfsBtreeOps.BuildOmapRecord(oid, newXid, block));
+    volOmapRecs.Sort((a, b) => ApfsBtreeOps.CompareOmapKeys(a.Key, b.Key));
     ApfsBtreeOps.RebuildBtreeOnFixedRoot(
       ref ctx.Image, ctx.Allocator,
       rootBlock: volOmapTreeBlock,
@@ -156,7 +186,30 @@ internal static class ApfsModifier {
       type: OBJECT_TYPE_BTREE | OBJ_PHYSICAL,
       xid: newXid,
       records: volOmapRecs,
-      keyComparer: ApfsBtreeOps.CompareOmapKeys);
+      keyComparer: ApfsBtreeOps.CompareOmapKeys,
+      // An object map's records are all one size — sixteen bytes of key naming an
+      // identifier and a transaction, sixteen of value naming a block.
+      subtype: OBJECT_TYPE_OMAP, fixedKv: true, leafKeySize: 16, leafValueSize: 16,
+      virtualNodes: extraNodes);
+
+    // The extent-reference tree says which runs of blocks are spoken for and by
+    // whom. It is rebuilt from the file extents the filesystem tree now holds —
+    // leaving it as it was describes a volume whose files own blocks nothing
+    // accounts for, and whose accounting names extents no file has.
+    var extrefTreeOid = BinaryPrimitives.ReadUInt64LittleEndian(
+      ctx.Image.AsSpan((int)(ctx.ApsbBlock * BlockSize) + APSB_EXTENTREF_TREE_OID));
+    if (extrefTreeOid != 0) {
+      var extrefRecs = BuildExtentRefRecords(ctx.FsRecords);
+      ApfsBtreeOps.RebuildBtreeOnFixedRoot(
+        ref ctx.Image, ctx.Allocator,
+        rootBlock: (long)extrefTreeOid,
+        rootOid: extrefTreeOid,
+        type: OBJECT_TYPE_BTREE | OBJ_PHYSICAL,
+        xid: newXid,
+        records: extrefRecs,
+        keyComparer: ApfsBtreeOps.CompareFsKeys,
+        subtype: OBJECT_TYPE_BLOCKREFTREE, virtualNodes: extraNodes);
+    }
 
     // Restamp volume OMAP phys.
     var volOmap = ctx.Image.AsSpan((int)(ctx.VolOmapBlock * BlockSize), (int)BlockSize);
@@ -176,7 +229,10 @@ internal static class ApfsModifier {
       type: OBJECT_TYPE_BTREE | OBJ_PHYSICAL,
       xid: newXid,
       records: ctrOmapRecs,
-      keyComparer: ApfsBtreeOps.CompareOmapKeys);
+      keyComparer: ApfsBtreeOps.CompareOmapKeys,
+      // An object map's records are all one size — sixteen bytes of key naming an
+      // identifier and a transaction, sixteen of value naming a block.
+      subtype: OBJECT_TYPE_OMAP, fixedKv: true, leafKeySize: 16, leafValueSize: 16);
 
     var ctrOmap = ctx.Image.AsSpan((int)(ctx.CtrOmapBlock * BlockSize), (int)BlockSize);
     BinaryPrimitives.WriteUInt64LittleEndian(ctrOmap[16..], newXid);
@@ -190,21 +246,59 @@ internal static class ApfsModifier {
       (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL);
     BinaryPrimitives.WriteUInt64LittleEndian(apsb[APSB_NEXT_OBJ_ID..], ctx.NextOid);
     var fileCount = (ulong)CountInodes(ctx.FsRecords, isDir: false);
-    var dirCount = (ulong)CountInodes(ctx.FsRecords, isDir: true);
+    // The root and the private directory are the format's own; a volume counts
+    // the directories in it, not the ones it is made of.
+    var dirCount = (ulong)Math.Max(0, CountInodes(ctx.FsRecords, isDir: true) - 2);
     BinaryPrimitives.WriteUInt64LittleEndian(apsb[APSB_NUM_FILES..], fileCount);
     BinaryPrimitives.WriteUInt64LittleEndian(apsb[APSB_NUM_DIRECTORIES..], dirCount);
+
+    // What the volume occupies: its five roots, every node beneath them, and the
+    // blocks its files' extents cover. Left unchanged, it describes a volume of
+    // the size it was before anything was added to it.
+    var dataBlocks = 0UL;
+    foreach (var r in ctx.FsRecords) {
+      if (r.Key.Length < 8 || r.Value.Length < 24) continue;
+      if ((int)(BinaryPrimitives.ReadUInt64LittleEndian(r.Key) >> 60) != APFS_TYPE_FILE_EXTENT) continue;
+      var len = BinaryPrimitives.ReadUInt64LittleEndian(r.Value) & 0x00FFFFFFFFFFFFFFUL;
+      dataBlocks += (len + BlockSize - 1) / BlockSize;
+    }
+    BinaryPrimitives.WriteUInt64LittleEndian(apsb[0x58..],
+      5UL + (ulong)(fsTreeNodes.Count + extraNodes.Count) + dataBlocks);
     ApfsFletcher64.Stamp(apsb);
 
-    // Checkpoint map.
+    // Checkpoint map: its transaction moves on, its identity does not. The
+    // object id used to be overwritten with the transaction id, and a physical
+    // object's id is the block it sits on.
     var chk = ctx.Image.AsSpan((int)(ctx.ChkMapBlock * BlockSize), (int)BlockSize);
-    BinaryPrimitives.WriteUInt64LittleEndian(chk[8..], newXid);
     BinaryPrimitives.WriteUInt64LittleEndian(chk[16..], newXid);
     ApfsFletcher64.Stamp(chk);
 
-    // NXSB primary.
+    // What the rebuild claimed is now spoken for, and the container's own
+    // account of its free space has to say so.
+    // What the volume still holds: the roots and nodes of its trees, and every
+    // block its files' extents cover. Anything a removal orphaned is simply not
+    // in the set, and so reads as free again.
+    var live = new List<ulong> {
+      ctx.ApsbBlock, ctx.VolOmapBlock, ctx.VolOmapTreeBlock,
+      (ulong)fsTreeRootBlock, extrefTreeOid,
+    };
+    live.AddRange(fsTreeNodes.Select(n => n.Block));
+    live.AddRange(extraNodes.Select(n => n.Block));
+    foreach (var r in ctx.FsRecords) {
+      if (r.Key.Length < 8 || r.Value.Length < 24) continue;
+      if ((int)(BinaryPrimitives.ReadUInt64LittleEndian(r.Key) >> 60) != APFS_TYPE_FILE_EXTENT) continue;
+      var len = BinaryPrimitives.ReadUInt64LittleEndian(r.Value) & 0x00FFFFFFFFFFFFFFUL;
+      var start = BinaryPrimitives.ReadUInt64LittleEndian(r.Value.AsSpan(8));
+      for (var i = 0UL; i < (len + BlockSize - 1) / BlockSize; ++i) live.Add(start + i);
+    }
+    ApfsSpaceManagerState.MarkUsedSet(ctx.Image, live);
+    ApfsSpaceManagerState.RestampEphemeral(ctx.Image, newXid);
+
+    // NXSB primary. The block count is the container's, not the file's — the
+    // image may be longer than the container it holds, and saying otherwise
+    // makes every derived quantity, the volume limit included, disagree.
     var nx = ctx.Image.AsSpan(0, (int)BlockSize);
     BinaryPrimitives.WriteUInt64LittleEndian(nx[16..], newXid);
-    BinaryPrimitives.WriteUInt64LittleEndian(nx[40..], (ulong)(ctx.Image.Length / BlockSize));
     BinaryPrimitives.WriteUInt64LittleEndian(nx[96..], newXid + 1);
     ApfsFletcher64.Stamp(nx);
 
@@ -261,7 +355,8 @@ internal static class ApfsModifier {
         BuildDrecValue(newDirIno, isDir: true)));
       InsertOrReplace(ctx.FsRecords, new ApfsBtreeOps.Record(
         BuildInodeKey(newDirIno),
-        BuildInodeValue(newDirIno, parentId: parent, size: 0, isDir: true, nchildren: 0)));
+        BuildInodeValue(newDirIno, parentId: parent, size: 0, isDir: true, nchildren: 0,
+          name: comp)));
       BumpInodeChildCount(ctx.FsRecords, parent, +1);
       parent = newDirIno;
     }
@@ -346,7 +441,12 @@ internal static class ApfsModifier {
             && string.Equals(actualName, fileName, StringComparison.Ordinal))
           continue;
       }
-      if ((keyType == APFS_TYPE_INODE || keyType == APFS_TYPE_FILE_EXTENT) && oid == fileIno)
+      // Its inode, its extents, and the record counting who shares its data
+      // stream. That last one used to be left behind, and a stream record with
+      // no inode pointing at it is what apfsprogs calls a "data stream: has no
+      // references".
+      if ((keyType == APFS_TYPE_INODE || keyType == APFS_TYPE_FILE_EXTENT
+           || keyType == APFS_TYPE_DSTREAM_ID) && oid == fileIno)
         continue;
       pruned.Add(rec);
     }
@@ -455,7 +555,10 @@ internal static class ApfsModifier {
     var fsTreeType = BinaryPrimitives.ReadUInt32LittleEndian(fsTreeRoot[24..]);
     var fsTreeOid = BinaryPrimitives.ReadUInt64LittleEndian(fsTreeRoot[8..]);
 
-    var fsRecords = ApfsBtreeOps.CollectAllLeafRecords(image, fsTreePhys);
+    // The filesystem tree's nodes are virtual, so reading it back needs the
+    // volume's map: without it a tree that had split gave up everything below
+    // its root, and each edit started again from whatever the root still held.
+    var fsRecords = ApfsBtreeOps.CollectAllLeafRecords(image, fsTreePhys, volOmapTreeBlock);
 
     var ctx = new Context {
       Image = image,
@@ -482,7 +585,11 @@ internal static class ApfsModifier {
       if (ino >= ctx.NextOid) ctx.NextOid = ino + 1;
     }
 
-    ctx.Allocator = new ApfsBlockAllocator(initialBlocks: (ulong)(image.Length / BlockSize));
+    // Start at the first block the container itself says is free, rather than at
+    // its end: allocating past the block count the superblock declares puts the
+    // volume's own nodes outside the container.
+    ctx.Allocator = new ApfsBlockAllocator(
+      initialBlocks: ApfsSpaceManagerState.FirstFreeBlock(image, (ulong)(image.Length / BlockSize)));
     return ctx;
   }
 
@@ -497,7 +604,8 @@ internal static class ApfsModifier {
       byte[] data, ulong physBlock) {
     var list = new List<ApfsBtreeOps.Record>(3) {
       new(BuildDrecKey(parentIno, name), BuildDrecValue(fileIno, isDir: false)),
-      new(BuildInodeKey(fileIno), BuildInodeValue(fileIno, parentIno, data.LongLength, isDir: false, nchildren: 1)),
+      new(BuildInodeKey(fileIno), BuildInodeValue(fileIno, parentIno, data.LongLength,
+        isDir: false, nchildren: 1, name: name)),
     };
     // The stream's share count, which a driver reads before it opens the file.
     list.Add(new ApfsBtreeOps.Record(
@@ -524,9 +632,40 @@ internal static class ApfsModifier {
     return k;
   }
 
-  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren)
-    => ApfsInodeRecord.BuildValue(ino, parentId, size, isDir, nchildren);
+  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren,
+      string name)
+    => ApfsInodeRecord.BuildValue(ino, parentId, size, isDir, nchildren, name: name);
 
+
+  /// <summary>
+  /// One extent-reference record per run of blocks a file occupies, read back
+  /// out of the filesystem tree's own file-extent records.
+  /// </summary>
+  private static List<ApfsBtreeOps.Record> BuildExtentRefRecords(List<ApfsBtreeOps.Record> fsRecords) {
+    var records = new List<ApfsBtreeOps.Record>();
+    foreach (var r in fsRecords) {
+      if (r.Key.Length < 8 || r.Value.Length < 24) continue;
+      var header = BinaryPrimitives.ReadUInt64LittleEndian(r.Key);
+      if ((int)(header >> 60) != APFS_TYPE_FILE_EXTENT) continue;
+
+      var ino = header & 0x0FFFFFFFFFFFFFFFUL;
+      var length = BinaryPrimitives.ReadUInt64LittleEndian(r.Value) & 0x00FFFFFFFFFFFFFFUL;
+      var paddr = BinaryPrimitives.ReadUInt64LittleEndian(r.Value.AsSpan(8));
+      if (paddr == 0 || length == 0) continue;
+
+      var key = new byte[8];
+      BinaryPrimitives.WriteUInt64LittleEndian(key, paddr | ((ulong)APFS_TYPE_EXTENT << 60));
+
+      const ulong kindNew = 1UL << 60;
+      var value = new byte[20];
+      BinaryPrimitives.WriteUInt64LittleEndian(value,
+        ((length + BlockSize - 1) / BlockSize) | kindNew);
+      BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), ino);
+      BinaryPrimitives.WriteInt32LittleEndian(value.AsSpan(16), 1);
+      records.Add(new ApfsBtreeOps.Record(key, value));
+    }
+    return records;
+  }
 
   private static byte[] BuildDrecValue(ulong fileId, bool isDir) {
     var v = new byte[18];

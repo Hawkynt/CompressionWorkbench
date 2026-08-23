@@ -222,14 +222,55 @@ public static class FilesystemDocGenerator {
   }
 
   /// <summary>The types whose doc comments describe the on-disk structures.</summary>
+  /// <remarks>
+  /// <para>Nested types are passed over and the rest are put in a fixed order,
+  /// because <see cref="Assembly.GetTypes" /> promises no order at all and more
+  /// than one type can end in the same word. Btrfs has two ending in "Writer" —
+  /// the writer, and a <c>BoundedWriter</c> nested inside the reader — and
+  /// LittleFs has three ending in "Layout". Taking the first of them meant taking
+  /// whichever the runtime happened to hand over first, and the helper types
+  /// carry no doc comment, so the section they won simply disappeared.</para>
+  ///
+  /// <para>That is how two pages passed here and failed on the build machine for
+  /// weeks: the page was not wrong on either, it was written on one machine and
+  /// checked on another that made a different arbitrary choice.</para>
+  /// </remarks>
   private static IEnumerable<Type> LayoutTypes(IFormatDescriptor descriptor) {
     var assembly = descriptor.GetType().Assembly;
+    var seen = new HashSet<Type> { descriptor.GetType() };
     yield return descriptor.GetType();
+
+    // What this filesystem's own types are called: the descriptor's name without
+    // the word that makes it a descriptor.
+    var family = descriptor.GetType().Name;
+    foreach (var tail in new[] { "FormatDescriptor", "Descriptor" })
+      if (family.EndsWith(tail, StringComparison.Ordinal)) {
+        family = family[..^tail.Length];
+        break;
+      }
+
     foreach (var suffix in new[] { "Reader", "Writer", "ExtentMap", "Layout" }) {
       var type = assembly.GetTypes()
-        .FirstOrDefault(t => t.IsClass && t.Name.EndsWith(suffix, StringComparison.Ordinal));
-      if (type != null && type != descriptor.GetType()) yield return type;
+        .Where(t => t.IsClass && !t.IsNested && t.Name.EndsWith(suffix, StringComparison.Ordinal))
+        // The one named after this filesystem is the one the page is about, and
+        // ties break the same way on every machine.
+        .OrderByDescending(t => string.Equals(t.Name, family + suffix, StringComparison.Ordinal))
+        .ThenByDescending(t => t.Name.StartsWith(family, StringComparison.Ordinal))
+        // Where a filesystem shares its assembly with a relative and has no type
+        // of its own, the nearest-named relative is the one worth describing.
+        .ThenByDescending(t => SharedPrefix(t.Name, family))
+        .ThenBy(t => t.Name.Length)
+        .ThenBy(t => t.FullName, StringComparer.Ordinal)
+        .FirstOrDefault();
+      if (type != null && seen.Add(type)) yield return type;
     }
+  }
+
+  /// <summary>How many leading characters two names have in common.</summary>
+  private static int SharedPrefix(string name, string family) {
+    var shared = 0;
+    while (shared < name.Length && shared < family.Length && name[shared] == family[shared]) ++shared;
+    return shared;
   }
 
   private static void AppendParameters(StringBuilder page, object? ops) {

@@ -53,6 +53,13 @@ public sealed class SysVBlockMover : IFilesystemBlockMover {
   /// </summary>
   public bool SupportsHeldRuns => true;
 
+  /// <summary>The last path component, which is how two spellings of one name meet.</summary>
+  private static string LeafOf(string name) {
+    var normalised = name.Replace('\\', '/').TrimEnd('/');
+    var slash = normalised.LastIndexOf('/');
+    return slash < 0 ? normalised : normalised[(slash + 1)..];
+  }
+
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -91,12 +98,25 @@ public sealed class SysVBlockMover : IFilesystemBlockMover {
       using var reader = new SysVReader(image);
       pointerOffset = -1;
       inInode = false;
-      foreach (var (runOffset, runLength, namedAt, owner) in reader.EnumerateLayout()) {
-        if (owner == null || namedAt < 0 || runOffset != oldOffset) continue;
-        if (runLength < (long)blocks * this._blockSize) continue;
-        pointerOffset = namedAt;
-        inInode = namedAt < reader.FirstDataByte;
-        break;
+
+      // The run is looked for by who owns it as well as where it starts.
+      // Matching on the offset alone was enough only while a move could not put
+      // another file where this one had been; once it can, two files of one
+      // length are told apart by nothing at all, and the pointers of whichever
+      // was found first get rewritten. The offset-only match stays as a
+      // fallback, because a reader may render a name differently from the way
+      // the caller spells it.
+      var leaf = LeafOf(fileName);
+      foreach (var byName in new[] { true, false }) {
+        foreach (var (runOffset, runLength, namedAt, owner) in reader.EnumerateLayout()) {
+          if (owner == null || namedAt < 0 || runOffset != oldOffset) continue;
+          if (runLength < (long)blocks * this._blockSize) continue;
+          if (byName && !string.Equals(LeafOf(owner), leaf, StringComparison.Ordinal)) continue;
+          pointerOffset = namedAt;
+          inInode = namedAt < reader.FirstDataByte;
+          break;
+        }
+        if (pointerOffset >= 0) break;
       }
     }
 

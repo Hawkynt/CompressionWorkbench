@@ -1736,7 +1736,9 @@ public class ExternalFsInteropTests {
       "set -e; " +
       "MNT=$(mktemp -d); " +
       "trap 'sudo -n umount \"$MNT\" 2>/dev/null; rmdir \"$MNT\" 2>/dev/null' EXIT; " +
-      "sudo -n modprobe ufs; " +
+      // built into the kernel rather than modular on some distributions, where
+      // modprobe fails though the driver is there; /proc/filesystems is the truth
+      "sudo -n modprobe ufs 2>/dev/null || true; " +
       $"sudo -n mount -t ufs -o loop,ro,ufstype=44bsd {wslImg} \"$MNT\"; " +
       "ls -la \"$MNT\"; " +
       "echo '--- hello.txt ---'; cat \"$MNT/hello.txt\"; " +
@@ -1797,7 +1799,9 @@ public class ExternalFsInteropTests {
       "set -e; " +
       "MNT=$(mktemp -d); " +
       "trap 'sudo -n umount \"$MNT\" 2>/dev/null; rmdir \"$MNT\" 2>/dev/null' EXIT; " +
-      "sudo -n modprobe adfs; " +
+      // built into the kernel rather than modular on some distributions, where
+      // modprobe fails though the driver is there; /proc/filesystems is the truth
+      "sudo -n modprobe adfs 2>/dev/null || true; " +
       // ADFS gives the root mode 0511, so without ownership options the
       // invoking user cannot even list what the driver mounted.
       $"sudo -n mount -t adfs -o loop,ro,uid=$(id -u),gid=$(id -g),ownmask=0777,othmask=0777 {wslImg} \"$MNT\"; " +

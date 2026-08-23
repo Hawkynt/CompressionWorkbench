@@ -39,7 +39,16 @@ namespace FileSystem.Bfs;
 internal static class BfsInPlaceModifier {
 
   // ── BFS layout constants (mirror BfsWriter; do not drift) ───────────
-  private const uint InodeMagic = 0x3BDE0AD9;
+  /// <summary>
+  /// The magic every BFS inode begins with.
+  /// </summary>
+  /// <remarks>
+  /// One nibble of this was wrong — 0x3BDE0AD9 for 0x3BBE0AD9 — in the writer,
+  /// the reader and the in-place modifier alike, so all three agreed and the
+  /// kernel's befs driver rejected the root inode of every volume this project
+  /// had ever written: "Inode has a bad magic header - inode = 11".
+  /// </remarks>
+  private const uint InodeMagic = 0x3BBE0AD9;
   private const int BlockSize = 1024;
   private const int AgBitmapBlock = 10;
   private const int RootDirInodeBlock = 11;
@@ -47,6 +56,15 @@ internal static class BfsInPlaceModifier {
   private const int InodeDataStreamOffset = 72;
   private const int NumDirectBlocks = 12;
   private const int BtreeLeafHeaderSize = 28;
+
+  /// <summary>Magic at the head of a B+ tree stream.</summary>
+  private const uint BtreeMagic = 0x69F6C2E8;
+
+  /// <summary>BEFS_INODE_IN_USE — this inode is live, not merely present.</summary>
+  private const uint InodeInUse = 0x00000001;
+
+  /// <summary>Bytes of the B+ tree header at the start of a stream.</summary>
+  private const int BtreeSuperSize = 40;
   private const uint S_IFREG = 0x8000;
   private const uint S_IRWXU = 0x01C0;
 
@@ -205,7 +223,7 @@ internal static class BfsInPlaceModifier {
     var newEntries = working.Select(e => (e.Name, e.InodeBlock)).ToList();
     if (!FitsInOneLeaf(newEntries)) return false;
 
-    WriteRootBtreeLeaf(image, newEntries);
+    WriteRootBtreeLeaf(image, leaf.LeafBlock, newEntries);
 
     // Bookkeeping: refresh superblock.used_blocks from the live bitmap so
     // sanity checks (and our own EnumerateExtents) keep agreeing with reality.
@@ -261,7 +279,7 @@ internal static class BfsInPlaceModifier {
 
     // Rewrite the root B+ tree leaf with the surviving entries (still
     // sorted — we kept them in their existing key order, which is sorted).
-    WriteRootBtreeLeaf(image, kept);
+    WriteRootBtreeLeaf(image, leaf.LeafBlock, kept);
     UpdateUsedBlocksFromBitmap(image);
     return true;
   }
@@ -371,7 +389,10 @@ internal static class BfsInPlaceModifier {
 
     var btreeRun = ReadBlockRun(image, rootInodeOff + InodeDataStreamOffset);
     if (btreeRun.Length == 0) return false;
-    var leafBlock = btreeRun.Start;
+    // A directory's stream opens with the tree's own header, and the root node
+    // follows at the offset it names. This took the first block for a node,
+    // which held only while the header was missing.
+    var leafBlock = RootNodeBlock(image, btreeRun.Start);
     var leafOff = leafBlock * BlockSize;
     if (leafOff + BlockSize > image.Length) return false;
 
@@ -388,16 +409,18 @@ internal static class BfsInPlaceModifier {
       return true;
     }
 
-    var keyLenTableOff = leafOff + BtreeLeafHeaderSize;
-    var keyDataOff = keyLenTableOff + keyCount * 2;
+    // Keys, then the eight-byte-aligned index of where each ends, then the
+    // values — the order the format uses, and the order the driver reads.
+    var keyDataOff = leafOff + BtreeLeafHeaderSize;
+    var keyLenTableOff = leafOff + AlignedIndexOffset(totalKeyLength);
     if (keyDataOff + totalKeyLength > image.Length) return false;
 
     var cumulative = new ushort[keyCount];
     for (var i = 0; i < keyCount; i++)
       cumulative[i] = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(keyLenTableOff + i * 2));
 
-    var valuesStart = leafOff + BlockSize - keyCount * 8;
-    if (valuesStart < keyDataOff + totalKeyLength) return false;
+    var valuesStart = keyLenTableOff + keyCount * 2;
+    if (valuesStart + keyCount * 8 > leafOff + BlockSize) return false;
 
     var prev = 0;
     for (var i = 0; i < keyCount; i++) {
@@ -413,22 +436,50 @@ internal static class BfsInPlaceModifier {
     return true;
   }
 
+  /// <summary>
+  /// Where a node's key-length index begins: after the keys, rounded up to an
+  /// eight-byte boundary.
+  /// </summary>
+  private static int AlignedIndexOffset(int totalKeyLength) {
+    const int keyLenAlign = 8;
+    var at = BtreeLeafHeaderSize + totalKeyLength;
+    var padding = at % keyLenAlign;
+    return padding == 0 ? at : at + keyLenAlign - padding;
+  }
+
+  /// <summary>The block a directory's B+ tree root node sits on.</summary>
+  private static int RootNodeBlock(byte[] image, int streamStartBlock) {
+    var at = streamStartBlock * BlockSize;
+    if (at < 0 || at + BtreeSuperSize > image.Length) return streamStartBlock;
+    if (BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(at)) != BtreeMagic)
+      return streamStartBlock;   // headerless: as it used to be
+
+    var rootPtr = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(at + 16));
+    return rootPtr <= 0 ? streamStartBlock + 1 : streamStartBlock + (int)(rootPtr / BlockSize);
+  }
+
   private static bool FitsInOneLeaf(IReadOnlyList<(string Name, int InodeBlock)> entries) {
-    var used = BtreeLeafHeaderSize;
-    foreach (var (name, _) in entries) {
-      var nameLen = Encoding.UTF8.GetByteCount(name);
-      used += 2 + nameLen + 8;
-      if (used > BlockSize) return false;
-    }
-    return true;
+    var keyLength = 0;
+    foreach (var (name, _) in entries) keyLength += Encoding.UTF8.GetByteCount(name);
+    return AlignedIndexOffset(keyLength) + entries.Count * (2 + 8) <= BlockSize;
   }
 
   /// <summary>
   /// Overwrites the root B+ tree leaf block (block 12) with the supplied
   /// sorted entry list — same byte layout as <c>BfsWriter.WriteBtreeLeaf</c>.
   /// </summary>
-  private static void WriteRootBtreeLeaf(byte[] image, IReadOnlyList<(string Name, int InodeBlock)> entries) {
-    var off = RootDirBtreeBlock * BlockSize;
+  /// <summary>
+  /// Writes the root directory's entries back into its B+ tree node.
+  /// </summary>
+  /// <remarks>
+  /// The node's block is passed in rather than assumed. A directory's stream now
+  /// begins with the tree's own header and the node follows it, so writing at the
+  /// stream's first block put a node on top of the header and the driver could
+  /// not read the directory at all afterwards.
+  /// </remarks>
+  private static void WriteRootBtreeLeaf(byte[] image, int nodeBlock,
+      IReadOnlyList<(string Name, int InodeBlock)> entries) {
+    var off = nodeBlock * BlockSize;
     image.AsSpan(off, BlockSize).Clear();
 
     // Header.
@@ -439,8 +490,7 @@ internal static class BfsInPlaceModifier {
 
     if (entries.Count == 0) return;
 
-    var keyLenTableOff = off + BtreeLeafHeaderSize;
-    var keyDataOff = keyLenTableOff + entries.Count * 2;
+    var keyDataOff = off + BtreeLeafHeaderSize;
 
     var keyBytes = new List<byte>();
     var cumulative = new ushort[entries.Count];
@@ -451,12 +501,13 @@ internal static class BfsInPlaceModifier {
     }
 
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 26), (ushort)keyBytes.Count);
+    keyBytes.CopyTo(0, image, keyDataOff, keyBytes.Count);
+
+    var keyLenTableOff = off + AlignedIndexOffset(keyBytes.Count);
     for (var i = 0; i < entries.Count; i++)
       BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(keyLenTableOff + i * 2), cumulative[i]);
 
-    keyBytes.CopyTo(0, image, keyDataOff, keyBytes.Count);
-
-    var valuesStart = off + BlockSize - entries.Count * 8;
+    var valuesStart = keyLenTableOff + entries.Count * 2;
     for (var i = 0; i < entries.Count; i++)
       BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(valuesStart + i * 8), entries[i].InodeBlock);
   }
@@ -470,6 +521,9 @@ internal static class BfsInPlaceModifier {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off), InodeMagic);
     WriteBlockRun(image, off + 4, 0, inodeBlock, 1);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 20), S_IFREG | S_IRWXU);
+    // BEFS_INODE_IN_USE: without it the driver walks past the inode entirely —
+    // "inode is not used" — so a file added in place was one it would not open.
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 24), InodeInUse);
     WriteBlockRun(image, off + 44, 0, parentInodeBlock, 1);
     BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(off + 64), InodeSize);
 

@@ -82,7 +82,9 @@ public sealed class ApfsReader : IDisposable {
     if (rootTreePhys == 0) return;
 
     // Walk FS tree leaf(s) and collect inodes / drec / file_extent.
-    this.ParseFsTree((long)rootTreePhys);
+    // The filesystem tree's nodes are virtual, so descending it needs the
+    // volume's object map to turn each child's identifier into a block.
+    this.ParseFsTree((long)rootTreePhys, volOmapPhys);
   }
 
   // ── OMAP resolution ─────────────────────────────────────────────────────
@@ -137,7 +139,8 @@ public sealed class ApfsReader : IDisposable {
   /// Enumerates (key, value) pairs from a B-tree leaf node. Supports single-level
   /// root-leaf trees (what our writer produces) and plain leaf nodes.
   /// </summary>
-  private static IEnumerable<(byte[] Key, byte[] Value)> EnumerateBtreeLeafRecords(ReadOnlySpan<byte> node, bool isRoot) {
+  private static IEnumerable<(byte[] Key, byte[] Value)> EnumerateBtreeLeafRecords(
+      ReadOnlySpan<byte> node, bool isRoot, int fixedKeyLen = 0, int fixedValLen = 0) {
     var results = new List<(byte[], byte[])>();
 
     var type = BinaryPrimitives.ReadUInt32LittleEndian(node[24..]) & OBJECT_TYPE_MASK;
@@ -168,6 +171,25 @@ public sealed class ApfsReader : IDisposable {
       : node.Length;
 
     var isFixed = (flags & BTNODE_FIXED_KV_SIZE) != 0;
+
+    // A fixed-size tree carries only offsets in its slots and states the one key
+    // size and one value size in the root's footer. This used to read those
+    // offsets and then leave both lengths at zero, with a comment saying the
+    // sizes were "not used by us" — and the guard below drops a slot of zero
+    // length, so every record in such a node was skipped and the tree read as
+    // empty. Every object map on a real APFS volume is laid out this way, so
+    // what this could open was our own volumes and nothing else.
+    // Only a root carries the footer; a node below one is told the sizes by the
+    // walk that reached it.
+    if (isFixed && (isRoot || (flags & BTNODE_ROOT) != 0)) {
+      var info = node.Length - 40;
+      fixedKeyLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 8)..]);
+      fixedValLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 12)..]);
+    }
+    // An internal node's value is the child's block number, whatever the leaves
+    // hold.
+    if (isFixed && (flags & BTNODE_LEAF) == 0) fixedValLen = 8;
+
     for (uint k = 0; k < nkeys; k++) {
       int keyOff, keyLen, valOff, valLen;
       if (isFixed) {
@@ -175,7 +197,7 @@ public sealed class ApfsReader : IDisposable {
         if (e + 4 > node.Length) break;
         keyOff = BinaryPrimitives.ReadUInt16LittleEndian(node[e..]);
         valOff = BinaryPrimitives.ReadUInt16LittleEndian(node[(e + 2)..]);
-        keyLen = 0; valLen = 0; // Fixed sizes come from btree_info; not used by us.
+        keyLen = fixedKeyLen; valLen = fixedValLen;
       } else {
         var e = tocAbs + (int)k * 8;
         if (e + 8 > node.Length) break;
@@ -209,30 +231,49 @@ public sealed class ApfsReader : IDisposable {
   /// common case and is returned as-is. A visited set guards against malformed
   /// cyclic child references.
   /// </summary>
-  private List<(byte[] Key, byte[] Value)> CollectAllLeafRecords(long rootPhys) {
+  /// <param name="omapPhys">
+  /// The object map that turns a child's identifier into its block, for a tree
+  /// whose nodes are virtual. Zero for a physical tree, whose children are named
+  /// by their blocks outright.
+  /// </param>
+  private List<(byte[] Key, byte[] Value)> CollectAllLeafRecords(long rootPhys, ulong omapPhys = 0) {
     var results = new List<(byte[], byte[])>();
     var visited = new HashSet<long>();
-    Descend(rootPhys, isRoot: true);
+    Descend(rootPhys, isRoot: true, 0, 0);
     return results;
 
-    void Descend(long blockNum, bool isRoot) {
+    void Descend(long blockNum, bool isRoot, int fixedKeyLen, int fixedValLen) {
       if (!visited.Add(blockNum)) return;
       var node = this.BlockSpan(blockNum);
       var level = BinaryPrimitives.ReadUInt16LittleEndian(node[34..]);
+      var nodeFlags = BinaryPrimitives.ReadUInt16LittleEndian(node[32..]);
+
+      // The root states the record sizes for the whole tree; carry them down so
+      // a node below it can be read at all.
+      if ((nodeFlags & BTNODE_FIXED_KV_SIZE) != 0 && (isRoot || (nodeFlags & BTNODE_ROOT) != 0)) {
+        var info = node.Length - 40;
+        fixedKeyLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 8)..]);
+        fixedValLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 12)..]);
+      }
+
       if (level == 0) {
-        results.AddRange(EnumerateBtreeLeafRecords(node, isRoot));
+        results.AddRange(EnumerateBtreeLeafRecords(node, isRoot, fixedKeyLen, fixedValLen));
         return;
       }
       // Internal node: each value is the physical block number of a child node.
-      foreach (var (_, value) in EnumerateBtreeLeafRecords(node, isRoot)) {
+      foreach (var (_, value) in EnumerateBtreeLeafRecords(node, isRoot, fixedKeyLen, fixedValLen)) {
         if (value.Length < 8) continue;
-        var childBlock = (long)BinaryPrimitives.ReadUInt64LittleEndian(value);
-        Descend(childBlock, isRoot: false);
+        var child = BinaryPrimitives.ReadUInt64LittleEndian(value);
+        var childBlock = omapPhys == 0
+          ? (long)child
+          : (long)this.ResolveOidViaOmap(omapPhys, child);
+        if (childBlock == 0) continue;
+        Descend(childBlock, isRoot: false, fixedKeyLen, fixedValLen);
       }
     }
   }
 
-  private void ParseFsTree(long treePhys) {
+  private void ParseFsTree(long treePhys, ulong volOmapPhys) {
     // Collect: inode name + size + isDir, drec: parent -> (name, child_ino), file_extent: ino -> (size, paddr).
     var inodeName = new Dictionary<ulong, string>();
     var inodeSize = new Dictionary<ulong, long>();
@@ -243,7 +284,7 @@ public sealed class ApfsReader : IDisposable {
     var fileExtent = new Dictionary<ulong, (long Length, ulong PhysBlock)>();
     var inodeTimestamps = new Dictionary<ulong, DateTime>();
 
-    foreach (var (key, val) in this.CollectAllLeafRecords(treePhys)) {
+    foreach (var (key, val) in this.CollectAllLeafRecords(treePhys, volOmapPhys)) {
       if (key.Length < 8) continue;
       var oidAndType = BinaryPrimitives.ReadUInt64LittleEndian(key);
       var keyType = (int)(oidAndType >> 60);
@@ -253,7 +294,9 @@ public sealed class ApfsReader : IDisposable {
         case APFS_TYPE_INODE:
           if (val.Length < 88) break;
           var mode = BinaryPrimitives.ReadUInt16LittleEndian(val.AsSpan(80));
-          var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(84));
+          // The length is in the data-stream extended field; the word at 84 is
+          // the uncompressed size, which only a compressed file fills in.
+          var size = ApfsInodeRecord.ReadDataStreamSize(val);
           inodeIsDir[oid] = (mode & 0xF000) == S_IFDIR;
           inodeIsLink[oid] = (mode & 0xF000) == S_IFLNK;
           inodeSize[oid] = size;

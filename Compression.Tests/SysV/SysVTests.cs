@@ -219,11 +219,24 @@ public class SysVTests {
   }
 
   [Test, Category("Sad")]
-  public void Writer_FileExceedingDirectZones_Throws() {
-    // 10 KB + 1 byte triggers the > 10-direct-zone guard.
-    var data = new byte[10 * 1024 + 1];
-    Assert.Throws<InvalidOperationException>(
-      () => SysVWriter.Build([("huge.bin", data)]));
+  public void Writer_FileExceedingDirectZones_UsesTheIndirectBlocks() {
+    // This used to assert the opposite: that a file of 10 KB and one byte was
+    // refused. An s5fs inode has thirteen block numbers — ten direct, then a
+    // single-, double- and triple-indirect tree — and the reader beside this
+    // followed all four, so the volume the writer would not build was one it
+    // could read. The kernel's sysv driver mounts what it writes now and hands
+    // every byte back.
+    var data = new byte[20_000];
+    for (var i = 0; i < data.Length; ++i) data[i] = (byte)(i * 17 + 7);
+
+    var image = SysVWriter.Build([("huge.bin", data)]);
+    using var stream = new MemoryStream(image);
+    var reader = new SysVReader(stream);
+    var entry = reader.Entries.Single(e => !e.IsDirectory);
+
+    Assert.That(entry.Size, Is.EqualTo(data.Length));
+    Assert.That(reader.Extract(entry), Is.EqualTo(data).AsCollection,
+      "a file past the direct blocks came back with different bytes");
   }
 
   [Test, Category("HappyPath")]

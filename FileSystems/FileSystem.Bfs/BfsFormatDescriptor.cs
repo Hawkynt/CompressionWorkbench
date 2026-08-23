@@ -337,7 +337,11 @@ public sealed class BfsFormatDescriptor
       if (rootInodeOff + 72 + 8 <= imageBytes.Length) {
         var btreeRun = ReadBlockRunFromImage(imageBytes, rootInodeOff + 72);
         if (btreeRun.Length > 0)
-          yield return new DefragBlockInfo(BlockOf(btreeRun) * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Root Dir B+Tree");
+          // The whole run, not one block: a tree is its header and its leaves,
+          // and reserving only the first left the leaves looking like free space
+          // for the wiper to zero.
+          yield return new DefragBlockInfo(BlockOf(btreeRun) * blockSize,
+            (long)btreeRun.Length * blockSize, DefragBlockKind.MetadataReserved, "Root Dir B+Tree");
       }
     }
 
@@ -349,7 +353,8 @@ public sealed class BfsFormatDescriptor
       if (idxInodeOff + 72 + 8 <= imageBytes.Length) {
         var btreeRun = ReadBlockRunFromImage(imageBytes, idxInodeOff + 72);
         if (btreeRun.Length > 0)
-          yield return new DefragBlockInfo(BlockOf(btreeRun) * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Indices B+Tree");
+          yield return new DefragBlockInfo(BlockOf(btreeRun) * blockSize,
+            (long)btreeRun.Length * blockSize, DefragBlockKind.MetadataReserved, "Indices B+Tree");
       }
     }
 

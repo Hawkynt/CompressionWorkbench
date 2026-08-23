@@ -89,20 +89,21 @@ public static class MinixFsInPlaceModifier {
     var imapBuf = ReadBytes(image, geom.ImapOffset, geom.ImapBlocks * geom.BlockSize);
     var zmapBuf = ReadBytes(image, geom.ZmapOffset, geom.ZmapBlocks * geom.BlockSize);
 
-    var newInodeOpt = AllocateBit(imapBuf, 0, (int)geom.TotalInodes);
+    // Inode N is bit N; bit 0 is reserved for the inode number that means
+    // "none", so the search starts at one.
+    var newInodeOpt = AllocateBit(imapBuf, 1, (int)geom.TotalInodes + 1);
     if (newInodeOpt == null) throw new IOException("MinixFs: no free inodes.");
-    var newInodeBit = newInodeOpt.Value;
-    var newInodeNum = (uint)(newInodeBit + 1);
+    var newInodeNum = (uint)newInodeOpt.Value;
 
     var allocatedZones = new List<int>(zonesNeeded);
     for (var i = 0; i < zonesNeeded; i++) {
-      var zone = AllocateBit(zmapBuf, geom.FirstDataZone, (int)geom.TotalZones);
-      if (zone == null) {
-        foreach (var z in allocatedZones) ClearBit(zmapBuf, z);
-        ClearBit(imapBuf, newInodeBit);
+      var bit = AllocateBit(zmapBuf, 1, ZoneBit(geom, geom.TotalZones));
+      if (bit == null) {
+        foreach (var z in allocatedZones) ClearBit(zmapBuf, ZoneBit(geom, z));
+        ClearBit(imapBuf, (int)newInodeNum);
         throw new IOException("MinixFs: not enough free zones.");
       }
-      allocatedZones.Add(zone.Value);
+      allocatedZones.Add(ZoneOfBit(geom, bit.Value));
     }
 
     // Write payload into the allocated data zones.
@@ -167,7 +168,7 @@ public static class MinixFsInPlaceModifier {
     for (var i = 0; i < directCount; i++) {
       var z = inodeZones[i];
       if (z == 0) continue;
-      ClearBit(zmapBuf, (int)z);
+      ClearBit(zmapBuf, ZoneBit(geom, z));
       if (wipeData) WriteAt(image, (long)z * geom.BlockSize, new byte[geom.BlockSize]);
     }
 
@@ -183,7 +184,7 @@ public static class MinixFsInPlaceModifier {
     if (geom.Version == Version.V3 && inodeZones.Length > directCount + 2 && inodeZones[directCount + 2] != 0)
       FreeIndirect(image, geom, zmapBuf, inodeZones[directCount + 2], level: 3, wipeData);
 
-    ClearBit(imapBuf, (int)(targetInodeNum - 1));
+    ClearBit(imapBuf, (int)targetInodeNum);
     WriteInode(image, geom, targetInodeNum, new byte[geom.InodeSize]);
 
     WriteAt(image, geom.ImapOffset, imapBuf);
@@ -237,7 +238,7 @@ public static class MinixFsInPlaceModifier {
       // Fits in already-allocated direct zones — reuse them, free the surplus.
       targetZones = existingZones.GetRange(0, zonesNeeded);
       for (var i = zonesNeeded; i < existingZones.Count; i++) {
-        ClearBit(zmapBuf, existingZones[i]);
+        ClearBit(zmapBuf, ZoneBit(geom, existingZones[i]));
         WriteAt(image, (long)existingZones[i] * geom.BlockSize, new byte[geom.BlockSize]);
       }
     } else {
@@ -245,11 +246,11 @@ public static class MinixFsInPlaceModifier {
       targetZones = new List<int>(existingZones);
       var extras = zonesNeeded - existingZones.Count;
       for (var i = 0; i < extras; i++) {
-        var zone = AllocateBit(zmapBuf, geom.FirstDataZone, (int)geom.TotalZones);
+        var zone = AllocateZone(zmapBuf, geom);
         if (zone == null) {
           // Roll back the allocations made so far.
           for (var k = existingZones.Count; k < targetZones.Count; k++)
-            ClearBit(zmapBuf, targetZones[k]);
+            ClearBit(zmapBuf, ZoneBit(geom, targetZones[k]));
           return false;
         }
         targetZones.Add(zone.Value);
@@ -476,13 +477,13 @@ public static class MinixFsInPlaceModifier {
         : BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(i * 2));
       if (ptr == 0) continue;
       if (level == 1) {
-        ClearBit(zmapBuf, (int)ptr);
+        ClearBit(zmapBuf, ZoneBit(geom, ptr));
         if (wipeData) WriteAt(image, (long)ptr * geom.BlockSize, new byte[geom.BlockSize]);
       } else {
         FreeIndirect(image, geom, zmapBuf, ptr, level - 1, wipeData);
       }
     }
-    ClearBit(zmapBuf, (int)indirectZone);
+    ClearBit(zmapBuf, ZoneBit(geom, indirectZone));
     if (wipeData) WriteAt(image, (long)indirectZone * geom.BlockSize, new byte[geom.BlockSize]);
   }
 
@@ -498,6 +499,27 @@ public static class MinixFsInPlaceModifier {
   private static void WriteAt(Stream image, long offset, byte[] data) {
     image.Position = offset;
     image.Write(data, 0, data.Length);
+  }
+
+  /// <summary>
+  /// The zone map's bit for an absolute zone number.
+  /// </summary>
+  /// <remarks>
+  /// The map covers the data zones only and counts from the first of them, with
+  /// bit 0 reserved — so absolute zone Z sits at bit Z - firstdatazone + 1, and
+  /// the metadata zones below firstdatazone are not in it at all. Everything
+  /// here used to mark the absolute number instead, which only ever agreed with
+  /// what a minix system expects on a volume with no free space in it.
+  /// </remarks>
+  private static int ZoneBit(Geometry geom, long zone) => (int)(zone - geom.FirstDataZone + 1);
+
+  /// <summary>The absolute zone number a zone-map bit stands for.</summary>
+  private static int ZoneOfBit(Geometry geom, int bit) => bit + (int)geom.FirstDataZone - 1;
+
+  /// <summary>Claims a free data zone and returns its absolute number.</summary>
+  private static int? AllocateZone(byte[] zmapBuf, Geometry geom) {
+    var bit = AllocateBit(zmapBuf, 1, ZoneBit(geom, geom.TotalZones));
+    return bit == null ? null : ZoneOfBit(geom, bit.Value);
   }
 
   private static bool TestBit(byte[] bitmap, int bit) =>

@@ -42,11 +42,30 @@ internal static class ThirdPartyFsCheck {
     string? MountType, string MountOptions, bool SevenZip,
     string? Fsck, string FsckArgs, int[] FsckOkExitCodes);
 
+  // Declared before the table below, because a static field initialiser runs in
+  // declaration order: with these underneath, every mount option built from them
+  // asked for uid=0 — root — and the invoking user could not read what it had
+  // just mounted.
+  private static readonly int Uid = GetId("-u");
+  private static readonly int Gid = GetId("-g");
+
   private static readonly Dictionary<string, Strategy> Strategies = new(StringComparer.OrdinalIgnoreCase) {
     // The adfs driver hands the root out as root-owned 0511, so a test running as
     // anyone else cannot list what is in it; the masks open what is already there.
     ["Adfs"] = new("adfs", "ownmask=0777,othmask=0777", false, null, "", []),
-    ["Apfs"] = new("apfs", "", false, null, "", []),
+    // The Amiga file system a bare ADF holds is the one Linux calls affs. It
+    // hands everything to root as 0700 and does not know uid=/gid=, so the
+    // ownership it does understand is spelled out here instead.
+    ["Adf"] = new("affs", "setuid=" + Uid + ",setgid=" + Gid + ",mode=644", false, null, "", []),
+    // apfsprogs ships a checker as well as the driver. It takes no read-only
+    // flag -- it never writes -- so the image is simply handed to it.
+    ["Apfs"] = new("apfs", "", false, "fsck.apfs", "{0}", [0]),
+    // BeOS/Haiku BFS. The kernel's befs driver is read-only and has no checker,
+    // so mounting it and reading the files back is the whole outside opinion —
+    // and the one that matters, since it is the driver a volume has to satisfy.
+    // It hands a root-owned 0700 root directory to whoever mounts it, so the
+    // ownership is spelled out the way this driver spells it.
+    ["Bfs"] = new("befs", "uid=" + Uid + ",gid=" + Gid, false, null, "", []),
     // A bcachefs volume written whole carries no allocation information — the trees
     // a running filesystem keeps so it can decide where to write next — and says so
     // twice: once with the feature bit for that, and once with the bit that says it
@@ -89,6 +108,7 @@ internal static class ThirdPartyFsCheck {
     // made against our own reader instead.
     ["Nilfs2"] = new(null, "", false, null, "", []),
     ["Ntfs"] = new("ntfs3", "", true, null, "", []),
+    ["Ocfs2"] = new("ocfs2", "", false, "fsck.ocfs2", "-fn {0}", [0]),
     ["Qnx4"] = new("qnx4", "", false, null, "", []),
     ["Qnx6"] = new("qnx6", "", false, null, "", []),
     // No reiser4 driver ships with mainline, so there is nothing to mount against;
@@ -220,7 +240,14 @@ internal static class ThirdPartyFsCheck {
 
       var (_, stderr, exit) = Sudo($"mount -t {strategy.MountType} -o {options} {Quote(imagePath)} {Quote(mountPoint)}");
       if (exit != 0)
-        return new Collected(false, [], $"mount failed ({exit}): {Truncate(stderr)}");
+        // A driver that is present and refuses the volume has given its opinion,
+        // and it is the one that counts. Reporting that as "nothing here could
+        // read it" turned a driver saying no into a check nobody had run --
+        // which is how a BFS volume the kernel would not mount passed for as
+        // long as it did. A driver that is not installed is a different thing,
+        // and still says so.
+        return new Collected(DriverIsLoaded(strategy.MountType!), [],
+          $"mount failed ({exit}): {Truncate(stderr)}");
 
       try {
         var payloads = new List<byte[]>();
@@ -312,13 +339,29 @@ internal static class ThirdPartyFsCheck {
   // ── process plumbing ──────────────────────────────────────────────────────
 
   private static readonly string? SevenZip = Which("7z") ?? Which("7zz");
-  private static readonly int Uid = GetId("-u");
-  private static readonly int Gid = GetId("-g");
 
   /// <summary>
   /// Whether images can be mounted here at all: mounting needs root, and these
   /// tests never prompt for a password.
   /// </summary>
+  /// <summary>Whether the kernel here has the driver for a filesystem at all.</summary>
+  /// <remarks>
+  /// Asked after a modprobe, because most of these drivers are modules that
+  /// nothing has needed yet. A type missing from /proc/filesystems once the
+  /// module has been asked for is one this host genuinely cannot mount.
+  /// </remarks>
+  private static bool DriverIsLoaded(string mountType) {
+    try {
+      Run("sudo", $"-n modprobe {mountType}");
+      foreach (var line in File.ReadAllLines("/proc/filesystems"))
+        if (line.TrimEnd().EndsWith("\t" + mountType, StringComparison.Ordinal)
+            || line.Trim() == mountType) return true;
+    } catch {
+      // Fall through: a host that will not tell us has no opinion to give.
+    }
+    return false;
+  }
+
   private static readonly bool CanMount = OperatingSystem.IsLinux() && HasPasswordlessSudo();
 
   private static bool HasPasswordlessSudo() {

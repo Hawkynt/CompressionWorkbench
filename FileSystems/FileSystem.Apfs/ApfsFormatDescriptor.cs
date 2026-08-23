@@ -243,7 +243,13 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         readContents: ReadPayloadsForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
-      if (planned) return;
+      if (planned) {
+        // What the pass moved is named by block in the extent-reference tree, so
+        // that tree has to be taken again from where the files now are.
+        archive.Position = 0;
+        try { ApfsModifier.RefreshDerivedState(archive); } catch (InvalidDataException) { }
+        return;
+      }
       archive.Position = 0;
     }
 

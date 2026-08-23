@@ -611,7 +611,12 @@ public sealed class ExtWriter {
     root.Subdirs["lost+found"] =
       new DirNode { Inode = lostAndFoundInode, Parent = RootInode, Name = "lost+found" };
 
-    var fileInodes = new List<(uint Inode, DirNode Parent, string LeafName, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)>();
+    // Each entry carries the position it came from in the registered list. The
+    // hole map and the content key are both looked up by that position, and
+    // once deduplication starts dropping entries this list no longer runs in
+    // step with it — a file's own place here is not where it was registered.
+    var fileInodes = new List<(uint Inode, DirNode Parent, string LeafName, byte[] Data,
+      long? StreamingSize, Func<Stream>? StreamOpener, int SourceIndex)>();
     // When identical files are to share one copy, the first of them gets the
     // inode and the blocks; every later one gets a directory entry naming that
     // same inode and nothing else. The inode's link count is how many names it
@@ -647,14 +652,14 @@ public sealed class ExtWriter {
         var firstInode = nextInode++;
         inodeOfContent[key] = firstInode;
         linksOfInode[firstInode] = 1;
-        fileInodes.Add((firstInode, dir, leaf, data, streamingSize, opener));
+        fileInodes.Add((firstInode, dir, leaf, data, streamingSize, opener, fileOrdinalForContent));
         dir.Files.Add((leaf, firstInode));
         continue;
       }
 
       var fileInode = nextInode++;
       linksOfInode[fileInode] = 1;
-      fileInodes.Add((fileInode, dir, leaf, data, streamingSize, opener));
+      fileInodes.Add((fileInode, dir, leaf, data, streamingSize, opener, fileOrdinalForContent));
       dir.Files.Add((leaf, fileInode));
     }
 
@@ -799,9 +804,7 @@ public sealed class ExtWriter {
     // Files use up to 12 direct block pointers, then the classic single /
     // double / triple indirect map. Pointer blocks count toward i_blocks
     // (e2fsck tallies them in the 512-byte sector count).
-    var fileOrdinal = -1;
-    foreach (var (fileInode, _, _, data, streamingSize, streamOpener) in fileInodes) {
-      ++fileOrdinal;
+    foreach (var (fileInode, _, _, data, streamingSize, streamOpener, sourceIndex) in fileInodes) {
       var fileInodeOffset = InodeOffset(fileInode);
       var effectiveLength = streamingSize ?? (long)data.Length;
 
@@ -809,7 +812,7 @@ public sealed class ExtWriter {
 
       // A hole keeps its slot in the map and costs no block: the pointer is zero,
       // and ext hands back zeros for it.
-      var holes = this.HoleMap(fileOrdinal, blockSize);
+      var holes = this.HoleMap(sourceIndex, blockSize);
       var fileBlocks = new List<int>(blocksNeeded);
       for (var b = 0; b < blocksNeeded; ++b)
         fileBlocks.Add(b < holes.Length && holes[b] ? 0 : AllocBlock());

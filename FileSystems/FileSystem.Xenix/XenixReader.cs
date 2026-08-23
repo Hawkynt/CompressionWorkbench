@@ -138,15 +138,15 @@ public sealed class XenixReader : IDisposable {
     }
     if (remaining > 0) {
       if (zones[10] != 0) this.ReadIndirect(ms, zones[10], ref remaining, 1);
-      else AppendHole(ms, ref remaining, (long)(this.BlockSize / 3) * this.BlockSize);
+      else AppendHole(ms, ref remaining, (long)(this.BlockSize / 4) * this.BlockSize);
     }
     if (remaining > 0) {
       if (zones[11] != 0) this.ReadIndirect(ms, zones[11], ref remaining, 2);
-      else AppendHole(ms, ref remaining, (long)(this.BlockSize / 3) * this.BlockSize * (this.BlockSize / 3));
+      else AppendHole(ms, ref remaining, (long)(this.BlockSize / 4) * this.BlockSize * (this.BlockSize / 4));
     }
     if (remaining > 0) {
       if (zones[12] != 0) this.ReadIndirect(ms, zones[12], ref remaining, 3);
-      else AppendHole(ms, ref remaining, (long)(this.BlockSize / 3) * this.BlockSize * (this.BlockSize / 3) * (this.BlockSize / 3));
+      else AppendHole(ms, ref remaining, (long)(this.BlockSize / 4) * this.BlockSize * (this.BlockSize / 4) * (this.BlockSize / 4));
     }
     return ms.ToArray();
   }
@@ -163,9 +163,16 @@ public sealed class XenixReader : IDisposable {
     if (indirectBlock == 0 || remaining <= 0) return;
     var offset = this.BlockOffset(indirectBlock);
     if (offset + this.BlockSize > this._data.Length) return;
-    var ptrsPerBlock = this.BlockSize / 3;
+    // Four bytes per pointer, not the three an inode packs them into. The
+    // inode's thirteen block numbers are squeezed into thirty-nine bytes; the
+    // blocks below it hold plain little-endian words, and this used to read them
+    // three bytes at a time. Everything past the first pointer of an indirect
+    // block came back as the wrong block, and every file large enough to need
+    // one was wrong from its eleventh block on. The kernel driver reads a volume
+    // written the other way and hands back every byte, which is what settled it.
+    var ptrsPerBlock = this.BlockSize / 4;
     for (var i = 0; i < ptrsPerBlock && remaining > 0; i++) {
-      var ptr = Read24(this._data.AsSpan((int)offset + i * 3));
+      var ptr = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan((int)offset + i * 4));
       if (ptr == 0) {
         // Everything this pointer would have addressed is hole.
         var span = (long)this.BlockSize;
@@ -258,6 +265,17 @@ public sealed class XenixReader : IDisposable {
         if (remaining <= 0) break;
         remaining -= this.BlockSize;
 
+        // A hole owns nothing, so there is nothing to report and nothing to
+        // move. It still ends whatever run was being gathered: the blocks on
+        // either side of it are not adjacent in the file even where they are on
+        // the disk.
+        if (block == 0) {
+          if (runPointer >= 0)
+            yield return (this.BlockOffset(runFirstBlock), (long)runBlocks * this.BlockSize, runPointer, owner);
+          runPointer = -1;
+          continue;
+        }
+
         // A run continues only while the blocks stay consecutive and so do the
         // pointers naming them: a move rewrites the pointers in order, so a gap
         // in either would put the wrong blocks under the wrong pointers.
@@ -287,15 +305,17 @@ public sealed class XenixReader : IDisposable {
   /// </summary>
   private IEnumerable<(uint Block, long PointerOffset, bool IsPointerBlock)> EnumerateBlockPointers(
       uint[] zones, long inodeOffset) {
-    for (var i = 0; i < 10; ++i) {
-      if (zones[i] == 0) yield break;
+    // Holes are reported too, as a block of zero. They own nothing, but they
+    // hold their place in the file -- and this used to stop at the first one it
+    // met, which left every block after a hole invisible to anything asking
+    // where a file's bytes are. A defragmentation reads this to know what to
+    // move.
+    for (var i = 0; i < 10; ++i)
       yield return (zones[i], inodeOffset + 12 + (long)i * 3, false);
-    }
 
     for (var level = 1; level <= 3; ++level) {
       var root = zones[9 + level];
-      if (root == 0) continue;
-      yield return (root, -1, true);
+      if (root != 0) yield return (root, -1, true);
       foreach (var triple in this.EnumerateIndirectPointers(root, level))
         yield return triple;
     }
@@ -304,18 +324,26 @@ public sealed class XenixReader : IDisposable {
   /// <summary>The blocks an indirect block names, descending as many levels as asked.</summary>
   private IEnumerable<(uint Block, long PointerOffset, bool IsPointerBlock)> EnumerateIndirectPointers(
       uint block, int levels) {
-    var blockOffset = this.BlockOffset(block);
-    if (blockOffset < 0 || blockOffset + this.BlockSize > this._data.Length) yield break;
+    // A pointer of zero is a hole as wide as everything it would have addressed
+    // -- one block at the bottom level, and a whole subtree above it -- so an
+    // absent block still accounts for the part of the file behind it.
+    var reach = 1L;
+    for (var i = 0; i < levels; ++i) reach *= this.BlockSize / 4;
+
+    var blockOffset = block == 0 ? -1 : this.BlockOffset(block);
+    if (blockOffset < 0 || blockOffset + this.BlockSize > this._data.Length) {
+      for (var i = 0L; i < reach; ++i) yield return (0, -1, false);
+      yield break;
+    }
 
     for (var i = 0; i < this.BlockSize / 4; ++i) {
       var at = blockOffset + (long)i * 4;
       var pointer = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan((int)at, 4));
-      if (pointer == 0) continue;
       if (levels <= 1) {
         yield return (pointer, at, false);
         continue;
       }
-      yield return (pointer, -1, true);
+      if (pointer != 0) yield return (pointer, -1, true);
       foreach (var triple in this.EnumerateIndirectPointers(pointer, levels - 1))
         yield return triple;
     }

@@ -138,8 +138,10 @@ public class ApfsModifyTests {
     var mutated = img.ToArray();
     var nx = mutated.AsSpan(0, 4096);
     var nxCopy = mutated.AsSpan(2 * 4096, 4096);
-    var apsb = mutated.AsSpan(5 * 4096, 4096);
-    var fsLeaf = mutated.AsSpan(8 * 4096, 4096);
+    // Found through the maps rather than at block numbers written down here:
+    // those move whenever the container layout is corrected.
+    var apsb = mutated.AsSpan((int)ApfsTestLayout.ApsbBlock(mutated) * 4096, 4096);
+    var fsLeaf = mutated.AsSpan((int)ApfsTestLayout.FsTreeBlock(mutated) * 4096, 4096);
     var chkMap = mutated.AsSpan(1 * 4096, 4096);
 
     Assert.That(ApfsFletcher64.Verify(nx), Is.True, "NXSB Fletcher-64 must verify after mutation.");
@@ -178,6 +180,7 @@ public class ApfsModifyTests {
 
     var bytes = img.ToArray();
     Assert.That(ApfsFletcher64.Verify(bytes.AsSpan(0, 4096)), Is.True);
-    Assert.That(ApfsFletcher64.Verify(bytes.AsSpan(8 * 4096, 4096)), Is.True);
+    Assert.That(ApfsFletcher64.Verify(
+      bytes.AsSpan((int)ApfsTestLayout.FsTreeBlock(bytes) * 4096, 4096)), Is.True);
   }
 }

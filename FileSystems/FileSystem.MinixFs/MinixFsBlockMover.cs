@@ -66,6 +66,12 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
     var zmapOffset = 2L * blockSize + (long)imapBlocks * blockSize;
     var inodeTableOffset = zmapOffset + (long)zmapBlocks * blockSize;
 
+    // The zone map covers the data zones only and counts from the first of them,
+    // with bit 0 reserved: absolute zone Z sits at bit Z - firstdatazone + 1.
+    // Marking the absolute number instead claimed and released the wrong bits.
+    var firstDataZone = BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(10)); // s_firstdatazone
+    int ZoneBit(uint zone) => (int)zone - firstDataZone + 1;
+
     var oldZone = (uint)(oldOffset / blockSize);
     var newZone = (uint)(newOffset / blockSize);
     var zoneCount = (int)((length + blockSize - 1) / blockSize);
@@ -74,7 +80,7 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
 
     // Step 1: Claim new zones in zone bitmap.
     for (var i = 0; i < zoneCount; i++)
-      SetBitStream(image, zmapOffset, (int)(newZone + (uint)i));
+      SetBitStream(image, zmapOffset, ZoneBit(newZone + (uint)i));
     cache.Invalidate(zmapOffset, zmapBlocks * blockSize);
     image.Flush();
 
@@ -93,12 +99,22 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
       Array.Copy(read, inodeBuf, V3InodeSize);
       for (var z = 0; z < 10; z++) {
         var ptr = BinaryPrimitives.ReadUInt32LittleEndian(inodeBuf.AsSpan(24 + z * 4));
-        if (ptr == 0) break;
+        // A pointer of zero is a hole, not the end of the file. Stopping here
+        // left every pointer behind a hole naming a zone that had moved.
+        if (ptr == 0) continue;
         if (ptr >= oldZone && ptr < oldZone + (uint)zoneCount) {
           BinaryPrimitives.WriteUInt32LittleEndian(inodeBuf.AsSpan(24 + z * 4),
             newZone + (ptr - oldZone));
           changed = true;
+          continue;
         }
+
+        // Past the seven direct slots the pointer names a block of pointers,
+        // and the zones that moved may be named in there rather than here. This
+        // used to look only at the inode, so a file large enough to need
+        // indirect addressing kept pointing at where its bytes had been.
+        if (z >= DirectSlots)
+          PatchIndirect(image, cache, ptr, z - DirectSlots + 1, oldZone, newZone, zoneCount, blockSize);
       }
       if (changed) {
         image.Position = inodeOff;
@@ -110,9 +126,43 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
 
     // Step 3: Release old zones in zone bitmap.
     for (var i = 0; i < zoneCount; i++)
-      ClearBitStream(image, zmapOffset, (int)(oldZone + (uint)i));
+      ClearBitStream(image, zmapOffset, ZoneBit(oldZone + (uint)i));
     cache.Invalidate(zmapOffset, zmapBlocks * blockSize);
     image.Flush();
+  }
+
+  /// <summary>Zone slots in an inode that name data directly.</summary>
+  private const int DirectSlots = 7;
+
+  /// <summary>
+  /// Rewrites any pointer inside an indirect block that names a zone which has
+  /// moved, descending as many levels as the slot it came from implies.
+  /// </summary>
+  private static void PatchIndirect(Stream image, SectorCache cache, uint block, int level,
+      uint oldZone, uint newZone, int zoneCount, int blockSize) {
+    var offset = (long)block * blockSize;
+    if (offset < 0 || offset + blockSize > cache.Length) return;
+
+    var buffer = cache.Read(offset, blockSize);
+    var changed = false;
+    for (var i = 0; i < blockSize / 4; ++i) {
+      var ptr = BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(i * 4));
+      if (ptr == 0) continue;
+
+      if (level <= 1) {
+        if (ptr < oldZone || ptr >= oldZone + (uint)zoneCount) continue;
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(i * 4), newZone + (ptr - oldZone));
+        changed = true;
+        continue;
+      }
+
+      PatchIndirect(image, cache, ptr, level - 1, oldZone, newZone, zoneCount, blockSize);
+    }
+
+    if (!changed) return;
+    image.Position = offset;
+    image.Write(buffer, 0, blockSize);
+    cache.Invalidate(offset, blockSize);
   }
 
   private static void SetBitStream(Stream image, long bitmapOffset, int bit) {
