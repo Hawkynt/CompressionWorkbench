@@ -29,6 +29,7 @@ public class WimReferenceReaderTests {
     WimConstants.CompressionXpress,
     WimConstants.CompressionXpressHuffman,
     WimConstants.CompressionLzx,
+    WimConstants.CompressionLzms,
   ];
 
   /// <summary>
@@ -50,6 +51,19 @@ public class WimReferenceReaderTests {
     var large = new byte[300_000];
     for (var i = 0; i < large.Length; ++i) large[i] = (byte)(i * 37 + 11);
 
+    // arrays of stepped integers, which is what makes LZMS reach for delta
+    // matches - the item kind that no other probe here exercises
+    var stepped = new List<byte>();
+    var noise = new Random(23);
+    for (var i = 0; i < 600; ++i) stepped.Add((byte)noise.Next(256));
+    for (var step = 1; step <= 0x100; step *= 16) {
+      var value = 0x10000u;
+      for (var i = 0; i < 500; ++i) {
+        stepped.AddRange(BitConverter.GetBytes(value));
+        value += (uint)step;
+      }
+    }
+
     return [
       ("A.TXT", "a short line of text\n"u8.ToArray()),
       ("B.BIN", random),
@@ -59,6 +73,7 @@ public class WimReferenceReaderTests {
       ("nested/COPY.BIN", (byte[])repeated.Clone()),
       ("TEXT.TXT", text),
       ("deep/down/BIG.BIN", large),
+      ("STEPPED.BIN", stepped.ToArray()),
     ];
   }
 

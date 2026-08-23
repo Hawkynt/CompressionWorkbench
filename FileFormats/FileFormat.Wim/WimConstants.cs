@@ -25,6 +25,16 @@ public static class WimConstants {
   public const uint Version = 0x00010D00u;
 
   /// <summary>
+  /// The version an LZMS image carries instead, with 128 KB chunks rather than
+  /// 32 KB. An LZMS resource is only ever found in one of these, so writing the
+  /// ordinary version alongside LZMS would mark the container as ours.
+  /// </summary>
+  public const uint VersionSolid = 0x00000E00u;
+
+  /// <summary>Chunk size an LZMS image uses.</summary>
+  public const int SolidChunkSize = 128 * 1024;
+
+  /// <summary>
   /// Default chunk size for compressed resources: 32 768 bytes (32 KB).
   /// </summary>
   public const int DefaultChunkSize = 32 * 1024;

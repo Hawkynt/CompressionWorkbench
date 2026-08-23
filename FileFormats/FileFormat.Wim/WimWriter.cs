@@ -63,17 +63,11 @@ public sealed class WimWriter {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(chunkSize, 0);
 
-    if (compressionType == WimConstants.CompressionLzms)
-      throw new NotSupportedException(
-        "LZMS resources here are not the ones a WIM holds: the range-coded and Huffman-coded "
-        + "halves of a chunk run in the opposite directions from the format's, the offset slots "
-        + "are a scheme of our own, and an image using LZMS is version 3584 with 128 KB chunks "
-        + "rather than 1.13 with 32 KB. Writing one would produce a container no reader opens. "
-        + "Use CompressionXpress or CompressionLzx, both of which reference readers accept.");
-
     this._output = output;
     this._compressionType = compressionType;
-    this._chunkSize = chunkSize;
+    this._chunkSize = compressionType == WimConstants.CompressionLzms && chunkSize == WimConstants.DefaultChunkSize
+      ? WimConstants.SolidChunkSize
+      : chunkSize;
   }
 
   /// <summary>
@@ -164,6 +158,11 @@ public sealed class WimWriter {
     this._output.Seek(start, SeekOrigin.Begin);
     var header = new WimHeader {
       WimFlags        = wimFlags,
+      // LZMS is only ever found in the later container, so an image using it
+      // says so in the version as well as in the flags.
+      Version         = this._compressionType == WimConstants.CompressionLzms
+        ? WimConstants.VersionSolid
+        : WimConstants.Version,
       CompressionType = this._compressionType,
       // Only a compressed WIM has a chunk size; on an uncompressed one the field
       // would describe chunks that are never cut.
@@ -297,7 +296,7 @@ public sealed class WimWriter {
       WimConstants.CompressionXpress        => new XpressHuffmanCompressor().Compress(chunk),
       WimConstants.CompressionXpressHuffman => new XpressHuffmanCompressor().Compress(chunk),
       WimConstants.CompressionLzx           => CompressLzx(chunk),
-      WimConstants.CompressionLzms => new LzmsCompressor().Compress(chunk),
+      WimConstants.CompressionLzms          => new LzmsCompressor().Compress(chunk),
       _ => throw new NotSupportedException(
         $"Unsupported WIM compression type: {this._compressionType}.")
     };
