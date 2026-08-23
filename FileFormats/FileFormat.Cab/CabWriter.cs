@@ -19,7 +19,7 @@ public sealed class CabWriter {
   private readonly CabCompressionType _compressionType;
   private readonly DeflateCompressionLevel _deflateLevel;
   private readonly int _lzxWindowBits;
-  private readonly int _quantumWindowLevel;
+  private readonly int _quantumWindowBits;
 
   /// <summary>
   /// Gets or sets the cabinet set identifier. Defaults to 0.
@@ -57,15 +57,15 @@ public sealed class CabWriter {
   /// The LZX window size exponent (15–21) used when
   /// <paramref name="compressionType"/> is <see cref="CabCompressionType.Lzx"/>.
   /// </param>
-  /// <param name="quantumWindowLevel">
-  /// The Quantum window level (1–7) used when
+  /// <param name="quantumWindowBits">
+  /// The Quantum window size exponent (10–21) used when
   /// <paramref name="compressionType"/> is <see cref="CabCompressionType.Quantum"/>.
   /// </param>
   public CabWriter(
     CabCompressionType compressionType = CabCompressionType.MsZip,
     DeflateCompressionLevel deflateLevel = DeflateCompressionLevel.Default,
     int lzxWindowBits = 15,
-    int quantumWindowLevel = 4) {
+    int quantumWindowBits = 15) {
     if (compressionType is not CabCompressionType.None
         and not CabCompressionType.MsZip
         and not CabCompressionType.Lzx
@@ -74,18 +74,10 @@ public sealed class CabWriter {
         $"CabWriter only supports None, MsZip, Lzx, and Quantum compression; got {compressionType}.",
         nameof(compressionType));
 
-    if (compressionType == CabCompressionType.Quantum)
-      throw new NotSupportedException(
-        "Quantum cabinets here are not the ones a cabinet reader opens: the folder's window "
-        + "field is written on a scale of our own where the format wants window bits of 10 to 21, "
-        + "and the coded stream does not agree with the reference either. Writing one would "
-        + "produce a cabinet whose every file fails to extract. Use MsZip or Lzx, both of which "
-        + "cabextract and 7-Zip accept.");
-
     this._compressionType    = compressionType;
     this._deflateLevel       = deflateLevel;
     this._lzxWindowBits      = lzxWindowBits;
-    this._quantumWindowLevel = quantumWindowLevel;
+    this._quantumWindowBits  = quantumWindowBits;
   }
 
   /// <summary>
@@ -193,7 +185,8 @@ public sealed class CabWriter {
     writer.Write((ushort)dataBlocks.Count);     // cCFData
     var typeCompress = this._compressionType switch {
       CabCompressionType.Lzx     => (ushort)((this._lzxWindowBits << 8) | (ushort)CabCompressionType.Lzx),
-      CabCompressionType.Quantum => (ushort)((this._quantumWindowLevel << 8) | (ushort)CabCompressionType.Quantum),
+      // Quantum names its window in bits, with the effort level in the nibble below
+      CabCompressionType.Quantum => (ushort)((this._quantumWindowBits << 8) | (7 << 4) | (ushort)CabCompressionType.Quantum),
       _                          => (ushort)this._compressionType,
     };
     writer.Write(typeCompress); // typeCompress
@@ -275,21 +268,12 @@ public sealed class CabWriter {
     }
 
     if (this._compressionType == CabCompressionType.Quantum) {
-      var blocks = new List<(byte[], int)>();
-      var offset = 0;
+      if (data.Length == 0)
+        return [([], 0)];
 
-      while (offset < data.Length) {
-        var len = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
-        var chunk = data.AsSpan(offset, len);
-        var compressed = QuantumCompressor.Compress(chunk, this._quantumWindowLevel);
-        blocks.Add((compressed, len));
-        offset += len;
-      }
-
-      if (blocks.Count == 0)
-        blocks.Add(([], 0));
-
-      return blocks;
+      return QuantumCompressor.CompressBlocks(data, this._quantumWindowBits)
+        .Select(block => (block.Compressed, block.Consumed))
+        .ToList();
     }
 
     // MSZIP: use MsZipCompressor which adds "CK" prefix to each Deflate block.

@@ -112,8 +112,8 @@ public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       _ => CabCompressionType.MsZip,
     };
     var lzxWindow = options.Level.HasValue ? Math.Clamp(options.Level.Value, 15, 21) : 15;
-    var quantumLevel = options.Level.HasValue ? Math.Clamp(options.Level.Value, 1, 7) : 4;
-    var w = new CabWriter(compType, lzxWindowBits: lzxWindow, quantumWindowLevel: quantumLevel);
+    var quantumWindow = options.Level.HasValue ? Math.Clamp(options.Level.Value, 10, 21) : 15;
+    var w = new CabWriter(compType, lzxWindowBits: lzxWindow, quantumWindowBits: quantumWindow);
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);

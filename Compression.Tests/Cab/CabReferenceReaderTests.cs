@@ -99,6 +99,89 @@ public class CabReferenceReaderTests {
     }
   }
 
+  /// <summary>
+  /// Quantum, which has a probe set of its own.
+  /// </summary>
+  /// <remarks>
+  /// <para>The probe set covers every item kind — literals, matches of three, four and
+  /// more, distances near and far, the extra bits that hang off both slot tables — and
+  /// sizes past the two places the encoding used to stop: a model's sorting rescales,
+  /// which data that resists compression reaches after about 1200 bytes and again
+  /// 50 rescales later, and the end of a data block, past which a folder's models have
+  /// to carry.</para>
+  ///
+  /// <para>The point of asking cabextract is that it is libmspack, which is the
+  /// reference for this encoding and the only thing that can say whether what we wrote
+  /// is Quantum rather than merely something we can read back.</para>
+  /// </remarks>
+  [Category("Interop")]
+  [Test]
+  public void AQuantumCabinetWeWrote_PassesTheToolThatOwnsTheFormat() {
+    if (!OperatingSystem.IsLinux()) Assert.Ignore("The reference readers run on Linux.");
+
+    var cabextract = Which("cabextract");
+    if (cabextract == null) Assert.Ignore("cabextract is not installed.");
+
+    var phrase = System.Text.Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog. ");
+    var text = new byte[20_000];
+    for (var i = 0; i < text.Length; ++i)
+      text[i] = phrase[i % phrase.Length];
+
+    var runs = new byte[16_000];
+    for (var i = 0; i < runs.Length; ++i)
+      runs[i] = (byte)(i / 400);
+
+    var random = new byte[600];
+    new Random(20200102).NextBytes(random);
+
+    // past a block: the models have to carry from one data block to the next
+    var big = new byte[80_000];
+    new Random(20200103).NextBytes(big);
+
+    // past the sorting rescales, in one block
+    var full = new byte[32_768];
+    new Random(20200104).NextBytes(full);
+
+    (string Name, byte[] Data)[] files = [
+      ("TEXT.TXT", text),
+      ("RUNS.BIN", runs),
+      ("RANDOM.BIN", random),
+      ("FULL.BIN", full),
+      ("BIG.BIN", big),
+      ("ZEROS.BIN", new byte[9_000]),
+      ("ONE.BIN", [0x51]),
+    ];
+
+    var stamp = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+    var root = Path.Combine(Path.GetTempPath(), "cwb_qtm_" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(root);
+
+    try {
+      foreach (var (name, data) in files) {
+        // one file per cabinet, so a failure names the payload that caused it
+        var writer = new CabWriter(CabCompressionType.Quantum);
+        writer.AddFile(name, data, stamp);
+        var path = Path.Combine(root, name + ".cab");
+        using (var output = File.Create(path))
+          writer.WriteTo(output);
+
+        var (exit, complaint) = Run(cabextract, $"-t \"{path}\"");
+        Assert.That(complaint, Does.Contain("no errors"),
+          $"cabextract would not test the Quantum cabinet holding {name}: {FirstComplaint(complaint)}");
+        Assert.That(exit, Is.Zero, $"cabextract exited {exit} on the Quantum cabinet holding {name}");
+
+        var into = Path.Combine(root, "out_" + name);
+        Run(cabextract, $"-d \"{into}\" \"{path}\"");
+        var extracted = Path.Combine(into, name);
+        Assert.That(File.Exists(extracted), $"cabextract tested {name} but would not extract it");
+        Assert.That(File.ReadAllBytes(extracted), Is.EqualTo(data).AsCollection,
+          $"cabextract read {name} out of our Quantum cabinet and got different bytes");
+      }
+    } finally {
+      try { Directory.Delete(root, true); } catch { /* the scratch directory is already gone */ }
+    }
+  }
+
   private static string FirstComplaint(string output) {
     foreach (var line in output.Split('\n')) {
       var trimmed = line.Trim();

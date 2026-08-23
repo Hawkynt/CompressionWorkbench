@@ -15,7 +15,6 @@ namespace FileFormat.Cab;
 public sealed class CabReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
-  private readonly int _quantumModelMaxTotal;
   private readonly List<CabEntry> _entries = [];
   private readonly List<FolderInfo> _folders = [];
   private bool _disposed;
@@ -40,19 +39,12 @@ public sealed class CabReader : IDisposable {
   /// <param name="leaveOpen">
   /// When <c>true</c>, the stream is not closed on <see cref="Dispose"/>.
   /// </param>
-  /// <param name="quantumModelMaxTotal">
-  /// The total frequency at which Quantum's adaptive models halve their counts. The
-  /// default matches <see cref="QuantumCompressor"/>; Quantum folders written by other
-  /// tools are not readable here, as this is not the CAB Quantum bitstream.
-  /// </param>
   /// <exception cref="InvalidDataException">
   /// Thrown when the stream does not contain a valid CAB archive.
   /// </exception>
-  public CabReader(Stream stream, bool leaveOpen = false,
-    int quantumModelMaxTotal = 1 << 14) {
+  public CabReader(Stream stream, bool leaveOpen = false) {
     this._stream    = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
-    this._quantumModelMaxTotal = quantumModelMaxTotal;
     this.ReadHeader();
   }
 
@@ -182,6 +174,7 @@ public sealed class CabReader : IDisposable {
       this._stream.Position = at;
     }
 
+    QuantumDecompressor.FolderReader? quantum = null;
     for (var i = 0; i < folder.DataCount; ++i) {
       var csum     = reader.ReadUInt32(); // checksum (ignored)
       var cbData   = reader.ReadUInt16(); // compressed size
@@ -200,11 +193,10 @@ public sealed class CabReader : IDisposable {
         }
 
         case CabCompressionType.Quantum: {
-          var windowLevel = (folder.RawCompressionType >> 8) & 0x1F;
-          if (windowLevel < 1) windowLevel = 4;
-          var decompressed = QuantumDecompressor.Decompress(abData, cbUncomp, windowLevel,
-            this._quantumModelMaxTotal);
-          output.AddRange(decompressed);
+          // the folder names its window in bits, 10 through 21, and its blocks share
+          // their models, so the folder is read by one reader rather than block by block
+          quantum ??= new QuantumDecompressor.FolderReader((folder.RawCompressionType >> 8) & 0x1F);
+          output.AddRange(quantum.ReadBlock(abData, cbUncomp));
           break;
         }
 

@@ -1,94 +1,73 @@
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Bit-oriented 32-bit arithmetic decoder used by the Quantum decompressor.
+/// Quantum's arithmetic decoder, the mirror of <see cref="QuantumRangeEncoder"/>.
 /// </summary>
 /// <remarks>
-/// The exact mirror of <see cref="QuantumRangeEncoder"/>: it tracks the same
-/// [low, high] interval and performs the same renormalisation, shifting one code bit
-/// in from the stream each time the encoder shifted one out. Bits are read
-/// most-significant-bit first, and reads past the end of the data yield zero bits so
-/// that the encoder's zero padding of the final byte needs no separate handling.
+/// It primes itself with the first sixteen bits and then shifts one bit in for each
+/// one the encoder shifted out. A slot's extra bits are taken raw from the stream at
+/// whatever point the reading has reached, which is exactly why the encoder has to
+/// place them sixteen bits ahead of its own output. Reads past the end yield zeros so
+/// that a block's padding needs no special case.
 /// </remarks>
 internal sealed class QuantumRangeDecoder {
-  private const uint Top = 0xFFFFFFFFu;
-  private const uint Half = 0x80000000u;
-  private const uint Quarter = 0x40000000u;
-  private const uint ThreeQuarters = 0xC0000000u;
-
   private readonly ReadOnlyMemory<byte> _data;
   private int _bitPosition;
   private uint _low;
-  private uint _high = Top;
-  private uint _value;
+  private uint _high = 0xFFFF;
+  private uint _code;
 
-  /// <summary>
-  /// Initializes a new <see cref="QuantumRangeDecoder"/> from compressed data.
-  /// </summary>
-  /// <param name="data">The packed code bits produced by <see cref="QuantumRangeEncoder"/>.</param>
+  /// <summary>Initializes a decoder over one cabinet block.</summary>
+  /// <param name="data">The compressed bytes.</param>
   public QuantumRangeDecoder(ReadOnlyMemory<byte> data) {
     this._data = data;
-    for (var i = 0; i < 32; ++i)
-      this._value = (this._value << 1) | this.NextBit();
+    for (var i = 0; i < 16; ++i)
+      this._code = (this._code << 1) | this.NextBit();
   }
 
-  /// <summary>Decodes a symbol from the given adaptive model and updates the model.</summary>
-  /// <param name="model">The adaptive frequency model.</param>
-  /// <returns>The decoded symbol index.</returns>
-  public int DecodeSymbol(QuantumModel model) {
-    var range = (ulong)this._high - this._low + 1;
-    var total = (ulong)model.TotalFrequency;
-    var scaled = (int)((((ulong)(this._value - this._low) + 1) * total - 1) / range);
-    var symbol = model.FindSymbol(scaled, out var cumulativeLow);
-    var cumulativeHigh = (ulong)(cumulativeLow + model.GetFrequency(symbol));
+  /// <summary>Decodes one symbol of a model, then lets the model learn from it.</summary>
+  /// <param name="model">The model to decode against.</param>
+  /// <returns>The symbol, not its position.</returns>
+  public int Decode(QuantumModel model) {
+    var total = (uint)model.TotalFrequency;
+    var range = this._high - this._low + 1;
+    var scaled = (int)(((this._code - this._low + 1) * total - 1) / range);
+    var index = model.FindIndex(scaled, out var above);
+    var atOrAbove = (uint)(above + model.FrequencyAt(index));
 
-    var low = this._low;
-    this._high = (uint)(low + range * cumulativeHigh / total - 1);
-    this._low = (uint)(low + range * (ulong)cumulativeLow / total);
+    this._high = this._low + range * atOrAbove / total - 1;
+    this._low += range * (uint)above / total;
 
-    this.Renormalize();
-    model.Update(symbol);
-    return symbol;
-  }
-
-  /// <summary>Decodes one bit that was written with a fixed 50/50 probability.</summary>
-  /// <returns>The decoded bit (0 or 1).</returns>
-  public int DecodeEqualProbabilityBit() {
-    var range = (ulong)this._high - this._low + 1;
-    var mid = (uint)(this._low + range / 2 - 1);
-
-    int bit;
-    if (this._value <= mid) {
-      bit = 0;
-      this._high = mid;
-    } else {
-      bit = 1;
-      this._low = mid + 1;
-    }
-
-    this.Renormalize();
-    return bit;
-  }
-
-  private void Renormalize() {
     for (;;) {
-      if (this._high < Half) {
-        // Interval sits in the lower half: nothing to subtract, just double it.
-      } else if (this._low >= Half) {
-        this._low -= Half;
-        this._high -= Half;
-        this._value -= Half;
-      } else if (this._low >= Quarter && this._high < ThreeQuarters) {
-        this._low -= Quarter;
-        this._high -= Quarter;
-        this._value -= Quarter;
+      if ((this._low & 0x8000) == (this._high & 0x8000)) {
+        // the top bits agree: nothing to fold away, just widen
+      } else if ((this._low & 0x4000) != 0 && (this._high & 0x4000) == 0) {
+        this._code ^= 0x4000;
+        this._low &= 0x3FFF;
+        this._high |= 0x4000;
       } else
         break;
 
-      this._low <<= 1;
-      this._high = (this._high << 1) | 1;
-      this._value = (this._value << 1) | this.NextBit();
+      this._low = (this._low << 1) & 0xFFFF;
+      this._high = ((this._high << 1) | 1) & 0xFFFF;
+      this._code = ((this._code << 1) | this.NextBit()) & 0xFFFF;
     }
+
+    // the symbol has to be read before the model updates itself
+    var symbol = model.SymbolAt(index);
+    model.Update(index);
+    return symbol;
+  }
+
+  /// <summary>Reads bits that bypass the coder.</summary>
+  /// <param name="count">How many bits to read.</param>
+  /// <returns>The value they spell, most significant bit first.</returns>
+  public int DecodeRaw(int count) {
+    var value = 0;
+    for (var i = 0; i < count; ++i)
+      value = (value << 1) | (int)this.NextBit();
+
+    return value;
   }
 
   private uint NextBit() {

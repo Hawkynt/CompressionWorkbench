@@ -259,37 +259,49 @@ public sealed class CabTests {
   // Quantum round-trip tests
   // -------------------------------------------------------------------------
 
-  private static CabReader OpenCabQuantum(byte[] data) =>
-    new(new MemoryStream(data), leaveOpen: false,
-      quantumModelMaxTotal: QuantumConstants.ModelMaxTotal);
-
   /// <summary>
-  /// Asking for a Quantum cabinet is refused rather than answered with one no
-  /// cabinet reader will open.
+  /// A Quantum cabinet we write is one cabextract reads.
   /// </summary>
   /// <remarks>
-  /// Two things are wrong with the Quantum we write, and they were found by
-  /// asking <c>cabextract</c> — libmspack, the reference for the encoding. The
-  /// folder's window field goes out on a scale of our own, one to seven, where
-  /// the format wants window bits of ten to twenty-one; libmspack answers a four
-  /// with "out of memory", which is what it says about a window it cannot make.
-  /// Patch a valid value in and it gets as far as "error in CAB data format",
-  /// so the coded stream does not agree either.
-  ///
-  /// <para>Until both are put right, a cabinet claiming Quantum is a claim about
-  /// somebody else's format that we cannot honour, and writing one produces a
-  /// file whose every entry fails to extract. Refusing says so at the point of
-  /// asking instead of hours later. The encoder itself stays, for the
-  /// workbench's own use; it is only the cabinet that lies about it.</para>
+  /// Quantum was never specified; what this writes was derived by measurement against
+  /// libmspack, the reference reader, and checked by handing it cabinets and asking.
+  /// See <c>docs/QUANTUM-ON-DISK.md</c>.
   /// </remarks>
-  [Category("Interop")]
+  [Category("HappyPath")]
   [Test]
-  public void Quantum_IsRefusedRatherThanWrittenWrongly() {
-    var refusal = Assert.Throws<NotSupportedException>(
-      () => new CabWriter(CabCompressionType.Quantum));
+  public void Quantum_RoundTripsThroughOurOwnReader() {
+    var phrase = System.Text.Encoding.ASCII.GetBytes("cabinets carry quantum, and so do we. ");
+    var data = new byte[8_000];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = phrase[i % phrase.Length];
 
-    Assert.That(refusal!.Message, Does.Contain("window bits"),
-      "the refusal should say what is wrong, not merely that something is");
+    var writer = new CabWriter(CabCompressionType.Quantum);
+    writer.AddFile("Q.TXT", data);
+    using var buffer = new MemoryStream();
+    writer.WriteTo(buffer);
+
+    using var reader = new CabReader(new MemoryStream(buffer.ToArray()));
+    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data).AsCollection);
+  }
+
+  /// <summary>
+  /// A Quantum folder holds as many data blocks as the file needs, sharing its models
+  /// across them, so a file larger than a block round-trips.
+  /// </summary>
+  [Category("HappyPath")]
+  [Test]
+  public void Quantum_MoreThanOneBlock_RoundTrips() {
+    var data = new byte[80_000];
+    new Random(4242).NextBytes(data);
+
+    var writer = new CabWriter(CabCompressionType.Quantum);
+    writer.AddFile("R.BIN", data);
+    using var buffer = new MemoryStream();
+    writer.WriteTo(buffer);
+
+    buffer.Position = 0;
+    using var reader = new CabReader(buffer);
+    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data).AsCollection);
   }
 
   // -------------------------------------------------------------------------

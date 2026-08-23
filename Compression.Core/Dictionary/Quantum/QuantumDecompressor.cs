@@ -1,84 +1,88 @@
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Decompresses data produced by <see cref="QuantumCompressor"/>.
+/// Reads Quantum as a cabinet carries it.
 /// </summary>
 /// <remarks>
-/// The stream carries no end marker, so the caller supplies the uncompressed size and
-/// decoding stops once that many bytes have been produced.
+/// <para>A match may reach back past the start of the folder, and what it finds there
+/// is zeros: the window begins empty and Quantum encoders do use it. A decoder that
+/// refuses such a match stops on perfectly ordinary streams.</para>
+///
+/// <para>A folder of several data blocks is one stream in the models and a fresh one
+/// in the coder: the models carry across, the coder is primed again in each block, and
+/// a match may reach back into the blocks before it. Restarting the models decodes the
+/// second block as noise from its first byte.</para>
 /// </remarks>
 public static class QuantumDecompressor {
-  /// <summary>
-  /// Decompresses a single Quantum-compressed block.
-  /// </summary>
-  /// <param name="compressed">The compressed input data, without any length header.</param>
-  /// <param name="uncompressedSize">The expected uncompressed output size in bytes.</param>
-  /// <param name="windowLevel">
-  /// Window level (1–7); must match the level used to compress. The window size is
-  /// 1024 &lt;&lt; (level − 1).
-  /// </param>
-  /// <param name="modelMaxTotal">
-  /// The total frequency at which the adaptive models halve their counts; must match
-  /// the value used to compress.
-  /// </param>
-  /// <returns>The decompressed data.</returns>
-  /// <exception cref="ArgumentOutOfRangeException">
-  /// Thrown when <paramref name="windowLevel"/> is outside the valid range [1, 7],
-  /// or when <paramref name="uncompressedSize"/> is negative.
-  /// </exception>
-  /// <exception cref="InvalidDataException">
-  /// Thrown when the compressed data is malformed.
-  /// </exception>
-  public static byte[] Decompress(
-    ReadOnlyMemory<byte> compressed,
-    int uncompressedSize,
-    int windowLevel,
-    int modelMaxTotal = QuantumConstants.ModelMaxTotal) {
-    ArgumentOutOfRangeException.ThrowIfNegative(uncompressedSize);
-    ArgumentOutOfRangeException.ThrowIfLessThan(windowLevel, QuantumConstants.MinWindowLevel, nameof(windowLevel));
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(windowLevel, QuantumConstants.MaxWindowLevel, nameof(windowLevel));
 
-    if (uncompressedSize == 0)
-      return [];
+  /// <summary>Reads the data blocks of one folder, which share their models.</summary>
+  public sealed class FolderReader {
+    private readonly QuantumModels _models;
+    private readonly List<byte> _window = [];
 
-    var decoder = new QuantumRangeDecoder(compressed);
-
-    var literalModels = new QuantumModel[QuantumConstants.StateCount];
-    var matchFlagModels = new QuantumModel[QuantumConstants.StateCount];
-    for (var state = 0; state < QuantumConstants.StateCount; ++state) {
-      literalModels[state] = new QuantumModel(QuantumConstants.LiteralSymbols, modelMaxTotal);
-      matchFlagModels[state] = new QuantumModel(2, modelMaxTotal);
+    /// <summary>Starts a folder.</summary>
+    /// <param name="windowBits">The window the folder names, 10 to 21.</param>
+    public FolderReader(int windowBits) {
+      ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, QuantumConstants.MinWindowBits, nameof(windowBits));
+      ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, QuantumConstants.MaxWindowBits, nameof(windowBits));
+      this._models = new(windowBits);
     }
 
-    var lengthSlotModel = new QuantumModel(QuantumConstants.SlotSymbols, modelMaxTotal);
-    var distanceSlotModel = new QuantumModel(QuantumConstants.SlotSymbols, modelMaxTotal);
+    /// <summary>Reads the next block.</summary>
+    /// <param name="compressed">The block as the cabinet carries it.</param>
+    /// <param name="uncompressedSize">How many bytes it should yield.</param>
+    /// <returns>The plain bytes of this block.</returns>
+    public byte[] ReadBlock(ReadOnlyMemory<byte> compressed, int uncompressedSize) {
+      var block = Decode(compressed, uncompressedSize, this._models, this._window);
+      this._window.AddRange(block);
+      return block;
+    }
+  }
 
+  /// <summary>Decompresses one folder's block.</summary>
+  /// <param name="compressed">The block as the cabinet carries it.</param>
+  /// <param name="uncompressedSize">How many bytes it should yield.</param>
+  /// <param name="windowBits">The window the folder names, 10 to 21.</param>
+  /// <returns>The plain bytes.</returns>
+  public static byte[] Decompress(ReadOnlyMemory<byte> compressed, int uncompressedSize, int windowBits) {
+    ArgumentOutOfRangeException.ThrowIfNegative(uncompressedSize, nameof(uncompressedSize));
+    ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, QuantumConstants.MinWindowBits, nameof(windowBits));
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, QuantumConstants.MaxWindowBits, nameof(windowBits));
+
+    return Decode(compressed, uncompressedSize, new QuantumModels(windowBits), []);
+  }
+
+  private static byte[] Decode(
+      ReadOnlyMemory<byte> compressed, int uncompressedSize, QuantumModels models, List<byte> window) {
+    var decoder = new QuantumRangeDecoder(compressed);
     var output = new byte[uncompressedSize];
-    var produced = 0;
-    var currentState = 0;
+    var written = 0;
 
-    while (produced < uncompressedSize) {
-      if (decoder.DecodeSymbol(matchFlagModels[currentState]) == 0) {
-        output[produced++] = (byte)decoder.DecodeSymbol(literalModels[currentState]);
-        currentState = QuantumConstants.LiteralNextState[currentState];
+    while (written < uncompressedSize) {
+      var selector = decoder.Decode(models.Selector);
+      if (selector < 4) {
+        output[written++] = (byte)decoder.Decode(models.Literals[selector]);
         continue;
       }
 
-      var matchLength = QuantumSlotCoding.Decode(decoder, lengthSlotModel) + QuantumConstants.MinMatch - 1;
-      var distance = QuantumSlotCoding.Decode(decoder, distanceSlotModel);
+      int length;
+      if (selector == 6) {
+        var slot = decoder.Decode(models.Lengths);
+        var extra = decoder.DecodeRaw(QuantumConstants.LengthExtraBits[slot]);
+        length = 5 + QuantumConstants.LengthBases[slot] + extra;
+      } else
+        length = selector == 4 ? 3 : 4;
 
-      if (distance > produced)
-        throw new InvalidDataException(
-          $"Quantum match distance {distance} exceeds the {produced} bytes decoded so far.");
-      if (matchLength > uncompressedSize - produced)
-        throw new InvalidDataException(
-          $"Quantum match of {matchLength} bytes overruns the declared size {uncompressedSize}.");
+      var positionSlot = decoder.Decode(models.Positions[selector - 4]);
+      var positionExtra = decoder.DecodeRaw(QuantumConstants.PositionExtraBits[positionSlot]);
+      var distance = QuantumConstants.PositionBases[positionSlot] + positionExtra + 1;
 
-      // Byte by byte, because a match may overlap itself — that is how runs are coded.
-      for (var source = produced - (int)distance; matchLength > 0; --matchLength)
-        output[produced++] = output[source++];
-
-      currentState = QuantumConstants.MatchNextState[currentState];
+      for (var i = 0; i < length && written < uncompressedSize; ++i) {
+        var source = written - distance;
+        output[written++] = source >= 0 ? output[source]
+          : window.Count + source >= 0 ? window[window.Count + source]
+          : (byte)0;
+      }
     }
 
     return output;
