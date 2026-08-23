@@ -63,6 +63,20 @@ public static class WimConstants {
   // Header flag bits (WimFlags field in the header)
   // -------------------------------------------------------------------------
 
+  /// <summary>
+  /// Flag bit indicating resources may be compressed. A reader that does not see
+  /// this bit treats the WIM as uncompressed however the algorithm bits read, so
+  /// it has to be set alongside them.
+  /// </summary>
+  public const uint FlagCompression = 0x00000002u;
+
+  /// <summary>
+  /// Flag bit indicating reparse-point path fixups have been applied. Set on
+  /// every image written here: with no reparse points there is nothing left to
+  /// fix, which is the state the bit describes.
+  /// </summary>
+  public const uint FlagRpFix = 0x00000080u;
+
   /// <summary>Flag bit indicating the WIM uses XPRESS compression.</summary>
   public const uint FlagXpressCompression = 0x00020000u;
 
@@ -72,8 +86,16 @@ public static class WimConstants {
   /// <summary>Flag bit indicating the WIM uses LZMS compression.</summary>
   public const uint FlagLzmsCompression = 0x00080000u;
 
-  /// <summary>Flag bit indicating the WIM uses XPRESS Huffman compression.</summary>
-  public const uint FlagXpressHuffmanCompression = 0x00400000u;
+  /// <summary>
+  /// Flag bit indicating the WIM uses the second XPRESS arrangement, which
+  /// differs from the first in chunk size rather than in encoding.
+  /// </summary>
+  /// <remarks>
+  /// The compression a WIM calls XPRESS is already the Huffman one; there is no
+  /// separate type for it, and the value written here used to be one this
+  /// project had invented, which no reader recognised.
+  /// </remarks>
+  public const uint FlagXpressHuffmanCompression = 0x00200000u;
 
   // -------------------------------------------------------------------------
   // Resource flags
@@ -82,11 +104,47 @@ public static class WimConstants {
   /// <summary>Resource flag: resource is stored uncompressed.</summary>
   public const uint ResourceFlagUncompressed = 0u;
 
-  /// <summary>Resource flag bit 0: resource data is compressed.</summary>
-  public const uint ResourceFlagCompressed = 1u;
+  /// <summary>Resource flag bit 0: the entry describes free space, not a resource.</summary>
+  public const uint ResourceFlagFree = 1u;
 
   /// <summary>Resource flag bit 1: resource contains image metadata.</summary>
   public const uint ResourceFlagMetadata = 2u;
+
+  /// <summary>Resource flag bit 2: resource data is compressed.</summary>
+  public const uint ResourceFlagCompressed = 4u;
+
+  /// <summary>Resource flag bit 3: resource data continues in another part.</summary>
+  public const uint ResourceFlagSpanned = 8u;
+
+  // -------------------------------------------------------------------------
+  // Image metadata resource
+  // -------------------------------------------------------------------------
+
+  /// <summary>
+  /// Size of the fixed part of a directory entry, ahead of the file name.
+  /// </summary>
+  public const int DirEntryFixedSize = 102;
+
+  /// <summary>
+  /// Size of an empty security-descriptor block: a total length and an entry
+  /// count, both of which an image without descriptors still has to carry.
+  /// </summary>
+  public const int EmptySecurityDataSize = 8;
+
+  /// <summary>Length of the SHA-1 hash identifying a resource.</summary>
+  public const int HashLength = 20;
+
+  /// <summary>Directory-entry attribute bit marking a directory.</summary>
+  public const uint AttributeDirectory = 0x00000010u;
+
+  /// <summary>Directory-entry attribute bit marking an ordinary file.</summary>
+  public const uint AttributeArchive = 0x00000020u;
+
+  /// <summary>
+  /// The security-descriptor index meaning "none". Written as -1 rather than 0,
+  /// which would name the first descriptor of a table we do not write.
+  /// </summary>
+  public const int NoSecurityDescriptor = -1;
 
   // -------------------------------------------------------------------------
   // LZX parameters

@@ -263,63 +263,33 @@ public sealed class CabTests {
     new(new MemoryStream(data), leaveOpen: false,
       quantumModelMaxTotal: QuantumConstants.ModelMaxTotal);
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
+  /// <summary>
+  /// Asking for a Quantum cabinet is refused rather than answered with one no
+  /// cabinet reader will open.
+  /// </summary>
+  /// <remarks>
+  /// Two things are wrong with the Quantum we write, and they were found by
+  /// asking <c>cabextract</c> — libmspack, the reference for the encoding. The
+  /// folder's window field goes out on a scale of our own, one to seven, where
+  /// the format wants window bits of ten to twenty-one; libmspack answers a four
+  /// with "out of memory", which is what it says about a window it cannot make.
+  /// Patch a valid value in and it gets as far as "error in CAB data format",
+  /// so the coded stream does not agree either.
+  ///
+  /// <para>Until both are put right, a cabinet claiming Quantum is a claim about
+  /// somebody else's format that we cannot honour, and writing one produces a
+  /// file whose every entry fails to extract. Refusing says so at the point of
+  /// asking instead of hours later. The encoder itself stays, for the
+  /// workbench's own use; it is only the cabinet that lies about it.</para>
+  /// </remarks>
+  [Category("Interop")]
   [Test]
-  public void Quantum_SingleFile_RoundTrip() {
-    var original = "Hello, Quantum compression in a Cabinet!"u8.ToArray();
+  public void Quantum_IsRefusedRatherThanWrittenWrongly() {
+    var refusal = Assert.Throws<NotSupportedException>(
+      () => new CabWriter(CabCompressionType.Quantum));
 
-    using var ms = new MemoryStream();
-    var writer = new CabWriter(CabCompressionType.Quantum, quantumWindowLevel: 4);
-    writer.AddFile("hello.txt", original);
-    writer.WriteTo(ms);
-
-    using var reader = OpenCabQuantum(ms.ToArray());
-    Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    Assert.That(reader.Entries[0].FileName, Is.EqualTo("hello.txt"));
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(original));
-  }
-
-  [Category("End2End")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Quantum_MultipleFiles_RoundTrip() {
-    var f1 = "First file."u8.ToArray();
-    var f2 = "Second file with more content."u8.ToArray();
-    var f3 = new byte[256];
-    new Random(42).NextBytes(f3);
-
-    using var ms = new MemoryStream();
-    var writer = new CabWriter(CabCompressionType.Quantum, quantumWindowLevel: 4);
-    writer.AddFile("a.txt", f1);
-    writer.AddFile("b.txt", f2);
-    writer.AddFile("c.bin", f3);
-    writer.WriteTo(ms);
-
-    using var reader = OpenCabQuantum(ms.ToArray());
-    Assert.That(reader.Entries, Has.Count.EqualTo(3));
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(f1));
-    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(f2));
-    Assert.That(reader.ExtractEntry(reader.Entries[2]), Is.EqualTo(f3));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [TestCase(1)]
-  [TestCase(4)]
-  [TestCase(7)]
-  public void Quantum_WindowLevels_RoundTrip(int level) {
-    var original = new byte[500];
-    for (var i = 0; i < original.Length; ++i)
-      original[i] = (byte)(i % 131);
-
-    using var ms = new MemoryStream();
-    var writer = new CabWriter(CabCompressionType.Quantum, quantumWindowLevel: level);
-    writer.AddFile("data.bin", original);
-    writer.WriteTo(ms);
-
-    using var reader = OpenCabQuantum(ms.ToArray());
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(original));
+    Assert.That(refusal!.Message, Does.Contain("window bits"),
+      "the refusal should say what is wrong, not merely that something is");
   }
 
   // -------------------------------------------------------------------------

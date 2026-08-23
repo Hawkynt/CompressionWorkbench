@@ -57,4 +57,16 @@ public static class LhaConstants {
 
   /// <summary>Method: PMA PPMd order-3 compression.</summary>
   public const string MethodPm2 = "-pm2-";
+
+  /// <summary>
+  /// The system a level-1 header says it was written on: 'U' for Unix.
+  /// </summary>
+  /// <remarks>
+  /// Not decoration. A reader that finds no identifier here — a zero byte is
+  /// none — falls back to the MS-DOS conventions of the format's first home,
+  /// and one of those is that names are case-insensitive: <c>lha</c> lists a
+  /// member written as <c>A.TXT</c> as <c>a.txt</c> and extracts it under that
+  /// name. Saying Unix says the name is to be taken as it stands.
+  /// </remarks>
+  public const byte OsIdentifierUnix = (byte)'U';
 }

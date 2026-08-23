@@ -56,7 +56,9 @@ public sealed class LzxDecompressor {
   private readonly Stream _input;
   private uint _bitBuffer;
   private int _bitsLeft;
-  private bool _endOfStream;
+
+  private readonly LzxStreamFormat _format;
+  private bool _readStreamHeader;
 
   // E8 call-instruction translation state
   private readonly bool _e8Translation;
@@ -77,7 +79,8 @@ public sealed class LzxDecompressor {
   /// <exception cref="ArgumentOutOfRangeException">
   /// Thrown when <paramref name="windowBits"/> is outside [15, 21].
   /// </exception>
-  public LzxDecompressor(Stream input, int windowBits = 15, bool e8Translation = false) {
+  public LzxDecompressor(Stream input, int windowBits = 15, bool e8Translation = false,
+      LzxStreamFormat format = LzxStreamFormat.Wim) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, LzxConstants.MinWindowBits);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, LzxConstants.MaxWindowBits);
@@ -94,6 +97,7 @@ public sealed class LzxDecompressor {
     this._alignedLengths = new int[LzxConstants.NumAlignedSymbols];
 
     this._e8Translation = e8Translation;
+    this._format = format;
   }
 
   /// <summary>
@@ -106,12 +110,32 @@ public sealed class LzxDecompressor {
     var output = new byte[uncompressedSize];
     var outPos = 0;
 
+    // A cabinet's stream opens with a bit saying whether x86 call targets were
+    // rewritten, and a 32-bit size after it if they were. It appears once for
+    // the whole folder, not once per call into here.
+    if (this._format == LzxStreamFormat.Cab) {
+      if (this._readStreamHeader)
+        // Each data record begins on a word boundary; whatever padded out the
+        // last one is not part of this one.
+        this.AlignTo16Bits();
+      else {
+        this._readStreamHeader = true;
+        if (this.ReadBits(1) == 1) {
+          this.ReadBits(16);
+          this.ReadBits(16);
+        }
+      }
+    }
+
     while (outPos < uncompressedSize) {
       var blockType = (int)this.ReadBits(3);
 
-      // Block size: 1-bit "use default 32768" flag, or 16-bit explicit size
+      // Block size: twenty-four bits in a cabinet; in a WIM, one bit meaning
+      // "the usual 32 768" or sixteen bits otherwise.
       int blockSize;
-      if (this.ReadBits(1) == 1)
+      if (this._format == LzxStreamFormat.Cab)
+        blockSize = (int)this.ReadBits(24);
+      else if (this.ReadBits(1) == 1)
         blockSize = LzxConstants.DefaultBlockSize;
       else
         blockSize = (int)this.ReadBits(16);
@@ -222,20 +246,23 @@ public sealed class LzxDecompressor {
           ++pos;
           break;
 
+        // A run of symbols this block does not use. These say the lengths are
+        // zero, not that they are unchanged — a delta of zero is what says
+        // unchanged. Reading them as "leave alone" is right only while the
+        // previous block's lengths were all zero, which is to say for the first
+        // block of a stream and no other.
         case 17: {
-          // Short zero-delta run: 4 extra bits → 4..19 positions with delta = 0 (no change)
           var runLen = 4 + (int)this.ReadBits(4);
           while (runLen-- > 0 && pos < end)
-            ++pos; // delta = 0: length is unchanged
+            lengths[pos++] = 0;
 
           break;
         }
 
         case 18: {
-          // Long zero-delta run: 5 extra bits → 20..51 positions with delta = 0 (no change)
           var runLen = 20 + (int)this.ReadBits(5);
           while (runLen-- > 0 && pos < end)
-            ++pos; // delta = 0: length is unchanged
+            lengths[pos++] = 0;
 
           break;
         }
@@ -328,8 +355,11 @@ public sealed class LzxDecompressor {
     } else
       footer = footerBits > 0 ? (int)this.ReadBits(footerBits) : 0;
 
-    // Actual match offset = formatted_offset + 2 (LZX bias)
-    var matchOffset = baseOffset + footer + 2;
+    // The slot and its footer name the formatted offset, which is two more than
+    // the distance — that is what leaves slots 0 to 2 free to mean the three
+    // remembered offsets instead. Adding the two rather than taking it off put
+    // every match four bytes from where it belonged.
+    var matchOffset = baseOffset + footer - LzxConstants.OffsetBias;
     (this._r2, this._r1, this._r0) = (this._r1, this._r0, matchOffset);
     return matchOffset;
   }
@@ -461,7 +491,7 @@ public sealed class LzxDecompressor {
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private void EnsureBits(int count) {
-    while (this._bitsLeft < count && !this._endOfStream)
+    while (this._bitsLeft < count)
       this.FillBitBuffer();
   }
 
@@ -470,9 +500,13 @@ public sealed class LzxDecompressor {
     var hi = this._input.ReadByte();
 
     if (lo < 0) {
-      // Stream exhausted; we have no more bits to add.
-      // Any decoding that still needs bits will fail later with a proper error.
-      this._endOfStream = true;
+      // Past the end of the stream, which is a place a reader is entitled to
+      // reach: the last symbol of a block can end a bit or two inside the final
+      // word, and the reader still wants a full buffer to look it up with. What
+      // lies beyond counts as zeros. Stopping instead left whatever the buffer
+      // happened to hold standing in for those bits.
+      this._bitBuffer <<= 16;
+      this._bitsLeft += 16;
       return;
     }
 

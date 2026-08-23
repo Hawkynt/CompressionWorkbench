@@ -107,10 +107,15 @@ public sealed class WimReader : IDisposable {
     var pos = (securitySize + 7) & ~7;
 
     // Parse DIRENTRY structures.
-    this.ParseDirectoryEntries(metadata, pos, "", result);
+    this.ParseDirectoryEntries(metadata, pos, "", result, [pos]);
   }
 
-  private void ParseDirectoryEntries(byte[] metadata, int offset, string parentPath, List<WimFileEntry> result) {
+  private void ParseDirectoryEntries(
+    byte[] metadata,
+    int offset,
+    string parentPath,
+    List<WimFileEntry> result,
+    HashSet<int> visited) {
     var pos = offset;
 
     // DIRENTRY on-disk layout (minimum 102 bytes fixed, padded to 8-byte boundary):
@@ -136,6 +141,8 @@ public sealed class WimReader : IDisposable {
       var entryLength = BinaryPrimitives.ReadInt64LittleEndian(metadata.AsSpan(pos));
       if (entryLength == 0)
         break; // end-of-directory sentinel
+      if (entryLength < MinEntrySize)
+        break; // shorter than the fixed part: not an entry, and no way forward
 
       var attributes   = BinaryPrimitives.ReadUInt32LittleEndian(metadata.AsSpan(pos + 8));
       var subdirOffset = BinaryPrimitives.ReadInt64LittleEndian(metadata.AsSpan(pos + 16));
@@ -149,25 +156,31 @@ public sealed class WimReader : IDisposable {
       // Remove null terminators.
       fileName = fileName.TrimEnd('\0');
 
-      var isDirectory = (attributes & 0x10) != 0; // FILE_ATTRIBUTE_DIRECTORY
+      var isDirectory = (attributes & WimConstants.AttributeDirectory) != 0;
 
-      if (!isDirectory && fileName.Length > 0 && !IsZeroHash(hash)) {
-        // Find the resource by hash.
-        var resourceIndex = this.FindResourceByHash(hash);
+      if (!isDirectory && fileName.Length > 0) {
+        // An empty file has no resource to point at and carries an all-zero
+        // hash instead. Dropping it here would lose a file that is in the image
+        // — one of length zero, but there by name all the same.
+        var resourceIndex = IsZeroHash(hash) ? -1 : this.FindResourceByHash(hash);
         var fileSize = resourceIndex >= 0 ? this._resourceTable[resourceIndex].OriginalSize : 0;
         var fullPath = parentPath.Length > 0 ? $"{parentPath}/{fileName}" : fileName;
         result.Add(new WimFileEntry(fullPath, resourceIndex, fileSize));
       }
 
-      if (isDirectory && subdirOffset > 0) {
+      if (isDirectory && subdirOffset > 0 && subdirOffset < metadata.Length && visited.Add((int)subdirOffset)) {
         // Root directory has an empty name; subdirectories have names.
         var dirPath = fileName.Length > 0
           ? (parentPath.Length > 0 ? $"{parentPath}/{fileName}" : fileName)
           : parentPath;
-        this.ParseDirectoryEntries(metadata, (int)subdirOffset, dirPath, result);
+        this.ParseDirectoryEntries(metadata, (int)subdirOffset, dirPath, result, visited);
       }
 
-      pos += (int)entryLength;
+      // Entries start eight-byte aligned. Writers differ on whether they say so
+      // in the length or leave the padding out of it, so the stride is rounded
+      // here rather than trusted: an unrounded length from the second kind puts
+      // every later entry a few bytes into the one before it.
+      pos += (int)((entryLength + 7) & ~7L);
     }
   }
 
@@ -233,6 +246,31 @@ public sealed class WimReader : IDisposable {
   // -------------------------------------------------------------------------
 
   private byte[] ReadResourceEntry(WimResourceEntry entry) {
+    var data = this.ReadResourceBytes(entry);
+    Verify(entry, data);
+    return data;
+  }
+
+  /// <summary>
+  /// Checks a resource against the SHA-1 the image records for it.
+  /// </summary>
+  /// <remarks>
+  /// A codec that is derived rather than specified can be wrong in ways its own
+  /// round trip never shows. The image carries the hash, so a decode that drifts
+  /// is an error we can name rather than bytes the caller takes for the payload.
+  /// </remarks>
+  private static void Verify(WimResourceEntry entry, byte[] data) {
+    if (entry.Hash is null || IsZeroHash(entry.Hash))
+      return;
+
+    var actual = System.Security.Cryptography.SHA1.HashData(data);
+    if (!actual.AsSpan().SequenceEqual(entry.Hash))
+      throw new InvalidDataException(
+        "A WIM resource did not match the SHA-1 the image records for it, so what came out "
+        + "of the decoder is not the payload that went in.");
+  }
+
+  private byte[] ReadResourceBytes(WimResourceEntry entry) {
     if (entry.OriginalSize == 0)
       return [];
 
@@ -316,7 +354,9 @@ public sealed class WimReader : IDisposable {
 
   private byte[] DecompressChunk(byte[] compressedData, int uncompressedSize) =>
     this._header.CompressionType switch {
-      WimConstants.CompressionXpress => XpressDecompressor.Decompress(
+      // A WIM's XPRESS is the Huffman variant — the plain encoding of the same
+      // name is NTFS's, and reading one as the other yields noise.
+      WimConstants.CompressionXpress => XpressHuffmanDecompressor.Decompress(
         compressedData.AsSpan(), uncompressedSize),
 
       WimConstants.CompressionXpressHuffman => XpressHuffmanDecompressor.Decompress(
@@ -332,10 +372,17 @@ public sealed class WimReader : IDisposable {
         $"Unsupported WIM compression type: {this._header.CompressionType}.")
     };
 
+  /// <remarks>
+  /// The x86 call targets a WIM rewrites before compressing are put back here.
+  /// It is not conditional: the writer applies it to every chunk, and there is
+  /// nothing in the stream that says so.
+  /// </remarks>
   private static byte[] DecompressLzx(byte[] compressedData, int uncompressedSize) {
     using var ms = new MemoryStream(compressedData);
     var decompressor = new LzxDecompressor(ms, WimConstants.LzxWindowBits);
-    return decompressor.Decompress(uncompressedSize);
+    var chunk = decompressor.Decompress(uncompressedSize);
+    LzxWimE8Filter.Postprocess(chunk);
+    return chunk;
   }
 
   // -------------------------------------------------------------------------

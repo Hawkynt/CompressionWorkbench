@@ -17,9 +17,9 @@ Measured on the full grid (8 representative sources x all creatable targets):
 
 | Outcome | Count |
 |---|---|
-| Passing pairs | 1616 |
+| Passing pairs | 1632 |
 | Ignored — genuinely-impossible | 440 |
-| Ignored — known gap (quarantined here) | 432 |
+| Ignored — known gap (quarantined here) | 416 |
 | **Total grid cells (+ coverage report)** | **2489** |
 
 ## Bucket summary
@@ -28,8 +28,8 @@ Measured on the full grid (8 representative sources x all creatable targets):
 |---|---:|---:|
 | single-payload/whole-image target | 18 | 144 |
 | name/charset/size constraint | 7 | 56 |
-| other | 29 | 232 |
-| **Total** | **54** | **432** |
+| other | 27 | 216 |
+| **Total** | **52** | **416** |
 
 > Fixed and flipped to enforced-pass: `Svx8` (descriptor class renamed so the
 > source-generated Format enum Id matches its registry Id), `Crate`, `FreeArc`,
@@ -37,6 +37,13 @@ Measured on the full grid (8 representative sources x all creatable targets):
 > + `Nsis` (now re-readable; reclassified as name-synthesizing so the matrix
 > content-matches their folded/synthesized entry names). `CpcDsk` moved to the
 > single-payload bucket: its reader has no filesystem layer.
+>
+> `Wim` and `Esd` joined them once the WIM writer gained an image metadata
+> resource: the names were never lost in conversion, they were never written.
+> A WIM keeps file contents in its lookup table addressed by hash and file names
+> in a directory tree beside it, and a container with only the first half has
+> resources nobody can name — which is why the entries came back as
+> `resource_N`, and why no other reader would open one at all.
 >
 > Also flipped to enforced-pass (32 pairs): `HfsPlus`, `ProDos` and `SysV`,
 > which shared their extension with another format and were handed to the wrong
@@ -109,7 +116,6 @@ Archive/format writers where the payload survives but entries are renamed (e.g. 
 | `Dcs` | DCS Amiga disk; exposed as track_NNN.raw not original names |
 | `Dmg` | DMG read-back returns 512-byte padded content (block padding, content mismatch) |
 | `Dtb` | Device-tree blob; names re-rooted under _root/ and de-extensioned (HELLO.bin) |
-| `Esd` | ESD image; entries renamed to resource_NNNN.bin |
 | `Fits` | FITS; payload exposed as hdu_* header/data members not original names |
 | `G64` | G64 GCR disk; exposed as track_NN.bin not original names |
 | `GameMaker` | GameMaker data.win; exposed as chunks/GEN8.bin not original names |
@@ -131,7 +137,6 @@ Archive/format writers where the payload survives but entries are renamed (e.g. 
 | `TfRecord` | TensorFlow TFRecord; entries renamed record_NNNNN.bin |
 | `Tfc` | UE texture cache; entries renamed bundle_NNNNN.bin |
 | `Warc` | WARC; entries listed as 'resource: <name>' so basename match fails |
-| `Wim` | Windows Imaging; entries renamed resource_N |
 | `Zap` | Zap Amiga disk; exposed as track_NNN.raw not original names |
 
 ## Pair-specific gaps

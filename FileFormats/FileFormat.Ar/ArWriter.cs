@@ -53,14 +53,15 @@ public sealed class ArWriter : IDisposable {
     var tableOffset = 0;
     foreach (var entry in entries) {
       string nameField;
-      if (entry.Name.Length > ArConstants.MaxInlineNameLength) {
+      var storedName = MemberName(entry.Name);
+      if (storedName.Length > ArConstants.MaxInlineNameLength) {
         // GNU long name: "/offset"
         nameField = $"/{tableOffset}";
         // Advance by the length of the entry in the string table: name + "/\n"
-        tableOffset += Encoding.ASCII.GetByteCount(entry.Name) + 2;
+        tableOffset += Encoding.ASCII.GetByteCount(storedName) + 2;
       } else {
         // Inline name: terminated by '/'
-        nameField = entry.Name + "/";
+        nameField = storedName + "/";
       }
 
       WriteEntryHeader(this._stream, nameField, entry.ModifiedTime,
@@ -136,11 +137,12 @@ public sealed class ArWriter : IDisposable {
     var tableOffset = 0;
     foreach (var m in members) {
       string nameField;
-      if (m.Name.Length > ArConstants.MaxInlineNameLength) {
+      var storedName = MemberName(m.Name);
+      if (storedName.Length > ArConstants.MaxInlineNameLength) {
         nameField = $"/{tableOffset}";
-        tableOffset += Encoding.ASCII.GetByteCount(m.Name) + 2;
+        tableOffset += Encoding.ASCII.GetByteCount(storedName) + 2;
       } else {
-        nameField = m.Name + "/";
+        nameField = storedName + "/";
       }
 
       WriteEntryHeader(this._stream, nameField, m.ModifiedTime,
@@ -169,6 +171,25 @@ public sealed class ArWriter : IDisposable {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   /// <summary>
+  /// The name an ar member can actually carry: the leaf, with any directories
+  /// dropped.
+  /// </summary>
+  /// <remarks>
+  /// A member name is terminated by a slash, so a name that contains one cannot
+  /// be told from a name that ends there — writing <c>nested/D.TXT</c> inline
+  /// produces a member every reader calls <c>nested</c>, holding the wrong
+  /// file's bytes under a name nobody asked for. The long-name table terminates
+  /// its entries the same way and is no better. GNU ar keeps the leaf, and so
+  /// does this.
+  /// </remarks>
+  /// <param name="name">The name as given.</param>
+  /// <returns>The name to store.</returns>
+  private static string MemberName(string name) {
+    var cut = name.LastIndexOfAny(['/', '\\']);
+    return cut < 0 ? name : name[(cut + 1)..];
+  }
+
+  /// <summary>
   /// Builds the GNU string table content for entries whose names exceed
   /// <see cref="ArConstants.MaxInlineNameLength"/> characters.
   /// Each entry in the table is "name/\n".
@@ -176,8 +197,9 @@ public sealed class ArWriter : IDisposable {
   private static string BuildGnuStringTable(IReadOnlyList<ArEntry> entries) {
     var sb = new StringBuilder();
     foreach (var entry in entries) {
-      if (entry.Name.Length > ArConstants.MaxInlineNameLength)
-        sb.Append(entry.Name).Append("/\n");
+      var storedName = MemberName(entry.Name);
+      if (storedName.Length > ArConstants.MaxInlineNameLength)
+        sb.Append(storedName).Append("/\n");
     }
     return sb.ToString();
   }

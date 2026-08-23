@@ -84,8 +84,8 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (namedFiles.Count > 0) {
       foreach (var f in namedFiles) {
         if (files != null && !MatchesFilter(f.FileName, files)) continue;
-        if (f.ResourceIndex < 0) continue;
-        WriteFile(outputDir, f.FileName, r.ReadResource(f.ResourceIndex));
+        // A file with no resource is an empty one — it still has to appear.
+        WriteFile(outputDir, f.FileName, f.ResourceIndex < 0 ? [] : r.ReadResource(f.ResourceIndex));
       }
       return;
     }
@@ -102,9 +102,9 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var resources = FormatHelpers.FilesOnly(inputs).Select(f => f.Data).ToList();
+    var files = FormatHelpers.FilesOnly(inputs).ToList();
     var w = new WimWriter(output);
-    w.Write(resources);
+    w.Write(files);
   }
 
   /// <summary>
@@ -122,8 +122,7 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (namedFiles.Count > 0) {
       foreach (var f in namedFiles) {
         if (!string.Equals(f.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-        if (f.ResourceIndex < 0) break;
-        var bytes = r.ReadResource(f.ResourceIndex);
+        var bytes = f.ResourceIndex < 0 ? [] : r.ReadResource(f.ResourceIndex);
         return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
           bytes.Length, leaveOpen: false);
       }

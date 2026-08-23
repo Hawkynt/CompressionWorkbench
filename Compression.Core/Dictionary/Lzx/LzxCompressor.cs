@@ -15,10 +15,9 @@ namespace Compression.Core.Dictionary.Lzx;
 /// LZX offset encoding uses a "formatted offset" convention:
 /// <list type="bullet">
 ///   <item>Position slots 0, 1, 2 encode repeated matches using R0, R1, R2 respectively.</item>
-///   <item>Position slots 3+ encode new offsets via formatted_offset = actual_distance − 2.</item>
-///   <item>Slot 3 has base = 3, so minimum encodeable non-repeat distance = 3 + 0 + 2 = 5.</item>
-///   <item>Distances 2–4 that are not a current R0/R1/R2 value cannot be encoded; the match
-///         finder is restricted to avoid them.</item>
+///   <item>Position slots 3+ encode new offsets via formatted_offset = actual_distance + 2.</item>
+///   <item>Slot 3 has base = 3, so the smallest non-repeat distance is 3 − 2 = 1.</item>
+///   <item>Every distance is therefore expressible, repeated offset or not.</item>
 /// </list>
 /// </para>
 /// </remarks>
@@ -29,6 +28,7 @@ public sealed partial class LzxCompressor {
   private readonly int _numMainSymbols;
   private readonly int _blockSize;
   private readonly LzxCompressionLevel _level;
+  private readonly LzxStreamFormat _format;
 
   // Repeated match offsets (1-based distances), initialised per LZX spec
   private int _r0 = 1;
@@ -49,11 +49,15 @@ public sealed partial class LzxCompressor {
   /// The maximum uncompressed bytes per block. Defaults to 32 768.
   /// </param>
   /// <param name="level">The compression level.</param>
+  /// <param name="format">
+  /// Which arrangement of the stream to write; see <see cref="LzxStreamFormat" />.
+  /// </param>
   /// <exception cref="ArgumentOutOfRangeException">
   /// Thrown when <paramref name="windowBits"/> is outside [15, 21] or <paramref name="blockSize"/> ≤ 0.
   /// </exception>
   public LzxCompressor(int windowBits = 15, int blockSize = LzxConstants.DefaultBlockSize,
-      LzxCompressionLevel level = LzxCompressionLevel.Normal) {
+      LzxCompressionLevel level = LzxCompressionLevel.Normal,
+      LzxStreamFormat format = LzxStreamFormat.Wim) {
     ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, LzxConstants.MinWindowBits);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, LzxConstants.MaxWindowBits);
     ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(blockSize, 0);
@@ -64,6 +68,7 @@ public sealed partial class LzxCompressor {
     this._numMainSymbols = LzxConstants.NumChars + this._numPositionSlots * LzxConstants.NumLengthHeaders;
     this._blockSize = blockSize;
     this._level = level;
+    this._format = format;
 
     this._prevMainLengths = new int[this._numMainSymbols];
     this._prevLengthLengths = new int[LzxConstants.NumLengthSymbols];
@@ -74,12 +79,38 @@ public sealed partial class LzxCompressor {
   /// </summary>
   /// <param name="data">The data to compress.</param>
   /// <returns>The compressed LZX data.</returns>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) => this.Compress(data, out _);
+
+  /// <summary>
+  /// Compresses the given data as one stream and reports where each block's
+  /// output ends in the compressed bytes.
+  /// </summary>
+  /// <param name="data">The data to compress.</param>
+  /// <param name="blocks">
+  /// One entry per block: how many bytes of input it covers, and how many
+  /// compressed bytes had been emitted by the time it was finished.
+  /// </param>
+  /// <returns>The compressed LZX data.</returns>
+  /// <remarks>
+  /// A cabinet stores one stream per folder and cuts it into data records of
+  /// 32 768 uncompressed bytes each. The cut may fall anywhere in the compressed
+  /// bytes — a reader is given the records in order and reads on into the next
+  /// one when a symbol straddles the join — but each record has to declare how
+  /// much output it accounts for, and only the encoder knows that.
+  /// </remarks>
+  public byte[] Compress(ReadOnlySpan<byte> data, out List<(int Uncompressed, int CompressedEnd)> blocks) {
+    blocks = [];
     if (data.Length == 0)
       return [];
 
     using var output = new MemoryStream();
     var writer = new LzxBitWriter(output);
+
+    // A cabinet's stream opens by saying whether x86 call targets were
+    // rewritten. They are not, here — but the bit has to be there, and a reader
+    // that expects it is one bit out of step for the whole stream without it.
+    if (this._format == LzxStreamFormat.Cab)
+      writer.WriteBits(0, 1);
 
     var tokens = this.Tokenise(data);
 
@@ -104,9 +135,22 @@ public sealed partial class LzxCompressor {
 
       this.EmitVerbatimBlock(writer, blockTokens, blockBytes);
       tokenStart = blockTokenEnd;
+
+      // A cabinet's data records are cut here, and a record begins on a word
+      // boundary of the bit stream rather than wherever the last symbol of the
+      // block before it happened to end.
+      if (this._format == LzxStreamFormat.Cab)
+        writer.Flush();
+
+      blocks.Add((blockBytes, (int)output.Position));
     }
 
     writer.Flush();
+
+    // The last block accounts for everything written, the closing word included.
+    if (blocks.Count > 0)
+      blocks[^1] = (blocks[^1].Uncompressed, (int)output.Position);
+
     return output.ToArray();
   }
 
@@ -126,11 +170,23 @@ public sealed partial class LzxCompressor {
     int r0 = this._r0, r1 = this._r1, r2 = this._r2;
 
     while (pos < data.Length) {
-      var (distance, length) = finder.FindMatch(data, pos, this._windowSize, LzxConstants.MaxMatch, LzxConstants.MinMatch);
+      // No match may run past the end of the block it starts in. A cabinet cuts
+      // its data records at those boundaries and every record but the last has
+      // to account for exactly the block size, so a match straddling one would
+      // leave a record short of what the format says it holds.
+      var roomInBlock = this._blockSize - pos % this._blockSize;
+      var longestHere = Math.Min(LzxConstants.MaxMatch, roomInBlock);
+
+      var distance = 0;
+      var length = 0;
+      if (longestHere >= LzxConstants.MinMatch)
+        (distance, length) = finder.FindMatch(data, pos, LzxConstants.MaxDistance(this._windowSize),
+          longestHere, LzxConstants.MinMatch);
+
       if (length >= LzxConstants.MinMatch) {
 
-        // LZX can encode dist == r0/r1/r2 as repeat slots.
-        // Non-repeat offsets require dist >= 5 (slot 3, base=3, +2 bias).
+        // LZX can encode dist == r0/r1/r2 as repeat slots, and any other
+        // distance through a position slot of its own.
         var isRepeat = distance == r0 || distance == r1 || distance == r2;
         var canEncode = isRepeat || distance >= LzxConstants.MinNonRepeatDistance;
 
@@ -192,9 +248,11 @@ public sealed partial class LzxCompressor {
     var mainCodes = BuildCanonicalCodes(mainLengths);
     var lengthCodes = BuildCanonicalCodes(lengthLengths);
 
-    // Write block type + size
+    // Write block type + size, in whichever way this stream's readers expect.
     writer.WriteBits(LzxConstants.BlockTypeVerbatim, 3);
-    if (blockUncompressedSize == LzxConstants.DefaultBlockSize)
+    if (this._format == LzxStreamFormat.Cab)
+      writer.WriteBits((uint)blockUncompressedSize, 24);
+    else if (blockUncompressedSize == LzxConstants.DefaultBlockSize)
       writer.WriteBits(1, 1);
     else {
       writer.WriteBits(0, 1);
@@ -240,8 +298,9 @@ public sealed partial class LzxCompressor {
         if (footerBits <= 0)
           continue;
 
-        // Formatted offset = actual_distance - 2; footer = formatted - base
-        var formattedOffset = tok.Offset - 2;
+        // The formatted offset is the distance plus the bias; the footer is what
+        // is left of it once the slot's base is taken off.
+        var formattedOffset = tok.Offset + LzxConstants.OffsetBias;
         var footer = formattedOffset - baseOffset;
         writer.WriteBits((uint)footer, footerBits);
       }
@@ -270,8 +329,8 @@ public sealed partial class LzxCompressor {
       return 2;
     }
 
-    // Non-repeat: formatted_offset = distance - 2
-    var formattedOffset = distance - 2;
+    // Non-repeat: the slot names the distance plus the bias.
+    var formattedOffset = distance + LzxConstants.OffsetBias;
     var slot = LzxConstants.OffsetToSlot(formattedOffset);
     r2 = r1;
     r1 = r0;
@@ -294,44 +353,43 @@ public sealed partial class LzxCompressor {
     for (var i = 0; i < count; ++i)
       deltas[i] = (prevLengths[start + i] - lengths[start + i] + 17) % 17;
 
-    // Run-length encode the delta sequence into pre-tree (sym, extra) pairs
+    // Run-length encode into pre-tree (sym, extra) pairs.
+    //
+    // Codes 17 and 18 say "this many lengths are zero", not "this many lengths
+    // are unchanged" — a delta of zero is what says unchanged. The two coincide
+    // only while the previous block's lengths were all zero, so using them for
+    // runs of zero delta produced a first block that read correctly and a second
+    // whose trees came back wiped.
     var preSymbols = new List<(int sym, int extra, int extraBits)>(count);
     var di = 0;
     while (di < count) {
-      var sym = deltas[di];
+      if (lengths[start + di] != 0) {
+        preSymbols.Add((deltas[di], 0, 0));
+        ++di;
+        continue;
+      }
 
-      if (sym == 0) {
-        // Count zero run
-        var runLen = 0;
-        while (di + runLen < count && deltas[di + runLen] == 0)
-          ++runLen;
+      var runLen = 0;
+      while (di + runLen < count && lengths[start + di + runLen] == 0)
+        ++runLen;
 
-        while (runLen > 0)
-          switch (runLen) {
-            case >= 20: {
-              var thisRun = Math.Min(runLen, 51); // 20 + (max 5-bit value=31)
-              preSymbols.Add((18, thisRun - 20, 5));
-              di += thisRun;
-              runLen -= thisRun;
-              break;
-            }
+      while (runLen >= 4)
+        if (runLen >= 20) {
+          var thisRun = Math.Min(runLen, 51);       // 20 + (max 5-bit value = 31)
+          preSymbols.Add((18, thisRun - 20, 5));
+          di += thisRun;
+          runLen -= thisRun;
+        } else {
+          var thisRun = Math.Min(runLen, 19);       // 4 + (max 4-bit value = 15)
+          preSymbols.Add((17, thisRun - 4, 4));
+          di += thisRun;
+          runLen -= thisRun;
+        }
 
-            case >= 4: {
-              var thisRun = Math.Min(runLen, 19); // 4 + (max 4-bit value=15)
-              preSymbols.Add((17, thisRun - 4, 4));
-              di += thisRun;
-              runLen -= thisRun;
-              break;
-            }
-
-            default:
-              preSymbols.Add((0, 0, 0));
-              ++di;
-              --runLen;
-              break;
-          }
-      } else {
-        preSymbols.Add((sym, 0, 0));
+      // A run too short for either code goes out as ordinary deltas, which say
+      // the same thing one symbol at a time.
+      while (runLen-- > 0) {
+        preSymbols.Add((deltas[di], 0, 0));
         ++di;
       }
     }
@@ -377,10 +435,20 @@ public sealed partial class LzxCompressor {
       if (frequencies[i] > 0)
         symbols.Add((i, frequencies[i]));
 
+    // A tree of nothing and a tree of one symbol both describe less than the
+    // whole code space, and a block header has to describe all of it — a reader
+    // that adds the fractions up calls anything else damaged data. A block whose
+    // matches are all short uses no length symbol at all, which is how an empty
+    // length tree comes about; two one-bit codes nobody will ever use cost two
+    // code lengths in the header and nothing in the block.
     switch (symbols.Count) {
-      case 0: return lengths;
+      case 0:
+        lengths[0] = 1;
+        lengths[1] = 1;
+        return lengths;
       case 1:
         lengths[symbols[0].symbol] = 1;
+        lengths[symbols[0].symbol == 0 ? 1 : 0] = 1;
         return lengths;
     }
 

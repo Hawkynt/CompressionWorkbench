@@ -188,7 +188,7 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var headerStart = output.Position;
 
     // Phase 1 — emit a standard uncompressed WIM via the existing writer.
-    var resources = FormatHelpers.FilesOnly(inputs).Select(f => f.Data).ToList();
+    var resources = FormatHelpers.FilesOnly(inputs).ToList();
     new WimWriter(output, WimConstants.CompressionNone).Write(resources);
 
     // Phase 2 — patch the header flags field at offset 16 to set the ESD marker.

@@ -159,6 +159,29 @@ public sealed class CabReader : IDisposable {
     this._stream.Seek(folder.DataOffset, SeekOrigin.Begin);
     using var reader = new BinaryReader(this._stream, System.Text.Encoding.UTF8, leaveOpen: true);
 
+    // An LZX folder is one stream however many records it is cut into, so the
+    // decompressor and the bytes it reads from both outlive the loop below.
+    // Everything else here is decoded a record at a time.
+    MemoryStream? lzxStream = null;
+    LzxDecompressor? lzxDecomp = null;
+    if (folder.CompressionType == CabCompressionType.Lzx) {
+      var windowBits = (folder.RawCompressionType >> 8) & 0x1F;
+      if (windowBits < 15) windowBits = 15;
+
+      var payload = new MemoryStream();
+      var at = this._stream.Position;
+      for (var i = 0; i < folder.DataCount; ++i) {
+        reader.ReadUInt32();                       // checksum (ignored)
+        var cbData = reader.ReadUInt16();
+        reader.ReadUInt16();                       // uncompressed size, read again below
+        payload.Write(reader.ReadBytes(cbData));
+      }
+      payload.Position = 0;
+      lzxStream = payload;
+      lzxDecomp = new LzxDecompressor(payload, windowBits, e8Translation: false, LzxStreamFormat.Cab);
+      this._stream.Position = at;
+    }
+
     for (var i = 0; i < folder.DataCount; ++i) {
       var csum     = reader.ReadUInt32(); // checksum (ignored)
       var cbData   = reader.ReadUInt16(); // compressed size
@@ -185,15 +208,9 @@ public sealed class CabReader : IDisposable {
           break;
         }
 
-        case CabCompressionType.Lzx: {
-          var windowBits = (folder.RawCompressionType >> 8) & 0x1F;
-          if (windowBits < 15) windowBits = 15;
-          using var lzxStream = new MemoryStream(abData);
-          var lzxDecomp = new LzxDecompressor(lzxStream, windowBits);
-          var decompressed = lzxDecomp.Decompress(cbUncomp);
-          output.AddRange(decompressed);
+        case CabCompressionType.Lzx:
+          output.AddRange(lzxDecomp!.Decompress(cbUncomp));
           break;
-        }
 
         default:
           throw new InvalidDataException(
@@ -201,6 +218,7 @@ public sealed class CabReader : IDisposable {
       }
     }
 
+    lzxStream?.Dispose();
     return [.. output];
   }
 

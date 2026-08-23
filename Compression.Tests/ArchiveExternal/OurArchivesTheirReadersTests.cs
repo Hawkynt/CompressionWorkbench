@@ -24,7 +24,10 @@ public class OurArchivesTheirReadersTests {
 
   public sealed record Oracle(string FormatId, string Extension, string Tool,
       Func<string, string, string> Extract) {
-    public override string ToString() => this.FormatId;
+    // The tool as well as the format: two readers of the same format disagree
+    // about what they accept, and a case named only for the format would hide
+    // which of them was asked.
+    public override string ToString() => $"{this.FormatId} via {this.Tool}";
   }
 
   private static readonly Oracle[] Oracles = [
@@ -32,12 +35,26 @@ public class OurArchivesTheirReadersTests {
     new("Zip", "zip", "7z", (archive, into) => $"x -y -o\"{into}\" \"{archive}\""),
     new("Tar", "tar", "7z", (archive, into) => $"x -y -o\"{into}\" \"{archive}\""),
     new("Cab", "cab", "7z", (archive, into) => $"x -y -o\"{into}\" \"{archive}\""),
+    // cabextract is libmspack, which is the reference for every encoding a
+    // cabinet may hold, and it checks things 7-Zip lets pass — it is how a
+    // deflate tree of ours that described half its code space was found.
+    new("Cab", "cab", "cabextract", (archive, into) => $"-d \"{into}\" \"{archive}\""),
     new("Xar", "xar", "7z", (archive, into) => $"x -y -o\"{into}\" \"{archive}\""),
     new("SquashFs", "sqfs", "unsquashfs", (archive, into) => $"-d \"{into}\" \"{archive}\""),
     // -y answers every prompt: arj otherwise waits for a keypress and the test
     // simply hangs.
     new("Arj", "arj", "arj", (archive, into) => $"x -y \"{archive}\" \"{into}/\""),
     new("Wim", "wim", "7z", (archive, into) => $"x -y -o\"{into}\" \"{archive}\""),
+    // A second opinion on the formats 7-Zip already reads. It is worth having:
+    // 7-Zip accepted deflate blocks whose distance tree described half the code
+    // space, and only a stricter reader said otherwise. unzip is Info-ZIP's
+    // inflater, a different one again from either.
+    new("Zip", "zip", "unzip", (archive, into) => $"-qq -o \"{archive}\" -d \"{into}\""),
+    // -d makes the leading directories a nested member needs; without it cpio
+    // refuses the member rather than the archive.
+    new("Cpio", "cpio", "cpio", (archive, into) => $"-i -d --quiet -F \"{archive}\" -D \"{into}\""),
+    new("Ar", "a", "ar", (archive, into) => $"x --output={into} \"{archive}\""),
+    new("Lzh", "lzh", "lha", (archive, into) => $"xqw={into} \"{archive}\""),
   ];
 
   /// <summary>
@@ -48,10 +65,6 @@ public class OurArchivesTheirReadersTests {
   /// wrote down is a case nobody knows is missing.
   /// </remarks>
   private static readonly Dictionary<string, string> KnownGaps = new(StringComparer.Ordinal) {
-    ["Wim"] =
-      "our writer stores each file as an anonymous resource with no metadata resource and no "
-      + "directory tree, and declares one image per file rather than one image holding them all, "
-      + "so 7-Zip will not open it at all; our reader is fine and reads 7-Zip's WIM exactly",
   };
 
   private static IEnumerable<Oracle> Available() => Oracles;

@@ -46,6 +46,13 @@ public sealed class WimHeader {
   /// <summary>Gets the uncompressed chunk size for compressed resources.</summary>
   public uint ChunkSize { get; init; } = WimConstants.DefaultChunkSize;
 
+  /// <summary>
+  /// Gets the identifier shared by every part of one WIM. Readers use it to tell
+  /// the parts of a split image apart from parts of some other image that happen
+  /// to be in the same directory.
+  /// </summary>
+  public Guid Guid { get; init; }
+
   /// <summary>Gets the total number of parts in a split WIM (1 for non-split).</summary>
   public ushort TotalParts { get; init; } = 1;
 
@@ -98,7 +105,8 @@ public sealed class WimHeader {
     // Chunk size (4 bytes LE at offset 20)
     BinaryPrimitives.WriteUInt32LittleEndian(buf[20..], this.ChunkSize);
 
-    // GUID: 16 bytes at offset 24 — left as zeros
+    // GUID: 16 bytes at offset 24
+    this.Guid.TryWriteBytes(buf[24..40]);
 
     // Part number (2 bytes LE at offset 40)
     BinaryPrimitives.WriteUInt16LittleEndian(buf[40..], this.PartNumber);
@@ -158,6 +166,7 @@ public sealed class WimHeader {
     var wimFlags  = BinaryPrimitives.ReadUInt32LittleEndian(buf[16..]);
     var chunkSize = BinaryPrimitives.ReadUInt32LittleEndian(buf[20..]);
 
+    var guid        = new Guid(buf[24..40]);
     var partNumber  = BinaryPrimitives.ReadUInt16LittleEndian(buf[40..]);
     var totalParts  = BinaryPrimitives.ReadUInt16LittleEndian(buf[42..]);
     var imageCount  = BinaryPrimitives.ReadUInt32LittleEndian(buf[44..]);
@@ -186,6 +195,7 @@ public sealed class WimHeader {
       WimFlags               = wimFlags,
       CompressionType        = compressionType,
       ChunkSize              = chunkSize == 0 ? WimConstants.DefaultChunkSize : chunkSize,
+      Guid                   = guid,
       PartNumber             = partNumber == 0 ? (ushort)1 : partNumber,
       TotalParts             = totalParts == 0 ? (ushort)1 : totalParts,
       ImageCount             = imageCount,
