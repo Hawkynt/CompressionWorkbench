@@ -19,7 +19,7 @@ namespace FileSystem.Xenix;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Xenix</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Xenix";
   public string DisplayName => "Xenix FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -104,11 +104,21 @@ public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    foreach (var (name, data) in FilesOnly(inputs)) {
-      // Idempotent replace: drop any existing copy first so the inode + zones
-      // get freed back into the caches before we re-allocate them.
-      XenixModifier.RemoveFile(archive, LeafName(name), wipeData: true);
-      XenixModifier.AddFile(archive, name, data);
+    try {
+      foreach (var (name, data) in FilesOnly(inputs)) {
+        // Idempotent replace: drop any existing copy first so the inode + zones
+        // get freed back into the caches before we re-allocate them.
+        XenixModifier.RemoveFile(archive, LeafName(name), wipeData: true);
+        XenixModifier.AddFile(archive, name, data);
+      }
+    } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or IOException) {
+      // The in-place modifier addresses direct zones only, so a file past ten
+      // blocks has nowhere to go through it — while the writer builds one
+      // happily. Without this the volume could hold a file it could never be
+      // given, which is a difference nobody could explain to a caller.
+      archive.Position = 0;
+      ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage,
+        largeVolumeCreator: this);
     }
   }
 
@@ -213,6 +223,38 @@ public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
+  /// <summary>
+  /// A block pointer of zero names no block, so a run of zeros need not be
+  /// allocated; and the inode counts the names pointing at it, so identical
+  /// files can share one copy under several of them.
+  /// </summary>
+  public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
+
+  /// <inheritdoc />
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    source.Position = 0;
+    var files = new List<(string Name, byte[] Data)>();
+    {
+      var reader = new XenixReader(source);
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory) continue;
+        files.Add((entry.Name, reader.Extract(entry)));
+      }
+    }
+
+    using var writer = new XenixWriter(target, leaveOpen: true) {
+      MakeSparse = options.MakeSparse,
+      DeduplicateWithLinks = options.DeduplicateWithLinks,
+    };
+    foreach (var (name, data) in files) writer.AddFile(name, data);
+    writer.Finish();
+    options.OnProgress?.Invoke(target.Length, target.Length);
+  }
+
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => XenixExtentMap.Enumerate(image);
 

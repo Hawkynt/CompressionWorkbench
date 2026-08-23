@@ -21,7 +21,45 @@ public sealed class AdfBlockMover : IFilesystemBlockMover {
   private const int DataBlockPtrsTop = 308;
   private const int NameOffset = 432;
   private const int HashChainOffset = 496;
+  /// <summary>Where a block names the first of its file-extension blocks.</summary>
+  private const int ExtBlockOffset = 504;
   private const int SecTypeWordOff = 508;
+
+  /// <summary>
+  /// Follows a file's extension blocks, repointing the chain itself and the data
+  /// blocks each one names.
+  /// </summary>
+  private static void PatchExtensionChain(byte[] data, int ownerOff, IReadOnlyDictionary<int, int> remap) {
+    var linkOff = ownerOff + ExtBlockOffset;
+    var seen = new HashSet<int>();
+    while (true) {
+      var ext = (int)ReadUInt32BE(data, linkOff);
+      if (ext == 0) return;
+
+      // The extension block may itself have moved, in which case whatever names
+      // it has to say so.
+      if (remap.TryGetValue(ext, out var moved)) {
+        WriteUInt32BE(data, linkOff, (uint)moved);
+        ComputeChecksum(data, linkOff - ExtBlockOffset);
+        ext = moved;
+      }
+
+      if (!seen.Add(ext)) return;                       // a chain that loops names nothing more
+      var extOff = ext * SectorSize;
+      if (extOff < 0 || extOff + SectorSize > data.Length) return;
+
+      var count = (int)ReadUInt32BE(data, extOff + 8);
+      if (count <= 0 || count > HashTableCount) count = HashTableCount;
+      for (var i = 0; i < count; i++) {
+        var ptrOff = extOff + DataBlockPtrsTop - i * 4;
+        var ptr = (int)ReadUInt32BE(data, ptrOff);
+        if (ptr != 0 && remap.TryGetValue(ptr, out var newPtr))
+          WriteUInt32BE(data, ptrOff, (uint)newPtr);
+      }
+      ComputeChecksum(data, extOff);
+      linkOff = extOff + ExtBlockOffset;
+    }
+  }
 
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -86,6 +124,11 @@ public sealed class AdfBlockMover : IFilesystemBlockMover {
           }
           // Recompute header checksum.
           ComputeChecksum(data, hdrOff);
+
+          // A header names at most 72 data blocks; the rest are named by a chain
+          // of extension blocks, and this used to walk none of them. Every block
+          // of a file past the first 36 864 bytes kept naming where it had been.
+          PatchExtensionChain(data, hdrOff, remap);
         }
 
         // Patch hash-chain link if it was remapped.

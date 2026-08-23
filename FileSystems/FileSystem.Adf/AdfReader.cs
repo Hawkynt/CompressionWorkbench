@@ -34,7 +34,11 @@ public sealed class AdfReader : IDisposable {
   private const int FirstDataOffset  = 16;   // uint32 BE pointer to first OFS data block
   private const int DataBlockPtrsTop = 308;  // offset of the first (highest-indexed) data block pointer
   private const int HashChainOffset  = 496;  // uint32 BE — next entry in same hash bucket
-  private const int ExtBlockOffset   = 496;  // same field used for extension blocks
+  // The last four words of a block are hash_chain (496), parent (500),
+  // extension (504) and sec_type (508). This used to read the extension pointer
+  // from 496 as well, "the same field" — so a file that shared a hash bucket
+  // with another followed its neighbour as a chain of data blocks.
+  private const int ExtBlockOffset   = 504;  // uint32 BE — first file extension block
   private const int NameOffset       = 432;  // first byte = length, then up to 30 ASCII chars
   private const int SecTypeWordOff   = 508;  // uint32 BE secondary type at end of block
 

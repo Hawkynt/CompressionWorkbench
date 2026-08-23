@@ -38,6 +38,23 @@ public class FragmentationLifecycleTests {
   /// enough that most allocators need several blocks for it.</summary>
   private const int FileBytes = 48 * 1024;
 
+  /// <summary>
+  /// Per-file sizes to try, largest first, until the format will hold one.
+  /// </summary>
+  /// <remarks>
+  /// <para>Several of the older filesystems here address a file with direct
+  /// pointers only, and cap it at a few kilobytes — MinixFs at 7 168 bytes, SysV
+  /// and Xenix at 10 240. A probe of 48 KB files is one they cannot build at
+  /// all, so all three were skipped by the one check that exists to get an
+  /// outside opinion on them, and skipped for a reason that had nothing to do
+  /// with whether they were correct.</para>
+  ///
+  /// <para>What that cost: every MinixFs volume this project wrote failed
+  /// fsck.minix, and nothing said so, because the format never reached the
+  /// fsck. A probe that fits is worth more than a probe that is large.</para>
+  /// </remarks>
+  private static readonly int[] FileSizesToTry = [FileBytes, 6 * 1024, 2 * 1024, 512];
+
   /// <summary>Files the volume starts with, alternating keep and filler.</summary>
   private const int InitialFiles = 8;
 
@@ -46,6 +63,24 @@ public class FragmentationLifecycleTests {
   /// reader on this host that is not ours — the point of the exercise is the
   /// outside opinion.
   /// </summary>
+  /// <summary>
+  /// What an outside tool refuses today, and exactly what it says.
+  /// </summary>
+  /// <remarks>
+  /// <para>Recorded rather than dropped from the list. Each of these came out of
+  /// wiring up a checker or a driver that was installed here all along and that
+  /// nothing was asking, and each is a real disagreement between what we write
+  /// and what the format's own software will accept — not a gap in the tool. A
+  /// case nobody runs and nobody wrote down is a case nobody knows is missing.
+  /// </para>
+  ///
+  /// <para>The format stays in the list and still has to survive our own reader
+  /// at every stage; only the outside verdict is set aside, and only with the
+  /// verdict quoted.</para>
+  /// </remarks>
+  private static readonly Dictionary<string, string> KnownThirdPartyGaps = new(StringComparer.Ordinal) {
+  };
+
   private static IEnumerable<string> LifecycleFormats() {
     foreach (var descriptor in FormatRegistry.All.OrderBy(d => d.Id, StringComparer.Ordinal)) {
       var ops = FormatRegistry.GetArchiveOps(descriptor.Id);
@@ -65,30 +100,53 @@ public class FragmentationLifecycleTests {
 
     try {
       // ── 1. a volume of alternating keep/filler files ────────────────────
-      var sources = new List<ArchiveInput>();
+      // The files shrink until the format will take them, rather than the format
+      // being passed over for holding less than the probe assumed.
       var keep = new List<byte[]>();
       var fillerNames = new List<string>();
-      for (var i = 0; i < InitialFiles; ++i) {
-        var payload = Payload(i);
-        var name = (i % 2 == 0 ? "KEEP" : "FILL") + i.ToString("D2");
-        var path = Path.Combine(work, name + ".BIN");
-        File.WriteAllBytes(path, payload);
-        sources.Add(new ArchiveInput(path, name + ".BIN"));
-        if (i % 2 == 0) keep.Add(payload); else fillerNames.Add(name + ".BIN");
+      var image = Path.Combine(work, "volume.img");
+      var fileBytes = 0;
+      string? refusal = null;
+
+      foreach (var size in FileSizesToTry) {
+        var sources = new List<ArchiveInput>();
+        keep.Clear();
+        fillerNames.Clear();
+        for (var i = 0; i < InitialFiles; ++i) {
+          var payload = Payload(i, size);
+          var name = (i % 2 == 0 ? "KEEP" : "FILL") + i.ToString("D2");
+          var path = Path.Combine(work, name + ".BIN");
+          File.WriteAllBytes(path, payload);
+          sources.Add(new ArchiveInput(path, name + ".BIN"));
+          if (i % 2 == 0) keep.Add(payload); else fillerNames.Add(name + ".BIN");
+        }
+
+        try {
+          ArchiveOperations.Create(image, sources, new CompressionOptions(), format, null);
+        } catch (Exception ex) {
+          refusal = $"{ex.GetType().Name}: {ex.Message.Split('\n')[0]}";
+          continue;
+        }
+
+        if (!File.Exists(image) || new FileInfo(image).Length == 0) {
+          refusal = "produced no image";
+          continue;
+        }
+
+        fileBytes = size;
+        break;
       }
 
-      var image = Path.Combine(work, "volume.img");
-      try {
-        ArchiveOperations.Create(image, sources, new CompressionOptions(), format, null);
-      } catch (Exception ex) {
-        Assert.Ignore($"{formatId}: cannot create a {InitialFiles}-file probe volume ({ex.GetType().Name}: " +
-                      $"{ex.Message.Split('\n')[0]}).");
+      if (fileBytes == 0) {
+        Assert.Ignore($"{formatId}: cannot create a {InitialFiles}-file probe volume at any size " +
+                      $"down to {FileSizesToTry[^1]:N0} bytes ({refusal}).");
         return;
       }
-      if (!File.Exists(image) || new FileInfo(image).Length == 0) {
-        Assert.Ignore($"{formatId}: produced no image.");
-        return;
-      }
+
+      if (fileBytes != FileBytes)
+        TestContext.Out.WriteLine(
+          $"{formatId}: {FileBytes:N0}-byte files were refused, so the probe uses " +
+          $"{fileBytes:N0} bytes each.");
 
       // ── 2. punch holes ──────────────────────────────────────────────────
       // Whatever happens here, the payloads expected from now on are the ones
@@ -109,25 +167,36 @@ public class FragmentationLifecycleTests {
 
         if (holesPunched) {
           // ── 3. a file that has to land in more than one hole ─────────────
-          try {
-            var bigPayload = Payload(0x5A, FileBytes * 3);
-            var bigPath = Path.Combine(work, "BIG.BIN");
-            File.WriteAllBytes(bigPath, bigPayload);
-            using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
-              modifier.Add(stream, [new ArchiveInputInfo(bigPath, "BIG.BIN", false)]);
-            keep.Add(bigPayload);
-            fragmented = true;
-          } catch (Exception ex) {
-            TestContext.Out.WriteLine(
-              $"{formatId}: cannot add a {FileBytes * 3:N0}-byte file in place " +
-              $"({ex.GetType().Name}: {ex.Message.Split('\n')[0]}); the holes stay empty.");
+          // Three files' worth is what has to span more than one hole. Where the
+          // format will not hold that much in one file, a smaller one still has
+          // to land in a hole, which is most of the point.
+          string? addRefusal = null;
+          foreach (var bigSize in new[] { fileBytes * 3, fileBytes, fileBytes / 4 }) {
+            if (bigSize <= 0) continue;
+            try {
+              var bigPayload = Payload(0x5A, bigSize);
+              var bigPath = Path.Combine(work, "BIG.BIN");
+              File.WriteAllBytes(bigPath, bigPayload);
+              using (var stream = File.Open(image, FileMode.Open, FileAccess.ReadWrite))
+                modifier.Add(stream, [new ArchiveInputInfo(bigPath, "BIG.BIN", false)]);
+              keep.Add(bigPayload);
+              fragmented = true;
+              break;
+            } catch (Exception ex) {
+              addRefusal = $"{ex.GetType().Name}: {ex.Message.Split('\n')[0]}";
+            }
           }
+
+          if (!fragmented)
+            TestContext.Out.WriteLine(
+              $"{formatId}: cannot add a file in place at any size ({addRefusal}); " +
+              "the holes stay empty.");
         }
       }
 
       if (!holesPunched) {
         keep.Clear();
-        for (var i = 0; i < InitialFiles; ++i) keep.Add(Payload(i));
+        for (var i = 0; i < InitialFiles; ++i) keep.Add(Payload(i, fileBytes));
       }
 
       var runs = CountRuns(ops, image);
@@ -217,15 +286,21 @@ public class FragmentationLifecycleTests {
         $"{formatId} {stage}: a payload of {payload.Length:N0} bytes did not come back " +
         $"through our own reader ({ours.Count} files read).");
 
+    var gap = KnownThirdPartyGaps.GetValueOrDefault(formatId);
+
     var third = ThirdPartyFsCheck.ReadBack(formatId, image, expected);
-    if (third.Ran)
+    if (third.Ran && gap == null)
       Assert.That(third.Ok, Is.True, $"{formatId} {stage}: {third.Tool} did not read the payload back — {third.Detail}");
-    else
+    else if (!third.Ran)
       TestContext.Out.WriteLine($"{formatId} {stage}: no third-party reader ran — {third.Detail}");
+    else if (!third.Ok)
+      TestContext.Out.WriteLine($"{formatId} {stage}: known gap — {gap}. {third.Tool} said: {third.Detail}");
 
     var fsck = ThirdPartyFsCheck.Fsck(formatId, image);
-    if (fsck.Ran)
+    if (fsck.Ran && gap == null)
       Assert.That(fsck.Ok, Is.True, $"{formatId} {stage}: {fsck.Tool} reported a problem — {fsck.Detail}");
+    else if (fsck.Ran && !fsck.Ok)
+      TestContext.Out.WriteLine($"{formatId} {stage}: known gap — {gap}. {fsck.Tool} said: {fsck.Detail}");
   }
 
   private static HashSet<string> ReadBackOurselves(IArchiveFormatOperations ops, string image) {

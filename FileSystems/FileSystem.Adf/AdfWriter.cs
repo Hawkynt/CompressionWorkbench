@@ -95,16 +95,53 @@ public sealed class AdfWriter {
 
       // Write file header block
       var hdrOff = headerSector * SectorSize;
+      // A header block names at most 72 data blocks. Everything past that is
+      // named by a chain of extension blocks hanging off offset 496 — which this
+      // did not write, while allocating and filling the data blocks all the
+      // same. The bytes were on the disk and nothing pointed at them, so every
+      // file over 36 864 bytes read back correct to exactly that offset and
+      // wrong after it, at full length and without an error anywhere.
+      var inHeader = Math.Min(dataBlockCount, HashTableCount);
       WriteUInt32BE(disk, hdrOff, 2); // T_HEADER
       WriteUInt32BE(disk, hdrOff + 4, (uint)headerSector); // own key
-      WriteUInt32BE(disk, hdrOff + 8, (uint)dataBlockCount); // high_seq (data block count)
+      WriteUInt32BE(disk, hdrOff + 8, (uint)inHeader); // high_seq: pointers in THIS block
       // Data block pointers at offsets 308, 304, 300, ... (reverse order)
-      for (var i = 0; i < dataBlockCount && i < HashTableCount; i++)
+      for (var i = 0; i < inHeader; i++)
         WriteUInt32BE(disk, hdrOff + 308 - i * 4, (uint)dataBlocks[i]);
+
+      // The extension chain for whatever the header could not name.
+      var previousOff = hdrOff;
+      for (var placed = inHeader; placed < dataBlockCount; ) {
+        var extSector = AllocateSector(used, headerSector + 1);
+        if (extSector < 0)
+          throw new InvalidOperationException(
+            $"ADF: disk is full; cannot allocate an extension block for '{name}'.");
+
+        var extOff = extSector * SectorSize;
+        var count = Math.Min(HashTableCount, dataBlockCount - placed);
+        WriteUInt32BE(disk, extOff, 16);                       // T_LIST
+        WriteUInt32BE(disk, extOff + 4, (uint)extSector);      // own key
+        WriteUInt32BE(disk, extOff + 8, (uint)count);          // high_seq
+        for (var i = 0; i < count; i++)
+          WriteUInt32BE(disk, extOff + 308 - i * 4, (uint)dataBlocks[placed + i]);
+        WriteUInt32BE(disk, extOff + 500, (uint)headerSector); // parent: the file header
+        WriteUInt32BE(disk, extOff + 508, 0xFFFFFFFD);         // sec_type = ST_FILE
+        ComputeChecksum(disk, extOff);
+
+        // Chain it on: the header's own extension pointer for the first, and
+        // each block's for the next.
+        WriteUInt32BE(disk, previousOff + 504, (uint)extSector);
+        previousOff = extOff;
+        placed += count;
+      }
       WriteUInt32BE(disk, hdrOff + 324, (uint)data.Length); // file size
       WriteFilename(disk, hdrOff + 432, leafName); // filename (leaf only)
       WriteUInt32BE(disk, hdrOff + 508, 0xFFFFFFFD); // sec_type = ST_FILE
-      WriteUInt32BE(disk, hdrOff + 504, (uint)parentSector); // parent directory
+      // The last four words of the block are hash_chain (496), parent (500),
+      // extension (504) and sec_type (508). The parent used to go into 504,
+      // which is the extension pointer — so every file this wrote claimed a
+      // file-extension block that was really its parent directory.
+      WriteUInt32BE(disk, hdrOff + 500, (uint)parentSector); // parent directory
 
       // Timestamp: days/mins/ticks since AmigaOS epoch (1978-01-01).
       var (fDays, fMins, fTicks) = ToAmigaTime(modTime ?? DateTime.Now);

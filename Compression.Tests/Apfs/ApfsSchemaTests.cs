@@ -32,9 +32,10 @@ public class ApfsSchemaTests {
     desc.Create(ms, [ArchiveInputInfo.InMemory("data.txt", payload)], opts);
     var image = ms.ToArray();
 
-    // APSB volume superblock is block 5 (4 KiB blocks); apfs_volname at +0x2C0.
-    const int apsbBlock = 5;
+    // The volume superblock is found through the container's object map, as a
+    // reader finds it; apfs_volname sits at +0x2C0 inside it.
     const int blockSize = 4096;
+    var apsbBlock = (int)ApfsTestLayout.ApsbBlock(image);
     var volnameSpan = image.AsSpan(apsbBlock * blockSize + 0x2C0, 256);
     var nul = volnameSpan.IndexOf((byte)0);
     var volname = Encoding.UTF8.GetString(volnameSpan[..(nul < 0 ? 256 : nul)]);

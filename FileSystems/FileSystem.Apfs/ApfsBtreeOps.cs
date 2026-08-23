@@ -36,6 +36,12 @@ internal static class ApfsBtreeOps {
   private const int BtreeInfoSize = 40;
   private const int TocEntrySize = 8;
 
+  /// <summary>Table slots a node reserves however few it holds.</summary>
+  private const int MinimumTableSlots = 16;
+
+  /// <summary>A slot in a fixed-size tree: two offsets and no lengths.</summary>
+  private const int FixedTocEntrySize = 4;
+
   /// <summary>A (key, value) pair stored in a B-tree leaf.</summary>
   internal readonly struct Record(byte[] key, byte[] value) {
     public byte[] Key { get; } = key;
@@ -58,6 +64,14 @@ internal static class ApfsBtreeOps {
     var tb = (int)(ob >> 60);
     cmp = ta.CompareTo(tb);
     if (cmp != 0) return cmp;
+
+    // A directory entry's key is a two-byte name length and then the name, so
+    // comparing the tail byte for byte compares the lengths first — which puts
+    // "root" before "private-dir" and leaves the tree in an order nothing else
+    // agrees with. Directory entries are ordered by their names.
+    if (ta == APFS_TYPE_DIR_REC && a.Length >= 10 && b.Length >= 10)
+      return a.AsSpan(10).SequenceCompareTo(b.AsSpan(10));
+
     return a.AsSpan(8).SequenceCompareTo(b.AsSpan(8));
   }
 
@@ -100,7 +114,13 @@ internal static class ApfsBtreeOps {
   /// block addresses of the next-level node. A visited set guards against
   /// malformed cycles.
   /// </summary>
-  public static List<Record> CollectAllLeafRecords(byte[] image, ulong rootPhys) {
+  /// <param name="omapTreePhys">
+  /// The object map's B-tree root, for a tree whose nodes are virtual: its
+  /// children are identifiers and this is what turns one into a block. Zero for
+  /// a physical tree, whose children name their blocks outright.
+  /// </param>
+  public static List<Record> CollectAllLeafRecords(byte[] image, ulong rootPhys,
+      ulong omapTreePhys = 0) {
     var results = new List<Record>();
     var visited = new HashSet<ulong>();
     Descend(rootPhys, isRoot: true);
@@ -119,7 +139,9 @@ internal static class ApfsBtreeOps {
       }
       foreach (var s in slots) {
         if (s.Value.Length < 8) continue;
-        var childAddr = BinaryPrimitives.ReadUInt64LittleEndian(s.Value);
+        var child = BinaryPrimitives.ReadUInt64LittleEndian(s.Value);
+        var childAddr = omapTreePhys == 0 ? child : ResolveOidViaOmapTree(image, omapTreePhys, child);
+        if (childAddr == 0) continue;
         Descend(childAddr, isRoot: false);
       }
     }
@@ -158,6 +180,20 @@ internal static class ApfsBtreeOps {
       ? node.Length - BtreeInfoSize
       : node.Length;
     var isFixed = (flags & BTNODE_FIXED_KV_SIZE) != 0;
+
+    // A fixed-size tree states its one key size and one value size in the root's
+    // footer, because the slots carry only offsets. This used to take the fixed
+    // branch and then set both lengths to zero, which the guard below reads as an
+    // empty slot — so every record in such a node was skipped and the tree looked
+    // empty. An object map is precisely the tree laid out this way.
+    var fixedKeyLen = 0;
+    var fixedValLen = 0;
+    if (isFixed) {
+      var info = node.Length - BtreeInfoSize;
+      fixedKeyLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 8)..]);
+      fixedValLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 12)..]);
+    }
+
     for (uint i = 0; i < nkeys; i++) {
       int keyOff, keyLen, valOff, valLen;
       if (isFixed) {
@@ -165,7 +201,7 @@ internal static class ApfsBtreeOps {
         if (e + 4 > node.Length) break;
         keyOff = BinaryPrimitives.ReadUInt16LittleEndian(node[e..]);
         valOff = BinaryPrimitives.ReadUInt16LittleEndian(node[(e + 2)..]);
-        keyLen = 0; valLen = 0;
+        keyLen = fixedKeyLen; valLen = fixedValLen;
       } else {
         var e = tocAbs + (int)i * TocEntrySize;
         if (e + TocEntrySize > node.Length) break;
@@ -203,16 +239,28 @@ internal static class ApfsBtreeOps {
   /// modifier has no such cap.
   /// </para>
   /// </summary>
+  /// <param name="virtualNodes">
+  /// Filled with every non-root node's identifier and the block it sits on, when
+  /// the tree's nodes are virtual. Those need an entry in the object map, because
+  /// a virtual tree names its children by identifier and the map is what turns
+  /// one back into a block.
+  /// </param>
   public static void RebuildBtreeOnFixedRoot(ref byte[] image, ApfsBlockAllocator allocator,
       long rootBlock, ulong rootOid, uint type, ulong xid,
-      List<Record> records, Comparison<byte[]> keyComparer) {
+      List<Record> records, Comparison<byte[]> keyComparer,
+      List<(ulong Oid, ulong Block)>? virtualNodes = null, uint subtype = 0,
+      bool fixedKv = false, int leafKeySize = 0, int leafValueSize = 0) {
+    // OBJ_VIRTUAL is zero, so a tree is virtual when it is neither of the others.
+    var isVirtual = (type & (OBJ_PHYSICAL | OBJ_EPHEMERAL)) == 0;
+    ulong NodeOid(ulong block) => isVirtual ? OID_RESERVED_COUNT + block : block;
     // Sort records once into canonical key order.
     records.Sort((a, b) => keyComparer(a.Key, b.Key));
 
     // Try the single root-leaf case first.
     if (FitsInRootLeaf(records)) {
       WriteLeafNode(image.AsSpan((int)(rootBlock * BlockSize), (int)BlockSize),
-        records, rootOid, type, xid, isRoot: true, nodeCount: 1, totalKeys: (ulong)records.Count);
+        records, rootOid, type, xid, isRoot: true, nodeCount: 1, totalKeys: (ulong)records.Count,
+        subtype: subtype, fixedKv: fixedKv, leafKeySize: leafKeySize, leafValueSize: leafValueSize);
       return;
     }
 
@@ -222,11 +270,16 @@ internal static class ApfsBtreeOps {
     var leafFirstKeys = new List<byte[]>(leafPartitions.Count);
     for (var i = 0; i < leafPartitions.Count; i++) {
       var leafBlock = allocator.AllocateNode(ref image);
-      leafBlocks.Add(leafBlock);
+      var leafOid = NodeOid(leafBlock);
+      leafBlocks.Add(leafOid);                        // what the parent names it by
       leafFirstKeys.Add(leafPartitions[i][0].Key);
+      // Reported whether or not the tree is virtual: the caller counts the nodes
+      // a volume owns, and only names the virtual ones in its map.
+      virtualNodes?.Add((leafOid, leafBlock));
       WriteLeafNode(image.AsSpan((int)(leafBlock * BlockSize), (int)BlockSize),
-        leafPartitions[i], leafBlock, type, xid, isRoot: false,
-        nodeCount: 0, totalKeys: 0);
+        leafPartitions[i], leafOid, type, xid, isRoot: false,
+        nodeCount: 0, totalKeys: 0, subtype: subtype,
+        fixedKv: fixedKv, leafKeySize: leafKeySize, leafValueSize: leafValueSize);
     }
 
     // Build internal levels bottom-up.
@@ -241,14 +294,16 @@ internal static class ApfsBtreeOps {
         WriteInternalNode(image.AsSpan((int)(rootBlock * BlockSize), (int)BlockSize),
           currentKeys, currentChildren, rootOid, type, xid,
           level: (ushort)currentLevel, isRoot: true,
-          nodeCount: totalNodes + 1, totalKeys: (ulong)records.Count);
+          nodeCount: totalNodes + 1, totalKeys: (ulong)records.Count, subtype: subtype,
+          fixedKv: fixedKv, leafKeySize: leafKeySize, leafValueSize: leafValueSize);
         return;
       }
 
       // Otherwise this level overflows too — partition it into multiple internal
       // nodes and build another level on top.
       var (parentKeys, parentBlocks, addedNodes) = PartitionAndWriteInternalLevel(
-        ref image, allocator, currentKeys, currentChildren, type, xid, (ushort)currentLevel);
+        ref image, allocator, currentKeys, currentChildren, type, xid, (ushort)currentLevel,
+        NodeOid, virtualNodes, subtype, fixedKv, leafKeySize, leafValueSize);
       currentKeys = parentKeys;
       currentChildren = parentBlocks;
       currentLevel++;
@@ -263,7 +318,9 @@ internal static class ApfsBtreeOps {
   /// </summary>
   private static (List<byte[]> ParentKeys, List<ulong> ParentBlocks, ulong AddedNodes)
       PartitionAndWriteInternalLevel(ref byte[] image, ApfsBlockAllocator allocator,
-        List<byte[]> keys, List<ulong> children, uint type, ulong xid, ushort level) {
+        List<byte[]> keys, List<ulong> children, uint type, ulong xid, ushort level,
+        Func<ulong, ulong> nodeOidOf, List<(ulong Oid, ulong Block)>? virtualNodes, uint subtype,
+        bool fixedKv, int leafKeySize, int leafValueSize) {
     var parentKeys = new List<byte[]>();
     var parentBlocks = new List<ulong>();
     var added = 0UL;
@@ -282,11 +339,14 @@ internal static class ApfsBtreeOps {
       var sliceKeys = keys.GetRange(startIdx, endIdx - startIdx);
       var sliceChildren = children.GetRange(startIdx, endIdx - startIdx);
       var nodeBlock = allocator.AllocateNode(ref image);
+      var nodeOid = nodeOidOf(nodeBlock);
+      virtualNodes?.Add((nodeOid, nodeBlock));
       WriteInternalNode(image.AsSpan((int)(nodeBlock * BlockSize), (int)BlockSize),
-        sliceKeys, sliceChildren, nodeBlock, type, xid,
-        level: level, isRoot: false, nodeCount: 0, totalKeys: 0);
+        sliceKeys, sliceChildren, nodeOid, type, xid,
+        level: level, isRoot: false, nodeCount: 0, totalKeys: 0, subtype: subtype,
+        fixedKv: fixedKv, leafKeySize: leafKeySize, leafValueSize: leafValueSize);
       parentKeys.Add(sliceKeys[0]);
-      parentBlocks.Add(nodeBlock);
+      parentBlocks.Add(nodeOid);
       added++;
       startIdx = endIdx;
     }
@@ -349,10 +409,12 @@ internal static class ApfsBtreeOps {
 
   /// <summary>Writes a leaf node (level 0) containing <paramref name="records"/>.</summary>
   private static void WriteLeafNode(Span<byte> block, List<Record> records, ulong oid, uint type, ulong xid,
-      bool isRoot, ulong nodeCount, ulong totalKeys) {
+      bool isRoot, ulong nodeCount, ulong totalKeys, uint subtype,
+      bool fixedKv, int leafKeySize, int leafValueSize) {
     var flags = isRoot ? (ushort)(BTNODE_ROOT | BTNODE_LEAF) : (ushort)BTNODE_LEAF;
     WriteBtreeNodeRaw(block, records.Select(r => (r.Key, r.Value)).ToList(),
-      oid, type, xid, flags, level: 0, isRoot, nodeCount, totalKeys);
+      oid, type, xid, flags, level: 0, isRoot, nodeCount, totalKeys, subtype,
+      fixedKv, leafKeySize, leafValueSize);
   }
 
   /// <summary>
@@ -362,7 +424,8 @@ internal static class ApfsBtreeOps {
   /// number in little-endian.
   /// </summary>
   private static void WriteInternalNode(Span<byte> block, List<byte[]> keys, List<ulong> children, ulong oid, uint type, ulong xid,
-      ushort level, bool isRoot, ulong nodeCount, ulong totalKeys) {
+      ushort level, bool isRoot, ulong nodeCount, ulong totalKeys, uint subtype,
+      bool fixedKv, int leafKeySize, int leafValueSize) {
     var slots = new List<(byte[], byte[])>(keys.Count);
     for (var i = 0; i < keys.Count; i++) {
       var val = new byte[8];
@@ -370,7 +433,9 @@ internal static class ApfsBtreeOps {
       slots.Add((keys[i], val));
     }
     var flags = isRoot ? (ushort)BTNODE_ROOT : (ushort)0;
-    WriteBtreeNodeRaw(block, slots, oid, type, xid, flags, level, isRoot, nodeCount, totalKeys);
+    // An index node's values are child identifiers, eight bytes each.
+    WriteBtreeNodeRaw(block, slots, oid, type, xid, flags, level, isRoot, nodeCount, totalKeys,
+      subtype, fixedKv, leafKeySize, 8);
   }
 
   /// <summary>
@@ -380,22 +445,48 @@ internal static class ApfsBtreeOps {
   /// stamps the Fletcher-64 checksum.
   /// </summary>
   private static void WriteBtreeNodeRaw(Span<byte> block, List<(byte[] Key, byte[] Value)> slots,
-      ulong oid, uint type, ulong xid, ushort flags, ushort level, bool isRoot, ulong nodeCount, ulong totalKeys) {
+      ulong oid, uint type, ulong xid, ushort flags, ushort level, bool isRoot, ulong nodeCount,
+      ulong totalKeys, uint subtype, bool fixedKv, int leafKeySize, int leafValueSize) {
     block.Clear();
 
     // obj_phys_t header (32 bytes).
     BinaryPrimitives.WriteUInt64LittleEndian(block[8..], oid);
     BinaryPrimitives.WriteUInt64LittleEndian(block[16..], xid);
-    BinaryPrimitives.WriteUInt32LittleEndian(block[24..], type);
-    BinaryPrimitives.WriteUInt32LittleEndian(block[28..], 0);
+    // A node below the root is a btree_node; which tree it belongs to is the
+    // subtype. Both used to be lost here — every rebuilt node claimed to be a
+    // root of no tree in particular.
+    BinaryPrimitives.WriteUInt32LittleEndian(block[24..],
+      isRoot ? type : (type & ~(uint)0xFFFF) | OBJECT_TYPE_BTREE_NODE);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[28..], subtype);
 
     // btn_phys header at offset 32.
+    // The node has to say it is fixed before its header is written, not after.
+    if (fixedKv) flags |= BTNODE_FIXED_KV_SIZE;
     BinaryPrimitives.WriteUInt16LittleEndian(block[32..], flags);
     BinaryPrimitives.WriteUInt16LittleEndian(block[34..], level);
     BinaryPrimitives.WriteUInt32LittleEndian(block[36..], (uint)slots.Count);
 
+    // A tree whose records are all one size keeps two offsets per slot instead
+    // of an offset and a length for each half, and reserves table space for as
+    // many records as the node could hold. Every object map is laid out that way.
+    var tocEntrySize = fixedKv ? FixedTocEntrySize : TocEntrySize;
+
     var tocOff = BtnHeaderEnd;
-    var tocLen = slots.Count * TocEntrySize;
+    var tocLen = slots.Count * tocEntrySize;
+    if (fixedKv) {
+      var keySize = 0;
+      var valSize = 0;
+      foreach (var (k, v) in slots) {
+        if (k.Length > keySize) keySize = k.Length;
+        if (v.Length > valSize) valSize = v.Length;
+      }
+      if (slots.Count == 0) { keySize = leafKeySize; valSize = leafValueSize; }
+      var perRecord = tocEntrySize + keySize + valSize;
+      if (perRecord > tocEntrySize)
+        tocLen = Math.Max(tocLen, (block.Length - BtnHeaderEnd) / perRecord * tocEntrySize);
+    } else {
+      tocLen = Math.Max(tocLen, MinimumTableSlots * tocEntrySize);
+    }
     BinaryPrimitives.WriteUInt16LittleEndian(block[40..], 0);
     BinaryPrimitives.WriteUInt16LittleEndian(block[42..], (ushort)tocLen);
 
@@ -414,11 +505,16 @@ internal static class ApfsBtreeOps {
       v.CopyTo(block[valCursor..]);
       var valRelOff = (ushort)(valAreaEnd - valCursor);
 
-      var entryOff = tocOff + i * TocEntrySize;
-      BinaryPrimitives.WriteUInt16LittleEndian(block[entryOff..], keyRelOff);
-      BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 2)..], (ushort)k.Length);
-      BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 4)..], valRelOff);
-      BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 6)..], (ushort)v.Length);
+      var entryOff = tocOff + i * tocEntrySize;
+      if (fixedKv) {
+        BinaryPrimitives.WriteUInt16LittleEndian(block[entryOff..], keyRelOff);
+        BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 2)..], valRelOff);
+      } else {
+        BinaryPrimitives.WriteUInt16LittleEndian(block[entryOff..], keyRelOff);
+        BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 2)..], (ushort)k.Length);
+        BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 4)..], valRelOff);
+        BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 6)..], (ushort)v.Length);
+      }
     }
 
     if (keyCursor > valCursor)
@@ -434,16 +530,27 @@ internal static class ApfsBtreeOps {
 
     if (isRoot) {
       var infoOff = block.Length - BtreeInfoSize;
-      BinaryPrimitives.WriteUInt32LittleEndian(block[infoOff..], 0);
-      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 4)..], (uint)block.Length);
-      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 8)..], 0);
-      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 12)..], 0);
-      var longestKey = 0;
-      var longestVal = 0;
+      var longestKey = leafKeySize;
+      var longestVal = leafValueSize;
       foreach (var s in slots) {
         if (s.Key.Length > longestKey) longestKey = s.Key.Length;
         if (s.Value.Length > longestVal) longestVal = s.Value.Length;
       }
+
+      // Where the nodes live, whether the records are padded, and — for a tree
+      // whose records are all one size — what that size is. All four used to be
+      // written as zero, so a fixed tree this rebuilt said nothing about how to
+      // read it and came back empty: the modifier could read a tree the writer
+      // made and not one it had made itself.
+      var storage = (type & OBJ_EPHEMERAL) != 0 ? BTREE_EPHEMERAL
+        : (type & OBJ_PHYSICAL) != 0 ? BTREE_PHYSICAL : 0u;
+      BinaryPrimitives.WriteUInt32LittleEndian(block[infoOff..],
+        storage | (fixedKv ? 0u : BTREE_KV_NONALIGNED));
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 4)..], (uint)block.Length);
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 8)..],
+        fixedKv ? (uint)longestKey : 0u);
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 12)..],
+        fixedKv ? (uint)longestVal : 0u);
       BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 16)..], (uint)longestKey);
       BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 20)..], (uint)longestVal);
       BinaryPrimitives.WriteUInt64LittleEndian(block[(infoOff + 24)..], totalKeys);

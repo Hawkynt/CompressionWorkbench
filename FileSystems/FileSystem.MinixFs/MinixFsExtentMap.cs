@@ -118,11 +118,24 @@ public static class MinixFsExtentMap {
       var isReg = (mode & 0xF000) == 0x8000;
       if (!isDir && !isReg) continue; // ignore symlinks/devices for layout purposes
 
-      var zones = CollectZones(data, inodeTableOffset, inodeSize, version, blockSize, ino);
-      if (zones.Count == 0) continue;
+      var (zones, pointerZones) = CollectZones(data, inodeTableOffset, inodeSize, version, blockSize, ino);
+      if (zones.Count == 0 && pointerZones.Count == 0) continue;
 
       foreach (var z in zones)
         if (z < owned.Length) owned[(int)z] = true;
+
+      // An indirect block is the volume's own bookkeeping, not part of any
+      // file's contents, and it is claimed here so that it is neither handed
+      // out as free nor zeroed as unused. It is left where it is: moving one
+      // means repointing the block that names it, which the mover does not do.
+      foreach (var z in pointerZones) {
+        if (z >= owned.Length) continue;
+        owned[(int)z] = true;
+        var pointerOffset = (long)z * blockSize;
+        if (pointerOffset < data.Length)
+          result.Add(new DefragBlockInfo(pointerOffset, Math.Min(blockSize, data.Length - pointerOffset),
+            DefragBlockKind.MetadataReserved, "indirect:" + ino));
+      }
 
       if (isDir) {
         // Directory zones hold dirents — protect them as metadata.
@@ -185,11 +198,26 @@ public static class MinixFsExtentMap {
 
   // Collects the ordered list of data-zone numbers referenced by an inode,
   // following direct + (single/double/triple) indirect pointers.
-  private static List<uint> CollectZones(byte[] data, long inodeTableOffset, int inodeSize, Version version, int blockSize, uint inodeNum) {
+  /// <summary>
+  /// The zones an inode owns: the ones holding its bytes, and separately the
+  /// indirect blocks that address them.
+  /// </summary>
+  /// <remarks>
+  /// <para>The indirect blocks used not to be reported at all, so every one of
+  /// them looked like free space — free to be handed to another file, and free
+  /// for the wiper to zero, which takes a file's tail with it.</para>
+  ///
+  /// <para>A pointer of zero is a hole and not the end of the file. Stopping at
+  /// the first one left every zone behind it unclaimed, with the same
+  /// consequences.</para>
+  /// </remarks>
+  private static (List<uint> Data, List<uint> Pointers) CollectZones(byte[] data, long inodeTableOffset,
+      int inodeSize, Version version, int blockSize, uint inodeNum) {
     var zones = new List<uint>();
-    if (inodeNum == 0) return zones;
+    var pointers = new List<uint>();
+    if (inodeNum == 0) return (zones, pointers);
     var inodeOff = inodeTableOffset + (long)(inodeNum - 1) * inodeSize;
-    if (inodeOff < 0 || inodeOff + inodeSize > data.Length) return zones;
+    if (inodeOff < 0 || inodeOff + inodeSize > data.Length) return (zones, pointers);
 
     uint size;
     uint[] ptrs;
@@ -204,7 +232,7 @@ public static class MinixFsExtentMap {
       for (var i = 0; i < 9; i++)
         ptrs[i] = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan((int)inodeOff + 14 + i * 2));
     }
-    if (size == 0) return zones;
+    if (size == 0) return (zones, pointers);
 
     var remaining = (long)size;
     const int directCount = 7;
@@ -212,37 +240,47 @@ public static class MinixFsExtentMap {
     var dindirectIdx = directCount + 1;
     var tindirectIdx = version == Version.V3 ? directCount + 2 : -1;
 
-    for (var i = 0; i < directCount && remaining > 0; i++) {
-      if (ptrs[i] == 0) break;
+    for (var i = 0; i < directCount && remaining > 0; i++)
       AddZone(zones, ptrs[i], ref remaining, blockSize);
-    }
-    if (remaining > 0 && indirectIdx < ptrs.Length && ptrs[indirectIdx] != 0)
-      WalkIndirect(data, zones, ptrs[indirectIdx], ref remaining, 1, blockSize);
-    if (remaining > 0 && dindirectIdx < ptrs.Length && ptrs[dindirectIdx] != 0)
-      WalkIndirect(data, zones, ptrs[dindirectIdx], ref remaining, 2, blockSize);
-    if (remaining > 0 && tindirectIdx >= 0 && tindirectIdx < ptrs.Length && ptrs[tindirectIdx] != 0)
-      WalkIndirect(data, zones, ptrs[tindirectIdx], ref remaining, 3, blockSize);
 
-    return zones;
+    if (remaining > 0 && indirectIdx < ptrs.Length)
+      WalkIndirect(data, zones, pointers, ptrs[indirectIdx], ref remaining, 1, blockSize);
+    if (remaining > 0 && dindirectIdx < ptrs.Length)
+      WalkIndirect(data, zones, pointers, ptrs[dindirectIdx], ref remaining, 2, blockSize);
+    if (remaining > 0 && tindirectIdx >= 0 && tindirectIdx < ptrs.Length)
+      WalkIndirect(data, zones, pointers, ptrs[tindirectIdx], ref remaining, 3, blockSize);
+
+    return (zones, pointers);
   }
 
+  /// <summary>Claims one logical zone; a zone of nought is a hole and owns nothing.</summary>
   private static void AddZone(List<uint> zones, uint zone, ref long remaining, int blockSize) {
-    zones.Add(zone);
+    if (zone != 0) zones.Add(zone);
     remaining -= blockSize;
   }
 
-  private static void WalkIndirect(byte[] data, List<uint> zones, uint indirectZone, ref long remaining, int level, int blockSize) {
-    if (indirectZone == 0 || remaining <= 0) return;
-    var off = (long)indirectZone * blockSize;
-    if (off < 0 || off + blockSize > data.Length) return;
+  private static void WalkIndirect(byte[] data, List<uint> zones, List<uint> pointers,
+      uint indirectZone, ref long remaining, int level, int blockSize) {
+    if (remaining <= 0) return;
+
     var ptrsPerBlock = blockSize / 4;
+    var reach = (long)ptrsPerBlock;
+    for (var i = 1; i < level; ++i) reach *= ptrsPerBlock;
+
+    // An absent block is a hole as wide as everything it would have addressed.
+    var off = indirectZone == 0 ? -1 : (long)indirectZone * blockSize;
+    if (off < 0 || off + blockSize > data.Length) {
+      remaining -= reach * blockSize;
+      return;
+    }
+
+    pointers.Add(indirectZone);
     for (var i = 0; i < ptrsPerBlock && remaining > 0; i++) {
       var ptr = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)off + i * 4));
-      if (ptr == 0) break;
       if (level == 1)
         AddZone(zones, ptr, ref remaining, blockSize);
       else
-        WalkIndirect(data, zones, ptr, ref remaining, level - 1, blockSize);
+        WalkIndirect(data, zones, pointers, ptr, ref remaining, level - 1, blockSize);
     }
   }
 

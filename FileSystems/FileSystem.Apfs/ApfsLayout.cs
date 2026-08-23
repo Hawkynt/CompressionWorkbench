@@ -25,6 +25,8 @@ internal static class ApfsLayout {
   private const int BtnHeaderEnd = 56;
   private const int BtreeInfoSize = 40;
   private const int TocEntrySize = 8;
+  /// <summary>A slot in a fixed-size tree: two offsets and no lengths.</summary>
+  private const int FixedTocEntrySize = 4;
 
   /// <summary>Where one file extent record sits, and what it currently names.</summary>
   /// <param name="PhysBlock">The block the record says the file's bytes start at.</param>
@@ -228,8 +230,32 @@ internal static class ApfsLayout {
 
     var table = BtnHeaderEnd + tableOffset;
     var keyArea = table + tableLength;
-    var valueArea = isRoot || (flags & BTNODE_ROOT) != 0 ? node.Length - BtreeInfoSize : node.Length;
-    if ((flags & BTNODE_FIXED_KV_SIZE) != 0) return slots;   // not a shape this walks
+    var isRootNode = isRoot || (flags & BTNODE_ROOT) != 0;
+    var valueArea = isRootNode ? node.Length - BtreeInfoSize : node.Length;
+
+    // A tree whose records are all one size keeps a pair of offsets per slot
+    // instead of an offset and a length for each half; the sizes are in the
+    // root's own footer. This used to give up on such a node and return nothing,
+    // which read as "this tree is empty" — and an object map is exactly the tree
+    // that is laid out this way.
+    if ((flags & BTNODE_FIXED_KV_SIZE) != 0) {
+      if (!isRootNode) return slots;   // sizes live in the root; nothing here says them
+      var info = node.Length - BtreeInfoSize;
+      var fixedKeyLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 8)..]);
+      var fixedValueLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 12)..]);
+      if (fixedKeyLength <= 0 || fixedValueLength <= 0) return slots;
+
+      for (var i = 0u; i < keyCount; ++i) {
+        var entry = table + (int)i * FixedTocEntrySize;
+        if (entry + FixedTocEntrySize > node.Length) break;
+
+        var keyAt = keyArea + BinaryPrimitives.ReadUInt16LittleEndian(node[entry..]);
+        var valueAt = valueArea - BinaryPrimitives.ReadUInt16LittleEndian(node[(entry + 2)..]);
+        if (keyAt + fixedKeyLength > node.Length || valueAt + fixedValueLength > node.Length) continue;
+        slots.Add((keyAt, fixedKeyLength, valueAt, fixedValueLength));
+      }
+      return slots;
+    }
 
     for (var i = 0u; i < keyCount; ++i) {
       var entry = table + (int)i * TocEntrySize;

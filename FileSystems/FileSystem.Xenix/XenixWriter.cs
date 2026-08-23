@@ -79,10 +79,42 @@ public sealed class XenixWriter : IDisposable {
 
   // In-memory mirror of the directory tree we will emit. Built from the
   // registered file paths; one node per path component.
+  /// <summary>
+  /// Leave a zone unallocated where the file holds nothing but zeros.
+  /// </summary>
+  /// <remarks>
+  /// A block pointer of zero names no block at all: the driver hands back a
+  /// block of zeros for it and reads on. So a run of zeros need not occupy
+  /// anything — the file keeps its length and every one of its bytes, and the
+  /// volume is sized for what was actually written. A pointer block whose whole
+  /// range is hole is not allocated either, because that is what a volume looks
+  /// like when the gap was seeked past rather than written.
+  /// </remarks>
+  public bool MakeSparse { get; set; }
+
+  /// <summary>
+  /// Store one copy of files whose bytes are identical and give the rest a
+  /// second name for it.
+  /// </summary>
+  /// <remarks>
+  /// One inode, one set of blocks, and a count in the inode of how many
+  /// directory entries name it — that is all a hard link is.
+  /// </remarks>
+  public bool DeduplicateWithLinks { get; set; }
+
+  /// <summary>A Xenix inode counts its names in sixteen bits.</summary>
+  private const int MaxLinks = ushort.MaxValue;
+
   private sealed class TreeNode {
     public uint Inode;
     public bool IsDirectory;
     public byte[] FileData = [];
+
+    /// <summary>How many names point at this inode.</summary>
+    public int Links = 1;
+
+    /// <summary>Which of this file's zones hold nothing but zeros.</summary>
+    public bool[] Holes = [];
     // Children are kept in insertion order so the on-disk layout is
     // deterministic, plus an index for O(1) component-name lookups during
     // path resolution.
@@ -133,8 +165,27 @@ public sealed class XenixWriter : IDisposable {
       if (dir == root) continue;
       dir.Inode = nextInode++;
     }
-    foreach (var file in allFiles)
+    // Files whose bytes are identical share one inode when asked, so the rest of
+    // the build only ever sees the stored ones and the content is laid down once
+    // however many names lead to it.
+    var stored = new List<TreeNode>(allFiles.Count);
+    var firstWithContent = new Dictionary<string, TreeNode>(StringComparer.Ordinal);
+    foreach (var file in allFiles) {
+      var key = ContentKey(file.FileData);
+      if (this.DeduplicateWithLinks && firstWithContent.TryGetValue(key, out var first)) {
+        file.Inode = first.Inode;
+        ++first.Links;
+        // An inode that has run out of room to count its names starts a fresh
+        // one for the next copy rather than wrapping round to none.
+        if (first.Links >= MaxLinks) firstWithContent.Remove(key);
+        continue;
+      }
+
       file.Inode = nextInode++;
+      file.Holes = this.HoleMap(file.FileData);
+      if (this.DeduplicateWithLinks) firstWithContent[key] = file;
+      stored.Add(file);
+    }
 
     // Total inodes counting the reserved inode 1 slot so the table offsets
     // line up with the reader's (inum-1)*64 indexing.
@@ -153,14 +204,6 @@ public sealed class XenixWriter : IDisposable {
     // direct-zone-only budget so we fail with a clear message instead of
     // emitting a truncated image.
     EnsureDirectoriesAddressable(root, "");
-    foreach (var file in allFiles) {
-      var zonesNeeded = file.FileData.Length == 0 ? 0
-        : (file.FileData.Length + BlockSize - 1) / BlockSize;
-      if (zonesNeeded > DirectZones)
-        throw new InvalidOperationException(
-          $"Xenix writer only supports direct zones " +
-          $"(max {DirectZones * BlockSize} bytes per file).");
-    }
 
     // ── 4. Allocate data zones for dirs then files ─────────────────────────
     var nextZone = (uint)firstDataBlock;
@@ -176,15 +219,23 @@ public sealed class XenixWriter : IDisposable {
       dirZones[dir] = zones;
     }
 
-    // Per-file zone(s) holding the file body.
+    // Per-file zone(s) holding the file body, and the pointer blocks that
+    // address whatever will not fit in the ten the inode carries.
     var fileZones = new Dictionary<TreeNode, uint[]>(ReferenceEqualityComparer.Instance);
-    foreach (var file in allFiles) {
+    var fileSlots = new Dictionary<TreeNode, uint[]>(ReferenceEqualityComparer.Instance);
+    var pointerBlocks = new List<(uint Block, uint[] Pointers)>();
+    foreach (var file in stored) {
       var dataLen = file.FileData.Length;
       var zoneCount = dataLen == 0 ? 0 : (dataLen + BlockSize - 1) / BlockSize;
       var zones = new uint[zoneCount];
-      for (var i = 0; i < zoneCount; i++)
+      for (var i = 0; i < zoneCount; i++) {
+        // A hole keeps its place in the pointer list and takes no zone: the
+        // pointer stays zero, and a reader hands back a block of zeros for it.
+        if (i < file.Holes.Length && file.Holes[i]) continue;
         zones[i] = nextZone++;
+      }
       fileZones[file] = zones;
+      fileSlots[file] = PlanSlots(zones, ref nextZone, pointerBlocks);
     }
 
     var totalBlocks = (int)nextZone; // index of the next free zone == total blocks
@@ -201,10 +252,10 @@ public sealed class XenixWriter : IDisposable {
       var subdirs = dir.Children.Count(c => c.Value.IsDirectory);
       WriteInode(disk, inodeTableOffset, (int)dir.Inode, ModeDirectory, size, zones, (ushort)(2 + subdirs));
     }
-    foreach (var file in allFiles) {
-      var zones = fileZones[file];
+    foreach (var file in stored) {
       var size = (uint)file.FileData.Length;
-      WriteInode(disk, inodeTableOffset, (int)file.Inode, ModeRegularFile, size, zones, 1);
+      WriteInode(disk, inodeTableOffset, (int)file.Inode, ModeRegularFile, size,
+        fileSlots[file], (ushort)file.Links);
     }
 
     // ── 6. Emit directory zones (.,..,child×N) ─────────────────────────────
@@ -229,15 +280,23 @@ public sealed class XenixWriter : IDisposable {
     }
 
     // ── 7. Emit file data ──────────────────────────────────────────────────
-    foreach (var file in allFiles) {
+    foreach (var file in stored) {
       var data = file.FileData;
       var zones = fileZones[file];
-      var written = 0;
       for (var z = 0; z < zones.Length; z++) {
-        var toWrite = Math.Min(BlockSize, data.Length - written);
-        Array.Copy(data, written, disk, (int)zones[z] * BlockSize, toWrite);
-        written += toWrite;
+        if (zones[z] == 0) continue;   // a hole owns no zone to write into
+        var at = z * BlockSize;
+        Array.Copy(data, at, disk, (int)zones[z] * BlockSize,
+          Math.Min(BlockSize, data.Length - at));
       }
+    }
+
+    // Pointer blocks hold plain four-byte words, unlike the three-byte ones an
+    // inode packs its thirteen block numbers into.
+    foreach (var (block, pointers) in pointerBlocks) {
+      var baseByte = (int)block * BlockSize;
+      for (var i = 0; i < pointers.Length; i++)
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(baseByte + i * 4), pointers[i]);
     }
 
     // ── 8. Superblock ──────────────────────────────────────────────────────
@@ -322,8 +381,101 @@ public sealed class XenixWriter : IDisposable {
     BinaryPrimitives.WriteUInt16LittleEndian(span, mode);
     BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(2), nlink);
     BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(8), size);
-    for (var i = 0; i < Math.Min(zones.Length, DirectZones); i++)
+    // Thirteen block numbers in thirty-nine bytes: ten direct, then the single-,
+    // double- and triple-indirect roots.
+    for (var i = 0; i < Math.Min(zones.Length, InodeZoneSlots); i++)
       Write24(span.Slice(12 + i * 3), zones[i]);
+  }
+
+  /// <summary>Which of a payload's zones hold nothing but zeros.</summary>
+  /// <remarks>
+  /// Empty when holes are not wanted, so every caller can ask without checking
+  /// first and the layout has one shape either way.
+  /// </remarks>
+  private bool[] HoleMap(byte[] data) {
+    if (!this.MakeSparse || data.Length == 0) return [];
+
+    var count = (data.Length + BlockSize - 1) / BlockSize;
+    var holes = new bool[count];
+    for (var z = 0; z < count; z++) {
+      var at = z * BlockSize;
+      var length = Math.Min(BlockSize, data.Length - at);
+      holes[z] = !data.AsSpan(at, length).ContainsAnyExcept((byte)0);
+    }
+    return holes;
+  }
+
+  /// <summary>A file's contents, as a key two identical files share.</summary>
+  private static string ContentKey(byte[] data) =>
+    data.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+    + ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+
+  /// <summary>Block numbers an inode carries: ten direct plus three indirect roots.</summary>
+  private const int InodeZoneSlots = 13;
+
+  /// <summary>Pointers a pointer block holds, four bytes each.</summary>
+  private const int PointersPerBlock = BlockSize / 4;
+
+  /// <summary>
+  /// Turns a file's data zones into the thirteen block numbers its inode
+  /// carries, claiming pointer blocks for whatever will not fit in the ten
+  /// direct ones.
+  /// </summary>
+  /// <remarks>
+  /// This writer used to refuse any file past those ten — 10 240 bytes — while
+  /// the reader beside it followed all four addressing levels, so a volume from
+  /// a real Xenix system could be read here and never written. It also meant the
+  /// format could not build the probe volume the interoperability checks use,
+  /// and was passed over by every one of them.
+  /// </remarks>
+  private static uint[] PlanSlots(uint[] dataZones, ref uint nextZone,
+      List<(uint Block, uint[] Pointers)> pointerBlocks) {
+    var slots = new uint[InodeZoneSlots];
+    var idx = 0;
+    for (; idx < dataZones.Length && idx < DirectZones; idx++)
+      slots[idx] = dataZones[idx];
+    if (idx == dataZones.Length) return slots;
+
+    for (var level = 1; level <= 3 && idx < dataZones.Length; ++level)
+      slots[DirectZones + level - 1] = PlanIndirect(dataZones, ref idx, ref nextZone, level, pointerBlocks);
+
+    if (idx < dataZones.Length)
+      throw new InvalidOperationException(
+        $"Xenix: a file of {(long)dataZones.Length * BlockSize:N0} bytes is past what " +
+        "triple-indirect addressing reaches.");
+    return slots;
+  }
+
+  /// <summary>Claims one pointer tree of the given level and returns its root block.</summary>
+  private static uint PlanIndirect(uint[] dataZones, ref int idx, ref uint nextZone, int level,
+      List<(uint Block, uint[] Pointers)> pointerBlocks) {
+    var reach = PointersPerBlock;
+    for (var i = 1; i < level; ++i) reach *= PointersPerBlock;
+
+    // A pointer block whose whole range is hole is not claimed at all: a slot of
+    // zero is how a volume records a gap nobody wrote.
+    var end = Math.Min(dataZones.Length, idx + reach);
+    var allHole = true;
+    for (var probe = idx; probe < end; probe++)
+      if (dataZones[probe] != 0) { allHole = false; break; }
+    if (allHole) {
+      idx = end;
+      return 0;
+    }
+
+    var root = nextZone++;
+    var pointers = new List<uint>(PointersPerBlock);
+
+    if (level == 1) {
+      var count = Math.Min(PointersPerBlock, dataZones.Length - idx);
+      for (var i = 0; i < count; i++) pointers.Add(dataZones[idx++]);
+    } else {
+      for (var i = 0; i < PointersPerBlock && idx < dataZones.Length; i++)
+        pointers.Add(PlanIndirect(dataZones, ref idx, ref nextZone, level - 1, pointerBlocks));
+    }
+
+    pointerBlocks.Add((root, [.. pointers]));
+    return root;
   }
 
   // 24-bit little-endian block-address store, mirroring the reader's Read24.

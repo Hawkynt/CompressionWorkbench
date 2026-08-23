@@ -16,6 +16,11 @@ internal static class ApfsConstants {
   public const uint OBJECT_TYPE_SPACEMAN_CAB = 0x00000006;
   public const uint OBJECT_TYPE_SPACEMAN_CIB = 0x00000007;
   public const uint OBJECT_TYPE_SPACEMAN_BITMAP = 0x00000008;
+  public const uint OBJECT_TYPE_SPACEMAN_FREE_QUEUE = 0x00000009;
+  public const uint OBJECT_TYPE_NX_REAPER = 0x00000011;
+
+  /// <summary>The first object identifier an ephemeral object may take.</summary>
+  public const ulong OID_RESERVED_COUNT = 1024;
   public const uint OBJECT_TYPE_OMAP = 0x0000000B;
   public const uint OBJECT_TYPE_CHECKPOINT_MAP = 0x0000000C;
   public const uint OBJECT_TYPE_FS = 0x0000000D; // APFS volume
@@ -66,6 +71,12 @@ internal static class ApfsConstants {
   public const int APSB_VOLNAME = 0x2C0;
   public const int APSB_VOLNAME_LEN = 256;
 
+  /// <summary>apfs_next_doc_id — the next document identifier this volume will hand out.</summary>
+  public const int APSB_NEXT_DOC_ID = APSB_VOLNAME + APSB_VOLNAME_LEN;
+
+  /// <summary>The lowest document identifier a volume may say it will hand out next.</summary>
+  public const uint APFS_MIN_DOC_ID = 3;
+
   /// <summary>The apfs_fs_flags bit that says the volume is not encrypted.</summary>
   public const ulong APFS_FS_UNENCRYPTED = 0x1;
 
@@ -98,6 +109,29 @@ internal static class ApfsConstants {
   public const ushort BTNODE_ROOT = 0x0001;
   public const ushort BTNODE_LEAF = 0x0002;
   public const ushort BTNODE_FIXED_KV_SIZE = 0x0004;
+
+  /// <summary>btree_info flag: this tree's nodes are physical objects.</summary>
+  /// <remarks>
+  /// Read off a container mkfs.apfs built: its object map's footer carries 0x10
+  /// and its free-queue trees carry 0x0C — ephemeral, allowing ghosts — while
+  /// both state their key and value sizes. So the sizes are what say a tree is
+  /// fixed; this bit says where its nodes live.
+  /// </remarks>
+  public const uint BTREE_PHYSICAL = 0x00000010;
+
+  /// <summary>btree_info flag: this tree's nodes are ephemeral objects.</summary>
+  public const uint BTREE_EPHEMERAL = 0x00000008;
+
+  /// <summary>btree_info flag: a key may be present with no value.</summary>
+  public const uint BTREE_ALLOW_GHOSTS = 0x00000004;
+
+  /// <summary>btree_info flag: keys and values are not padded to an alignment.</summary>
+  /// <remarks>
+  /// Every variable-length tree in a container mkfs.apfs builds carries it — the
+  /// filesystem tree, the extent-reference tree and the snapshot-metadata tree
+  /// alike.
+  /// </remarks>
+  public const uint BTREE_KV_NONALIGNED = 0x00000040;
 
   // Inode flags / modes.
   public const ushort APFS_DIR_REC_FLAGS_MASK = 0x000F;

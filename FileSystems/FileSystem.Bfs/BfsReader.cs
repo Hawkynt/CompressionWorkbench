@@ -14,8 +14,23 @@ namespace FileSystem.Bfs;
 /// </summary>
 internal sealed class BfsReader {
 
-  private const uint InodeMagic = 0x3BDE0AD9;
+  /// <summary>
+  /// The magic every BFS inode begins with.
+  /// </summary>
+  /// <remarks>
+  /// One nibble of this was wrong — 0x3BDE0AD9 for 0x3BBE0AD9 — in the writer,
+  /// the reader and the in-place modifier alike, so all three agreed and the
+  /// kernel's befs driver rejected the root inode of every volume this project
+  /// had ever written: "Inode has a bad magic header - inode = 11".
+  /// </remarks>
+  private const uint InodeMagic = 0x3BBE0AD9;
   private const int InodeDataStreamOffset = 72;
+
+  /// <summary>Magic at the head of a B+ tree stream.</summary>
+  private const uint BtreeMagic = 0x69F6C2E8;
+
+  /// <summary>Bytes of the B+ tree header at the start of a stream.</summary>
+  private const int BtreeSuperSize = 40;
   private const int NumDirectBlocks = 12;
   private const uint S_IFDIR = 0x4000;
   private const uint S_IFMT = 0xF000;
@@ -87,7 +102,7 @@ internal sealed class BfsReader {
 
     var btreeRun = ReadBlockRun(_image.Read(dirInodeOffset + InodeDataStreamOffset, 16), 0);
 
-    foreach (var (name, inodeBlock) in ReadAllBtreeEntries(this.BlockOf(btreeRun))) {
+    foreach (var (name, inodeBlock) in ReadAllBtreeEntries(this.RootNodeBlock(this.BlockOf(btreeRun)))) {
       var fullName = prefix.Length == 0 ? name : prefix + "/" + name;
       var inodeOffset = inodeBlock * _blockSize;
       var (isDir, size) = ReadInodeKindAndSize(inodeOffset);
@@ -208,6 +223,24 @@ internal sealed class BfsReader {
   }
 
   /// <summary>Absolute block number a run addresses: its group index times the group size, plus its start.</summary>
+  /// <summary>
+  /// The block a directory's B+ tree root node sits on, given its stream's first block.
+  /// </summary>
+  /// <remarks>
+  /// A stream opens with the tree's own header — magic, node size and the offset
+  /// of the root node within the stream — and the nodes follow it. Treating the
+  /// first block as a node read the header as one, which worked only against a
+  /// writer that had left the header out.
+  /// </remarks>
+  private long RootNodeBlock(long streamStartBlock) {
+    var at = streamStartBlock * _blockSize;
+    if (at < 0 || at + BtreeSuperSize > _image.Length) return streamStartBlock;
+    if (_image.ReadUInt32(at) != BtreeMagic) return streamStartBlock;   // headerless: as before
+
+    var rootPtr = _image.ReadInt64(at + 16);
+    return rootPtr <= 0 ? streamStartBlock + 1 : streamStartBlock + rootPtr / _blockSize;
+  }
+
   private long BlockOf((uint Ag, int Start, int Length) run)
     => run.Ag * this._blocksPerAg + run.Start;
 
@@ -253,23 +286,30 @@ internal sealed class BfsReader {
 
     if (keyCount == 0) return entries;
 
-    var headerSize = 28;
-    var keyLenTableOffset = leafOffset + headerSize;
-    var keyDataOffset = keyLenTableOffset + keyCount * 2;
+    // The body runs: the keys, then — rounded up to an eight-byte boundary — the
+    // index saying where each one ends, then the values. This read the index
+    // first and the values from the far end of the block, which is a layout the
+    // format does not use and only our own writer produced.
+    const int headerSize = 28;
+    const int keyLenAlign = 8;
+
+    var keyDataOffset = leafOffset + headerSize;
+    var indexStart = headerSize + totalKeyLength;
+    var padding = indexStart % keyLenAlign;
+    if (padding != 0) indexStart += keyLenAlign - padding;
+
+    var keyLenTableOffset = leafOffset + indexStart;
+    var valuesStart = keyLenTableOffset + keyCount * 2;
 
     // Validate bounds
-    if (keyDataOffset + totalKeyLength > _image.Length)
-      return entries;
+    if (valuesStart + keyCount * 8 > _image.Length) return entries;
+    if (valuesStart + keyCount * 8 > leafOffset + _blockSize)
+      return entries; // does not fit the node — malformed
 
     // Read cumulative key lengths
     var cumulativeLengths = new ushort[keyCount];
     for (var i = 0; i < keyCount; i++)
       cumulativeLengths[i] = _image.ReadUInt16(keyLenTableOffset + i * 2);
-
-    // Read values from end of block
-    var valuesStart = leafOffset + _blockSize - keyCount * 8;
-    if (valuesStart < keyDataOffset + totalKeyLength)
-      return entries; // overlap — malformed
 
     var prevLen = 0;
     for (var i = 0; i < keyCount; i++) {
