@@ -47,9 +47,10 @@ public class UbifsTests {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(leb + 24 + 80, 4), 0x5);
 
     // Dentry at LEB 2.
-    // Layout: common(24) + key(16) + inum(8) + pad(1) + type(1) + nlen(2) + name
+    // Layout: common(24) + key(16) + inum(8) + pad(1) + type(1) + nlen(2)
+    //         + cookie(4) + name -- the cookie is the part that is easy to miss.
     var nameBytes = Encoding.UTF8.GetBytes("hello.txt");
-    var dentryTotal = 24 + 16 + 8 + 4 + nameBytes.Length;
+    var dentryTotal = 24 + 16 + 8 + 1 + 1 + 2 + 4 + nameBytes.Length;
     WriteNodeCommon(image.AsSpan(2 * leb, 24), type: 2, totalLen: (uint)dentryTotal);
     // parent inode
     BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(2 * leb + 24, 8), 1);
@@ -60,7 +61,7 @@ public class UbifsTests {
     // name length
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(2 * leb + 24 + 16 + 8 + 2, 2), (ushort)nameBytes.Length);
     // name
-    nameBytes.CopyTo(image.AsSpan(2 * leb + 24 + 16 + 8 + 4));
+    nameBytes.CopyTo(image.AsSpan(2 * leb + 24 + 16 + 8 + 1 + 1 + 2 + 4));
 
     return image;
   }

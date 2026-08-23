@@ -297,30 +297,39 @@ internal static class ZstdHuffmanLiterals {
     if (stream.Length == 0)
       throw new InvalidDataException("Empty Huffman weight bitstream.");
 
-    var reader = new ReverseBitReader(stream);
+    // Never more weights than there are symbol values to give them to.
+    const int maxWeights = 255;
+
+    var reader = new BitWindow(stream);
     var state1 = reader.ReadBits(accuracyLog);
     var state2 = reader.ReadBits(accuracyLog);
 
     var weights = new List<int>();
-    while (true) {
+    while (weights.Count < maxWeights) {
+      // Emitting a symbol also advances its state, and advancing reads the bits
+      // that decide where it goes. The check for the stream being over comes
+      // after that, not before it: checking first ends the table a symbol early
+      // every time, and the symbol that should carry the implicit weight is then
+      // not the one that gets it.
       weights.Add(table.Symbol[state1]);
-      if (reader.Finished) {
+      state1 = table.NewStateBase[state1] + reader.ReadBits(table.NumBits[state1]);
+      if (reader.Reload() == BitWindow.Status.Overflow) {
         weights.Add(table.Symbol[state2]);
         break;
       }
-      state1 = table.NewStateBase[state1] + reader.ReadBits(table.NumBits[state1]);
 
       weights.Add(table.Symbol[state2]);
-      if (reader.Finished) {
+      state2 = table.NewStateBase[state2] + reader.ReadBits(table.NumBits[state2]);
+      if (reader.Reload() == BitWindow.Status.Overflow) {
         weights.Add(table.Symbol[state1]);
         break;
       }
-      state2 = table.NewStateBase[state2] + reader.ReadBits(table.NumBits[state2]);
     }
 
     // Reserve a trailing slot for the implicit last weight.
-    var result = new int[weights.Count + 1];
-    for (var i = 0; i < weights.Count; ++i)
+    var count = Math.Min(weights.Count, maxWeights);
+    var result = new int[count + 1];
+    for (var i = 0; i < count; ++i)
       result[i] = weights[i];
     return result;
   }
@@ -424,6 +433,82 @@ internal static class ZstdHuffmanLiterals {
   /// Reads a Zstandard backward bitstream: the highest set bit of the last byte is the
   /// sentinel, data bits are below it, consumed from the most significant downward.
   /// </summary>
+  /// <summary>
+  /// Zstandard's backward bit reader: a sixty-four bit window over the stream,
+  /// with bits counted from the top of it.
+  /// </summary>
+  /// <remarks>
+  /// <para>Modelling this as a plain bit position over the whole span looks
+  /// equivalent and is not. The window is padded for a stream shorter than itself
+  /// and refilled as it walks back, and the stream is over when the window has
+  /// reached the start AND every one of its sixty-four bits is spent. Whether that
+  /// has happened cannot be read off a flat position: two flat rules, one bit
+  /// apart, each decoded one class of stream correctly and the other wrongly.</para>
+  ///
+  /// <para>The FSE loop above ends on Overflow -- consumed past the window rather
+  /// than level with it -- which is what the format's own decoder does.</para>
+  /// </remarks>
+  private ref struct BitWindow {
+    internal enum Status { Unfinished, EndOfBuffer, Completed, Overflow }
+
+    private readonly ReadOnlySpan<byte> _data;
+    private int _ptr;
+    private ulong _window;
+    private int _consumed;
+
+    public BitWindow(ReadOnlySpan<byte> data) {
+      this._data = data;
+      var n = data.Length;
+      if (n == 0) throw new InvalidDataException("Empty Huffman weight bitstream.");
+
+      if (n >= 8) {
+        this._ptr = n - 8;
+        this._window = BinaryPrimitives.ReadUInt64LittleEndian(data[this._ptr..]);
+        var last = data[n - 1];
+        this._consumed = 8 - HighBit(last);
+      } else {
+        this._ptr = 0;
+        ulong w = 0;
+        for (var i = 0; i < n; ++i) w |= (ulong)data[i] << (8 * i);
+        this._window = w;
+        var last = data[n - 1];
+        this._consumed = (last != 0 ? 8 - HighBit(last) : 0) + (8 - n) * 8;
+      }
+    }
+
+    private static int HighBit(byte value) =>
+      value == 0 ? 0 : 31 - System.Numerics.BitOperations.LeadingZeroCount(value);
+
+    public int ReadBits(int n) {
+      if (n == 0) return 0;
+      var value = (int)((this._window << this._consumed) >> (64 - n));
+      this._consumed += n;
+      return value;
+    }
+
+    public Status Reload() {
+      if (this._consumed > 64) return Status.Overflow;
+
+      if (this._ptr >= 8) {
+        this._ptr -= this._consumed >> 3;
+        this._consumed &= 7;
+        this._window = BinaryPrimitives.ReadUInt64LittleEndian(this._data[this._ptr..]);
+        return Status.Unfinished;
+      }
+
+      if (this._ptr == 0)
+        return this._consumed < 64 ? Status.EndOfBuffer : Status.Completed;
+
+      var bytes = Math.Min(this._consumed >> 3, this._ptr);
+      this._ptr -= bytes;
+      this._consumed -= bytes * 8;
+      this._window = BinaryPrimitives.ReadUInt64LittleEndian(this._data[this._ptr..]);
+      return this._ptr == 0
+        ? (this._consumed < 64 ? Status.EndOfBuffer : Status.Completed)
+        : Status.Unfinished;
+    }
+  }
+
   private ref struct ReverseBitReader {
     private readonly ReadOnlySpan<byte> _data;
     private int _bitPos;

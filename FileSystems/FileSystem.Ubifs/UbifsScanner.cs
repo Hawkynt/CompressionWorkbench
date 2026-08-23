@@ -110,18 +110,23 @@ internal static class UbifsScanner {
   }
 
   // UBIFS dentry node layout (after 24-byte common header):
-  //   key[16] inum(8) padding(1) type(1) nlen(2) name[nlen + 1]
+  //   key[16] inum(8) padding(1) type(1) nlen(2) cookie(4) name[nlen + 1]
+  //
+  // The cookie sits between the name length and the name itself, and leaving it
+  // out of the layout put the name four bytes early -- on the cookie, which is
+  // zero -- so every name came back as its own first character with four nulls in
+  // front of it. B.BIN read as "B".
   private static void TryParseDentry(ReadOnlySpan<byte> image, int off, int nodeLen, ScanResult result) {
     try {
       var payload = off + 24;
-      if (payload + 16 + 8 + 4 > image.Length) return;
+      if (payload + 16 + 8 + 1 + 1 + 2 + 4 > image.Length) return;
       // parent inode is the first 8 bytes of the key
       var parent = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.Slice(payload, 8));
       var inum = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.Slice(payload + 16, 8));
       var type = image[payload + 16 + 8 + 1];
       var nlen = BinaryPrimitives.ReadUInt16LittleEndian(image.Slice(payload + 16 + 8 + 2, 2));
       if (nlen == 0 || nlen > 255) return;
-      var nameOff = payload + 16 + 8 + 4;
+      var nameOff = payload + 16 + 8 + 1 + 1 + 2 + 4;
       if (nameOff + nlen > image.Length) return;
       var name = Encoding.UTF8.GetString(image.Slice(nameOff, nlen));
       result.Dentries.Add(new DentryInfo(parent, name, type));

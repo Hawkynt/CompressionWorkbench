@@ -223,24 +223,31 @@ internal static class ZstdLiterals {
       pos += 3;
     }
     else if (sizeFormat == 2) {
-      // Both sizes use 14 bits, 4-byte header total
+      // Both sizes use 14 bits, 4-byte header total. Gathered in 64 bits: four
+      // header bits and two fourteen-bit fields fill all thirty-two of an int, so
+      // the top field lands on the sign bit and the shift that reads it back
+      // carries the sign down through it.
       if (pos + 3 >= blockData.Length)
         throw new InvalidDataException("Truncated compressed literal header.");
-      var combined = ((headerByte >> 4) & 0x0F) | (blockData[pos + 1] << 4)
-             | (blockData[pos + 2] << 12) | (blockData[pos + 3] << 20);
-      regenSize = combined & 0x3FFF;
-      compressedSize = combined >> 14;
+      var combined = (long)((headerByte >> 4) & 0x0F) | ((long)blockData[pos + 1] << 4)
+             | ((long)blockData[pos + 2] << 12) | ((long)blockData[pos + 3] << 20);
+      regenSize = (int)(combined & 0x3FFF);
+      compressedSize = (int)(combined >> 14);
       pos += 4;
     }
     else {
-      // Both sizes use 18 bits, 5-byte header total
+      // Both sizes use 18 bits, 5-byte header total -- four header bits and two
+      // eighteen-bit fields is thirty-six bits, which does not fit an int. Packed
+      // into one the top four bits of the compressed size fell off the end, so any
+      // block whose literals ran past about sixteen kilobytes was read as a much
+      // smaller one and its Huffman streams did not add up.
       if (pos + 4 >= blockData.Length)
         throw new InvalidDataException("Truncated compressed literal header.");
-      var combined = ((headerByte >> 4) & 0x0F) | (blockData[pos + 1] << 4)
-             | (blockData[pos + 2] << 12) | (blockData[pos + 3] << 20)
-             | (blockData[pos + 4] << 28);
-      regenSize = combined & 0x3FFFF;
-      compressedSize = (int)((uint)combined >> 18);
+      var combined = (long)((headerByte >> 4) & 0x0F) | ((long)blockData[pos + 1] << 4)
+             | ((long)blockData[pos + 2] << 12) | ((long)blockData[pos + 3] << 20)
+             | ((long)blockData[pos + 4] << 28);
+      regenSize = (int)(combined & 0x3FFFF);
+      compressedSize = (int)((combined >> 18) & 0x3FFFF);
       pos += 5;
     }
 
