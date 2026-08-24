@@ -818,9 +818,26 @@ confirmed.
 What is left is not in that set at all. Tables whose entry width and step change
 from block to block - so the reference a delta names alternates - still stop part
 way: three of four such payloads built for this fail, where all eight of the
-original probe set now pass. Whatever governs which recent *delta* a repeat names
-is the same question this queue answered for LZ offsets, and the same rule does not
-answer it: applying consumption to the delta queue changes nothing either way.
+original probe set now pass.
+
+**It is not the delta queue's rule.** That space has been swept and is empty:
+consumption on or off, a lag of one, two or three items, depths four through eight,
+and four ways of reading an entry - span and offset from it, offset from it with the
+span from the newest delta, a byte reference with the span from the newest, and a
+byte reference with the span factored out of it. Also three readings of the
+saturated index, which carries no terminator and so might have been an escape the
+way the top length symbol turned out to be: the queue entry, an explicit power and
+offset from the backward stream, and the reference still in flight. Every one of the
+forty-odd combinations scores the same six of nine or worse, and lag two or three
+collapses to one of nine.
+
+What the failures have in common is narrower than that. Each stops at a repeat whose
+**index** resolves to an entry the data cannot use while another entry in the same
+queue fits - so the index itself is misread, and no rearrangement of what the
+entries mean can repair it. The index bits' six-bit context is measured by writing
+over a run of one byte, where every distance and span agree, so it holds for the
+coding; what it does not cover is a stream where the *choice* of index varies from
+item to item.
 
 The rest of the ground is covered:The rest of the ground is covered: not the length alphabet, whose fifty-four
 symbols are each confirmed by writing; not the offset alphabet, whose size was
