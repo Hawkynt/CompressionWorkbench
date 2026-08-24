@@ -80,8 +80,15 @@ internal static class LzmsConstants {
   /// </summary>
   public const int RepeatIndexStateBits = 6;
 
-  /// <summary>Recent delta references a repeat may name.</summary>
-  public const int NumRecentDeltas = 4;
+  /// <summary>
+  /// Recent delta references a repeat may name, which is three as on the LZ side.
+  /// Measured by writing repeats whose index varies from item to item over a run of
+  /// one byte - where every span and reference rebuild the payload, so only the
+  /// coding is under test. With three places every pattern verifies, including those
+  /// naming the last one; with four, any pattern naming index two fails at once,
+  /// because the last place carries no terminating bit and a fourth would.
+  /// </summary>
+  public const int NumRecentDeltas = 3;
 
   private static (int Base, int Width)[] Build((int Width, int Count)[] schedule) {
     var slots = new List<(int, int)>();
