@@ -5,9 +5,17 @@ namespace Compression.Core.Dictionary.Lzms;
 
 /// <summary>
 /// Exposes the LZMS algorithm as a benchmarkable building block.
-/// Prepends a 4-byte LE uncompressed size header for round-trip support.
 /// </summary>
+/// <remarks>
+/// LZMS is a chunked codec: a resource is cut into pieces of at most 128 KB and
+/// each is coded on its own, because the offset alphabet is sized by the piece it
+/// codes. This wrapper does the same rather than handing the codec one enormous
+/// chunk, and frames each piece with its two sizes so the whole can be put back
+/// together.
+/// </remarks>
 public sealed class LzmsBuildingBlock : IBuildingBlock {
+  private const int ChunkSize = 128 * 1024;
+
   /// <inheritdoc/>
   public string Id => "BB_Lzms";
   /// <inheritdoc/>
@@ -19,18 +27,52 @@ public sealed class LzmsBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
   public byte[] Compress(ReadOnlySpan<byte> data) {
+    using var output = new MemoryStream();
+    Span<byte> header = stackalloc byte[8];
+    BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
+    BinaryPrimitives.WriteInt32LittleEndian(header[4..], ChunkSize);
+    output.Write(header);
+
     var compressor = new LzmsCompressor();
-    var compressed = compressor.Compress(data);
-    var result = new byte[4 + compressed.Length];
-    BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
-    compressed.CopyTo(result.AsSpan(4));
-    return result;
+    var size = new byte[4];
+    for (var at = 0; at < data.Length; at += ChunkSize) {
+      var length = Math.Min(ChunkSize, data.Length - at);
+      var chunk = compressor.Compress(data.Slice(at, length));
+
+      // A chunk that did not get smaller is stored, exactly as a WIM does it.
+      var stored = chunk.Length >= length;
+      BinaryPrimitives.WriteInt32LittleEndian(size, stored ? -length : chunk.Length);
+      output.Write(size);
+      if (stored) output.Write(data.Slice(at, length));
+      else output.Write(chunk);
+    }
+
+    return output.ToArray();
   }
 
   /// <inheritdoc/>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
-    var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
+    var total = BinaryPrimitives.ReadInt32LittleEndian(data);
+    var chunkSize = BinaryPrimitives.ReadInt32LittleEndian(data[4..]);
+    var result = new byte[total];
     var decompressor = new LzmsDecompressor();
-    return decompressor.Decompress(data[4..], originalSize);
+    var at = 8;
+    var produced = 0;
+    while (produced < total) {
+      var length = Math.Min(chunkSize, total - produced);
+      var stored = BinaryPrimitives.ReadInt32LittleEndian(data[at..]);
+      at += 4;
+      if (stored < 0) {
+        data.Slice(at, length).CopyTo(result.AsSpan(produced));
+        at += length;
+      } else {
+        decompressor.Decompress(data.Slice(at, stored), length).CopyTo(result.AsSpan(produced));
+        at += stored;
+      }
+
+      produced += length;
+    }
+
+    return result;
   }
 }

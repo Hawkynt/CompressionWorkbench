@@ -1,439 +1,249 @@
-using Compression.Core.Dictionary.MatchFinders;
+using System.Buffers.Binary;
 
 namespace Compression.Core.Dictionary.Lzms;
 
 /// <summary>
-/// Compresses data using the LZMS algorithm (used in WIM/ESD).
+/// Produces one LZMS chunk.
 /// </summary>
 /// <remarks>
-/// LZMS uses two interleaved bitstreams: a forward bitstream for Huffman codes
-/// and a backward bitstream for range-coded match/literal type decisions.
-/// Huffman tables are adaptive (rebuilt periodically).
+/// <para>An encoder owes the format nothing about how it factorises its input, so
+/// this one keeps to the item set that is fully derived: literals, explicit
+/// matches and explicit delta matches. The repeat forms of both are legal and
+/// would compress a little better, but their queue update rules are not settled,
+/// and declining to use them costs nothing but a few bytes.</para>
+///
+/// <para>The x86 filter is not optional in the same way. A decoder applies it to
+/// every chunk, so the payload is filtered first.</para>
 /// </remarks>
 public sealed class LzmsCompressor {
-  // Range encoder state — outputs 16-bit LE words placed backward at end of buffer
-  private readonly List<ushort> _rcWords = [];
-  private uint _rcRange;
-  private ulong _rcLow;
+  private const int MinimumMatch = 3;
+  private const int MaximumCandidates = 24;
 
-  // Forward bitstream (writes forward, MSB-first)
-  private byte[] _fwdOutput = [];
-  private int _fwdPos;
-  private ulong _fwdBitBuf;
-  private int _fwdBitsUsed;
+  // A delta only pays for itself over a long run, and searching every span and
+  // offset is what costs; both bounds are ours to choose, not the format's.
+  private const int MinimumDelta = 16;
+  private const int MaximumDeltaOffset = 16;
 
-  // Adaptive probabilities
-  private int _probLzMatch = LzmsConstants.InitialProb;
-  private readonly int[] _probLzRepeat = new int[LzmsConstants.NumRecentLzOffsets];
-
-  // Delta match probabilities (not used in compressor, but tracked for symmetry)
-  private int _probDeltaMatch = LzmsConstants.InitialProb;
-
-  // Recent match offsets
-  private readonly long[] _recentLzOffsets = [1, 1, 1];
-
-  // Huffman frequencies (adaptive)
-  private int[] _literalFreqs = new int[LzmsConstants.NumLiteralSymbols];
-  private int _literalCount;
-  private int[] _literalCodeLens = [];
-
-  private int[] _lzOffsetFreqs = new int[LzmsConstants.NumLzOffsetSlots];
-  private int _lzOffsetCount;
-  private int[] _lzOffsetCodeLens = [];
-
-  private int[] _lengthFreqs = new int[LzmsConstants.NumLengthSymbols];
-  private int _lengthCount;
-  private int[] _lengthCodeLens = [];
-
-  /// <summary>
-  /// Compresses data using LZMS.
-  /// </summary>
+  /// <summary>Compresses a chunk.</summary>
+  /// <param name="data">The payload.</param>
+  /// <returns>The chunk, which the decoder needs the uncompressed size to read.</returns>
   public byte[] Compress(ReadOnlySpan<byte> data) {
-    if (data.Length == 0) return [];
+    var filtered = LzmsX86Filter.Apply(data, forward: true);
+    var items = Parse(filtered);
 
-    var dataArray = data.ToArray();
-
-    // Allocate forward output buffer — for incompressible data (random bytes),
-    // matches expand the output, so the forward stream can exceed the input size
-    var maxSize = (long)data.Length * 2 + 1024;
-    if (maxSize > Array.MaxLength)
-      throw new NotSupportedException(
-        $"LZMS: an input of {data.Length} bytes needs a {maxSize}-byte worst-case output buffer, which exceeds the {Array.MaxLength}-element array limit.");
-
-    _fwdOutput = new byte[maxSize];
-    _fwdPos = 0;
-    _fwdBitBuf = 0;
-    _fwdBitsUsed = 0;
-
-    // Initialize range encoder
-    _rcWords.Clear();
-    _rcRange = 0xFFFFFFFF;
-    _rcLow = 0;
-
-    // Initialize probabilities
-    _probLzMatch = LzmsConstants.InitialProb;
-    _probDeltaMatch = LzmsConstants.InitialProb;
-    Array.Fill(_probLzRepeat, LzmsConstants.InitialProb);
-
-    // Initialize Huffman frequencies
-    Array.Fill(_literalFreqs, 1);
-    _literalCount = 0;
-    RebuildCodeLengths(_literalFreqs, LzmsConstants.NumLiteralSymbols, out _literalCodeLens);
-
-    Array.Fill(_lzOffsetFreqs, 1);
-    _lzOffsetCount = 0;
-    RebuildCodeLengths(_lzOffsetFreqs, LzmsConstants.NumLzOffsetSlots, out _lzOffsetCodeLens);
-
-    Array.Fill(_lengthFreqs, 1);
-    _lengthCount = 0;
-    RebuildCodeLengths(_lengthFreqs, LzmsConstants.NumLengthSymbols, out _lengthCodeLens);
-
-    // Find matches
-    var matchFinder = new HashChainMatchFinder(data.Length, 64);
-    var pos = 0;
-
-    while (pos < data.Length) {
-      // Try to find an LZ match
-      Match bestMatch = default;
-      if (pos + 3 <= data.Length) {
-        var maxDist = Math.Min(pos, data.Length);
-        var maxLen = Math.Min(224, data.Length - pos);
-        bestMatch = matchFinder.FindMatch(dataArray, pos, maxDist, maxLen, LzmsConstants.MinMatchLength);
-      } else {
-        if (pos + 2 < data.Length)
-          matchFinder.InsertPosition(dataArray, pos);
-      }
-
-      if (bestMatch.Length >= LzmsConstants.MinMatchLength) {
-        // Check recent offsets
-        var recentIdx = -1;
-        for (var i = 0; i < LzmsConstants.NumRecentLzOffsets; ++i) {
-          if (_recentLzOffsets[i] != bestMatch.Distance)
-            continue;
-          recentIdx = i;
-          break;
-        }
-
-        // Encode: match
-        RangeEncodeBit(ref _probLzMatch, true);
-
-        // Not a delta match
-        RangeEncodeBit(ref _probDeltaMatch, false);
-
-        if (recentIdx >= 0) {
-          // Encode recent offset usage
-          for (var i = 0; i < recentIdx; ++i)
-            RangeEncodeBit(ref _probLzRepeat[i], false);
-          RangeEncodeBit(ref _probLzRepeat[recentIdx], true);
-
-          // Move to front
-          var off = _recentLzOffsets[recentIdx];
-          for (var j = recentIdx; j > 0; --j)
-            _recentLzOffsets[j] = _recentLzOffsets[j - 1];
-          _recentLzOffsets[0] = off;
-        } else {
-          // Not a recent offset
-          for (var i = 0; i < LzmsConstants.NumRecentLzOffsets; ++i)
-            RangeEncodeBit(ref _probLzRepeat[i], false);
-
-          // Encode offset via Huffman
-          var offsetSlot = EncodeOffsetToSlot(bestMatch.Distance);
-          WriteHuffman(offsetSlot, _lzOffsetCodeLens, LzmsConstants.NumLzOffsetSlots);
-
-          // Write extra bits for the offset
-          WriteOffsetExtraBits(bestMatch.Distance, offsetSlot);
-
-          ++_lzOffsetFreqs[offsetSlot];
-          if (++_lzOffsetCount >= LzmsConstants.LzOffsetRebuildInterval) {
-            RebuildCodeLengths(_lzOffsetFreqs, LzmsConstants.NumLzOffsetSlots, out _lzOffsetCodeLens);
-            HalveFrequencies(_lzOffsetFreqs, LzmsConstants.NumLzOffsetSlots);
-            _lzOffsetCount = 0;
-          }
-
-          // Update recent offsets
-          _recentLzOffsets[2] = _recentLzOffsets[1];
-          _recentLzOffsets[1] = _recentLzOffsets[0];
-          _recentLzOffsets[0] = bestMatch.Distance;
-        }
-
-        // Encode match length
-        EncodeMatchLength(bestMatch.Length);
-
-        // Insert skipped positions
-        for (var i = 1; i < bestMatch.Length && pos + i + 2 < data.Length; ++i)
-          matchFinder.InsertPosition(dataArray, pos + i);
-        pos += bestMatch.Length;
-      } else {
-        // Encode: literal
-        RangeEncodeBit(ref _probLzMatch, false);
-        WriteLiteral(dataArray[pos]);
-        ++pos;
-      }
+    var range = new LzmsRangeEncoder();
+    var bits = new LzmsBackwardBitWriter();
+    var main = new LzmsProbability[1 << LzmsConstants.MainStateBits];
+    for (var i = 0; i < main.Length; ++i) main[i] = new();
+    var matchKind = new LzmsProbability[1 << LzmsConstants.MatchKindStateBits];
+    for (var i = 0; i < matchKind.Length; ++i) matchKind[i] = new();
+    var kindState = 0;
+    var kindMask = (1 << LzmsConstants.MatchKindStateBits) - 1;
+    var explicitOffset = new LzmsProbability[1 << LzmsConstants.LzExplicitStateBits];
+    for (var i = 0; i < explicitOffset.Length; ++i) explicitOffset[i] = new();
+    var explicitState = 0;
+    var explicitMask = (1 << LzmsConstants.LzExplicitStateBits) - 1;
+    var deltaExplicit = new LzmsProbability[1 << LzmsConstants.DeltaExplicitStateBits];
+    for (var i = 0; i < deltaExplicit.Length; ++i) deltaExplicit[i] = new();
+    var deltaState = 0;
+    var deltaMask = (1 << LzmsConstants.DeltaExplicitStateBits) - 1;
+    var deltaRepeatIndex = new LzmsProbability[LzmsConstants.NumRecentDeltas - 1][];
+    for (var i = 0; i < deltaRepeatIndex.Length; ++i) {
+      deltaRepeatIndex[i] = new LzmsProbability[1 << LzmsConstants.RepeatIndexStateBits];
+      for (var j = 0; j < deltaRepeatIndex[i].Length; ++j) deltaRepeatIndex[i][j] = new();
     }
+    var deltaRepeatIndexState = new int[deltaRepeatIndex.Length];
+    var indexMask = (1 << LzmsConstants.RepeatIndexStateBits) - 1;
+    var lastDelta = (Power: 0, Offset: 1);
+    var previousDelta = (Power: 0, Offset: 1);
+    var deltaPowers = new LzmsHuffmanCode(LzmsConstants.NumDeltaPowers, LzmsConstants.LzOffsetRebuildInterval);
+    var deltaOffsets = new LzmsHuffmanCode(LzmsConstants.OffsetSlotCount(filtered.Length), LzmsConstants.LzOffsetRebuildInterval);
 
-    FlushRangeEncoder();
-    FlushForwardBits();
-    return MergeStreams();
-  }
+    var literals = new LzmsHuffmanCode(LzmsConstants.NumLiteralSymbols, LzmsConstants.LiteralRebuildInterval);
+    var offsets = new LzmsHuffmanCode(LzmsConstants.OffsetSlotCount(filtered.Length), LzmsConstants.LzOffsetRebuildInterval);
+    var lengths = new LzmsHuffmanCode(LzmsConstants.NumLengthSlots, LzmsConstants.LengthRebuildInterval);
 
-  private void WriteLiteral(byte value) {
-    WriteHuffman(value, _literalCodeLens, LzmsConstants.NumLiteralSymbols);
-    ++_literalFreqs[value];
-    if (++_literalCount >= LzmsConstants.LiteralRebuildInterval) {
-      RebuildCodeLengths(_literalFreqs, LzmsConstants.NumLiteralSymbols, out _literalCodeLens);
-      HalveFrequencies(_literalFreqs, LzmsConstants.NumLiteralSymbols);
-      _literalCount = 0;
-    }
-  }
-
-  private void EncodeMatchLength(int length) {
-    var sym = 0;
-    for (var i = LzmsConstants.LengthBase.Length - 1; i >= 0; --i) {
-      if (length < LzmsConstants.LengthBase[i])
+    var state = 0;
+    var mask = (1 << LzmsConstants.MainStateBits) - 1;
+    foreach (var item in items) {
+      if (item.Length == 0) {
+        range.WriteBit(main[state], 0);
+        state = (state << 1) & mask;
+        literals.Write(bits, item.Literal);
         continue;
-      sym = i;
-      break;
-    }
-
-    WriteHuffman(sym, _lengthCodeLens, LzmsConstants.NumLengthSymbols);
-
-    var extraBits = LzmsConstants.LengthExtraBits[sym];
-    if (extraBits > 0) {
-      var extra = length - LzmsConstants.LengthBase[sym];
-      WriteForwardBits(extra, extraBits);
-    }
-
-    ++_lengthFreqs[sym];
-    if (++_lengthCount >= LzmsConstants.LengthRebuildInterval) {
-      RebuildCodeLengths(_lengthFreqs, LzmsConstants.NumLengthSymbols, out _lengthCodeLens);
-      HalveFrequencies(_lengthFreqs, LzmsConstants.NumLengthSymbols);
-      _lengthCount = 0;
-    }
-  }
-
-  private static int EncodeOffsetToSlot(int offset) {
-    if (offset <= 0) return 0;
-    if (offset <= 2) return offset - 1;
-
-    // v = offset - 1 (>= 2). Find highBit = floor(log2(v)).
-    var v = offset - 1;
-    var highBit = 0;
-    var tmp = v;
-    while (tmp > 1) { tmp >>= 1; ++highBit; }
-
-    // The second-highest bit determines even/odd slot.
-    var secondBit = (v >> (highBit - 1)) & 1;
-    var slot = 2 * (highBit - 1) + secondBit + 2;
-
-    if (slot >= LzmsConstants.NumLzOffsetSlots)
-      slot = LzmsConstants.NumLzOffsetSlots - 1;
-    return slot;
-  }
-
-  private void WriteOffsetExtraBits(int offset, int slot) {
-    if (slot < 2) return;
-    var extraBits = (slot - 2) / 2;
-    if (extraBits <= 0) return;
-    var baseOffset = (2 + (slot & 1)) << extraBits;
-    var extra = (offset - 1) - baseOffset;
-    if (extra < 0) extra = 0;
-    WriteForwardBits(extra, extraBits);
-  }
-
-  // -------------------------------------------------------------------------
-  // Range encoder (backward, 16-bit LE words with carry propagation)
-  // -------------------------------------------------------------------------
-
-  private void RangeEncodeBit(ref int prob, bool bit) {
-    var bound = (_rcRange >> LzmsConstants.NumProbBits) * (uint)prob;
-    if (!bit) {
-      _rcRange = bound;
-      prob += (LzmsConstants.ProbDenominator - prob) >> 4;
-    } else {
-      _rcLow += bound;
-      _rcRange -= bound;
-      prob -= prob >> 4;
-    }
-
-    while (_rcRange <= 0xFFFF) {
-      // Extract carry (bit 32+) and the top 16 bits of the 32-bit value
-      var carry = (int)(_rcLow >> 32);
-      var word = (ushort)((_rcLow >> 16) & 0xFFFF);
-
-      if (carry != 0) {
-        // Propagate carry backward through previous words
-        for (var i = _rcWords.Count - 1; i >= 0; --i) {
-          _rcWords[i]++;
-          if (_rcWords[i] != 0) break;
-        }
       }
 
-      _rcWords.Add(word);
-      _rcLow = (_rcLow & 0xFFFF) << 16;
-      _rcRange <<= 16;
-    }
-  }
+      range.WriteBit(main[state], 1);
+      state = ((state << 1) | 1) & mask;
 
-  private void FlushRangeEncoder() {
-    // Output remaining 32 bits of _rcLow (2 × 16-bit words)
-    for (var i = 0; i < 2; ++i) {
-      var carry = (int)(_rcLow >> 32);
-      var word = (ushort)((_rcLow >> 16) & 0xFFFF);
-
-      if (carry != 0) {
-        for (var j = _rcWords.Count - 1; j >= 0; --j) {
-          _rcWords[j]++;
-          if (_rcWords[j] != 0) break;
+      if (item.Power >= 0) {
+        range.WriteBit(matchKind[kindState], 1);
+        kindState = ((kindState << 1) | 1) & kindMask;
+        // Which reference a repeat names is not settled: index zero reads either as
+        // the last delta or as the one before it, and no written chunk tells them
+        // apart. A repeat is therefore only written where the two agree - the last
+        // two deltas being the same reference - which wimlib accepts.
+        if (lastDelta == (item.Power, item.Distance) && previousDelta == lastDelta) {
+          range.WriteBit(deltaExplicit[deltaState], 1);
+          deltaState = ((deltaState << 1) | 1) & deltaMask;
+          range.WriteBit(deltaRepeatIndex[0][deltaRepeatIndexState[0]], 0);
+          deltaRepeatIndexState[0] = (deltaRepeatIndexState[0] << 1) & indexMask;
+          WriteLength(bits, lengths, item.Length);
+          continue;
         }
+
+        range.WriteBit(deltaExplicit[deltaState], 0);
+        deltaState = (deltaState << 1) & deltaMask;
+        deltaPowers.Write(bits, item.Power);
+
+        var deltaSlot = LzmsConstants.SlotOf(LzmsConstants.OffsetSlots, item.Distance);
+        var (deltaBase, deltaWidth) = LzmsConstants.OffsetSlots[deltaSlot];
+        deltaOffsets.Write(bits, deltaSlot);
+        if (deltaWidth > 1) bits.Write(item.Distance - deltaBase, LzmsConstants.ExtraBits(deltaWidth));
+
+        previousDelta = lastDelta;
+        lastDelta = (item.Power, item.Distance);
+
+        WriteLength(bits, lengths, item.Length);
+        continue;
       }
 
-      _rcWords.Add(word);
-      _rcLow = (_rcLow & 0xFFFF) << 16;
+      range.WriteBit(matchKind[kindState], 0);
+      kindState = (kindState << 1) & kindMask;
+      range.WriteBit(explicitOffset[explicitState], 0);
+      explicitState = (explicitState << 1) & explicitMask;
+
+      var slot = LzmsConstants.SlotOf(LzmsConstants.OffsetSlots, item.Distance);
+      var (offsetBase, offsetWidth) = LzmsConstants.OffsetSlots[slot];
+      offsets.Write(bits, slot);
+      if (offsetWidth > 1) bits.Write(item.Distance - offsetBase, LzmsConstants.ExtraBits(offsetWidth));
+
+      WriteLength(bits, lengths, item.Length);
     }
 
-    // Ensure at least 2 words for decoder init (which reads 4 bytes)
-    while (_rcWords.Count < 2)
-      _rcWords.Add(0);
-  }
+    var forward = range.Finish();
+    var backward = bits.Units();
+    var chunk = new byte[2 * (forward.Count + backward.Count)];
+    var at = 0;
+    foreach (var unit in forward) {
+      BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(at), unit);
+      at += 2;
+    }
 
-  // -------------------------------------------------------------------------
-  // Forward bitstream (MSB-first)
-  // -------------------------------------------------------------------------
+    // the backward half is laid out tail first, so the first unit written lands last
+    for (var i = backward.Count - 1; i >= 0; --i) {
+      BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(at), backward[i]);
+      at += 2;
+    }
+
+    return chunk;
+  }
 
   /// <summary>
-  /// Grows the forward buffer so that one more byte fits.
+  /// Writes a match's length. Never the last symbol, which a reader takes as running
+  /// to the end of the chunk: writing it is refused for the matches this parse makes,
+  /// and declining to use it costs only the bytes it would have saved.
   /// </summary>
-  /// <remarks>
-  /// The initial estimate of twice the input plus 1 KiB holds for ordinary data,
-  /// but it is an estimate rather than a bound: a Huffman table whose code
-  /// lengths have run out to the 15-bit limit emits up to 1.875 bytes per input
-  /// byte until the periodic rebuild shortens them again. Overrunning it used to
-  /// discard the excess bits silently, which left a truncated forward stream that
-  /// no decoder can read. Growing instead keeps every stream that already fitted
-  /// byte-for-byte identical.
-  /// </remarks>
-  private void EnsureForwardCapacity() {
-    if (_fwdPos < _fwdOutput.Length)
-      return;
-
-    Array.Resize(ref _fwdOutput, _fwdOutput.Length * 2);
+  private static void WriteLength(LzmsBackwardBitWriter bits, LzmsHuffmanCode lengths, int length) {
+    var slot = LzmsConstants.SlotOf(LzmsConstants.LengthSlots, length);
+    var (baseValue, width) = LzmsConstants.LengthSlots[slot];
+    lengths.Write(bits, slot);
+    if (width > 1) bits.Write(length - baseValue, LzmsConstants.ExtraBits(width));
   }
 
-  private void WriteForwardBits(int value, int count) {
-    _fwdBitBuf |= ((ulong)value & ((1ul << count) - 1)) << (64 - _fwdBitsUsed - count);
-    _fwdBitsUsed += count;
+  /// <summary>A literal, an ordinary match, or - when Power is not -1 - a delta match.</summary>
+  private readonly record struct Item(byte Literal, int Distance, int Length, int Power = -1);
 
-    while (_fwdBitsUsed >= 8) {
-      EnsureForwardCapacity();
-      _fwdOutput[_fwdPos++] = (byte)(_fwdBitBuf >> 56);
-      _fwdBitBuf <<= 8;
-      _fwdBitsUsed -= 8;
+  private static List<Item> Parse(ReadOnlySpan<byte> data) {
+    var items = new List<Item>();
+    var positions = new Dictionary<int, List<int>>();
+    var maxLength = LzmsConstants.MaxMatchLength;
+    var i = 0;
+    while (i < data.Length) {
+      var bestLength = 0;
+      var bestDistance = 0;
+      if (i + MinimumMatch <= data.Length) {
+        var key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+        if (positions.TryGetValue(key, out var candidates)) {
+          var from = Math.Max(0, candidates.Count - MaximumCandidates);
+          for (var c = candidates.Count - 1; c >= from; --c) {
+            var previous = candidates[c];
+            var distance = i - previous;
+            if (distance <= 0 || distance > i) continue;
+
+            var length = 0;
+            while (i + length < data.Length && length < maxLength && data[previous + length] == data[i + length])
+              ++length;
+            if (length <= bestLength) continue;
+
+            bestLength = length;
+            bestDistance = distance;
+          }
+        }
+      }
+
+      var (deltaPower, deltaOffset, deltaLength) = FindDelta(data, i);
+      if (deltaLength >= MinimumDelta && deltaLength > bestLength) {
+        items.Add(new(0, deltaOffset, deltaLength, deltaPower));
+        var deltaStop = Math.Min(i + deltaLength, data.Length - 2);
+        for (var k = i; k < deltaStop; ++k) Remember(positions, data, k);
+        i += deltaLength;
+        continue;
+      }
+
+      if (bestLength >= MinimumMatch) {
+        items.Add(new(0, bestDistance, bestLength));
+        var stop = Math.Min(i + bestLength, data.Length - 2);
+        for (var k = i; k < stop; ++k) Remember(positions, data, k);
+        i += bestLength;
+        continue;
+      }
+
+      items.Add(new(data[i], 0, 0));
+      if (i + MinimumMatch <= data.Length) Remember(positions, data, i);
+      ++i;
     }
+
+    return items;
   }
 
-  private void WriteHuffman(int symbol, int[] codeLens, int numSymbols) {
-    if (symbol >= numSymbols) symbol = 0;
-    var len = codeLens[symbol];
-    if (len <= 0) len = 1;
+  /// <summary>
+  /// The longest run from here that a delta match rebuilds: each byte is its
+  /// predecessor a span back plus the same step taken a reference further back.
+  /// </summary>
+  private static (int Power, int Offset, int Length) FindDelta(ReadOnlySpan<byte> data, int at) {
+    var bestPower = 0;
+    var bestOffset = 0;
+    var bestLength = 0;
+    for (var power = 0; power < LzmsConstants.NumDeltaPowers; ++power) {
+      var span = 1 << power;
+      for (var offset = 1; offset <= MaximumDeltaOffset; ++offset) {
+        var reference = offset * span;
+        if (reference + span > at) break;
 
-    var code = BuildCanonicalCode(symbol, codeLens, numSymbols);
-    WriteForwardBits(code, len);
+        var length = 0;
+        while (at + length < data.Length && length < LzmsConstants.MaxMatchLength) {
+          var p = at + length;
+          var want = (byte)(data[p - span] + data[p - reference] - data[p - reference - span]);
+          if (data[p] != want) break;
+
+          ++length;
+        }
+
+        if (length <= bestLength) continue;
+
+        bestLength = length;
+        bestPower = power;
+        bestOffset = offset;
+      }
+    }
+
+    return (bestPower, bestOffset, bestLength);
   }
 
-  private static int BuildCanonicalCode(int symbol, int[] codeLens, int numSymbols) {
-    var targetLen = codeLens[symbol];
-    if (targetLen <= 0) return 0;
-
-    var maxLen = 0;
-    for (var i = 0; i < numSymbols; ++i)
-      maxLen = Math.Max(maxLen, codeLens[i]);
-
-    var blCount = new int[maxLen + 1];
-    for (var i = 0; i < numSymbols; ++i)
-      if (codeLens[i] > 0)
-        ++blCount[codeLens[i]];
-
-    var nextCode = new int[maxLen + 1];
-    var code = 0;
-    for (var bits = 1; bits <= maxLen; ++bits) {
-      code = (code + blCount[bits - 1]) << 1;
-      nextCode[bits] = code;
-    }
-
-    for (var sym = 0; sym < numSymbols; ++sym) {
-      var len = codeLens[sym];
-      if (len <= 0) continue;
-      if (sym == symbol) return nextCode[len];
-      ++nextCode[len];
-    }
-
-    return 0;
-  }
-
-  private void FlushForwardBits() {
-    while (_fwdBitsUsed > 0) {
-      EnsureForwardCapacity();
-      _fwdOutput[_fwdPos++] = (byte)(_fwdBitBuf >> 56);
-      _fwdBitBuf <<= 8;
-      _fwdBitsUsed -= 8;
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Stream merging
-  // -------------------------------------------------------------------------
-
-  private byte[] MergeStreams() {
-    // Layout: [forward Huffman bytes] [RC words placed backward]
-    // The decoder reads Huffman forward from start, and RC backward from end.
-    var fwdLen = _fwdPos;
-    var rcByteLen = _rcWords.Count * 2;
-    var result = new byte[fwdLen + rcByteLen];
-    Array.Copy(_fwdOutput, 0, result, 0, fwdLen);
-
-    // Place RC words: word 0 at the end, word 1 just before it, etc.
-    // Each word is stored as 16-bit little-endian.
-    var pos = result.Length;
-    foreach (var word in _rcWords) {
-      pos -= 2;
-      result[pos] = (byte)word;           // low byte
-      result[pos + 1] = (byte)(word >> 8); // high byte
-    }
-
-    return result;
-  }
-
-  // -------------------------------------------------------------------------
-  // Huffman code length construction
-  // -------------------------------------------------------------------------
-
-  private static void RebuildCodeLengths(int[] freqs, int numSymbols, out int[] codeLens) {
-    codeLens = new int[numSymbols];
-    var nonZero = 0;
-    for (var i = 0; i < numSymbols; ++i)
-      if (freqs[i] > 0) ++nonZero;
-
-    if (nonZero <= 1) {
-      for (var i = 0; i < numSymbols; ++i)
-        if (freqs[i] > 0) codeLens[i] = 1;
-      return;
-    }
-
-    var bitsNeeded = 1;
-    while ((1 << bitsNeeded) < nonZero) ++bitsNeeded;
-    bitsNeeded = Math.Min(bitsNeeded, 15);
-
-    var shortCount = (1 << bitsNeeded) - nonZero;
-    var assigned = 0;
-    for (var i = 0; i < numSymbols; ++i) {
-      if (freqs[i] <= 0) continue;
-      codeLens[i] = assigned < shortCount && bitsNeeded > 1 ? bitsNeeded - 1 : bitsNeeded;
-      ++assigned;
-    }
-  }
-
-  private static void HalveFrequencies(int[] freqs, int count) {
-    for (var i = 0; i < count; ++i)
-      freqs[i] = Math.Max(1, (freqs[i] + 1) >> 1);
+  private static void Remember(Dictionary<int, List<int>> positions, ReadOnlySpan<byte> data, int at) {
+    var key = (data[at] << 16) | (data[at + 1] << 8) | data[at + 2];
+    if (!positions.TryGetValue(key, out var list)) positions[key] = list = [];
+    list.Add(at);
   }
 }

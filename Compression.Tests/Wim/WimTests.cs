@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using FileFormat.Wim;
 
@@ -331,31 +332,55 @@ public class WimTests {
   // -------------------------------------------------------------------------
 
   /// <summary>
-  /// Asking for an LZMS image is refused rather than answered with one no WIM
-  /// reader will open.
+  /// An image asking for LZMS gets one, and it survives a round trip.
   /// </summary>
   /// <remarks>
-  /// <para>The LZMS here is not the LZMS a WIM holds. A chunk carries two
-  /// streams, and the reference runs the range-coded one forwards from the start
-  /// and the Huffman-coded one backwards from the end; ours run the other way
-  /// about, which is plain in a reference chunk — read its tail backwards and the
-  /// literal text appears, because a fresh literal table gives every byte its own
-  /// value as an eight-bit code. The offset slots are a scheme of our own rather
-  /// than the format's table, and an image that uses LZMS is version 3584 with
-  /// 128 KB chunks, not 1.13 with 32 KB.</para>
-  ///
-  /// <para>Until those are put right, an image claiming LZMS is a claim about
-  /// somebody else's format that we cannot honour. Refusing says so at the point
-  /// of asking rather than handing back a container that opens nowhere. The
-  /// encoder itself stays, for the workbench's own use.</para>
+  /// <para>This used to be a test that the writer refused LZMS, because what we
+  /// wrote under that name was a private arrangement no reader opened. The
+  /// format has since been derived from wimlib's own streams — the derivation is
+  /// in <c>docs/LZMS-ON-DISK.md</c> — and the interop fixture checks the result
+  /// against the tools that own the format. This one checks the container's own
+  /// shape: an LZMS image is the later version with 128 KB chunks, and writing
+  /// the ordinary version alongside LZMS would mark it as ours at a glance.</para>
   /// </remarks>
-  [Category("Interop")]
   [Test]
-  public void Lzms_IsRefusedRatherThanWrittenWrongly() {
-    var refusal = Assert.Throws<NotSupportedException>(
-      () => new WimWriter(new MemoryStream(), WimConstants.CompressionLzms));
+  public void Lzms_IsWrittenInTheContainerThatCarriesIt() {
+    var files = new List<(string, byte[])> {
+      ("A.TXT", System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("a line of text\n", 500)))),
+    };
 
-    Assert.That(refusal!.Message, Does.Contain("opposite directions"),
-      "the refusal should say what is wrong, not merely that something is");
+    using var stream = new MemoryStream();
+    new WimWriter(stream, WimConstants.CompressionLzms).Write(files);
+
+    var bytes = stream.ToArray();
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12)),
+      Is.EqualTo(WimConstants.VersionSolid), "an LZMS image carries the later version");
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(20)),
+      Is.EqualTo((uint)WimConstants.SolidChunkSize), "and its chunk size");
+
+    stream.Position = 0;
+    using var reader = new WimReader(stream);
+    var entry = reader.GetNamedFiles().Single(e => e.FileName.EndsWith("A.TXT"));
+    Assert.That(reader.ReadResource(entry.ResourceIndex), Is.EqualTo(files[0].Item2).AsCollection,
+      "and it reads back as what went in");
+  }
+
+  /// <summary>
+  /// The LZMS range coder's flush leaves one word of slack after its two shift-outs.
+  /// </summary>
+  /// <remarks>
+  /// Taking a chunk wimlib wrote, decoding it to its items and writing those items
+  /// back gives wimlib's bytes exactly - but only with one word here. With two, the
+  /// result carried two extra zero bytes at offset eight and was otherwise identical.
+  /// A chunk with either amount verifies, so nothing but a byte-for-byte comparison
+  /// against wimlib catches it, and this is what pins it in the ordinary suite.
+  /// </remarks>
+  [Test]
+  public void Lzms_TheCoderFlushLeavesOneWordOfSlack() {
+    var encoder = new Compression.Core.Dictionary.Lzms.LzmsRangeEncoder();
+    encoder.WriteBit(new Compression.Core.Dictionary.Lzms.LzmsProbability(), 0);
+
+    Assert.That(encoder.Finish(), Has.Count.EqualTo(3),
+      "two words shifted out and one of slack");
   }
 }
