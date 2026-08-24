@@ -1,121 +1,108 @@
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Bit-oriented 32-bit arithmetic encoder used by the Quantum compressor.
+/// Quantum's arithmetic encoder: sixteen-bit <c>low</c> and <c>high</c>, in the shape
+/// the CACM87 paper describes, with the underflow case carried as pending bits.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The interval [low, high] is held in 32-bit registers. After each symbol the
-/// interval is renormalised: while it lies entirely in the lower or upper half a
-/// bit is emitted and the interval is doubled, and while it straddles the midpoint
-/// but sits inside the middle half a pending "follow" bit is counted instead. That
-/// follow-bit handling is what keeps the interval from collapsing when low and high
-/// converge on the midpoint from opposite sides — the classic underflow case.
-/// </para>
-/// <para>
-/// Emitted bits are packed most-significant-bit first; the final byte is padded
-/// with zero bits. Mirrors <see cref="QuantumRangeDecoder"/>.
-/// </para>
+/// <para>The awkward part is not the coder but the bits that bypass it. A slot's
+/// extra bits are written raw, and the decoder reads them at the point <em>its</em>
+/// reading has reached — which is sixteen bits ahead of what this coder has emitted,
+/// because the decoder swallowed sixteen priming bits before it decoded anything. So
+/// raw bits cannot simply be appended: they belong sixteen bits further on, inside
+/// coder output this encoder has not produced yet. They are therefore remembered with
+/// the position they belong at and spliced in when the stream is finished.</para>
+///
+/// <para>Appending them where they are written happens to work whenever the coder has
+/// no bits in flight, which is why getting this wrong looks like a fault that depends
+/// on the data.</para>
 /// </remarks>
 internal sealed class QuantumRangeEncoder {
-  private const uint Top = 0xFFFFFFFFu;
-  private const uint Half = 0x80000000u;
-  private const uint Quarter = 0x40000000u;
-  private const uint ThreeQuarters = 0xC0000000u;
-
-  private readonly Stream _output;
+  private readonly List<int> _bits = [];
+  private readonly List<(int At, int Value, int Count)> _rawBits = [];
   private uint _low;
-  private uint _high = Top;
-  private long _followBits;
-  private int _bitBuffer;
-  private int _bitCount;
+  private uint _high = 0xFFFF;
+  private int _pending;
+  private int _shifts;
 
-  /// <summary>Initializes a new <see cref="QuantumRangeEncoder"/>.</summary>
-  /// <param name="output">The stream that receives the packed code bits.</param>
-  public QuantumRangeEncoder(Stream output) => this._output = output;
+  /// <summary>Codes one symbol of a model, then lets the model learn from it.</summary>
+  /// <param name="model">The model to code against.</param>
+  /// <param name="index">The position of the symbol in that model.</param>
+  public void Encode(QuantumModel model, int index) {
+    var total = (uint)model.TotalFrequency;
+    var range = this._high - this._low + 1;
+    var above = (uint)model.CumulativeFrom(index + 1);
+    var atOrAbove = above + (uint)model.FrequencyAt(index);
 
-  /// <summary>Encodes a symbol and updates the model with it.</summary>
-  /// <param name="model">The adaptive frequency model.</param>
-  /// <param name="symbol">The symbol to encode.</param>
-  public void EncodeSymbol(QuantumModel model, int symbol) {
-    var range = (ulong)this._high - this._low + 1;
-    var total = (ulong)model.TotalFrequency;
-    var cumulativeLow = (ulong)model.CumulativeBelow(symbol);
-    var cumulativeHigh = cumulativeLow + (ulong)model.GetFrequency(symbol);
+    this._high = this._low + range * atOrAbove / total - 1;
+    this._low += range * above / total;
 
-    var low = this._low;
-    this._high = (uint)(low + range * cumulativeHigh / total - 1);
-    this._low = (uint)(low + range * cumulativeLow / total);
-
-    this.Renormalize();
-    model.Update(symbol);
-  }
-
-  /// <summary>Encodes one bit with a fixed 50/50 probability, carrying no model state.</summary>
-  /// <param name="bit">The bit to encode (0 or 1).</param>
-  public void EncodeEqualProbabilityBit(int bit) {
-    var range = (ulong)this._high - this._low + 1;
-    var half = range / 2;
-
-    if (bit != 0)
-      this._low = (uint)(this._low + half);
-    else
-      this._high = (uint)(this._low + half - 1);
-
-    this.Renormalize();
-  }
-
-  /// <summary>
-  /// Flushes the coder state and any partial byte. Must be called once, after every
-  /// symbol has been encoded.
-  /// </summary>
-  public void Finish() {
-    // Two bits are enough to name a point inside the final interval: emit the one that
-    // says which quarter it starts in, preceded by the pending follow bits.
-    ++this._followBits;
-    this.OutputBit(this._low < Quarter ? 0 : 1);
-
-    if (this._bitCount == 0)
-      return;
-
-    this._output.WriteByte((byte)(this._bitBuffer << (8 - this._bitCount)));
-    this._bitBuffer = 0;
-    this._bitCount = 0;
-  }
-
-  private void Renormalize() {
     for (;;) {
-      if (this._high < Half)
-        this.OutputBit(0);
-      else if (this._low >= Half) {
-        this.OutputBit(1);
-        this._low -= Half;
-        this._high -= Half;
-      } else if (this._low >= Quarter && this._high < ThreeQuarters) {
-        ++this._followBits;
-        this._low -= Quarter;
-        this._high -= Quarter;
+      if ((this._low & 0x8000) == (this._high & 0x8000))
+        this.Emit((int)(this._low >> 15));
+      else if ((this._low & 0x4000) != 0 && (this._high & 0x4000) == 0) {
+        ++this._pending;
+        this._low &= 0x3FFF;
+        this._high |= 0x4000;
       } else
         break;
 
-      this._low <<= 1;
-      this._high = (this._high << 1) | 1;
+      this._low = (this._low << 1) & 0xFFFF;
+      this._high = ((this._high << 1) | 1) & 0xFFFF;
+      ++this._shifts;
     }
+
+    model.Update(index);
   }
 
-  private void OutputBit(int bit) {
-    this.WriteBit(bit);
-    for (; this._followBits > 0; --this._followBits)
-      this.WriteBit(1 - bit);
+  /// <summary>
+  /// Notes bits that bypass the coder, to be placed where the decoder will read them.
+  /// </summary>
+  /// <param name="value">The value to spell out.</param>
+  /// <param name="count">How many bits to spell it in.</param>
+  public void EncodeRaw(int value, int count) {
+    if (count > 0)
+      this._rawBits.Add((16 + this._shifts, value, count));
   }
 
-  private void WriteBit(int bit) {
-    this._bitBuffer = (this._bitBuffer << 1) | bit;
-    if (++this._bitCount < 8)
-      return;
+  /// <summary>Closes the stream and returns the block a cabinet should carry.</summary>
+  /// <returns>The compressed bytes.</returns>
+  public byte[] Finish() {
+    ++this._pending;
+    this.Emit(this._low < 0x4000 ? 0 : 1);
 
-    this._output.WriteByte((byte)this._bitBuffer);
-    this._bitBuffer = 0;
-    this._bitCount = 0;
+    var bits = new List<int>(this._bits);
+    var shift = 0;
+    foreach (var (at, value, count) in this._rawBits) {
+      var index = at + shift;
+
+      // early on the coder has emitted fewer bits than the decoder has already read,
+      // so the slot may lie past everything written so far and has to be made
+      while (bits.Count < index)
+        bits.Add(0);
+
+      for (var k = count - 1; k >= 0; --k)
+        bits.Insert(index + (count - 1 - k), (value >> k) & 1);
+
+      shift += count;
+    }
+
+    while (bits.Count % 8 != 0)
+      bits.Add(0);
+
+    var data = new byte[bits.Count / 8 + QuantumConstants.TrailingSlackBytes];
+    for (var i = 0; i < bits.Count; ++i)
+      if (bits[i] != 0)
+        data[i >> 3] |= (byte)(0x80 >> (i & 7));
+
+    return data;
+  }
+
+  private void Emit(int bit) {
+    this._bits.Add(bit);
+    while (this._pending > 0) {
+      this._bits.Add(bit ^ 1);
+      --this._pending;
+    }
   }
 }

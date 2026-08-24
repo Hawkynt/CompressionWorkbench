@@ -1,139 +1,168 @@
 namespace Compression.Core.Dictionary.Quantum;
 
 /// <summary>
-/// Compresses data with the Quantum algorithm.
+/// Writes Quantum as a cabinet carries it.
 /// </summary>
 /// <remarks>
-/// <para>
-/// LZ77 dictionary matching feeding a bit-oriented adaptive arithmetic coder. A
-/// seven-state machine, driven by whether the previous tokens were literals or
-/// matches, selects which literal and literal/match-flag models code the next token;
-/// match lengths and distances are coded as magnitude slots (see
-/// <see cref="QuantumSlotCoding"/>). Mirrors <see cref="QuantumDecompressor"/>.
-/// </para>
-/// <para>
-/// The bitstream is an original design rather than a reconstruction of the Quantum
-/// method found in Microsoft Cabinet archives, whose exact models and slot tables
-/// Microsoft never published; see <see cref="QuantumBuildingBlock"/>.
-/// </para>
+/// <para>A folder is closed before any of its models would take a fourth rescale.
+/// That rescale sorts the model, and what the sort does to symbols of equal frequency
+/// has not been measured; stopping short of it means the writer never has to guess,
+/// and a cabinet of several folders is an entirely ordinary cabinet. The cost is
+/// ratio, since each folder starts its models afresh — never correctness.</para>
+///
+/// <para>Everything this emits has been checked by writing it into a cabinet and
+/// asking libmspack, through <c>cabextract</c>, to read it back.</para>
 /// </remarks>
 public static class QuantumCompressor {
+
+  /// <summary>One folder's worth of compressed data.</summary>
+  /// <param name="Compressed">The block a cabinet should carry.</param>
+  /// <param name="Consumed">How many plain bytes it covers.</param>
+  public readonly record struct Folder(byte[] Compressed, int Consumed);
+
+
   /// <summary>
-  /// Compresses a single block of data using the Quantum algorithm.
+  /// Compresses as much of <paramref name="data"/> from <paramref name="offset"/> as
+  /// one folder may hold.
   /// </summary>
-  /// <param name="data">The uncompressed input data.</param>
-  /// <param name="windowLevel">Window level (1–7). The window size is 1024 &lt;&lt; (level − 1).</param>
-  /// <returns>The compressed data, without any length header.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data, int windowLevel) {
-    ArgumentOutOfRangeException.ThrowIfLessThan(windowLevel, QuantumConstants.MinWindowLevel, nameof(windowLevel));
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(windowLevel, QuantumConstants.MaxWindowLevel, nameof(windowLevel));
-
-    if (data.Length == 0)
-      return [];
-
-    using var output = new MemoryStream();
-    var encoder = new QuantumRangeEncoder(output);
-
-    var literalModels = new QuantumModel[QuantumConstants.StateCount];
-    var matchFlagModels = new QuantumModel[QuantumConstants.StateCount];
-    for (var state = 0; state < QuantumConstants.StateCount; ++state) {
-      literalModels[state] = new QuantumModel(QuantumConstants.LiteralSymbols);
-      matchFlagModels[state] = new QuantumModel(2);
-    }
-
-    var lengthSlotModel = new QuantumModel(QuantumConstants.SlotSymbols);
-    var distanceSlotModel = new QuantumModel(QuantumConstants.SlotSymbols);
-
-    var windowSize = QuantumConstants.WindowSize(windowLevel);
-    var currentState = 0;
-
-    foreach (var token in Parse(data, windowSize)) {
-      if (token.Length == 0) {
-        encoder.EncodeSymbol(matchFlagModels[currentState], 0);
-        encoder.EncodeSymbol(literalModels[currentState], token.Distance);
-        currentState = QuantumConstants.LiteralNextState[currentState];
-        continue;
-      }
-
-      encoder.EncodeSymbol(matchFlagModels[currentState], 1);
-      QuantumSlotCoding.Encode(encoder, lengthSlotModel, token.Length - QuantumConstants.MinMatch + 1);
-      QuantumSlotCoding.Encode(encoder, distanceSlotModel, token.Distance);
-      currentState = QuantumConstants.MatchNextState[currentState];
-    }
-
-    encoder.Finish();
-    return output.ToArray();
+  /// <param name="data">The data to compress.</param>
+  /// <param name="offset">Where in it to start.</param>
+  /// <param name="windowBits">The window this folder will name, 10 to 21.</param>
+  /// <returns>The block and how far it got.</returns>
+  public static Folder CompressFolder(ReadOnlySpan<byte> data, int offset, int windowBits) {
+    return CompressBlock(data, offset, offset, windowBits, null);
   }
 
   /// <summary>
-  /// A parsed token: a literal (<see cref="Length"/> 0, <see cref="Distance"/> holding
-  /// the byte value) or a match of <see cref="Length"/> bytes <see cref="Distance"/> back.
+  /// Compresses everything as one folder, as the run of data blocks a cabinet
+  /// carries it in.
   /// </summary>
-  private readonly record struct Token(int Length, int Distance);
-
-  /// <summary>
-  /// Greedy LZ77 parse over a hash chain keyed on the next three bytes.
-  /// </summary>
+  /// <param name="data">The data to compress.</param>
+  /// <param name="windowBits">The window this folder will name, 10 to 21.</param>
+  /// <returns>The blocks, in order.</returns>
   /// <remarks>
-  /// The chain for a key holds the positions where that key was seen, in increasing
-  /// order, and is walked newest first for at most
-  /// <see cref="QuantumConstants.MaxMatchChain"/> candidates, stopping early once a
-  /// candidate falls outside the window. The longest match wins; among equally long
-  /// matches the most recent position wins, because the walk starts there and a later
-  /// candidate must be strictly longer to replace it. The current position joins the
-  /// chain after the search, so it is never its own candidate. Positions covered by an
-  /// emitted match are not indexed.
+  /// The models carry across the blocks; only the coder starts afresh in each. A
+  /// block that restarts the models decodes as noise from its first byte.
   /// </remarks>
-  private static List<Token> Parse(ReadOnlySpan<byte> data, int windowSize) {
-    var tokens = new List<Token>();
-    var chains = new Dictionary<int, List<int>>();
-    var length = data.Length;
+  public static IReadOnlyList<Folder> CompressBlocks(ReadOnlySpan<byte> data, int windowBits) {
+    var blocks = new List<Folder>();
+    if (data.Length == 0)
+      return blocks;
 
-    for (var position = 0; position < length;) {
-      var bestLength = 0;
-      var bestDistance = 0;
+    var models = new QuantumModels(windowBits);
+    var offset = 0;
+    while (offset < data.Length) {
+      var block = CompressBlock(data, 0, offset, windowBits, models);
+      if (block.Consumed <= 0)
+        throw new InvalidOperationException("The Quantum compressor made no progress.");
 
-      if (position + QuantumConstants.MinMatch <= length) {
-        var key = (data[position] << 16) ^ (data[position + 1] << 8) ^ data[position + 2];
-
-        if (chains.TryGetValue(key, out var chain))
-          for (int index = chain.Count - 1, tries = 0; index >= 0 && tries < QuantumConstants.MaxMatchChain; --index, ++tries) {
-            var candidate = chain[index];
-            if (position - candidate > windowSize)
-              break;
-
-            var matchLength = MatchLength(data, candidate, position);
-            if (matchLength <= bestLength)
-              continue;
-
-            bestLength = matchLength;
-            bestDistance = position - candidate;
-          }
-        else
-          chains[key] = chain = [];
-
-        chain.Add(position);
-      }
-
-      if (bestLength >= QuantumConstants.MinMatch) {
-        tokens.Add(new(bestLength, bestDistance));
-        position += bestLength;
-        continue;
-      }
-
-      tokens.Add(new(0, data[position]));
-      ++position;
+      blocks.Add(block);
+      offset += block.Consumed;
     }
 
-    return tokens;
+    return blocks;
   }
 
-  private static int MatchLength(ReadOnlySpan<byte> data, int candidate, int position) {
-    var limit = data.Length - position;
-    var length = 0;
-    while (length < limit && data[candidate + length] == data[position + length])
-      ++length;
+  /// <summary>Compresses one block, optionally against models a previous block left.</summary>
+  private static Folder CompressBlock(ReadOnlySpan<byte> data, int folderStart, int offset, int windowBits, QuantumModels? carried) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, QuantumConstants.MinWindowBits, nameof(windowBits));
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, QuantumConstants.MaxWindowBits, nameof(windowBits));
 
-    return length;
+    var models = carried ?? new QuantumModels(windowBits);
+    var encoder = new QuantumRangeEncoder();
+    var window = (1 << windowBits) - 1;
+    var position = offset;
+
+    while (position < data.Length) {
+      if (position - offset >= QuantumConstants.MaxBlockSize)
+        break;
+
+      var (length, distance) = FindMatch(data, folderStart, offset, position, window, models);
+      if (length >= QuantumConstants.MinMatch) {
+        WriteMatch(encoder, models, length, distance);
+        position += length;
+      } else {
+        WriteLiteral(encoder, models, data[position]);
+        ++position;
+      }
+    }
+
+    return new(encoder.Finish(), position - offset);
+  }
+
+  /// <summary>
+  /// Compresses everything, as the sequence of folders a cabinet should hold.
+  /// </summary>
+  /// <param name="data">The data to compress.</param>
+  /// <param name="windowBits">The window each folder will name.</param>
+  /// <returns>The folders, in order.</returns>
+  public static IReadOnlyList<Folder> Compress(ReadOnlySpan<byte> data, int windowBits) {
+    var folders = new List<Folder>();
+    var offset = 0;
+    while (offset < data.Length) {
+      var folder = CompressFolder(data, offset, windowBits);
+      if (folder.Consumed <= 0)
+        throw new InvalidOperationException("The Quantum compressor made no progress.");
+
+      folders.Add(folder);
+      offset += folder.Consumed;
+    }
+
+    return folders;
+  }
+
+  private static void WriteLiteral(QuantumRangeEncoder encoder, QuantumModels models, byte value) {
+    var selector = value >> 6;
+    encoder.Encode(models.Selector, models.Selector.IndexOf(selector));
+    var literals = models.Literals[selector];
+    encoder.Encode(literals, literals.IndexOf(value));
+  }
+
+  private static void WriteMatch(QuantumRangeEncoder encoder, QuantumModels models, int length, int distance) {
+    var selector = QuantumConstants.SelectorForLength(length);
+    encoder.Encode(models.Selector, models.Selector.IndexOf(selector));
+
+    if (selector == 6) {
+      var (lengthSlot, lengthExtra) = QuantumConstants.LengthSlot(length);
+      encoder.Encode(models.Lengths, models.Lengths.IndexOf(lengthSlot));
+      encoder.EncodeRaw(lengthExtra, QuantumConstants.LengthExtraBits[lengthSlot]);
+    }
+
+    var (slot, extra) = QuantumConstants.PositionSlot(distance);
+    var positions = models.Positions[selector - 4];
+    encoder.Encode(positions, positions.IndexOf(slot));
+    encoder.EncodeRaw(extra, QuantumConstants.PositionExtraBits[slot]);
+  }
+
+  private static (int Length, int Distance) FindMatch(
+      ReadOnlySpan<byte> data, int folderStart, int blockStart, int position, int window, QuantumModels models) {
+    var bestLength = 0;
+    var bestDistance = 0;
+
+    // a match may reach back over the whole folder, window permitting, but may not
+    // run past the block it is in: a data block says how many bytes it decodes to
+    var earliest = Math.Max(folderStart, position - window);
+    var room = Math.Min(QuantumConstants.MaxMatch, QuantumConstants.MaxBlockSize - (position - blockStart));
+    for (var distance = 1; distance <= position - earliest; ++distance) {
+      if (data[position - distance] != data[position])
+        continue;
+
+      var length = 0;
+      while (position + length < data.Length
+             && length < room
+             && data[position + length] == data[position - distance + length])
+        ++length;
+
+      // a shorter match may reach where a longer one's selector cannot
+      while (length >= QuantumConstants.MinMatch && !models.CanCode(length, distance))
+        --length;
+
+      if (length >= QuantumConstants.MinMatch && length > bestLength) {
+        bestLength = length;
+        bestDistance = distance;
+      }
+    }
+
+    return (bestLength, bestDistance);
   }
 }
