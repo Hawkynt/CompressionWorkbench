@@ -229,6 +229,37 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
                          .Select(e => (e.Name, reader.Extract(e))).ToList();
   }
 
+  /// <summary>
+  /// A zone pointer of zero names no zone, so a run of zeros need not be
+  /// allocated; and the inode counts the names pointing at it, so identical
+  /// files can share one copy under several of them.
+  /// </summary>
+  public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
+
+  /// <inheritdoc />
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    source.Position = 0;
+    var files = new List<(string Name, byte[] Data)>();
+    using (var reader = new MinixV1Reader(source)) {
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory) continue;
+        files.Add((entry.Name, reader.Extract(entry)));
+      }
+    }
+
+    using var writer = new MinixV1Writer(target, leaveOpen: true) {
+      MakeSparse = options.MakeSparse,
+      DeduplicateWithLinks = options.DeduplicateWithLinks,
+    };
+    foreach (var (name, data) in files) writer.AddFile(name, data);
+    writer.Finish();
+    options.OnProgress?.Invoke(target.Length, target.Length);
+  }
+
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />

@@ -61,17 +61,13 @@ Descriptor for Acorn Advanced Disc Filing System (ADFS) images. Read works for b
 
 Reader for Acorn Advanced Disc Filing System (ADFS) "old map" image formats (ADFS-S, ADFS-M, ADFS-L). Sector size = 256 bytes. The root directory is at sector 2 (file offset 0x200). Each directory is 1280 bytes (5 sectors) and bracketed by a 4-byte "Hugo" or "Nick" marker at the start (DirHdr) and matching marker just before the directory tail. Directory layout (per https://mdfs.net/Docs/Comp/Disk/Format/ADFS, originally published in the BBC Master Reference Manual): +0x000 StartName 1 byte 'H' (=0x48) — start of "Hugo" magic +0x000 "Hugo" 4 bytes (master/L variant) or "Nick" 4 bytes +0x005 DirEntries 47 entries x 26 bytes = 1222 bytes +0x4CB EndName "Hugo" again +0x4CF DirName 10-byte master sequence name (parent ref) +0x4D9 ParentInd 3-byte parent directory sector +0x4DC DirTitle 19-byte ASCII title +0x4EF Reserved 14 bytes +0x4FD EndCheckByte 1 byte Each 26-byte directory entry: +0x00 Name 10 bytes (top bit of byte 0 = attribute flag) +0x0A LoadAddr 4 bytes (LE) +0x0E ExecAddr 4 bytes (LE) +0x12 Length 4 bytes (LE) +0x16 IndCyl 3 bytes (start sector, LE) +0x19 CycleCount 1 byte (sequence #) Attributes are encoded in the high bits of the name characters (R=byte0, W=byte1, L=byte2, D=byte3, E=byte4, r=byte5, w=byte6, e=byte7, P=byte8). D = directory. We support the "old map" (S/M/L) variant by default; the newer D/E/F variants use 1024-byte sectors and a different free-space map but the directory layout is similar. Format auto-detected via the "Hugo" marker.
 
-### AdfsNewMapWriter
+### AdfsWriter
 
-Builds an Acorn ADFS new-map image — the E/F-style layout, as opposed to the S/M/L free-space-list layout `AdfsWriter` emits.
+Builds a fresh Acorn ADFS "old-map" disk image (Write-Once-Read-Many).
 
-Why this exists. Linux's adfs driver only mounts new-map discs: it looks for a disc record either in the boot block at 0xC00 + 0x1C0 or at sector 0 + 4 with a single zone, and its allocation walk expects the zone bitmap described below. An old-map ADFS-L image has neither, so the driver cannot read one at all — which is what this writer fixes.
+Targets the ADFS-L variant (640 KiB, 80-track double-sided floppy, 256-byte sectors, 2 560 sectors total). The on-disk layout is:
 
-Layout. One 1024-byte sector per block, one map zone, one map bit per sector:
-
-Bounds. A single zone's bitmap is one sector — 8192 bits, of which 512 are the header and disc record — so a volume holds at most `MaxSectors` sectors (7.5 MB), and every fragment costs at least idlen + 1 sectors. Multi-zone maps, share offsets for small files, and F+ big directories are out of scope.
-
-Cross-checked against the kernel's fs/adfs: adfs_checkdiscrecord, adfs_validate_dr0, adfs_map_layout, lookup_zone, scan_free_map, adfs_calczonecheck and adfs_dir_checkbyte.
+Layout reference: BBC Master Reference Manual, Section "ADFS Disc Format"; also https://mdfs.net/Docs/Comp/Disk/Format/ADFS. We emit the Acorn-canonical check byte (rotate-and-add over bytes 0..0xFE) so the Linux ADFS kernel driver accepts the image when mounted read-only. ADFS-D/E/F (new-map, 1024-byte sectors) are out of scope for this writer.
 
 ### AdfsExtentMap
 

@@ -134,7 +134,7 @@ public static class ApfsStructuralValidator {
     }
 
     // Walk FS-tree end to end.
-    var fsLeafRecords = WalkBtree(image, fsTreePhys, "FS-tree", r);
+    var fsLeafRecords = WalkBtree(image, fsTreePhys, "FS-tree", r, omapPhys: volOmapPhys);
     r.FsRecordsScanned = fsLeafRecords.Count;
     ValidateFsTreeSemantics(fsLeafRecords, image, r);
 
@@ -186,7 +186,12 @@ public static class ApfsStructuralValidator {
   /// that the level field is consistent (root level = depth, leaves = 0). Uses
   /// a visited set to guard against malformed cyclic child pointers.
   /// </summary>
-  private static List<(byte[] Key, byte[] Value)> WalkBtree(byte[] image, ulong rootPhys, string label, Report r) {
+  /// <param name="omapPhys">
+  /// The object map that turns a child's identifier into its block, for a tree
+  /// whose nodes are virtual. Zero for a physical tree.
+  /// </param>
+  private static List<(byte[] Key, byte[] Value)> WalkBtree(byte[] image, ulong rootPhys, string label,
+      Report r, ulong omapPhys = 0) {
     var records = new List<(byte[], byte[])>();
     var visited = new HashSet<ulong>();
     Walk(rootPhys, isRoot: true, expectedLevel: -1);
@@ -243,7 +248,19 @@ public static class ApfsStructuralValidator {
           r.Errors.Add($"{label}: internal node {blockNum} slot value too short");
           continue;
         }
-        var childAddr = BinaryPrimitives.ReadUInt64LittleEndian(s.Value);
+        // A virtual tree names its children by identifier; the map turns one
+        // into a block. Following the identifier as though it were a block found
+        // nothing, so a split tree looked like a tree with one node in it.
+        var child = BinaryPrimitives.ReadUInt64LittleEndian(s.Value);
+        var childAddr = omapPhys == 0
+          ? child
+          : ApfsBtreeOps.ResolveOidViaOmapTree(image,
+              BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan((int)(omapPhys * BlockSize) + 48)),
+              child);
+        if (childAddr == 0) {
+          r.Errors.Add($"{label}: child {child} is named by nothing in the object map");
+          continue;
+        }
         Walk(childAddr, isRoot: false, expectedLevel: level - 1);
       }
     }
@@ -267,6 +284,21 @@ public static class ApfsStructuralValidator {
       ? node.Length - BtreeInfoSize
       : node.Length;
     var isFixed = (flags & BTNODE_FIXED_KV_SIZE) != 0;
+
+    // A tree whose records are all one size states that size in its root's
+    // footer, because the slots carry only offsets. Leaving both lengths at zero
+    // here made every such node decode to nothing — "nkeys=1 but decoded 0
+    // slots" — which is the third place in this codebase that assumed the shape
+    // our own writer used to produce.
+    var fixedKeyLen = 0;
+    var fixedValLen = 0;
+    if (isFixed) {
+      var info = node.Length - BtreeInfoSize;
+      fixedKeyLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 8)..]);
+      fixedValLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(node[(info + 12)..]);
+      if ((flags & BTNODE_LEAF) == 0) fixedValLen = 8;   // an index node names children
+    }
+
     for (uint i = 0; i < nkeys; i++) {
       int keyOff, keyLen, valOff, valLen;
       if (isFixed) {
@@ -274,7 +306,7 @@ public static class ApfsStructuralValidator {
         if (e + 4 > node.Length) break;
         keyOff = BinaryPrimitives.ReadUInt16LittleEndian(node[e..]);
         valOff = BinaryPrimitives.ReadUInt16LittleEndian(node[(e + 2)..]);
-        keyLen = 0; valLen = 0;
+        keyLen = fixedKeyLen; valLen = fixedValLen;
       } else {
         var e = tocAbs + (int)i * TocEntrySize;
         if (e + TocEntrySize > node.Length) break;
@@ -375,6 +407,13 @@ public static class ApfsStructuralValidator {
     var tb = (int)(ob >> 60);
     cmp = ta.CompareTo(tb);
     if (cmp != 0) return cmp;
+
+    // A directory entry's key is a two-byte name length and then the name, so
+    // comparing the tail byte for byte compares the lengths first. Entries are
+    // ordered by name.
+    if (ta == APFS_TYPE_DIR_REC && a.Length >= 10 && b.Length >= 10)
+      return a.AsSpan(10).SequenceCompareTo(b.AsSpan(10));
+
     return a.AsSpan(8).SequenceCompareTo(b.AsSpan(8));
   }
 }

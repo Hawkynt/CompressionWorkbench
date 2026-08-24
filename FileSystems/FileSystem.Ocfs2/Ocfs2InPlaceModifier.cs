@@ -33,6 +33,10 @@ public static class Ocfs2InPlaceModifier {
   private const int BlockSize = Ocfs2Writer.BlockSize;
   private const int ClusterSize = Ocfs2Writer.ClusterSize;
   private const int Id2Offset = 0xC0;
+  /// <summary>id1.bitmap1.i_used — how many bits an allocator has handed out.</summary>
+  private const int Id1UsedOffset = 0xB8;
+  /// <summary>Where a group descriptor's own bitmap starts.</summary>
+  private const int GroupBitmapOffset = 0x40;
 
   // ocfs2_dinode field offsets (spec-correct, per ocfs2_fs.h).
   private const int OffClusters = 0x14;       // i_clusters (u32)
@@ -93,16 +97,22 @@ public static class Ocfs2InPlaceModifier {
     var dataClusters = data.Length == 0 ? 0 : (data.Length + ClusterSize - 1) / ClusterSize;
     var bitmap = ReadBlock(image, Ocfs2Writer.BitmapDataBlkno);
 
-    var newDinodeBlk = AllocateCluster(bitmap)
-      ?? throw new IOException("ocfs2: no free clusters available for new file dinode.");
+    // An inode is a bit in the per-slot inode allocator's group, not a cluster
+    // out of the global bitmap. Taking a cluster instead put the dinode outside
+    // the range the allocator covers, so fsck.ocfs2 said "Bit does not exist in
+    // bitmap range while testing if inode 90 is allocated" and the kernel, which
+    // asks the same question, would not show the file at all.
+    var inodeSlot = AllocateInodeBit(image)
+      ?? throw new IOException("ocfs2: the inode allocator group has no free bits left.");
+    var newDinodeBlk = inodeSlot.Blkno;
 
     long firstDataBlk = 0;
     if (dataClusters > 0) {
       // Allocate a contiguous run so a single extent record can describe it.
       var run = AllocateContiguousClusters(bitmap, dataClusters);
       if (run == null) {
-        // Roll back the dinode allocation before throwing.
-        ClearBit(bitmap, (int)newDinodeBlk);
+        // Roll back the inode allocation before throwing.
+        FreeInodeBit(image, inodeSlot);
         throw new IOException($"ocfs2: no contiguous run of {dataClusters} free clusters for '{name}'.");
       }
       firstDataBlk = run.Value;
@@ -114,7 +124,8 @@ public static class Ocfs2InPlaceModifier {
     if (image.Length < requiredLength) image.SetLength(requiredLength);
 
     // Write the new file dinode block.
-    var dinodeBytes = BuildFileDinodeBlock(newDinodeBlk, firstDataBlk, dataClusters, data.Length);
+    var dinodeBytes = BuildFileDinodeBlock(newDinodeBlk, firstDataBlk, dataClusters, data.Length,
+      inodeSlot.Bit, VolumeGeneration(image));
     WriteBlock(image, newDinodeBlk, dinodeBytes);
 
     // Write the file's data blocks (contiguous).
@@ -133,8 +144,8 @@ public static class Ocfs2InPlaceModifier {
     // dirs keep the last entry's rec_len stretched to the inline end; we carve
     // the new entry out of that slack). i_size stays the full inline capacity.
     if (!InsertInlineDirEntry(rootDirBytes, inlineStart, inlineCapacity, newEntrySize, newDinodeBlk, name, FtRegFile)) {
-      // No slack — roll back the cluster allocations.
-      ClearBit(bitmap, (int)newDinodeBlk);
+      // No slack — roll back what was claimed.
+      FreeInodeBit(image, inodeSlot);
       if (dataClusters > 0)
         for (var i = 0; i < dataClusters; i++) ClearBit(bitmap, (int)(firstDataBlk + i));
       throw new IOException($"ocfs2: root directory inline area is full (cannot add '{name}').");
@@ -435,6 +446,20 @@ public static class Ocfs2InPlaceModifier {
   // Bit N (= cluster N) therefore lives at byte BitmapBase + N/8.
   private const int BitmapBase = Ocfs2Writer.BitmapInGroupOffset;
 
+  /// <summary>How many clusters this group's bitmap actually covers.</summary>
+  /// <remarks>
+  /// <c>bg_bits</c>, not the room the block has for bitmap bytes. Scanning to the
+  /// end of the block handed out clusters past the end of the volume, which the
+  /// caller then grew the image to reach — leaving a file whose extent, in fsck's
+  /// words, "goes beyond the end of the volume". Running out of space is supposed
+  /// to raise here, so that the caller falls back to relaying the volume out.
+  /// </remarks>
+  private static int BitmapCapacity(byte[] bitmap) {
+    var bits = BinaryPrimitives.ReadUInt16LittleEndian(bitmap.AsSpan(0x0A, 2));
+    var room = (bitmap.Length - BitmapBase) * 8;
+    return bits <= 0 ? room : Math.Min(bits, room);
+  }
+
   private static bool TestBit(byte[] bitmap, int bit)
     => (bitmap[BitmapBase + bit / 8] & (1 << (bit % 8))) != 0;
 
@@ -446,7 +471,7 @@ public static class Ocfs2InPlaceModifier {
 
   /// <summary>Allocates the first free cluster (LSB-first scan). bit N = cluster N.</summary>
   private static long? AllocateCluster(byte[] bitmap) {
-    var maxBit = (bitmap.Length - BitmapBase) * 8;
+    var maxBit = BitmapCapacity(bitmap);
     for (var bit = 0; bit < maxBit; bit++) {
       if (TestBit(bitmap, bit)) continue;
       SetBit(bitmap, bit);
@@ -461,7 +486,7 @@ public static class Ocfs2InPlaceModifier {
   /// </summary>
   private static long? AllocateContiguousClusters(byte[] bitmap, int count) {
     if (count <= 0) return 0;
-    var maxBit = (bitmap.Length - BitmapBase) * 8;
+    var maxBit = BitmapCapacity(bitmap);
     var runStart = -1;
     var runLen = 0;
     for (var bit = 0; bit < maxBit; bit++) {
@@ -492,17 +517,108 @@ public static class Ocfs2InPlaceModifier {
   /// writing them in the canonical format is what makes the file surface in
   /// List/Extract.
   /// </summary>
-  private static byte[] BuildFileDinodeBlock(long blkno, long dataBlkno, int dataClusters, int fileSize) {
+  /// <summary>Where an inode sits in the per-slot allocator: its bit and its block.</summary>
+  private readonly record struct InodeSlot(long GroupBlkno, int Bit, long Blkno);
+
+  /// <summary>The block the per-slot inode allocator's only group lives at.</summary>
+  /// <remarks>
+  /// The <c>inode_alloc:0000</c> dinode carries a chain list whose first record
+  /// names it, at <c>id2.i_chain.cl_recs[0].c_blkno</c>.
+  /// </remarks>
+  private static long PerSlotInodeGroup(Stream image) {
+    var allocDinode = ReadBlock(image, Ocfs2Writer.InodeAllocBlkno);
+    return (long)BinaryPrimitives.ReadUInt64LittleEndian(allocDinode.AsSpan(Id2Offset + 0x18, 8));
+  }
+
+  /// <summary>
+  /// Claims the lowest free bit of the inode allocator's group and returns where
+  /// the dinode belongs, keeping the group descriptor and the allocator dinode's
+  /// counts in step with it.
+  /// </summary>
+  private static InodeSlot? AllocateInodeBit(Stream image) {
+    var groupBlkno = PerSlotInodeGroup(image);
+    if (groupBlkno <= 0) return null;
+
+    var group = ReadBlock(image, groupBlkno);
+    var bits = BinaryPrimitives.ReadUInt16LittleEndian(group.AsSpan(0x0A, 2));
+    var free = BinaryPrimitives.ReadUInt16LittleEndian(group.AsSpan(0x0C, 2));
+    if (free == 0) return null;
+
+    var bit = -1;
+    for (var i = 0; i < bits; i++)
+      if ((group[GroupBitmapOffset + (i >> 3)] & (1 << (i & 7))) == 0) { bit = i; break; }
+    if (bit < 0) return null;
+
+    group[GroupBitmapOffset + (bit >> 3)] |= (byte)(1 << (bit & 7));
+    SetGroupFreeCounts(group, free - 1);
+    WriteBlock(image, groupBlkno, group);
+    AdjustAllocatorUsed(image, +1);
+
+    return new InodeSlot(groupBlkno, bit, groupBlkno + bit);
+  }
+
+  /// <summary>Gives an inode's bit back, undoing <see cref="AllocateInodeBit" />.</summary>
+  private static void FreeInodeBit(Stream image, InodeSlot slot) {
+    var group = ReadBlock(image, slot.GroupBlkno);
+    if ((group[GroupBitmapOffset + (slot.Bit >> 3)] & (1 << (slot.Bit & 7))) == 0) return;
+
+    group[GroupBitmapOffset + (slot.Bit >> 3)] &= (byte)~(1 << (slot.Bit & 7));
+    var free = BinaryPrimitives.ReadUInt16LittleEndian(group.AsSpan(0x0C, 2));
+    SetGroupFreeCounts(group, free + 1);
+    WriteBlock(image, slot.GroupBlkno, group);
+    AdjustAllocatorUsed(image, -1);
+  }
+
+  /// <summary>
+  /// Writes a group descriptor's free-bit counts. The contiguous count is kept
+  /// equal to the free count, which the writer does too and which holds while
+  /// bits are handed out from the bottom.
+  /// </summary>
+  private static void SetGroupFreeCounts(byte[] group, int free) {
+    BinaryPrimitives.WriteUInt16LittleEndian(group.AsSpan(0x0C, 2), (ushort)free); // bg_free_bits_count
+    BinaryPrimitives.WriteUInt16LittleEndian(group.AsSpan(0x14, 2), (ushort)free); // bg_contig_free_bits
+  }
+
+  /// <summary>
+  /// Moves the inode allocator's used count and its chain record's free count by
+  /// one, in step with the group's own bitmap.
+  /// </summary>
+  private static void AdjustAllocatorUsed(Stream image, int delta) {
+    var dinode = ReadBlock(image, Ocfs2Writer.InodeAllocBlkno);
+    var used = BinaryPrimitives.ReadUInt32LittleEndian(dinode.AsSpan(Id1UsedOffset, 4));
+    BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(Id1UsedOffset, 4), (uint)(used + delta));
+
+    var chainFree = BinaryPrimitives.ReadUInt32LittleEndian(dinode.AsSpan(Id2Offset + 0x10, 4));
+    BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(Id2Offset + 0x10, 4), (uint)(chainFree - delta));
+    WriteBlock(image, Ocfs2Writer.InodeAllocBlkno, dinode);
+  }
+
+  /// <summary>The generation every structure on this volume is stamped with.</summary>
+  /// <remarks>
+  /// Both fsck and the kernel use it to decide whether a block belongs to this
+  /// filesystem at all, so an inode stamped with anything else is one they will
+  /// pass over — silently, because a block that is not ours is not an error.
+  /// </remarks>
+  private static uint VolumeGeneration(Stream image) {
+    var superblock = ReadBlock(image, Ocfs2Writer.SuperBlockBlkno);
+    return BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(OffFsGeneration, 4));
+  }
+
+  private static byte[] BuildFileDinodeBlock(long blkno, long dataBlkno, int dataClusters, int fileSize,
+      int suballocBit, uint fsGeneration) {
     var block = new byte[BlockSize];
 
     // i_signature[8] at offset 0 — regular-inode magic.
     InodeSignature.CopyTo(block.AsSpan(0, InodeSignature.Length));
     // i_generation at +8
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(0x08, 4), (uint)(blkno + 100));
-    // i_suballoc_slot at +0x0C (i16): -1
-    BinaryPrimitives.WriteInt16LittleEndian(block.AsSpan(0x0C, 2), -1);
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(0x08, 4), fsGeneration);
+    // i_suballoc_slot at +0x0C (i16): slot 0's inode allocator owns user inodes.
+    // This used to say -1, which names the global allocator, and to put the
+    // inode's own block number in the bit field — neither of which describes
+    // where the inode actually came from.
+    BinaryPrimitives.WriteInt16LittleEndian(block.AsSpan(0x0C, 2), 0);
     // i_suballoc_bit at +0x0E (u16)
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(0x0E, 2), (ushort)blkno);
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(0x0E, 2), (ushort)suballocBit);
     // i_clusters at +0x14
     BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OffClusters, 4), (uint)dataClusters);
     // i_size at +0x20
@@ -515,8 +631,10 @@ public static class Ocfs2InPlaceModifier {
     BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OffFlags, 4), InodeValid);
     // i_blkno at +0x50
     BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(OffBlkno, 8), (ulong)blkno);
-    // i_fs_generation at +0x60
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OffFsGeneration, 4), (uint)(blkno + 100));
+    // i_fs_generation at +0x60. This used to be blkno + 100 — a number belonging
+    // to nothing — so every file added in place was stamped as coming from some
+    // other filesystem, and both fsck and the kernel passed over it.
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OffFsGeneration, 4), fsGeneration);
 
     if (fileSize == 0) return block;
 

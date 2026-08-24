@@ -60,11 +60,50 @@ public sealed class MinixV2Writer : IDisposable {
   /// <summary>Registers a file to be written into the image.</summary>
   public void AddFile(string path, byte[] data) => _files.Add((path, data));
 
+  /// <summary>
+  /// Leave a zone unallocated where the file holds nothing but zeros.
+  /// </summary>
+  /// <remarks>
+  /// <para>Minix says a file's zones one pointer at a time, and a pointer of
+  /// zero names no zone at all: the driver hands back a block of zeros for it
+  /// and reads on. So a run of zeros need not occupy anything — the file keeps
+  /// its length and every one of its bytes, and the volume is sized for what was
+  /// actually written.</para>
+  ///
+  /// <para>The indirect blocks go the same way. One whose whole range is hole is
+  /// not allocated either, and its slot in the inode stays zero, because that is
+  /// what a volume looks like when the file was written by seeking past the gap:
+  /// the kernel never asks for a block it is not filling. Allocating a block of
+  /// nothing but zero pointers would read back identically and still be a
+  /// volume no minix system would have produced.</para>
+  /// </remarks>
+  public bool MakeSparse { get; set; }
+
+  /// <summary>
+  /// Store one copy of files whose bytes are identical and give the rest a
+  /// second name for it.
+  /// </summary>
+  /// <remarks>
+  /// One inode, one set of zones, and a count in the inode of how many directory
+  /// entries name it — that is all a hard link is, and minix has had it since
+  /// the beginning. <c>fsck.minix</c> counts the entries pointing at each inode
+  /// and compares them against that field, so linking is a matter of naming the
+  /// same inode twice and saying so.
+  /// </remarks>
+  public bool DeduplicateWithLinks { get; set; }
+
+  /// <summary>A v2 inode counts its names in sixteen bits.</summary>
+  private const int MaxLinks = ushort.MaxValue;
+
   private sealed class TreeNode {
     public uint Inode;
     public bool IsDirectory;
     public byte[] FileData = [];
     public TreeNode? Parent;
+
+    /// <summary>How many names point at this inode.</summary>
+    public int Links = 1;
+
     public readonly List<KeyValuePair<string, TreeNode>> Children = [];
     public readonly Dictionary<string, TreeNode> ChildIndex = [];
   }
@@ -88,8 +127,27 @@ public sealed class MinixV2Writer : IDisposable {
       if (dir == root) continue;
       dir.Inode = nextInode++;
     }
-    foreach (var file in allFiles)
+
+    // Files whose bytes are identical share one inode when asked; the rest of
+    // the build then only ever sees the stored ones, so the content is laid down
+    // once however many names lead to it.
+    var stored = new List<TreeNode>(allFiles.Count);
+    var firstWithContent = new Dictionary<string, TreeNode>(StringComparer.Ordinal);
+    foreach (var file in allFiles) {
+      var key = ContentKey(file.FileData);
+      if (this.DeduplicateWithLinks && firstWithContent.TryGetValue(key, out var first)) {
+        file.Inode = first.Inode;
+        ++first.Links;
+        // An inode that has run out of room to count its names starts a fresh
+        // one for the next copy rather than wrapping round to none.
+        if (first.Links >= MaxLinks) firstWithContent.Remove(key);
+        continue;
+      }
+
       file.Inode = nextInode++;
+      if (this.DeduplicateWithLinks) firstWithContent[key] = file;
+      stored.Add(file);
+    }
     var totalInodes = (int)nextInode - 1;
 
     var inodesPerBlock = BlockSize / InodeSize; // 16
@@ -102,13 +160,39 @@ public sealed class MinixV2Writer : IDisposable {
     const int zmapBlocks = 1;
     var firstDataZone = 2 + imapBlocks + zmapBlocks + inodeTableBlocks;
 
-    var dataZonesNeeded = 0;
-    foreach (var dir in allDirs)
-      dataZonesNeeded += ZonesForByteLength(DirectoryByteLength(dir));
-    foreach (var file in allFiles)
-      dataZonesNeeded += ZonesForByteLength(file.FileData.Length);
+    // A directory's block is the same in both passes below, so it is built once.
+    var directoryBytes = new Dictionary<TreeNode, byte[]>(allDirs.Count);
+    foreach (var dir in allDirs) {
+      var entries = new List<(uint Inode, string Name)>(dir.Children.Count + 2) {
+        (dir.Inode, "."),
+        ((dir.Parent ?? root).Inode, ".."),
+      };
+      foreach (var (childName, child) in dir.Children)
+        entries.Add((child.Inode, childName));
 
-    var totalZones = firstDataZone + dataZonesNeeded;
+      var dirBytes = new byte[entries.Count * this.DirEntrySize];
+      for (var e = 0; e < entries.Count; e++)
+        WriteDirEntry(dirBytes, e * this.DirEntrySize, entries[e].Inode, entries[e].Name);
+      directoryBytes[dir] = dirBytes;
+    }
+
+    // Which of each stored file's zones hold nothing but zeros. Read once: the
+    // count the volume is sized for and the layout it is written with both
+    // depend on it, and they have to agree exactly.
+    var holes = new Dictionary<TreeNode, bool[]>(stored.Count);
+    foreach (var file in stored)
+      holes[file] = this.HoleMap(file.FileData);
+
+    // Pass one hands out zone numbers with no disk to write them onto, so the
+    // size comes from the same code that does the laying out rather than from a
+    // second description of it that could disagree with it.
+    var planner = new ZoneAllocator(firstDataZone);
+    foreach (var dir in allDirs)
+      WriteData(null, 0, firstDataZone, planner, directoryBytes[dir], []);
+    foreach (var file in stored)
+      WriteData(null, 0, firstDataZone, planner, file.FileData, holes[file]);
+
+    var totalZones = planner.Next;
     // A zone number is 16 bits wide on this variant, and the image is built in
     // memory. Sizing past either limit used to surface as an arithmetic
     // overflow instead of saying the volume cannot hold the payload.
@@ -132,30 +216,24 @@ public sealed class MinixV2Writer : IDisposable {
     var allocator = new ZoneAllocator(firstDataZone);
 
     foreach (var dir in allDirs) {
-      var entries = new List<(uint Inode, string Name)>(dir.Children.Count + 2) {
-        (dir.Inode, "."),
-        ((dir.Parent ?? root).Inode, ".."),
-      };
-      foreach (var (childName, child) in dir.Children)
-        entries.Add((child.Inode, childName));
-
-      var dirBytes = new byte[entries.Count * this.DirEntrySize];
-      for (var e = 0; e < entries.Count; e++)
-        WriteDirEntry(dirBytes, e * this.DirEntrySize, entries[e].Inode, entries[e].Name);
+      var dirBytes = directoryBytes[dir];
 
       var childDirCount = 0;
       foreach (var (_, child) in dir.Children)
         if (child.IsDirectory) childDirCount++;
 
-      var zones = WriteData(disk, zmapOff, firstDataZone, allocator, dirBytes);
+      // A directory is never written sparse. Its zeros are empty entry slots
+      // rather than absent data, and a driver reading a hole where a directory
+      // block should be gets a block of entries naming inode 0.
+      var zones = WriteData(disk, zmapOff, firstDataZone, allocator, dirBytes, []);
       WriteInode(disk, inodeTableOff, (int)dir.Inode, ModeDirectory,
         (uint)dirBytes.Length, (ushort)(2 + childDirCount), zones);
     }
 
-    foreach (var file in allFiles) {
-      var zones = WriteData(disk, zmapOff, firstDataZone, allocator, file.FileData);
+    foreach (var file in stored) {
+      var zones = WriteData(disk, zmapOff, firstDataZone, allocator, file.FileData, holes[file]);
       WriteInode(disk, inodeTableOff, (int)file.Inode, ModeRegularFile,
-        (uint)file.FileData.Length, nlinks: 1, zones);
+        (uint)file.FileData.Length, (ushort)file.Links, zones);
     }
 
     // --- Superblock at offset 1024 ---
@@ -205,25 +283,61 @@ public sealed class MinixV2Writer : IDisposable {
 
   private sealed class ZoneAllocator(int firstDataZone) {
     private int _next = firstDataZone;
+
+    /// <summary>The zone number the next allocation would take.</summary>
+    public int Next => _next;
+
     public uint Allocate() => (uint)_next++;
   }
 
+  /// <summary>Which of a payload's zones hold nothing but zeros.</summary>
+  /// <remarks>
+  /// Empty when holes are not wanted, so every caller can ask without checking
+  /// first and <see cref="WriteData" /> has one shape either way.
+  /// </remarks>
+  private bool[] HoleMap(byte[] data) {
+    if (!this.MakeSparse || data.Length == 0) return [];
+
+    var count = (data.Length + BlockSize - 1) / BlockSize;
+    var holes = new bool[count];
+    for (var z = 0; z < count; z++) {
+      var at = z * BlockSize;
+      var length = Math.Min(BlockSize, data.Length - at);
+      holes[z] = !data.AsSpan(at, length).ContainsAnyExcept((byte)0);
+    }
+    return holes;
+  }
+
+  /// <summary>A file's contents, as a key two identical files share.</summary>
+  /// <remarks>
+  /// The length goes in as well as the digest: the digest is what says two files
+  /// are the same, and the length is what makes saying so cheap to be sure of.
+  /// </remarks>
+  private static string ContentKey(byte[] data) =>
+    data.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+    + ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+
   // Writes a payload across direct, single-, double- and triple-indirect zones.
-  private uint[] WriteData(byte[] disk, int zmapOff, int firstDataZone,
-      ZoneAllocator allocator, byte[] data) {
+  // A null disk allocates without writing, which is how the volume is sized.
+  private uint[] WriteData(byte[]? disk, int zmapOff, int firstDataZone,
+      ZoneAllocator allocator, byte[] data, bool[] holes) {
     var slots = new uint[10];
     if (data.Length == 0) return slots;
 
     var dataZoneCount = (data.Length + BlockSize - 1) / BlockSize;
-    var written = 0;
     var dataZones = new uint[dataZoneCount];
     for (var z = 0; z < dataZoneCount; z++) {
+      // A hole keeps its place in the pointer list and takes no zone: the slot
+      // stays zero, and a reader hands back a block of zeros for it.
+      if (z < holes.Length && holes[z]) continue;
+
       var zone = allocator.Allocate();
-      MarkZone(disk, zmapOff, firstDataZone, zone);
       dataZones[z] = zone;
-      var toWrite = Math.Min(BlockSize, data.Length - written);
-      Array.Copy(data, written, disk, (long)zone * BlockSize, toWrite);
-      written += toWrite;
+      if (disk == null) continue;
+
+      MarkZone(disk, zmapOff, firstDataZone, zone);
+      var at = z * BlockSize;
+      Array.Copy(data, at, disk, (long)zone * BlockSize, Math.Min(BlockSize, data.Length - at));
     }
 
     var idx = 0;
@@ -253,61 +367,49 @@ public sealed class MinixV2Writer : IDisposable {
   // Builds one indirect tree of the given level rooted at a freshly allocated
   // zone, consuming as many data zones from <paramref name="dataZones"/> as the
   // level can address (up to 256^level), and returns the root zone number.
-  private uint BuildIndirect(byte[] disk, int zmapOff, int firstDataZone,
+  // Returns zero, having taken no zone, when everything it would address is
+  // hole — an inode slot of zero is how a volume records a gap nobody wrote.
+  private uint BuildIndirect(byte[]? disk, int zmapOff, int firstDataZone,
       ZoneAllocator allocator, uint[] dataZones, ref int idx, int total, int level) {
+    var end = Math.Min(total, idx + Capacity(level));
+    var allHole = true;
+    for (var probe = idx; probe < end; probe++)
+      if (dataZones[probe] != 0) { allHole = false; break; }
+
+    if (allHole) {
+      idx = end;
+      return 0;
+    }
+
     var root = allocator.Allocate();
-    MarkZone(disk, zmapOff, firstDataZone, root);
     var baseByte = (long)root * BlockSize;
+    if (disk != null) MarkZone(disk, zmapOff, firstDataZone, root);
 
     if (level == 1) {
       var count = Math.Min(ZonePointersPerBlock, total - idx);
-      for (var i = 0; i < count; i++)
-        BinaryPrimitives.WriteUInt32LittleEndian(
-          disk.AsSpan((int)(baseByte + i * 4)), dataZones[idx++]);
+      for (var i = 0; i < count; i++) {
+        var zone = dataZones[idx++];
+        if (disk != null)
+          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)(baseByte + i * 4)), zone);
+      }
       return root;
     }
 
     for (var i = 0; i < ZonePointersPerBlock && idx < total; i++) {
       var child = BuildIndirect(disk, zmapOff, firstDataZone, allocator,
         dataZones, ref idx, total, level - 1);
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)(baseByte + i * 4)), child);
+      if (disk != null)
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)(baseByte + i * 4)), child);
     }
     return root;
   }
 
-  // Number of zones (data + indirect-pointer blocks) a payload occupies.
-  private static int ZonesForByteLength(int length) {
-    if (length == 0) return 0;
-    var dataZones = (length + BlockSize - 1) / BlockSize;
-    var total = dataZones;
-    var remaining = dataZones - DirectZones;
-    if (remaining <= 0) return total;
-
-    var perSingle = ZonePointersPerBlock;
-    // Single-indirect.
-    var take = Math.Min(remaining, perSingle);
-    total += 1;
-    remaining -= take;
-    if (remaining <= 0) return total;
-
-    // Double-indirect.
-    var perDouble = perSingle * ZonePointersPerBlock;
-    take = Math.Min(remaining, perDouble);
-    total += 1 + (take + perSingle - 1) / perSingle;
-    remaining -= take;
-    if (remaining <= 0) return total;
-
-    // Triple-indirect.
-    total += 1; // top block
-    var singles = (remaining + perSingle - 1) / perSingle;
-    total += singles;
-    var doubles = (singles + ZonePointersPerBlock - 1) / ZonePointersPerBlock;
-    total += doubles;
-    return total;
+  /// <summary>How many data zones an indirect tree of this level addresses.</summary>
+  private static int Capacity(int level) {
+    var capacity = ZonePointersPerBlock;
+    for (var i = 1; i < level; i++) capacity *= ZonePointersPerBlock;
+    return capacity;
   }
-
-  private int DirectoryByteLength(TreeNode dir) =>
-    (2 + dir.Children.Count) * this.DirEntrySize;
 
   private List<string> SplitPath(string path) {
     var parts = new List<string>();

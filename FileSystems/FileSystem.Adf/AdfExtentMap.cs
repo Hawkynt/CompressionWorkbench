@@ -28,7 +28,11 @@ public static class AdfExtentMap {
   private const int FirstDataOffset = 16;
   private const int DataBlockPtrsTop = 308;
   private const int HashChainOffset = 496;
-  private const int ExtBlockOffset = 496;
+  // hash_chain (496), parent (500), extension (504), sec_type (508) are the last
+  // four words of a block. Reading the extension pointer from 496 followed the
+  // hash chain instead, so a file sharing a bucket with another was reported as
+  // owning its neighbour's blocks.
+  private const int ExtBlockOffset = 504;
   private const int NameOffset = 432;
   private const int SecTypeWordOff = 508;
   private const int BitmapPagesOffset = 318; // root: 25 bitmap-block pointers

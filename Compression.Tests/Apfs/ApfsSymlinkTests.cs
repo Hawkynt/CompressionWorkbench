@@ -160,11 +160,38 @@ public class ApfsSymlinkTests {
     return k;
   }
 
+  /// <summary>
+  /// One inode record's value: the fixed part, then a data-stream extended field
+  /// carrying the length.
+  /// </summary>
+  /// <remarks>
+  /// The length used to be written into <c>uncompressed_size</c> at offset 84,
+  /// which is where the reader used to look for it. Neither is what APFS does —
+  /// that word belongs to compressed files — so this fixture agreed with the
+  /// reader about a shape no real volume has.
+  /// </remarks>
   private static byte[] InodeVal(ulong parent, ushort mode, int size) {
-    var v = new byte[92];
+    const int fixedLength = 92;
+    const int xfBlobHeader = 4;
+    const int xfieldSize = 4;
+    const ushort dstreamSize = 40;
+    const byte inoExtTypeDstream = 8;
+
+    var v = new byte[fixedLength + xfBlobHeader + xfieldSize + dstreamSize];
     BinaryPrimitives.WriteUInt64LittleEndian(v, parent);
     BinaryPrimitives.WriteUInt16LittleEndian(v.AsSpan(80), mode);            // mode @80
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(84), (ulong)size);     // uncompressed_size @84
+    // uncompressed_size @84 stays zero: nothing here is compressed.
+
+    var x = v.AsSpan(fixedLength);
+    BinaryPrimitives.WriteUInt16LittleEndian(x, 1);                          // one field
+    BinaryPrimitives.WriteUInt16LittleEndian(x[2..], dstreamSize);
+    x[4] = inoExtTypeDstream;
+    x[5] = 0x20;                                                             // system field
+    BinaryPrimitives.WriteUInt16LittleEndian(x[6..], dstreamSize);
+
+    var ds = x[(xfBlobHeader + xfieldSize)..];
+    BinaryPrimitives.WriteUInt64LittleEndian(ds, (ulong)size);               // size
+    BinaryPrimitives.WriteUInt64LittleEndian(ds[8..], (ulong)size);          // alloced_size
     return v;
   }
 

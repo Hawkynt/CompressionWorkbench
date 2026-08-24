@@ -34,7 +34,7 @@ Minix file system image
 | defragment | yes | lay the volume out again |
 | wipe free space | yes | zero what no file holds |
 | shrink | yes | reduce the volume to what it needs |
-| optimise layout | no | re-lay the volume at a chosen geometry |
+| optimise layout | yes | re-lay the volume at a chosen geometry |
 | report layout | yes | say where every byte belongs |
 | move blocks | yes | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |

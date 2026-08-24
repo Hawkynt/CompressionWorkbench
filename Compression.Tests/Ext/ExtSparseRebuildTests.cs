@@ -87,6 +87,40 @@ public class ExtSparseRebuildTests {
   }
 
   [Test, Category("Regression")]
+  public void BothSwitchesAtOnce_DoNotGiveAFileAnotherFilesHoles() {
+    // Which blocks of a file are holes is looked up by where that file was
+    // registered. The loop that writes the files walked the ones that ended up
+    // with an inode of their own, and deduplication is exactly what makes those
+    // two lists stop running in step: after the first copy is folded away, every
+    // file behind it was written with the hole map belonging to some other file.
+    //
+    // The damage is silent and one-directional. A block that should have held
+    // data is left unallocated, so the file comes back the right length and
+    // reads perfectly well, with zeros where its bytes were. Neither switch on
+    // its own goes wrong, which is why this asks for both.
+    var files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+    var shared = new byte[40_000];
+    for (var i = 0; i < shared.Length; ++i) shared[i] = (byte)(i * 17 + 7);
+
+    for (var group = 0; group < 8; ++group) {
+      // Copies, so the stored list falls behind the registered one...
+      for (var copy = 0; copy < 4; ++copy) files[$"COPY{group}_{copy}.BIN"] = (byte[])shared.Clone();
+
+      // ...a file that is mostly hole, so there is a hole map worth misapplying...
+      var holey = new byte[40_000];
+      for (var i = 0; i < 4_000; ++i) holey[i] = (byte)(i * 31 + 7);
+      files[$"HOLEY{group}.BIN"] = holey;
+
+      // ...and one that is solid from end to end, which is what comes back wrong.
+      var solid = new byte[40_000];
+      for (var i = 0; i < solid.Length; ++i) solid[i] = (byte)(i * (29 + group) + 7);
+      files[$"SOLID{group}.BIN"] = solid;
+    }
+
+    AssertReadsBack(Build(files, sparse: true, dedup: true), files, "with holes and links together");
+  }
+
+  [Test, Category("Regression")]
   public void WithoutAsking_NothingChanges() {
     // The switch is a switch: a volume built without it must be allocated solid,
     // because a hole is a promise about what a reader will be given and not

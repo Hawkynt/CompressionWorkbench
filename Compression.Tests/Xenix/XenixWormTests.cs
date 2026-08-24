@@ -183,12 +183,27 @@ public class XenixWormTests {
   // ── File-size budget: > 10*1024 bytes throws cleanly (Sad path) ─────────
 
   [Test, Category("Sad")]
-  public void FileBeyondDirectZoneBudget_Throws() {
+  public void FileBeyondDirectZoneBudget_UsesTheIndirectBlocks() {
+    // This used to assert the opposite: that a file past ten blocks was refused.
+    // A Xenix inode carries thirteen block numbers — ten direct, then the
+    // single-, double- and triple-indirect roots — and the reader beside the
+    // writer followed all four, so the volume the writer would not build was one
+    // it could read. The kernel's sysv driver mounts what it writes now and
+    // hands every byte back.
+    var data = new byte[300_000];
+    for (var i = 0; i < data.Length; ++i) data[i] = (byte)(i * 19 + 7);
+
     using var ms = new MemoryStream();
-    using var w = new FileSystem.Xenix.XenixWriter(ms, leaveOpen: true);
-    // 10 direct zones * 1024 bytes = 10240 bytes ceiling.
-    w.AddFile("oversize", new byte[10241]);
-    Assert.Throws<InvalidOperationException>(() => w.Finish());
+    using (var w = new FileSystem.Xenix.XenixWriter(ms, leaveOpen: true)) {
+      w.AddFile("oversize", data);
+      w.Finish();
+    }
+
+    ms.Position = 0;
+    var reader = new FileSystem.Xenix.XenixReader(ms);
+    var entry = reader.Entries.Single(e => !e.IsDirectory);
+    Assert.That(reader.Extract(entry), Is.EqualTo(data).AsCollection,
+      "a file past the direct blocks came back with different bytes");
   }
 
   // ── Path-component conflict (file used as parent dir) (Sad path) ────────

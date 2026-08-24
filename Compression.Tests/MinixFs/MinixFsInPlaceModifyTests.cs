@@ -259,11 +259,18 @@ public class MinixFsInPlaceModifyTests {
     return 2 * 1024 + imap * 1024 + zmap * 1024;
   }
 
+  /// <summary>Whether the inode bitmap has the given inode marked in use.</summary>
+  /// <remarks>
+  /// Inode N is bit N: bit 0 is reserved for the inode number that means "none",
+  /// which is why a fresh mkfs.minix volume of any version leaves bits 0 and 1
+  /// set — the reserved one and the root. This read the bit below, and agreed
+  /// with a writer that wrote the bit below, so the pair of them were consistent
+  /// with each other and with nothing else.
+  /// </remarks>
   private static bool ReadImapBit(MemoryStream ms, int inodeOneBased) {
     var data = ms.ToArray();
-    var bit = inodeOneBased - 1;
     var imapOff = 2 * 1024;
-    return (data[imapOff + bit / 8] & (1 << (bit % 8))) != 0;
+    return (data[imapOff + inodeOneBased / 8] & (1 << (inodeOneBased % 8))) != 0;
   }
 
   private static void AssertBytesEqual(byte[] a, byte[] b, int offset, int length, string label) {
@@ -322,17 +329,17 @@ public class MinixFsInPlaceModifyTests {
     var zmapOff = 3 * blockSize;
     var inodeTableOff = 4 * blockSize;
 
-    // Mark inode 1 (root) used.
-    disk[imapOff] = 0x01;
+    // Bit 0 of the inode bitmap is reserved and bit N is inode N, so the root
+    // leaves bits 0 and 1 set — which is exactly what mkfs.minix writes for a
+    // fresh volume of any version.
+    disk[imapOff] = 0x03;
 
-    // Mark all metadata + reserved data-zone-bitmap-base bits used.
-    // Per spec, bit 0 of the zone bitmap covers firstDataZone, so used bits
-    // for the root dir's zone start at bit 0.
-    for (var z = 0; z < firstDataZone; z++)
-      disk[zmapOff + z / 8] |= (byte)(1 << (z % 8));
-    // Allocate root directory's data zone.
+    // The zone bitmap covers the data zones only and counts from the first of
+    // them, with bit 0 reserved as the inode bitmap's is: the root directory's
+    // zone is the first data zone, and so bit 1. The metadata zones below
+    // firstDataZone are not in the map at all.
     var rootZone = firstDataZone;
-    disk[zmapOff + rootZone / 8] |= (byte)(1 << (rootZone % 8));
+    disk[zmapOff] = 0x03;
 
     // Root inode (inode 1) — V1 32-byte layout (modifier convention).
     // mode (2) | uid (2) | size (4) | time (4) | gid (1) | nlinks (1) | zones[9] (18)

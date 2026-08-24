@@ -52,6 +52,16 @@ internal sealed class Ocfs2Writer {
   internal const int BlockSizeBits = 12;
   internal const int ClusterSizeBits = 12;
 
+  /// <summary>
+  /// Free bits left in the per-slot inode group so files can be added later.
+  /// </summary>
+  /// <remarks>
+  /// Every one costs a block of the volume whether or not it is ever used, so
+  /// this is a balance rather than a maximum: enough that adding files to a
+  /// fresh volume works, small enough that an empty volume stays small.
+  /// </remarks>
+  internal const int SpareInodeBits = 32;
+
   internal const int SuperBlockBlkno = 2;
   internal const int GlobalBitmapGroupBlkno = 3;
   internal const int InodeAllocGroupBlkno = 4;
@@ -293,8 +303,15 @@ internal sealed class Ocfs2Writer {
       userInodes[i].InodeAllocBit = 2 + i;
     }
 
-    // The per-slot inode group must be large enough to hold all its bits.
-    var perSlotGroupBits = Math.Max(perSlotUsedBits, 1);
+    // The per-slot inode group must be large enough to hold all its bits, and
+    // then some. An inode on OCFS2 is a bit in this group, not a cluster out of
+    // the global bitmap, so a group sized to exactly what the volume was created
+    // with is a volume no file can ever be added to: the in-place modifier had
+    // nowhere to put an inode and took a cluster instead, which fsck.ocfs2 read
+    // as "Bit does not exist in bitmap range while testing if inode 90 is
+    // allocated". A real mkfs hands out a whole group; this reserves a modest
+    // margin of free bits, which is what makes the volume writable afterwards.
+    var perSlotGroupBits = Math.Max(perSlotUsedBits + SpareInodeBits, 1);
 
     // Parent back-references.
     void SetParents(TreeNode node) {

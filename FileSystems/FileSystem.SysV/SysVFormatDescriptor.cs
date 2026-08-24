@@ -283,6 +283,38 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
+  /// <summary>
+  /// A block pointer of zero names no block, so a run of zeros need not be
+  /// allocated; and the inode counts the names pointing at it, so identical
+  /// files can share one copy under several of them.
+  /// </summary>
+  public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
+
+  /// <inheritdoc />
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    source.Position = 0;
+    var files = new List<(string Name, byte[] Data)>();
+    {
+      var reader = new SysVReader(source);
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory) continue;
+        files.Add((entry.Name, reader.Extract(entry)));
+      }
+    }
+
+    using var writer = new SysVWriter(target, leaveOpen: true) {
+      MakeSparse = options.MakeSparse,
+      DeduplicateWithLinks = options.DeduplicateWithLinks,
+    };
+    foreach (var (name, data) in files) writer.AddFile(name, data);
+    writer.Finish();
+    options.OnProgress?.Invoke(target.Length, target.Length);
+  }
+
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => SysVExtentMap.Enumerate(image);
 

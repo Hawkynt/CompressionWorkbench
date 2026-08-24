@@ -130,10 +130,44 @@ public sealed class SysVWriter : IDisposable {
 
   // ── Tree node ──────────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Leave a block unallocated where the file holds nothing but zeros.
+  /// </summary>
+  /// <remarks>
+  /// A block pointer of zero names no block at all: the driver hands back a
+  /// block of zeros for it and reads on. So a run of zeros need not occupy
+  /// anything — the file keeps its length and every one of its bytes, and the
+  /// volume is sized for what was actually written. A pointer block whose whole
+  /// range is hole is not allocated either, because that is what a volume looks
+  /// like when the gap was seeked past rather than written.
+  /// </remarks>
+  public bool MakeSparse { get; set; }
+
+  /// <summary>
+  /// Store one copy of files whose bytes are identical and give the rest a
+  /// second name for it.
+  /// </summary>
+  /// <remarks>
+  /// One inode, one set of blocks, and a count in the inode of how many
+  /// directory entries name it — that is all a hard link is, and s5fs has had it
+  /// since the beginning.
+  /// </remarks>
+  public bool DeduplicateWithLinks { get; set; }
+
+  /// <summary>An s5fs inode counts its names in sixteen bits.</summary>
+  private const int MaxLinks = ushort.MaxValue;
+
   private sealed class TreeNode {
     public uint Inode;
     public bool IsDirectory;
     public byte[] FileData = [];
+
+    /// <summary>How many names point at this inode.</summary>
+    public int Links = 1;
+
+    /// <summary>Which of this file's blocks hold nothing but zeros.</summary>
+    public bool[] Holes = [];
+
     public readonly List<KeyValuePair<string, TreeNode>> Children = [];
     public readonly Dictionary<string, TreeNode> ChildIndex = [];
   }
@@ -177,7 +211,27 @@ public sealed class SysVWriter : IDisposable {
       if (dir == root) continue;
       dir.Inode = nextInode++;
     }
-    foreach (var file in allFiles) file.Inode = nextInode++;
+    // Files whose bytes are identical share one inode when asked, so the rest of
+    // the build only ever sees the stored ones and the content is laid down once
+    // however many names lead to it.
+    var stored = new List<TreeNode>(allFiles.Count);
+    var firstWithContent = new Dictionary<string, TreeNode>(StringComparer.Ordinal);
+    foreach (var file in allFiles) {
+      var key = ContentKey(file.FileData);
+      if (this.DeduplicateWithLinks && firstWithContent.TryGetValue(key, out var first)) {
+        file.Inode = first.Inode;
+        ++first.Links;
+        // An inode that has run out of room to count its names starts a fresh
+        // one for the next copy rather than wrapping round to none.
+        if (first.Links >= MaxLinks) firstWithContent.Remove(key);
+        continue;
+      }
+
+      file.Inode = nextInode++;
+      file.Holes = this.HoleMap(file.FileData);
+      if (this.DeduplicateWithLinks) firstWithContent[key] = file;
+      stored.Add(file);
+    }
     var totalInodes = (int)nextInode - 1;    // inodes 1..totalInodes are accounted for
 
     // 3. Plan the inode table size. ilist must hold every used inode plus
@@ -195,12 +249,13 @@ public sealed class SysVWriter : IDisposable {
     var dataBlocksNeeded = 0;
     foreach (var dir in allDirs)
       dataBlocksNeeded += DirectoryBlockCount(dir);
-    foreach (var file in allFiles) {
-      var blocks = file.FileData.Length == 0 ? 0 : (file.FileData.Length + BlockSize - 1) / BlockSize;
-      if (blocks > DirectZones)
-        throw new InvalidOperationException(
-          $"SysV writer supports at most {DirectZones * BlockSize} bytes per file (direct zones only).");
-      dataBlocksNeeded += blocks;
+    // What a file costs is counted by laying it out with nowhere to write it, so
+    // the number the volume is sized for and the layout it ends up with come from
+    // one piece of code rather than two descriptions of it.
+    foreach (var file in stored) {
+      var counter = 0u;
+      LayoutFile(null, ref counter, file.FileData, file.Holes);
+      dataBlocksNeeded += (int)counter;
     }
 
     // 5. Plan the free-block pool. The superblock's in-line free-block cache
@@ -256,24 +311,14 @@ public sealed class SysVWriter : IDisposable {
         zones: dirBlocks);
     }
 
-    foreach (var file in allFiles) {
-      var data = file.FileData;
-      var blocks = data.Length == 0 ? 0 : (data.Length + BlockSize - 1) / BlockSize;
-      var fileBlocks = new uint[DirectZones];
-      for (var b = 0; b < blocks; b++) {
-        var block = nextDataBlock++;
-        fileBlocks[b] = block;
-        var spanOff = (int)(block * BlockSize);
-        var srcOff = b * BlockSize;
-        var toCopy = Math.Min(BlockSize, data.Length - srcOff);
-        Buffer.BlockCopy(data, srcOff, disk, spanOff, toCopy);
-      }
+    foreach (var file in stored) {
+      var fileBlocks = LayoutFile(disk, ref nextDataBlock, file.FileData, file.Holes);
 
       WriteInode(disk, ilistOff: FirstInodeBlock * BlockSize,
         inodeNumber: file.Inode,
         mode: ModeRegularFile,
-        size: (uint)data.Length,
-        nlinks: 1,
+        size: (uint)file.FileData.Length,
+        nlinks: (ushort)file.Links,
         zones: fileBlocks);
     }
 
@@ -366,6 +411,124 @@ public sealed class SysVWriter : IDisposable {
     var copyLen = Math.Min(nameBytes.Length, MaxNameLength);
     Buffer.BlockCopy(nameBytes, 0, disk, offset + 2, copyLen);
     // Remaining name bytes already zero (NUL-pad).
+  }
+
+  /// <summary>Which of a payload's blocks hold nothing but zeros.</summary>
+  /// <remarks>
+  /// Empty when holes are not wanted, so every caller can ask without checking
+  /// first and <see cref="LayoutFile" /> has one shape either way.
+  /// </remarks>
+  private bool[] HoleMap(byte[] data) {
+    if (!this.MakeSparse || data.Length == 0) return [];
+
+    var count = (data.Length + BlockSize - 1) / BlockSize;
+    var holes = new bool[count];
+    for (var b = 0; b < count; b++) {
+      var at = b * BlockSize;
+      var length = Math.Min(BlockSize, data.Length - at);
+      holes[b] = !data.AsSpan(at, length).ContainsAnyExcept((byte)0);
+    }
+    return holes;
+  }
+
+  /// <summary>A file's contents, as a key two identical files share.</summary>
+  private static string ContentKey(byte[] data) =>
+    data.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+    + ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+
+  /// <summary>Pointers a 1024-byte indirect block holds, four bytes each.</summary>
+  private const int PointersPerBlock = BlockSize / 4;
+
+  /// <summary>
+  /// Places one file's blocks and returns its thirteen inode slots.
+  /// </summary>
+  /// <remarks>
+  /// <para>Ten direct, then a single-, double- and triple-indirect tree, which is
+  /// what an s5fs inode has always addressed. This used to refuse any file past
+  /// the ten direct blocks outright — 10 240 bytes — while the reader beside it
+  /// followed all four levels, so a volume from a real System V machine could be
+  /// read here and never written. It also meant the format could not build the
+  /// probe volume the interoperability checks use, and so was passed over by
+  /// every one of them.</para>
+  ///
+  /// <para>A null <paramref name="disk" /> hands out block numbers without
+  /// writing anything, which is how the volume is sized.</para>
+  /// </remarks>
+  private static uint[] LayoutFile(byte[]? disk, ref uint nextBlock, byte[] data, bool[] holes) {
+    var slots = new uint[13];
+    if (data.Length == 0) return slots;
+
+    var blockCount = (data.Length + BlockSize - 1) / BlockSize;
+    var dataBlocks = new uint[blockCount];
+    for (var b = 0; b < blockCount; b++) {
+      // A hole keeps its place in the pointer list and takes no block: the
+      // pointer stays zero, and a reader hands back a block of zeros for it.
+      if (b < holes.Length && holes[b]) continue;
+
+      var block = nextBlock++;
+      dataBlocks[b] = block;
+      if (disk == null) continue;
+
+      var srcOff = b * BlockSize;
+      Buffer.BlockCopy(data, srcOff, disk, (int)(block * BlockSize),
+        Math.Min(BlockSize, data.Length - srcOff));
+    }
+
+    var idx = 0;
+    for (; idx < blockCount && idx < DirectZones; idx++)
+      slots[idx] = dataBlocks[idx];
+    if (idx == blockCount) return slots;
+
+    for (var level = 1; level <= 3 && idx < blockCount; ++level)
+      slots[DirectZones + level - 1] =
+        BuildIndirect(disk, ref nextBlock, dataBlocks, ref idx, blockCount, level);
+
+    if (idx < blockCount)
+      throw new InvalidOperationException(
+        $"SysV: a file of {data.Length:N0} bytes is past what triple-indirect addressing reaches.");
+    return slots;
+  }
+
+  /// <summary>
+  /// Builds one indirect tree of the given level and returns the block it is
+  /// rooted at. Pointers inside an indirect block are four-byte words, unlike the
+  /// three-byte ones an inode carries.
+  /// </summary>
+  private static uint BuildIndirect(byte[]? disk, ref uint nextBlock,
+      uint[] dataBlocks, ref int idx, int total, int level) {
+    var reach = PointersPerBlock;
+    for (var i = 1; i < level; ++i) reach *= PointersPerBlock;
+
+    // A pointer block whose whole range is hole is not allocated at all: a slot
+    // of zero is how a volume records a gap nobody wrote.
+    var end = Math.Min(total, idx + reach);
+    var allHole = true;
+    for (var probe = idx; probe < end; probe++)
+      if (dataBlocks[probe] != 0) { allHole = false; break; }
+    if (allHole) {
+      idx = end;
+      return 0;
+    }
+
+    var root = nextBlock++;
+    var baseByte = (long)root * BlockSize;
+
+    if (level == 1) {
+      var count = Math.Min(PointersPerBlock, total - idx);
+      for (var i = 0; i < count; i++) {
+        var block = dataBlocks[idx++];
+        if (disk != null)
+          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)(baseByte + i * 4)), block);
+      }
+      return root;
+    }
+
+    for (var i = 0; i < PointersPerBlock && idx < total; i++) {
+      var child = BuildIndirect(disk, ref nextBlock, dataBlocks, ref idx, total, level - 1);
+      if (disk != null)
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)(baseByte + i * 4)), child);
+    }
+    return root;
   }
 
   private static void WriteInode(byte[] disk, int ilistOff, uint inodeNumber,

@@ -32,6 +32,21 @@ internal static class ApfsInodeRecord {
   private const byte InoExtTypeDstream = 8;
   private const byte XfSystemField = 0x20;
 
+  /// <summary>INO_EXT_TYPE_NAME — the name the inode is primarily known by.</summary>
+  /// <remarks>
+  /// Every inode carries it, directories included: apfsprogs reports one that
+  /// does not as having "no name for primary link". A container mkfs.apfs builds
+  /// gives its root the name "root" and its private directory "private-dir",
+  /// each with flags 0x02 and a size that counts the terminating nul.
+  /// </remarks>
+  private const byte InoExtTypeName = 4;
+
+  /// <summary>The flags a name field carries.</summary>
+  private const byte XfDoNotCopy = 0x02;
+
+  /// <summary>Every extended field's value is padded out to eight bytes.</summary>
+  private static int PadTo8(int length) => (length + 7) & ~7;
+
   /// <summary>The fixed part of an inode record, before any extended field.</summary>
   private const int FixedLength = 92;
 
@@ -46,9 +61,12 @@ internal static class ApfsInodeRecord {
   /// <param name="nchildren">Children for a directory, or link count for a file.</param>
   /// <param name="internalFlags">Flags the filesystem keeps for itself.</param>
   internal static byte[] BuildValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren,
-      ulong internalFlags = 0) {
-    var xfields = isDir ? 0 : XfBlobHeader + XFieldSize + DstreamSize;
-    var v = new byte[FixedLength + xfields];
+      ulong internalFlags = 0, string name = "") {
+    var nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
+    var nameSize = nameBytes.Length + 1;              // the nul is part of it
+    var fieldCount = 1 + (isDir ? 0 : 1);             // the name, and a file's data stream
+    var dataBytes = PadTo8(nameSize) + (isDir ? 0 : DstreamSize);
+    var v = new byte[FixedLength + XfBlobHeader + fieldCount * XFieldSize + dataBytes];
 
     BinaryPrimitives.WriteUInt64LittleEndian(v, parentId);
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(8), ino); // private_id = own inode number
@@ -69,19 +87,33 @@ internal static class ApfsInodeRecord {
     BinaryPrimitives.WriteUInt16LittleEndian(v.AsSpan(80),
       (ushort)(isDir ? S_IFDIR | DirPermissions : S_IFREG | FilePermissions));
     BinaryPrimitives.WriteUInt16LittleEndian(v.AsSpan(82), 0);     // pad1
-    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(84), (ulong)size); // uncompressed_size
+    // uncompressed_size: what the file would be if it were compressed, and so a
+    // field only a compressed file fills in. Nothing here is compressed, and
+    // reporting the plain size in it is what apfsprogs calls an inode that
+    // "should not report uncompressed size".
+    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(84), 0);
 
-    if (isDir)
-      return v;
-
+    // The extended fields: a blob header, then one descriptor per field, then
+    // the values in the same order, each padded out to eight bytes.
     var x = v.AsSpan(FixedLength);
-    BinaryPrimitives.WriteUInt16LittleEndian(x, 1);                 // one extended field
-    BinaryPrimitives.WriteUInt16LittleEndian(x[2..], DstreamSize);  // bytes of value data
-    x[4] = InoExtTypeDstream;
-    x[5] = XfSystemField;
-    BinaryPrimitives.WriteUInt16LittleEndian(x[6..], DstreamSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(x, (ushort)fieldCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(x[2..], (ushort)dataBytes);
 
-    var ds = x[(XfBlobHeader + XFieldSize)..];
+    x[4] = InoExtTypeName;
+    x[5] = XfDoNotCopy;
+    BinaryPrimitives.WriteUInt16LittleEndian(x[6..], (ushort)nameSize);
+    if (!isDir) {
+      x[8] = InoExtTypeDstream;
+      x[9] = XfSystemField;
+      BinaryPrimitives.WriteUInt16LittleEndian(x[10..], DstreamSize);
+    }
+
+    var values = x[(XfBlobHeader + fieldCount * XFieldSize)..];
+    nameBytes.CopyTo(values);                                        // the nul is already zero
+
+    if (isDir) return v;
+
+    var ds = values[PadTo8(nameSize)..];
     BinaryPrimitives.WriteUInt64LittleEndian(ds, (ulong)size);      // size
     // Allocated size is what the extents cover, which is whole blocks.
     BinaryPrimitives.WriteUInt64LittleEndian(ds[8..],
@@ -90,6 +122,38 @@ internal static class ApfsInodeRecord {
     BinaryPrimitives.WriteUInt64LittleEndian(ds[24..], (ulong)size); // total_bytes_written
     BinaryPrimitives.WriteUInt64LittleEndian(ds[32..], 0);          // total_bytes_read
     return v;
+  }
+
+  /// <summary>
+  /// The length of the file this inode record describes.
+  /// </summary>
+  /// <remarks>
+  /// It lives in the data-stream extended field, not in the fixed part: the
+  /// <c>uncompressed_size</c> word there belongs to compressed files and is zero
+  /// for everything else. Reading the length from that word worked only because
+  /// this writer used to fill it in for every file, which is a thing no APFS
+  /// volume does — so the size of a file on a volume from anywhere else read as
+  /// nothing at all.
+  /// </remarks>
+  internal static long ReadDataStreamSize(ReadOnlySpan<byte> value) {
+    if (value.Length < FixedLength + XfBlobHeader) return 0;
+
+    var count = BinaryPrimitives.ReadUInt16LittleEndian(value[FixedLength..]);
+    var descriptors = FixedLength + XfBlobHeader;
+    var data = descriptors + count * XFieldSize;
+    if (data > value.Length) return 0;
+
+    for (var i = 0; i < count; ++i) {
+      var at = descriptors + i * XFieldSize;
+      var type = value[at];
+      var size = BinaryPrimitives.ReadUInt16LittleEndian(value[(at + 2)..]);
+      if (type == InoExtTypeDstream)
+        return data + 8 <= value.Length ? (long)BinaryPrimitives.ReadUInt64LittleEndian(value[data..]) : 0;
+
+      data += PadTo8(size);
+      if (data > value.Length) return 0;
+    }
+    return 0;
   }
 
   /// <summary>The key of the record counting who shares an inode's data stream.</summary>

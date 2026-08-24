@@ -17,7 +17,18 @@ public class BfsInPlaceModifyTests {
 
   private const int BlockSize = 1024;
   private const int AgBitmapBlock = 10;
-  private const int RootDirBtreeBlock = 12;
+  /// <summary>The block the root directory's B+ tree stream starts at.</summary>
+  private const int RootDirBtreeStreamBlock = 12;
+
+  /// <summary>
+  /// The block its root node sits on — the one entries are written into.
+  /// </summary>
+  /// <remarks>
+  /// A stream opens with the tree's own header and the nodes follow, so the node
+  /// is the block after the stream's first. This was the stream's first block,
+  /// from when there was no header and the two were the same thing.
+  /// </remarks>
+  private const int RootDirBtreeBlock = RootDirBtreeStreamBlock + 1;
 
   // ── Helpers ────────────────────────────────────────────────────────
 
@@ -83,7 +94,7 @@ public class BfsInPlaceModifyTests {
     // The required allowlist: superblock, bitmap, root leaf, plus the newly
     // allocated inode and data blocks (each freshly-allocated free run is
     // contiguous in our bitmap allocator, so this gives a tight upper bound).
-    var allowed = new HashSet<int> { 0, AgBitmapBlock, RootDirBtreeBlock };
+    var allowed = new HashSet<int> { 0, AgBitmapBlock, RootDirBtreeStreamBlock, RootDirBtreeBlock };
     // Find which new blocks (>=15) the bitmap flipped from 0→1.
     var blocks = before.Length / BlockSize;
     for (var b = 15; b < blocks; b++)
@@ -193,7 +204,7 @@ public class BfsInPlaceModifyTests {
     Assert.That(changed, Does.Contain(AgBitmapBlock));
     Assert.That(changed, Does.Contain(RootDirBtreeBlock));
 
-    var allowed = new HashSet<int> { 0, AgBitmapBlock, RootDirBtreeBlock };
+    var allowed = new HashSet<int> { 0, AgBitmapBlock, RootDirBtreeStreamBlock, RootDirBtreeBlock };
     var blocks = before.Length / BlockSize;
     for (var b = 15; b < blocks; b++)
       if (ReadBitmapBit(before, b) && !ReadBitmapBit(after, b)) allowed.Add(b);

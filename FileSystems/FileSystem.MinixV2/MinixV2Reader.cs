@@ -199,6 +199,16 @@ public sealed class MinixV2Reader : IDisposable {
       if (remaining <= 0) break;
       remaining -= BlockSize;
 
+      // A hole owns nothing, so there is nothing to report and nothing to move.
+      // It still ends whatever run was being gathered: the zones on either side
+      // of it are not adjacent in the file even where they are on the disk.
+      if (zone == 0) {
+        if (runPointer >= 0)
+          yield return ((long)runFirstZone * BlockSize, (long)runZones * BlockSize, runPointer);
+        runPointer = -1;
+        continue;
+      }
+
       // A run continues only while the zones stay consecutive and so do the
       // pointers naming them: a move rewrites the pointers in order, so a gap
       // in either would put the wrong zones under the wrong pointers.
@@ -225,30 +235,40 @@ public sealed class MinixV2Reader : IDisposable {
   /// of the pointer itself — in the inode for the direct ones, in an indirect
   /// block for the rest.
   /// </summary>
+  /// <remarks>
+  /// Holes are reported too, as a zone of zero. They own nothing, but they hold
+  /// their place in the file — and this used to stop at the first one it met,
+  /// which left every zone after a hole invisible to anything asking where a
+  /// file's bytes are. A defragmentation reads this to know what to move.
+  /// </remarks>
   private IEnumerable<(uint Zone, long PointerOffset)> EnumerateZonePointers(uint[] zones, long inodeOffset) {
-    for (var i = 0; i < 7; ++i) {
-      if (zones[i] == 0) yield break;
+    for (var i = 0; i < 7; ++i)
       yield return (zones[i], inodeOffset + 24 + (long)i * 4);
-    }
 
-    if (zones[7] != 0)
-      foreach (var pair in this.EnumerateIndirectPointers(zones[7], 1))
-        yield return pair;
-
-    if (zones[8] != 0)
-      foreach (var pair in this.EnumerateIndirectPointers(zones[8], 2))
+    for (var level = 1; level <= 3; ++level)
+      foreach (var pair in this.EnumerateIndirectPointers(zones[6 + level], level))
         yield return pair;
   }
 
   /// <summary>The zones an indirect block names, descending as many levels as asked.</summary>
+  /// <remarks>
+  /// A pointer of zero is a hole as wide as everything it would have addressed —
+  /// one zone at the bottom level, and a whole subtree above it — so an absent
+  /// block still accounts for the part of the file that sits behind it.
+  /// </remarks>
   private IEnumerable<(uint Zone, long PointerOffset)> EnumerateIndirectPointers(uint zone, int levels) {
-    var blockOffset = this.ZoneOffset(zone);
-    if (blockOffset < 0 || blockOffset + BlockSize > _data.Length) yield break;
+    var reach = 1L;
+    for (var i = 0; i < levels; ++i) reach *= BlockSize / 4;
+
+    var blockOffset = zone == 0 ? -1 : this.ZoneOffset(zone);
+    if (blockOffset < 0 || blockOffset + BlockSize > _data.Length) {
+      for (var i = 0L; i < reach; ++i) yield return (0, -1);
+      yield break;
+    }
 
     for (var i = 0; i < BlockSize / 4; ++i) {
       var at = blockOffset + (long)i * 4;
       var pointer = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan((int)at, 4));
-      if (pointer == 0) continue;
       if (levels <= 1) {
         yield return (pointer, at);
         continue;

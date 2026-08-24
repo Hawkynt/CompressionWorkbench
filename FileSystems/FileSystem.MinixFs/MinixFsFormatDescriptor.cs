@@ -17,7 +17,7 @@ namespace FileSystem.MinixFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Minix_file_system</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, ILayoutOptimizable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
   public string Id => "MinixFs";
   public string DisplayName => "Minix FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -229,6 +229,37 @@ public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => MinixFsExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// A zone pointer of zero names no zone, so a run of zeros need not be
+  /// allocated; and the inode counts the names pointing at it, so identical
+  /// files can share one copy under several of them.
+  /// </summary>
+  public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
+
+  /// <inheritdoc />
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+
+    source.Position = 0;
+    var files = new List<(string Name, byte[] Data)>();
+    using (var reader = new MinixFsReader(source, leaveOpen: true)) {
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory) continue;
+        files.Add((entry.Name, reader.Extract(entry)));
+      }
+    }
+
+    using var writer = new MinixFsWriter(target, leaveOpen: true) {
+      MakeSparse = options.MakeSparse,
+      DeduplicateWithLinks = options.DeduplicateWithLinks,
+    };
+    foreach (var (name, data) in files) writer.AddFile(name, data);
+    writer.Finish();
+    options.OnProgress?.Invoke(target.Length, target.Length);
+  }
 
   // ── IWipeEmpty ─────────────────────────────────────────────────────────
 

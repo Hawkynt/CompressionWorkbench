@@ -37,7 +37,19 @@ internal sealed class BfsWriter {
   private const uint Magic1 = 0x42465331;  // 'BFS1' in LE
   private const uint Magic2 = 0xDD121031;
   private const uint Magic3 = 0x15B6830E;
-  private const uint InodeMagic = 0x3BDE0AD9; // 'InNd' magic for BFS inodes
+  /// <summary>
+  /// The magic every BFS inode begins with.
+  /// </summary>
+  /// <remarks>
+  /// One nibble of this was wrong — 0x3BDE0AD9 for 0x3BBE0AD9 — in the writer,
+  /// the reader and the in-place modifier alike, so all three agreed and the
+  /// kernel's befs driver rejected the root inode of every volume this project
+  /// had ever written: "Inode has a bad magic header - inode = 11".
+  /// </remarks>
+  private const uint InodeMagic = 0x3BBE0AD9;
+
+  /// <summary>BEFS_INODE_IN_USE — this inode is live, not merely present.</summary>
+  private const uint InodeInUse = 0x00000001;
   private const uint BplusLeafMagic = 0x69F6C2E8; // 'BPLV' B+ tree leaf node magic
 
   private const int BlockSize = 1024;
@@ -123,7 +135,7 @@ internal sealed class BfsWriter {
   //   // Let me check: small_data_start at offset 68? No.
   //
   // Per Giampaolo's book (p.159), the inode is:
-  //   0-3:   magic1 (0x3BDE0AD9)
+  //   0-3:   magic1 (0x3BBE0AD9)
   //   4-11:  inode_num (block_run)
   //   12-15: uid
   //   16-19: gid
@@ -275,22 +287,27 @@ internal sealed class BfsWriter {
     // more bitmap block.
     bitmapBlocks = (int)(((estimate + bitmapBlocks + 7) / 8 + BlockSize - 1) / BlockSize);
 
+    // A directory's contents are a B+ tree, and a B+ tree begins with its own
+    // superblock — magic, node size, and where the root node sits inside the
+    // stream — with the nodes after it. The stream used to start at the first
+    // node, so the driver read a node header where the tree's own header should
+    // be and said "Index header has bad magic". Each directory therefore gets one
+    // block for that header and its leaves contiguously behind it, which keeps
+    // the whole stream a single run.
+    var rootLeaves = CountLeafBlocks(root);
     var rootDirInodeBlock = AgBitmapBlock + bitmapBlocks;
     var rootDirBtreeBlock = rootDirInodeBlock + 1;
-    var indicesInodeBlock = rootDirBtreeBlock + 1;
+    var indicesInodeBlock = rootDirBtreeBlock + 1 + rootLeaves;
     var indicesBtreeBlock = indicesInodeBlock + 1;
-    var nextBlock = indicesBtreeBlock + 1;
+    var nextBlock = indicesBtreeBlock + 2;   // its header and one empty leaf
 
     root.InodeBlock = rootDirInodeBlock;
     root.BtreeBlock = rootDirBtreeBlock;
     this._bitmapBlocks = bitmapBlocks;
     this._rootDirInodeBlock = rootDirInodeBlock;
     this._indicesInodeBlock = indicesInodeBlock;
-    // Root's first leaf is the fixed block 12; overflow leaves come from the pool.
-    root.LeafBlocks.Add((int)root.BtreeBlock);
-    var rootLeaves = CountLeafBlocks(root);
-    for (var i = 1; i < rootLeaves; i++)
-      root.LeafBlocks.Add(nextBlock++);
+    for (var i = 0; i < rootLeaves; i++)
+      root.LeafBlocks.Add((int)root.BtreeBlock + 1 + i);
     root.BtreeBlocks = root.LeafBlocks.Count;
     AssignBlocks(root, root.InodeBlock, ref nextBlock);
 
@@ -313,12 +330,14 @@ internal sealed class BfsWriter {
     WriteAgBitmap(image, totalUsedBlocks, bitmapBlocks);
 
     // --- Root dir inode + its B+ tree ---
-    WriteDirectoryInode(image, root.InodeBlock, root.BtreeBlock, 0, 0);
+    WriteDirectoryInode(image, root.InodeBlock, root.BtreeBlock, 0, 0, root.BtreeBlocks);
+    WriteBtreeSuper(image, root.BtreeBlock, root.BtreeBlocks);
     WriteDirBtreeLeaf(image, root);
 
     // --- Indices dir inode + empty B+ tree ---
-    WriteDirectoryInode(image, indicesInodeBlock, indicesBtreeBlock, rootDirInodeBlock, 0);
-    WriteEmptyBtreeLeaf(image, indicesBtreeBlock);
+    WriteDirectoryInode(image, indicesInodeBlock, indicesBtreeBlock, rootDirInodeBlock, 0, 1);
+    WriteBtreeSuper(image, indicesBtreeBlock, 1);
+    WriteEmptyBtreeLeaf(image, indicesBtreeBlock + 1);
 
     // --- All non-root directories and files (depth-first) ---
     WriteNode(image, root);
@@ -384,7 +403,7 @@ internal sealed class BfsWriter {
         // A directory's children are spilled across one or more chained B+ tree
         // leaves; allocate that many contiguous blocks. The first is BtreeBlock.
         var leafCount = CountLeafBlocks(child);
-        child.BtreeBlock = nextBlock;
+        child.BtreeBlock = nextBlock++;        // the tree's own header
         for (var i = 0; i < leafCount; i++)
           child.LeafBlocks.Add(nextBlock++);
         child.BtreeBlocks = leafCount;
@@ -458,7 +477,9 @@ internal sealed class BfsWriter {
   private void WriteNode(SparseBlockImage image, TreeNode dir) {
     foreach (var child in dir.Children.Values) {
       if (child.IsDir) {
-        WriteDirectoryInode(image, child.InodeBlock, child.BtreeBlock, child.ParentInodeBlock, 0);
+        WriteDirectoryInode(image, child.InodeBlock, child.BtreeBlock, child.ParentInodeBlock, 0,
+          child.BtreeBlocks);
+        WriteBtreeSuper(image, child.BtreeBlock, child.BtreeBlocks);
         WriteDirBtreeLeaf(image, child);
       } else {
         var length = child.StreamingSize ?? (child.Data?.Length ?? 0);
@@ -565,7 +586,8 @@ internal sealed class BfsWriter {
       image[bitmapOffset + i / 8] |= (byte)(1 << (int)(7 - i % 8));
   }
 
-  private static void WriteDirectoryInode(SparseBlockImage image, long inodeBlock, long btreeBlock, long parentBlock, int inodeNum) {
+  private static void WriteDirectoryInode(SparseBlockImage image, long inodeBlock, long btreeBlock,
+      long parentBlock, int inodeNum, int leafCount = 1) {
     var off = inodeBlock * BlockSize;
 
     // magic1
@@ -578,7 +600,10 @@ internal sealed class BfsWriter {
     // mode = S_IFDIR | S_IRWXU
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 20, 4), S_IFDIR | S_IRWXU);
 
-    // flags = 0
+    // flags: BEFS_INODE_IN_USE. Left at zero, an inode is one the driver walks
+    // past — "inode is not used - inode = 11" — because a BFS inode's slot and
+    // the inode being live are two different things.
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 24, 4), InodeInUse);
     // create_time at 28 = 0
     // last_modified_time at 36 = 0
 
@@ -590,14 +615,18 @@ internal sealed class BfsWriter {
     // inode_size at 64
     BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 64, 4), InodeSize);
 
-    // data_stream at 72: one direct block_run pointing at btree leaf
-    WriteBlockAsRun(image, off + InodeDataStreamOffset, btreeBlock, 1);
+    // data_stream at 72: one run covering the tree's header and its leaves.
+    var streamBlocks = 1 + leafCount;
+    var streamBytes = (long)streamBlocks * BlockSize;
+    WriteBlockAsRun(image, off + InodeDataStreamOffset, btreeBlock, streamBlocks);
 
     // max_direct_range at 72 + 96 = 168
-    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + NumDirectBlocks * 8, 8), BlockSize);
+    BinaryPrimitives.WriteInt64LittleEndian(
+      image.At(off + InodeDataStreamOffset + NumDirectBlocks * 8, 8), streamBytes);
 
     // size at 72 + 136 = 208
-    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + InodeDataStreamOffset + 136, 8), BlockSize);
+    BinaryPrimitives.WriteInt64LittleEndian(
+      image.At(off + InodeDataStreamOffset + 136, 8), streamBytes);
   }
 
   private static void WriteDirBtreeLeaf(SparseBlockImage image, TreeNode dir) {
@@ -614,6 +643,27 @@ internal sealed class BfsWriter {
       var rightLink = i < partitions.Count - 1 ? leafBlocks[i + 1] : -1L;
       WriteBtreeLeaf(image, leafBlocks[i], partitions[i], leftLink, rightLink);
     }
+  }
+
+  /// <summary>
+  /// The header a B+ tree stream begins with: what the tree is, how big its nodes
+  /// are, and where the root node sits inside the stream.
+  /// </summary>
+  /// <remarks>
+  /// Offsets in a BFS tree are measured from the start of the stream, not in
+  /// blocks of the volume — so the root node, which follows this header, is at
+  /// one node's width in.
+  /// </remarks>
+  private static void WriteBtreeSuper(SparseBlockImage image, long superBlock, int leafCount) {
+    var off = superBlock * BlockSize;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off, 4), BplusLeafMagic);        // magic
+    BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 4, 4), BlockSize);          // node_size
+    BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 8, 4), 1);                  // max_depth
+    BinaryPrimitives.WriteInt32LittleEndian(image.At(off + 12, 4), 0);                 // data_type: string
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 16, 8), BlockSize);         // root_node_ptr
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 24, 8), -1L);               // free_node_ptr
+    BinaryPrimitives.WriteInt64LittleEndian(image.At(off + 32, 8),
+      (long)(1 + leafCount) * BlockSize);                                              // max_size
   }
 
   private static void WriteBtreeLeaf(SparseBlockImage image, int btreeBlock, List<(string Name, long InodeBlock)> entries, long leftLink, long rightLink) {
@@ -649,12 +699,14 @@ internal sealed class BfsWriter {
     //   where shiftValue = blocks_per_ag_shift + 16 (for the block_run bit layout)
     //   But for a single-AG image with AG=0: off_t = start_block (since AG << X = 0)
 
+    // The body of a node runs: the keys themselves, then — rounded up to an
+    // eight-byte boundary — the index of where each one ends, then the values.
+    // This used to put the index first and the values at the far end of the
+    // block, so the driver read key data as an index and came out with a key
+    // "of size 16942".
+    const int keyLenAlign = 8;
     var headerSize = BtreeLeafHeaderSize;
-    var keyLenTableOffset = off + headerSize;
-    var keyLenTableSize = entries.Count * 2; // u16 per key
-    var keyDataOffset = keyLenTableOffset + keyLenTableSize;
 
-    // Build key data (concatenated entry names)
     var keyBytes = new List<byte>();
     var cumulativeLengths = new List<ushort>();
     foreach (var (name, _) in entries) {
@@ -663,9 +715,16 @@ internal sealed class BfsWriter {
       cumulativeLengths.Add((ushort)keyBytes.Count);
     }
 
-    // Invariant: PartitionEntries already sized this leaf to fit one block.
-    var valuesSize = entries.Count * 8; // u64 per value
-    var totalUsed = headerSize + keyLenTableSize + keyBytes.Count + valuesSize;
+    var keyDataOffset = off + headerSize;
+    var indexStart = headerSize + keyBytes.Count;
+    var padding = indexStart % keyLenAlign;
+    if (padding != 0) indexStart += keyLenAlign - padding;
+    var keyLenTableOffset = off + indexStart;
+    var keyLenTableSize = entries.Count * 2;               // u16 per key
+    var valuesSize = entries.Count * 8;                    // u64 per value
+    var valuesStart = keyLenTableOffset + keyLenTableSize;
+
+    var totalUsed = indexStart + keyLenTableSize + valuesSize;
     if (totalUsed > BlockSize)
       throw new InvalidOperationException(
         $"BFS B+ tree leaf overflow: {totalUsed} bytes needed but block size is {BlockSize} (partitioning invariant violated).");
@@ -673,16 +732,14 @@ internal sealed class BfsWriter {
     // Write all_key_length
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 26, 2), (ushort)keyBytes.Count);
 
-    // Write key length table (cumulative)
+    // Write the key-length index (each entry is where that key ends)
     for (var i = 0; i < cumulativeLengths.Count; i++)
       BinaryPrimitives.WriteUInt16LittleEndian(image.At(keyLenTableOffset + i * 2, 2), cumulativeLengths[i]);
 
     // Write key data
     image.Write(keyDataOffset, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(keyBytes));
 
-    // Write values from the END of the block (growing downward)
-    // Values are at: block_end - (key_count * 8) + (i * 8)
-    var valuesStart = off + BlockSize - valuesSize;
+    // Values follow the index, one per key, in the same order.
     for (var i = 0; i < entries.Count; i++) {
       // off_t = block number for single-AG (AG=0, shift irrelevant when AG=0)
       BinaryPrimitives.WriteInt64LittleEndian(image.At(valuesStart + i * 8, 8), entries[i].InodeBlock);
@@ -711,7 +768,10 @@ internal sealed class BfsWriter {
     // mode = S_IFREG | S_IRWXU
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 20, 4), S_IFREG | S_IRWXU);
 
-    // flags = 0
+    // flags: BEFS_INODE_IN_USE. Left at zero, an inode is one the driver walks
+    // past — "inode is not used - inode = 11" — because a BFS inode's slot and
+    // the inode being live are two different things.
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 24, 4), InodeInUse);
     // create_time at 28 = 0
     // last_modified_time at 36 = 0
 

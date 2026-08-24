@@ -91,8 +91,12 @@ public class ApfsTests {
     w.AddFile("a.txt", "hello"u8.ToArray());
     var image = w.Build();
 
-    // APSB is at block 5 per our layout.
-    var apsb = image.AsSpan(5 * 4096, 4096);
+    // The volume superblock is found the way a reader finds it — through the
+    // container's object map — rather than at a block number written down here.
+    // Those numbers moved when the container gained a real checkpoint data area,
+    // and a test that knows the layout by heart has to be edited every time the
+    // layout is right about something.
+    var apsb = image.AsSpan((int)ApfsTestLayout.ApsbBlock(image) * 4096, 4096);
     Assert.That(ApfsFletcher64.Verify(apsb), Is.True, "APSB Fletcher-64 must verify.");
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(apsb[32..]);
     Assert.That(magic, Is.EqualTo(0x42535041U), "APSB magic at offset 32.");
