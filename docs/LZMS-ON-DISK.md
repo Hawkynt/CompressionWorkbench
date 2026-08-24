@@ -758,8 +758,8 @@ it and accepted when it is the last, which is what a run-to-the-end match would 
 wimlib's chunk for a long repeating text carries it and decodes byte-exact under this
 reading and no other; and it makes that chunk two bytes smaller than the two explicit
 matches it would otherwise need, which is exactly the gap that could not be accounted
-for. Seven of the eight delta-heavy payloads wimlib writes here now read back
-byte-exact.
+for. Every one of the eight delta-heavy payloads wimlib writes for the original
+probe set now reads back byte-exact.
 
 The writer declines it. Emitting it for the matches this parse makes is refused, and
 what a reader needs is not what a writer may use.
@@ -799,28 +799,30 @@ after an explicit match is rejected; the same repeat with one literal between it
 and the match verifies, and with two literals it still verifies. The distance
 reaches the queue after the item that follows it, exactly as reading said.
 
-Seven of the eight delta-heavy payloads wimlib writes here now read back
-byte-exact, against three when this began.
+Every one of the eight delta-heavy payloads wimlib writes for the original probe
+set now reads back byte-exact, against three when this began.
 
-What is left is one payload of eight: a table of four-byte entries stepping by
-0x100, so that only the second byte of each entry varies. **Name it by the hash the
-image records, not by its length** - four of the probe payloads are the same size,
-and matching on length reported the failure against the wrong one of them for most
-of this work.
+**Naming a recent offset spends it.** The entry is taken, the ones above it move
+down, and the seed that has not been used yet takes the last place - so a queue
+seeded 1, 2, 3 becomes 1, 2, 4 once index two has been named. Nothing else explains
+a chunk in which two consecutive repeats both name index two and the second has to
+mean four, and both instruments agree: under this rule every delta-heavy payload
+wimlib writes here decodes byte-exact, and a chunk written to need it verifies.
 
-It stops at two consecutive LZ repeat matches that both name index two. The first
-resolves to a distance of three, which the seeded queue gives and which is right;
-the second needs four, and no arrangement of a three-entry queue seeded 1, 2, 3
-holds four at that point - not the delayed insertion, not an immediate one, not
-move-to-front. A four-entry queue seeded 1, 2, 3, 4 reads worse, and forcing either
-item to be explicit reads worse still.
+Finding it needed the range-coded half of the mirror. Writing the decoded items back
+and comparing from the chunk's **end** checks the Huffman fields; comparing from its
+**start** checks the arithmetic-coded decisions, and only the second could say which
+index a repeat named. A reading confirmed by one half and not the other is not
+confirmed.
 
-The fields themselves are not in doubt. Writing the decoded items back and comparing
-with wimlib's chunk bit by bit from the end shows agreement continuing to grow
-through several items past the divergence, so the lengths and the absence of an
-offset field are right, and the queue's contents are what is left.
+What is left is not in that set at all. Tables whose entry width and step change
+from block to block - so the reference a delta names alternates - still stop part
+way: three of four such payloads built for this fail, where all eight of the
+original probe set now pass. Whatever governs which recent *delta* a repeat names
+is the same question this queue answered for LZ offsets, and the same rule does not
+answer it: applying consumption to the delta queue changes nothing either way.
 
-The rest of the ground is covered: not the length alphabet, whose fifty-four
+The rest of the ground is covered:The rest of the ground is covered: not the length alphabet, whose fifty-four
 symbols are each confirmed by writing; not the offset alphabet, whose size was
 swept twelve either way; not the main or kind state width, swept two to eight; not
 the LZ explicit bit's width, swept nought to eight; not a queue that collapses
@@ -842,14 +844,16 @@ and an offset - a reading that carried exactly one item further.
 
 ## What is not derived
 
-- the last of the x86 filter's candidate table. The mechanism is derived and
-  binaries verify with it, but a few instruction forms are still read
-  differently by the two scans, which costs a handful of bytes per binary.
-- what a third repeat delta naming index one costs, which is the last thing
-  between here and reading every LZMS resource wimlib writes.
-- delta matches, which LZMS has instead of a delta filter.
-- the x86 preprocessing.
-- the offset slot widths past 64, which only large resources reach.
+- which recent delta a repeat names when the references alternate. This is the
+  last thing between here and reading every LZMS resource wimlib writes, and the
+  only thing on this list that costs correctness.
+- the last of the x86 filter's candidate table. A few instruction forms are still
+  read differently by the two scans, which costs a handful of bytes per binary.
+  It costs no correctness on anything measured here: the filter moves no byte of
+  any probe payload, including one with 798 of the byte it keys on, and every one
+  round-trips.
+- the offset slot widths past twenty-four thousand, which only large resources
+  reach. Every distance below that is confirmed by writing.
 
 An encoder needs none of wimlib's parsing choices — any valid factorisation will
 do — so it may decline repeats, deltas and the filter entirely and still produce
