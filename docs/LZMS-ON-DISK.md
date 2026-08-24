@@ -799,8 +799,8 @@ after an explicit match is rejected; the same repeat with one literal between it
 and the match verifies, and with two literals it still verifies. The distance
 reaches the queue after the item that follows it, exactly as reading said.
 
-Six of the eight delta-heavy payloads wimlib writes here now read back byte-exact,
-against three when this began.
+Seven of the eight delta-heavy payloads wimlib writes here now read back
+byte-exact, against three when this began.
 
 What is left is one payload of eight, and it is delta-heavy where the one just
 solved was pure LZ. It is not the length alphabet, whose fifty-four symbols are each
