@@ -55,7 +55,8 @@ public sealed class LzmsDecompressor {
     var offsets = new LzmsHuffmanCode(LzmsConstants.OffsetSlotCount(uncompressedSize), LzmsConstants.LzOffsetRebuildInterval);
     var lengths = new LzmsHuffmanCode(LzmsConstants.NumLengthSlots, LzmsConstants.LengthRebuildInterval);
 
-    var recent = new int[] { 1, 2, 3 };
+    var recent = new int[LzmsConstants.NumRecentLzOffsets];
+    for (var i = 0; i < recent.Length; ++i) recent[i] = i + 1;
     var output = new byte[uncompressedSize];
     var produced = 0;
     var state = 0;
