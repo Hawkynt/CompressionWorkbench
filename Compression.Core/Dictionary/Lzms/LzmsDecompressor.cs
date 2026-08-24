@@ -46,6 +46,7 @@ public sealed class LzmsDecompressor {
 
     var recentDeltas = new (int Power, int Offset)[LzmsConstants.NumRecentDeltas];
     for (var i = 0; i < recentDeltas.Length; ++i) recentDeltas[i] = (0, i + 1);
+    var nextDeltaSeed = LzmsConstants.NumRecentDeltas + 1;
     (int Power, int Offset)? deltaPending = null, deltaCarried = null;
     int? lzPending = null, lzCarried = null;
     var deltaPowers = new LzmsHuffmanCode(LzmsConstants.NumDeltaPowers, LzmsConstants.LzOffsetRebuildInterval);
@@ -110,7 +111,10 @@ public sealed class LzmsDecompressor {
 
             ++index;
           }
+          // spent on naming, exactly as an LZ offset is
           (power, deltaOffset) = recentDeltas[index];
+          for (var i = index; i < recentDeltas.Length - 1; ++i) recentDeltas[i] = recentDeltas[i + 1];
+          recentDeltas[^1] = (0, nextDeltaSeed++);
         } else {
           deltaState = (deltaState << 1) & deltaMask;
           power = deltaPowers.Read(bits);

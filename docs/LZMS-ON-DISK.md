@@ -806,8 +806,9 @@ set now reads back byte-exact, against three when this began.
 down, and the seed that has not been used yet takes the last place - so a queue
 seeded 1, 2, 3 becomes 1, 2, 4 once index two has been named. Nothing else explains
 a chunk in which two consecutive repeats both name index two and the second has to
-mean four, and both instruments agree: under this rule every delta-heavy payload
-wimlib writes here decodes byte-exact, and a chunk written to need it verifies.
+mean four, and both instruments agree: it is the only arrangement under which
+wimlib's own chunks decode, and a chunk written to need it verifies. The same holds
+for delta references - see below.
 
 Finding it needed the range-coded half of the mirror. Writing the decoded items back
 and comparing from the chunk's **end** checks the Huffman fields; comparing from its
@@ -815,31 +816,32 @@ and comparing from the chunk's **end** checks the Huffman fields; comparing from
 index a repeat named. A reading confirmed by one half and not the other is not
 confirmed.
 
-What is left is not in that set at all. Tables whose entry width and step change
-from block to block - so the reference a delta names alternates - still stop part
-way: three of four such payloads built for this fail, where all eight of the
-original probe set now pass.
+**Both queues hold three references, and both spend one when it is named.** The
+delta side is the LZ side: three places, an insertion that lands only after the
+item that follows, and an entry that leaves the queue when a repeat names it, the
+ones above moving down and the next unused seed taking the last place.
 
-**It is not the delta queue's rule.** That space has been swept and is empty:
-consumption on or off, a lag of one, two or three items, depths four through eight,
-and four ways of reading an entry - span and offset from it, offset from it with the
-span from the newest delta, a byte reference with the span from the newest, and a
-byte reference with the span factored out of it. Also three readings of the
-saturated index, which carries no terminator and so might have been an escape the
-way the top length symbol turned out to be: the queue entry, an explicit power and
-offset from the backward stream, and the reference still in flight. Every one of the
-forty-odd combinations scores the same six of nine or worse, and lag two or three
-collapses to one of nine.
+The depth was the thing that hid the rest. Measured by writing repeats whose index
+**varies from item to item** over a run of one byte - where every span and every
+reference rebuild the payload, so only the coding is under test: with three places
+every pattern verifies, including those naming the last one, at every length tried;
+with four, any pattern naming index two fails at once. The last place carries no
+terminating bit, so a reader with a fourth place eats a bit that belongs to the next
+item. That is why the failures all looked like a repeat naming index three - a place
+that does not exist.
 
-What the failures have in common is narrower than that. Each stops at a repeat whose
-**index** resolves to an entry the data cannot use while another entry in the same
-queue fits - so the index itself is misread, and no rearrangement of what the
-entries mean can repair it. The index bits' six-bit context is measured by writing
-over a run of one byte, where every distance and span agree, so it holds for the
-coding; what it does not cover is a stream where the *choice* of index varies from
-item to item.
+An earlier sweep of this queue's rules - consumption, lag, depth, four ways of
+reading an entry - reported that none of it helped, and that was worth nothing: it
+ran on a reader that mistook index two for index three, so every arrangement was
+being scored through the same fault. **Sweeping a space is only evidence if the rest
+of the decoder is right.** With the depth corrected the same sweep picks out
+consumption immediately, and a chunk written to need it verifies.
 
-The rest of the ground is covered:The rest of the ground is covered: not the length alphabet, whose fifty-four
+Every payload wimlib writes for this probe set now reads back byte-exact - the
+original eight, long repeating text, and four tables built to make the delta
+reference alternate from block to block, which is what used to break it.
+
+The rest of the ground is covered:The rest of the ground is covered:The rest of the ground is covered: not the length alphabet, whose fifty-four
 symbols are each confirmed by writing; not the offset alphabet, whose size was
 swept twelve either way; not the main or kind state width, swept two to eight; not
 the LZ explicit bit's width, swept nought to eight; not a queue that collapses
@@ -861,9 +863,6 @@ and an offset - a reading that carried exactly one item further.
 
 ## What is not derived
 
-- which recent delta a repeat names when the references alternate. This is the
-  last thing between here and reading every LZMS resource wimlib writes, and the
-  only thing on this list that costs correctness.
 - the last of the x86 filter's candidate table. A few instruction forms are still
   read differently by the two scans, which costs a handful of bytes per binary.
   It costs no correctness on anything measured here: the filter moves no byte of
