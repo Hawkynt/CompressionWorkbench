@@ -71,18 +71,23 @@ public class UbifsReaderTests {
 
   /// <summary>
   /// Dentry node: common(24) + key(16, parent inum at +0) + child_inum(8)
-  /// + pad(1) + type(1) + nlen(2) + name(nlen).
+  /// + pad(1) + type(1) + nlen(2) + cookie(4) + name(nlen).
   /// </summary>
+  /// <remarks>
+  /// The cookie between the length and the name is what both halves of this
+  /// project used to leave out, so they agreed with each other and not with the
+  /// kernel. A fixture that leaves it out too would keep agreeing with the bug.
+  /// </remarks>
   private static byte[] BuildDentNode(uint parentInum, uint childInum, byte dtType, string name, ulong sqnum) {
     var nameBytes = Encoding.UTF8.GetBytes(name);
-    var len = 24 + 16 + 8 + 4 + nameBytes.Length;
+    var len = 24 + 16 + 8 + 1 + 1 + 2 + 4 + nameBytes.Length;
     var buf = new byte[len];
     WriteCommonHeader(buf.AsSpan(0, 24), NtDent, (uint)len, sqnum);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(24, 4), parentInum);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(40, 4), childInum);
     buf[49] = dtType; // type at offset 49 (after parent key + child inum + pad)
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(50, 2), (ushort)nameBytes.Length);
-    nameBytes.CopyTo(buf.AsSpan(52));
+    nameBytes.CopyTo(buf.AsSpan(56));
     return buf;
   }
 

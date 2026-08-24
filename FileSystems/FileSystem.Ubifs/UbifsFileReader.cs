@@ -15,7 +15,7 @@ namespace FileSystem.Ubifs;
 /// zlib-compressed DATA blocks (the UBIFS default), inode size/mode metadata,
 /// dentry parent/name/target tuples, recursive path reconstruction from the
 /// dentry tree.</para>
-/// <para><b>What's NOT covered</b>: LZO and ZSTD compression (less common
+/// <para><b>What's NOT covered</b>: (less common
 /// — these images return empty per-block payload with a TODO marker in
 /// metadata); TNC / LPT / wandering-tree traversal (we use a linear log scan
 /// instead, which is correct for normal UBIFS images but may miss versions
@@ -57,12 +57,17 @@ public sealed class UbifsFileReader {
   private const int DataPayloadOffset = CommonHeaderSize + 16 + 4 + 2 + 2;
 
   // Dentry-node payload (after common header):
-  //   key[16] inum(8) padding(1) type(1) nlen(2) name[nlen + 1]
+  //   key[16] inum(8) padding(1) type(1) nlen(2) cookie(4) name[nlen + 1]
+  //
+  // The cookie sits between the name length and the name itself, and leaving it
+  // out of the layout put the name four bytes early -- on the cookie, which is
+  // zero -- so every name came back as its own first character with four nulls in
+  // front of it. B.BIN read as "B".
   private const int DentKeyOffset = CommonHeaderSize;
   private const int DentInumOffset = CommonHeaderSize + 16;
   private const int DentTypeOffset = CommonHeaderSize + 16 + 8 + 1;
   private const int DentNlenOffset = CommonHeaderSize + 16 + 8 + 1 + 1;
-  private const int DentNameOffset = CommonHeaderSize + 16 + 8 + 4;
+  private const int DentNameOffset = CommonHeaderSize + 16 + 8 + 1 + 1 + 2 + 4;
 
   private const int DefaultBlockSize = 4096; // UBIFS standard logical block
 
@@ -212,11 +217,22 @@ public sealed class UbifsFileReader {
         if (decompressed.Length == 0 && uncompressedSize > 0) return; // skip blocks we couldn't inflate
         break;
       case ComprLzo:
-        unsupported.Add("lzo");
-        return;
-      case ComprZstd:
-        unsupported.Add("zstd");
-        return;
+        // mkfs.ubifs reaches for LZO by default, so declining it meant declining
+        // most of the data on most volumes -- and the block was skipped, which
+        // reports the file as short rather than as unread.
+        decompressed = Compression.Core.Dictionary.Lzo.Lzo1xDecompressor.Decompress(
+          span.Slice(off + DataPayloadOffset, payloadLen), (int)uncompressedSize);
+        break;
+      case ComprZstd: {
+        using var input = new MemoryStream(
+          span.Slice(off + DataPayloadOffset, payloadLen).ToArray());
+        using var zstd = new FileFormat.Zstd.ZstdStream(
+          input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
+        using var plain = new MemoryStream();
+        zstd.CopyTo(plain);
+        decompressed = plain.ToArray();
+        break;
+      }
       default:
         unsupported.Add($"compr_{comprType}");
         return;

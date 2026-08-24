@@ -92,11 +92,6 @@ public class TheirWriterOurReaderTests {
   /// real inability to read what the format's own tool writes.
   /// </remarks>
   private static readonly Dictionary<string, string> KnownGaps = new(StringComparer.Ordinal) {
-    ["SquashFs (zstd)"] =
-      "our zstd decoder cannot decode Huffman-coded literals, which is what a real encoder "
-      + "emits for anything but tiny or incompressible input; raw-literal frames read correctly",
-    ["Jffs2"] = "files on a volume mkfs.jffs2 writes come back empty",
-    ["Ubifs"] = "files on a volume mkfs.ubifs writes are not found at all",
   };
 
   /// <summary>Puts the probe files into a formatted FAT image with mtools.</summary>

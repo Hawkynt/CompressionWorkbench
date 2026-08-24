@@ -77,9 +77,15 @@ public sealed class UbifsWriter {
   internal const int InodeNodeSize = 184;
 
   // Dentry payload (after common header):
-  //   key[16] inum[8] padding[1] type[1] nlen[2] name[nlen + 1 NUL]
-  // Length is 24 + 16 + 8 + 4 + nlen + 1 (kernel always NUL-terminates)
-  internal const int DentryFixedSize = 24 + 16 + 8 + 4;
+  //   key[16] inum[8] padding[1] type[1] nlen[2] cookie[4] name[nlen + 1 NUL]
+  // Length is 24 + 16 + 8 + 4 + 4 + nlen + 1 (kernel always NUL-terminates)
+  //
+  // The cookie between the name length and the name is easy to leave out, and
+  // leaving it out puts the name four bytes early. Both halves of this project
+  // did, so they agreed with each other and with nothing else: a name we wrote
+  // landed where a reader expects the cookie, and a name mkfs.ubifs wrote came
+  // back as its own first character with four nulls in front of it.
+  internal const int DentryFixedSize = 24 + 16 + 8 + 1 + 1 + 2 + 4;
 
   // Data payload (after common header):
   //   key[16] size[4] compr_type[2] compr_size[2] data[compr_size]
@@ -331,7 +337,8 @@ public sealed class UbifsWriter {
     node[49] = dtType;
     // nlen @50
     BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(50, 2), (ushort)nameBytes.Length);
-    // name @52 (DentryFixedSize=52)
+    // cookie @52 stays zero: it is only meaningful with the double-hash feature.
+    // name @56 (DentryFixedSize)
     nameBytes.CopyTo(node, DentryFixedSize);
     // NUL terminator already at node[DentryFixedSize + nameBytes.Length]
 

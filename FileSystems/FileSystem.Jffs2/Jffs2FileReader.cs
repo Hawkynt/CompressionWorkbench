@@ -46,7 +46,8 @@ public sealed class Jffs2FileReader {
 
   /// <summary>One data node's contribution: <paramref name="FileOffset" /> bytes into the file,
   /// <paramref name="ImageOffset" /> bytes into the image, <paramref name="Length" /> bytes long.</summary>
-  private readonly record struct Fragment(uint FileOffset, long ImageOffset, uint Length, uint DSize, uint Version);
+  private readonly record struct Fragment(uint FileOffset, long ImageOffset, uint Length, uint DSize,
+    uint Version, byte Compression);
 
   // inode -> latest (highest-version) isize.
   private readonly Dictionary<uint, uint> _inodeSize = new();
@@ -103,40 +104,22 @@ public sealed class Jffs2FileReader {
   /// Writes <paramref name="entry" />'s reassembled contents into
   /// <paramref name="destination" />, one fragment at a time. Returns the byte count.
   /// </summary>
+  /// <summary>Writes one entry's contents to <paramref name="destination" />.</summary>
+  /// <remarks>
+  /// Through the same stream a caller would open, rather than a second walk of
+  /// the same fragments. There were two, and they disagreed: this one copied the
+  /// bytes straight out of the image, so a compressed node was written out still
+  /// compressed, and it measured a fragment by the smaller of its compressed and
+  /// decompressed sizes, so the pieces of a multi-page file landed on top of one
+  /// another. One implementation cannot drift from itself.
+  /// </remarks>
   public long ExtractTo(FileEntry entry, Stream destination) {
     ArgumentNullException.ThrowIfNull(entry);
     ArgumentNullException.ThrowIfNull(destination);
 
-    var fileSize = this.SizeOf(entry);
-    if (fileSize <= 0) return 0;
-    if (!this._inodeData.TryGetValue(entry.Inode, out var fragments) || fragments.Count == 0)
-      return 0;
-
-    // Holes between fragments read back as zeros, which is what a sparse JFFS2
-    // file means: no data node covers that range.
-    var buffer = new byte[64 * 1024];
-    long written = 0;
-    foreach (var f in fragments.OrderBy(f => f.FileOffset)) {
-      if (f.FileOffset >= fileSize) break;
-      var span = Math.Min(Math.Min(f.DSize, f.Length), (uint)(fileSize - f.FileOffset));
-      if (span == 0) continue;
-      while (written < f.FileOffset) {
-        var gap = (int)Math.Min(buffer.Length, f.FileOffset - written);
-        Array.Clear(buffer, 0, gap);
-        destination.Write(buffer, 0, gap);
-        written += gap;
-      }
-      if (written > f.FileOffset) continue; // overlapping fragment — first write wins
-      this._accessor.CopyTo(f.ImageOffset, destination, span);
-      written += span;
-    }
-    while (written < fileSize) {
-      var gap = (int)Math.Min(buffer.Length, fileSize - written);
-      Array.Clear(buffer, 0, gap);
-      destination.Write(buffer, 0, gap);
-      written += gap;
-    }
-    return written;
+    using var source = this.OpenEntry(entry);
+    source.CopyTo(destination);
+    return source.Length;
   }
 
   /// <summary>
@@ -188,7 +171,12 @@ public sealed class Jffs2FileReader {
       }
 
       var fragment = fragments[index];
-      var span = Math.Min((long)fragment.DSize, fragment.Length);
+      // How much of the FILE this fragment covers is its decompressed size. Its
+      // Length is how much of the IMAGE it occupies, and for a compressed node
+      // those are nothing like each other -- taking the smaller of the two made a
+      // compressed fragment appear to cover only as many bytes as it was squeezed
+      // into, so everything after the first one landed in the wrong place.
+      var span = (long)fragment.DSize;
       if (this._position < fragment.FileOffset) {
         // Hole before the next fragment.
         var gap = (int)Math.Min(want, fragment.FileOffset - this._position);
@@ -205,19 +193,68 @@ public sealed class Jffs2FileReader {
         return want;
       }
 
+      if (fragment.Compression != Jffs2Compression.None) {
+        var plain = this.Materialise(index, fragment);
+        var available = (int)Math.Min(take, plain.Length - into);
+        if (available <= 0) {
+          buffer[..want].Clear();
+          this._position += want;
+          return want;
+        }
+
+        plain.AsSpan((int)into, available).CopyTo(buffer);
+        this._position += available;
+        return available;
+      }
+
       var read = accessor.Read(fragment.ImageOffset + into, buffer[..take]);
       this._position += read;
       return read;
     }
 
-    /// <summary>Index of the fragment covering <paramref name="position" />, else the next one; -1 past the end.</summary>
+    private int _cachedFragment = -1;
+    private byte[] _cachedPlain = [];
+
+    /// <summary>
+    /// The bytes of one compressed fragment, decompressed.
+    /// </summary>
+    /// <remarks>
+    /// A fragment is at most a page of data, and reads walk it in order, so
+    /// holding the last one is enough to avoid decompressing it for every call.
+    /// </remarks>
+    private byte[] Materialise(int index, Fragment fragment) {
+      if (this._cachedFragment == index) return this._cachedPlain;
+
+      var raw = new byte[fragment.Length];
+      accessor.Read(fragment.ImageOffset, raw);
+      this._cachedPlain = Jffs2Compression.Decompress(raw, fragment.Compression, fragment.DSize);
+      this._cachedFragment = index;
+      return this._cachedPlain;
+    }
+
+    /// <summary>
+    /// The fragment to read <paramref name="position" /> from, or the next one
+    /// along when nothing covers it; -1 past the last.
+    /// </summary>
+    /// <remarks>
+    /// Where two fragments cover the same byte the newer one wins, which is what
+    /// a version is for on a log-structured filesystem: a rewritten page is
+    /// appended rather than replaced, and both nodes stay on the volume.
+    /// </remarks>
     private int IndexAt(long position) {
+      var covering = -1;
+      var next = -1;
       for (var i = 0; i < fragments.Length; ++i) {
         var f = fragments[i];
-        var end = f.FileOffset + Math.Min((long)f.DSize, f.Length);
-        if (position < end) return i;
+        if (position >= f.FileOffset && position < f.FileOffset + f.DSize) {
+          if (covering < 0 || f.Version > fragments[covering].Version) covering = i;
+        } else if (f.FileOffset > position
+                   && (next < 0 || f.FileOffset < fragments[next].FileOffset)) {
+          next = i;
+        }
       }
-      return -1;
+
+      return covering >= 0 ? covering : next;
     }
 
     public override long Seek(long offset, SeekOrigin origin) {
@@ -344,30 +381,31 @@ public sealed class Jffs2FileReader {
     var dsize = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(52, 4));
     var compr = span[56];
 
+    // Every data node carries its own version, and they count up as the file is
+    // written -- a four-page file has five nodes numbered one to five, each
+    // covering a different part of it. A later version does not replace what came
+    // before it; it only wins where the two cover the SAME bytes. Treating a
+    // higher version as a fresh start threw away every fragment but the last, so
+    // any file past a single page came back as holes with its tail on the end,
+    // whatever it was compressed with.
     var prevMaxVersion = this._inodeMaxVersion.GetValueOrDefault(ino, 0u);
-    var startingFresh = version > prevMaxVersion;
-
-    if (startingFresh) {
-      // New high-water version: discard any data fragments belonging to lower
-      // versions (the JFFS2 "newest write wins" semantic).
+    if (version >= prevMaxVersion) {
+      // The newest node is the one that says how big the file is now.
       this._inodeSize[ino] = isize;
       this._inodeMode[ino] = mode;
       this._inodeMaxVersion[ino] = version;
-      this._inodeData[ino] = [];
-    } else if (version < prevMaxVersion) {
-      // Stale version — ignore. (It still lives in the byte stream so older
-      // tooling can replay the log, but it's not contributing to the current
-      // view of the file.)
-      return;
     }
-    // version == prevMaxVersion: same write, contribute additional fragments.
 
     if (!this._inodeData.ContainsKey(ino))
       this._inodeData[ino] = [];
 
-    // Record where the data lives if present and uncompressed.
-    if (csize > 0 && compr == 0x00 && off + InodeNodeHeaderSize + csize <= imageLength)
-      this._inodeData[ino].Add(new Fragment(dataOffset, off + InodeNodeHeaderSize, csize, dsize, version));
+    // Record where the data lives, whatever it is compressed with. Keeping only
+    // the uncompressed ones meant a compressed file came back empty and said
+    // nothing about it -- and mkfs.jffs2 compresses almost everything it can, so
+    // that was most files on most real images.
+    if (csize > 0 && off + InodeNodeHeaderSize + csize <= imageLength)
+      this._inodeData[ino].Add(
+        new Fragment(dataOffset, off + InodeNodeHeaderSize, csize, dsize, version, compr));
     // csize == 0 && dsize == 0: zero-length data node (e.g. directory or empty
     // file) — no fragment to add but the bucket is already initialised above.
   }

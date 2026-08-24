@@ -63,7 +63,7 @@ Reads a UBIFS image and extracts file contents by linearly scanning the log for 
 
 What this reader handles: stored (uncompressed) DATA blocks, zlib-compressed DATA blocks (the UBIFS default), inode size/mode metadata, dentry parent/name/target tuples, recursive path reconstruction from the dentry tree.
 
-What's NOT covered: LZO and ZSTD compression (less common — these images return empty per-block payload with a TODO marker in metadata); TNC / LPT / wandering-tree traversal (we use a linear log scan instead, which is correct for normal UBIFS images but may miss versions in pathological recovery scenarios); xattrs; hardlinks beyond first-seen.
+What's NOT covered: (less common — these images return empty per-block payload with a TODO marker in metadata); TNC / LPT / wandering-tree traversal (we use a linear log scan instead, which is correct for normal UBIFS images but may miss versions in pathological recovery scenarios); xattrs; hardlinks beyond first-seen.
 
 UBIFS key layout: 16 bytes. Lower 32 bits = inode number (LE). Upper 32 bits at offset 4 hold type in the top 3 bits and a per-type value (block index for DATA, dirent-hash for DENT) in the low 29 bits.
 
