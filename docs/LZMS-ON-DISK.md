@@ -802,12 +802,30 @@ reaches the queue after the item that follows it, exactly as reading said.
 Seven of the eight delta-heavy payloads wimlib writes here now read back
 byte-exact, against three when this began.
 
-What is left is one payload of eight, and it is delta-heavy where the one just
-solved was pure LZ. It is not the length alphabet, whose fifty-four symbols are each
-confirmed by writing; not the offset alphabet, whose size was swept twelve either
-way; not the main or kind state width, swept two to eight; not the repeat index,
-which forcing at any single item does not rescue; not a queue that collapses
-duplicates, which a written chunk refutes.
+What is left is one payload of eight: a table of four-byte entries stepping by
+0x100, so that only the second byte of each entry varies. **Name it by the hash the
+image records, not by its length** - four of the probe payloads are the same size,
+and matching on length reported the failure against the wrong one of them for most
+of this work.
+
+It stops at two consecutive LZ repeat matches that both name index two. The first
+resolves to a distance of three, which the seeded queue gives and which is right;
+the second needs four, and no arrangement of a three-entry queue seeded 1, 2, 3
+holds four at that point - not the delayed insertion, not an immediate one, not
+move-to-front. A four-entry queue seeded 1, 2, 3, 4 reads worse, and forcing either
+item to be explicit reads worse still.
+
+The fields themselves are not in doubt. Writing the decoded items back and comparing
+with wimlib's chunk bit by bit from the end shows agreement continuing to grow
+through several items past the divergence, so the lengths and the absence of an
+offset field are right, and the queue's contents are what is left.
+
+The rest of the ground is covered: not the length alphabet, whose fifty-four
+symbols are each confirmed by writing; not the offset alphabet, whose size was
+swept twelve either way; not the main or kind state width, swept two to eight; not
+the LZ explicit bit's width, swept nought to eight; not a queue that collapses
+duplicates, which a written chunk refutes; and not the x86 filter, which moves no
+byte of any payload here and round-trips every one.
 
 **The queue keeps a reference it already holds** rather than collapsing it. A chunk
 was written with two matches of the same distance and then a repeat naming index
