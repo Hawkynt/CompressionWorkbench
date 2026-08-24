@@ -198,6 +198,74 @@ public class ExternalInteropTests {
     Assert.That(ms.ToArray(), Is.EqualTo(data));
   }
 
+  // ── ZSTD, LZ4, LZOP, BROTLI ────────────────────────────────────────
+
+  /// <summary>
+  /// The four stream codecs whose own tools are installed and which nothing was
+  /// asking, with the switches each needs to name its output explicitly.
+  /// </summary>
+  /// <remarks>
+  /// Each is checked both ways round. Writing something the tool refuses and
+  /// reading something it wrote are different faults, and a codec can have one
+  /// without the other — our deflate wrote blocks a strict inflater refused
+  /// while reading everything put in front of it perfectly well.
+  /// </remarks>
+  private static IEnumerable<TestCaseData> StreamCodecs() {
+    yield return new TestCaseData("Zstd", "zstd", "zst").SetName("Zstd via zstd");
+    yield return new TestCaseData("Lz4", "lz4", "lz4").SetName("Lz4 via lz4");
+    yield return new TestCaseData("Lzop", "lzop", "lzo").SetName("Lzop via lzop");
+    yield return new TestCaseData("Brotli", "brotli", "br").SetName("Brotli via brotli");
+  }
+
+  [TestCaseSource(nameof(StreamCodecs))]
+  public void StreamCodec_OurOutput_ReadByTheirTool(string formatId, string tool, string extension) {
+    foreach (var data in new[] { RepetitiveText, RandomData, SmallText }) {
+      var ours = Path.Combine(this._tmpDir, $"ours.{extension}");
+      var back = Path.Combine(this._tmpDir, "back.bin");
+      File.Delete(ours);
+      File.Delete(back);
+
+      using (var fs = File.Create(ours)) {
+        using var input = new MemoryStream(data);
+        GetStreamOps(formatId).Compress(input, fs);
+      }
+
+      RunTool(tool, DecompressArguments(tool, ours, back));
+      Assert.That(File.ReadAllBytes(back), Is.EqualTo(data),
+        $"{tool} read back something other than what {formatId} was given");
+    }
+  }
+
+  [TestCaseSource(nameof(StreamCodecs))]
+  public void StreamCodec_TheirOutput_ReadByUs(string formatId, string tool, string extension) {
+    foreach (var data in new[] { RepetitiveText, RandomData, SmallText }) {
+      var raw = Path.Combine(this._tmpDir, "input.bin");
+      var theirs = Path.Combine(this._tmpDir, $"theirs.{extension}");
+      File.Delete(theirs);
+      File.WriteAllBytes(raw, data);
+
+      RunTool(tool, CompressArguments(tool, raw, theirs));
+
+      using var fs = File.OpenRead(theirs);
+      using var ms = new MemoryStream();
+      GetStreamOps(formatId).Decompress(fs, ms);
+      Assert.That(ms.ToArray(), Is.EqualTo(data),
+        $"{formatId} read back something other than what {tool} was given");
+    }
+  }
+
+  private static string DecompressArguments(string tool, string from, string to) => tool switch {
+    "lz4" => $"-d -f \"{from}\" \"{to}\"",
+    _ => $"-d -f -o \"{to}\" \"{from}\"",
+  };
+
+  private static string CompressArguments(string tool, string from, string to) => tool switch {
+    "lz4" => $"-f -9 \"{from}\" \"{to}\"",
+    "brotli" => $"-f -q 11 -o \"{to}\" \"{from}\"",
+    "zstd" => $"-f -19 -o \"{to}\" \"{from}\"",
+    _ => $"-f -9 -o \"{to}\" \"{from}\"",
+  };
+
   // ── TAR ────────────────────────────────────────────────────────────
 
   [Test]

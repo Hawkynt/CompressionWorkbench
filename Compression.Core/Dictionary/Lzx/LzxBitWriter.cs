@@ -47,22 +47,25 @@ internal sealed class LzxBitWriter {
 
   /// <summary>
   /// Flushes any remaining buffered bits to the stream, padding to the next
-  /// 16-bit word boundary with zero bits, then writes one additional zero word
-  /// so the decompressor's lookahead never straddles the end of the byte stream.
+  /// 16-bit word boundary with zero bits.
   /// </summary>
+  /// <remarks>
+  /// Nothing follows that last word. A zero word used to, on the grounds that a
+  /// reader filling its buffer near the end would otherwise run off the stream —
+  /// but a reader is entitled to treat what is past the end as zeros, and the
+  /// word it does not need is a byte-count no other encoder produces. At least
+  /// one reader compares the compressed size against what it consumed and calls
+  /// the difference damage.
+  /// </remarks>
   public void Flush() {
-    if (this._bitsUsed > 0) {
-      // Shift remaining bits to the top of a 16-bit word and write it
-      var word = (ushort)(this._buffer << (16 - this._bitsUsed));
-      this._stream.WriteByte((byte)(word & 0xFF));
-      this._stream.WriteByte((byte)((word >> 8) & 0xFF));
-      this._bitsUsed = 0;
-      this._buffer = 0;
-    }
+    if (this._bitsUsed <= 0)
+      return;
 
-    // Extra padding word ensures the decompressor can always fill its bit buffer
-    // without hitting EOF during a symbol's table lookup.
-    this._stream.WriteByte(0);
-    this._stream.WriteByte(0);
+    // Shift remaining bits to the top of a 16-bit word and write it
+    var word = (ushort)(this._buffer << (16 - this._bitsUsed));
+    this._stream.WriteByte((byte)(word & 0xFF));
+    this._stream.WriteByte((byte)((word >> 8) & 0xFF));
+    this._bitsUsed = 0;
+    this._buffer = 0;
   }
 }

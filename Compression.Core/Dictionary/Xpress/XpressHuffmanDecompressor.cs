@@ -12,7 +12,8 @@ namespace Compression.Core.Dictionary.Xpress;
 /// <para>
 /// Each compressed chunk begins with a 256-byte table header containing 512 4-bit
 /// Huffman code lengths (two nibbles per byte, low nibble = lower-indexed symbol).
-/// The Huffman-coded bitstream follows immediately, using 16-bit LE words, LSB first.
+/// The Huffman-coded bit stream follows immediately, in 16-bit little-endian
+/// words read most significant bit first.
 /// </para>
 /// <para>
 /// Symbol alphabet (512 symbols):
@@ -24,11 +25,14 @@ namespace Compression.Core.Dictionary.Xpress;
 ///     <c>length_header = (symbol - 256) &amp; 0xF</c><br/>
 ///     <c>distance = (1 &lt;&lt; offset_log2) + ReadBits(offset_log2)</c><br/>
 ///     Length: if <c>length_header &lt; 15</c>: <c>length = length_header + 3</c>.<br/>
-///     If <c>length_header == 15</c>: read extra byte <c>E</c>;
-///     if <c>E != 255</c>: <c>length = E + 3</c>;
-///     else: read 16-bit LE length.
+///     If <c>length_header == 15</c>: take a raw byte <c>E</c> from between the
+///     words; <c>length = 15 + E + 3</c>, unless <c>E</c> is 255, when a raw
+///     16-bit value follows giving <c>length - 3</c> outright.
 ///   </description></item>
 /// </list>
+/// </para>
+/// <para>
+/// Format per [MS-XCA] section 2.2, "LZ77+Huffman Compression Algorithm".
 /// </para>
 /// </remarks>
 public static partial class XpressHuffmanDecompressor {
@@ -46,74 +50,74 @@ public static partial class XpressHuffmanDecompressor {
       return [];
 
     var output = new byte[uncompressedSize];
-    var reader = new SpanBitReader(input);
     var outputPos = 0;
+    var inputPos = 0;
 
     while (outputPos < uncompressedSize) {
-      // Reset bit buffer between chunks — each chunk starts byte-aligned
-      reader.BitBuf = 0;
-      reader.BitsAvailable = 0;
-
-      // Read the 256-byte table header
-      if (reader.InputPos + XpressConstants.HuffTableHeaderBytes > input.Length)
+      // Read the 256-byte table header.
+      if (inputPos + XpressConstants.HuffTableHeaderBytes > input.Length)
         ThrowTruncated();
 
       var codeLengths = new int[XpressConstants.HuffSymbolCount];
       for (var i = 0; i < XpressConstants.HuffTableHeaderBytes; ++i) {
-        codeLengths[i * 2]     =  input[reader.InputPos + i] & 0xF;
-        codeLengths[i * 2 + 1] = (input[reader.InputPos + i] >> 4) & 0xF;
+        codeLengths[i * 2]     =  input[inputPos + i] & 0xF;
+        codeLengths[i * 2 + 1] = (input[inputPos + i] >> 4) & 0xF;
       }
-      reader.AdvanceBytes(XpressConstants.HuffTableHeaderBytes);
 
-      // Build canonical decode table (LSB-first)
       var decodeTable = BuildDecodeTable(codeLengths, out var maxCodeLength);
+
+      var bitsAt = inputPos + XpressConstants.HuffTableHeaderBytes;
+      var reader = new SpanBitReader(input, bitsAt);
 
       var chunkUncompressedSize = Math.Min(XpressConstants.HuffChunkSize, uncompressedSize - outputPos);
       var chunkEnd = outputPos + chunkUncompressedSize;
 
       while (outputPos < chunkEnd) {
-        var sym = DecodeSymbol(input, ref reader, decodeTable, maxCodeLength);
+        var sym = DecodeSymbol(ref reader, decodeTable, maxCodeLength);
 
-        if (sym < 256)
+        if (sym < 256) {
           output[outputPos++] = (byte)sym;
-        else {
-          var offsetLog2   = (sym - 256) >> 4;
-          var lengthHeader = (sym - 256) & 0xF;
-
-          // Decode distance
-          int distance;
-          if (offsetLog2 == 0)
-            distance = 1;
-          else
-            distance = (1 << offsetLog2) + (int)ReadBits(input, ref reader, offsetLog2);
-
-          // Decode length
-          int length;
-          if (lengthHeader < 15)
-            length = lengthHeader + XpressConstants.MinMatch;
-          else {
-            var extra = (int)ReadBits(input, ref reader, 8);
-            if (extra != XpressConstants.LengthSentinel8)
-              length = extra + XpressConstants.MinMatch;
-            else
-              length = (int)ReadBits(input, ref reader, 16);
-          }
-
-          var copyFrom = outputPos - distance;
-          if (copyFrom < 0)
-            ThrowInvalidMatch();
-
-          var copyEnd = Math.Min(outputPos + length, chunkEnd);
-          while (outputPos < copyEnd)
-            output[outputPos++] = output[copyFrom++];
+          continue;
         }
+
+        var offsetLog2   = (sym - 256) >> 4;
+        var lengthHeader = (sym - 256) & 0xF;
+
+        // Length first: its raw bytes come from between the words, and reading
+        // them in the order they were written is what keeps the two in step.
+        int length;
+        if (lengthHeader < 15)
+          length = lengthHeader + XpressConstants.MinMatch;
+        else {
+          var beyondHeader = reader.ReadRawByte();
+          length = beyondHeader == XpressConstants.LengthSentinel8
+            ? reader.ReadRawUInt16() + XpressConstants.MinMatch
+            : beyondHeader + 15 + XpressConstants.MinMatch;
+        }
+
+        var distance = (1 << offsetLog2) + (int)reader.ReadBits(offsetLog2);
+
+        var copyFrom = outputPos - distance;
+        if (copyFrom < 0)
+          ThrowInvalidMatch();
+
+        var copyEnd = Math.Min(outputPos + length, chunkEnd);
+        while (outputPos < copyEnd)
+          output[outputPos++] = output[copyFrom++];
       }
 
-      // Rewind InputPos for any 16-bit words eagerly loaded beyond this chunk's
-      // bitstream. The compressor pads each chunk to a 16-bit word boundary, so
-      // the leftover bits within the last word are just padding (< 16 bits).
-      // Any additional full words came from the next chunk's header area.
-      reader.InputPos -= (reader.BitsAvailable / 16) * 2;
+      if (outputPos >= uncompressedSize)
+        break;
+
+      // Where the next chunk starts is not written down anywhere: a chunk is
+      // delimited by the size of what it decodes to, which a container carries
+      // and this stream does not. It can still be worked out, because the writer
+      // hands out its words and its raw bytes in a fixed order and the reader
+      // has just taken the same ones — but only if it has taken all of them, and
+      // one symbol is left after the output is full. That is the terminator
+      // every chunk written here ends with.
+      DecodeSymbol(ref reader, decodeTable, maxCodeLength);
+      inputPos = bitsAt + reader.ChunkLength;
     }
 
     return output;
@@ -140,48 +144,19 @@ public static partial class XpressHuffmanDecompressor {
 
   // ---- Bit reading --------------------------------------------------------
 
-  private static uint ReadBits(ReadOnlySpan<byte> input, ref SpanBitReader reader, int count) {
-    while (reader.BitsAvailable < count)
-      if (reader.InputPos + 1 < input.Length) {
-        var word = BinaryPrimitives.ReadUInt16LittleEndian(input[reader.InputPos..]);
-        reader.InputPos += 2;
-        reader.BitBuf |= (uint)word << reader.BitsAvailable;
-        reader.BitsAvailable += 16;
-      } else if (reader.InputPos < input.Length) {
-        reader.BitBuf |= (uint)input[reader.InputPos++] << reader.BitsAvailable;
-        reader.BitsAvailable += 8;
-      } else
-        break; // truncated; caller will catch downstream
-
-    var result = reader.BitBuf & ((1u << count) - 1u);
-    reader.BitBuf >>= count;
-    reader.BitsAvailable -= count;
-    return result;
-  }
-
-  private static int DecodeSymbol(ReadOnlySpan<byte> input, ref SpanBitReader reader, int[] decodeTable, int maxCodeLength) {
-    // Ensure we have enough bits
-    while (reader.BitsAvailable < maxCodeLength && reader.InputPos + 1 < input.Length) {
-      var word = BinaryPrimitives.ReadUInt16LittleEndian(input[reader.InputPos..]);
-      reader.InputPos += 2;
-      reader.BitBuf |= (uint)word << reader.BitsAvailable;
-      reader.BitsAvailable += 16;
-    }
-
-    var peek = (int)(reader.BitBuf & ((1u << maxCodeLength) - 1u));
-    var entry = decodeTable[peek];
+  private static int DecodeSymbol(ref SpanBitReader reader, int[] decodeTable, int maxCodeLength) {
+    var entry = decodeTable[(int)reader.Peek(maxCodeLength)];
     if (entry < 0)
       ThrowInvalidHuffmanCode();
 
-    var codeLen = entry >> 16;
-    reader.BitBuf >>= codeLen;
-    reader.BitsAvailable -= codeLen;
+    reader.Remove(entry >> 16);
     return entry & 0xFFFF;
   }
 
   // ---- Decode table -------------------------------------------------------
 
-  // Builds a flat decode table for LSB-first canonical Huffman codes.
+  // Builds a flat decode table for canonical Huffman codes read most
+  // significant bit first.
   // Entry format: (codeLength << 16) | symbol, or -1 for unused.
   private static int[] BuildDecodeTable(int[] codeLengths, out int maxLen) {
     maxLen = 0;
@@ -215,26 +190,16 @@ public static partial class XpressHuffmanDecompressor {
       if (len == 0)
         continue;
 
-      var symCode = nextCode[len]++;
-
-      // Bit-reverse the canonical code for LSB-first table lookup
-      var reversed = ReverseBits(symCode, len);
+      // The code occupies the top of the index; every value of the bits below
+      // it decodes to the same symbol.
+      var start = (int)(nextCode[len]++ << (maxLen - len));
       var fillCount = 1 << (maxLen - len);
       var packed = sym | (len << 16);
       for (var fill = 0; fill < fillCount; ++fill)
-        table[(int)reversed + (fill << len)] = packed;
+        table[start + fill] = packed;
     }
 
     return table;
-  }
-
-  private static uint ReverseBits(uint code, int length) {
-    uint result = 0;
-    for (var i = 0; i < length; ++i) {
-      result = (result << 1) | (code & 1);
-      code >>= 1;
-    }
-    return result;
   }
 
   // ---- Helpers ------------------------------------------------------------

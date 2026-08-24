@@ -144,7 +144,7 @@ public sealed class LhaWriter {
     hw.Write((byte)nameBytes.Length); // name length
     hw.Write(nameBytes); // name
     hw.Write(crc); // CRC-16
-    hw.Write((byte)0); // OS: generic
+    hw.Write(LhaConstants.OsIdentifierUnix);
     hw.Write((ushort)0); // no extended headers
     hw.Flush();
 

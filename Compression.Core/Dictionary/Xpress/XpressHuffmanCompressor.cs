@@ -5,7 +5,8 @@ using Compression.Core.Entropy.Huffman;
 namespace Compression.Core.Dictionary.Xpress;
 
 /// <summary>
-/// Compresses data using the XPRESS Huffman variant.
+/// Compresses data using the XPRESS Huffman variant, as used by WIM images and
+/// by Windows wherever "Xpress Huffman" is named.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,15 +20,22 @@ namespace Compression.Core.Dictionary.Xpress;
 ///   <item><description>Symbols 0–255: literal bytes.</description></item>
 ///   <item><description>
 ///     Symbols 256–511: LZ matches encoded as
-///     <c>256 + (offset_log2 &lt;&lt; 4) + min(length - 3, 15)</c>.
-///     If the length header is 15, an extra byte follows (raw, not Huffman-coded),
-///     giving <c>length = extra + 3</c> unless extra == 255, in which case a
-///     16-bit LE length follows the extra byte.
+///     <c>256 + (offset_log2 &lt;&lt; 4) + min(length - 3, 15)</c>, followed by
+///     <c>offset_log2</c> raw bits giving the offset below its power of two.
+///     A length header of 15 means the length did not fit, and a raw byte
+///     carrying <c>min(length - 3 - 15, 255)</c> follows; a byte of 255 in turn
+///     means a raw 16-bit <c>length - 3</c> follows it.
 ///   </description></item>
 /// </list>
 /// </para>
 /// <para>
-/// Bits are written LSB-first, packed into 16-bit LE words.
+/// Bits are written most significant first and packed into 16-bit
+/// little-endian words; the raw bytes above are not part of that bit stream but
+/// sit between the words, which is what
+/// <see cref="XpressHuffmanOutputBitstream" /> exists to arrange.
+/// </para>
+/// <para>
+/// Format per [MS-XCA] section 2.2, "LZ77+Huffman Compression Algorithm".
 /// </para>
 /// </remarks>
 public sealed partial class XpressHuffmanCompressor {
@@ -75,7 +83,7 @@ public sealed partial class XpressHuffmanCompressor {
 
   private void CompressChunk(ReadOnlySpan<byte> chunk, Stream output) {
     // Pass 1: tokenize and gather symbol frequencies
-    var matchFinder = new HashChainMatchFinder(XpressConstants.WindowSize, this._maxChainDepth);
+    var matchFinder = new HashChainMatchFinder(XpressConstants.HuffWindowSize, this._maxChainDepth);
     var tokens = new List<HuffToken>(chunk.Length);
     var freq = new long[XpressConstants.HuffSymbolCount];
     var pos = 0;
@@ -83,8 +91,8 @@ public sealed partial class XpressHuffmanCompressor {
     while (pos < chunk.Length) {
       var match = matchFinder.FindMatch(
         chunk, pos,
-        XpressConstants.WindowSize,
-        XpressConstants.MaxMatch,
+        XpressConstants.HuffWindowSize,
+        XpressConstants.HuffMaxMatch,
         XpressConstants.MinMatch);
 
       if (match.Length >= XpressConstants.MinMatch) {
@@ -106,6 +114,10 @@ public sealed partial class XpressHuffmanCompressor {
       }
     }
 
+    // The shortest match symbol always gets a code, because the chunk ends with
+    // one — see the terminator written after the tokens below.
+    ++freq[MatchTerminatorSymbol];
+
     // Build Huffman tree and get code lengths (max 15 bits)
     var codeLengths = BuildLengths(freq);
 
@@ -119,69 +131,58 @@ public sealed partial class XpressHuffmanCompressor {
     // Build canonical codes
     var codes = BuildCanonicalCodes(codeLengths);
 
-    // Pass 3: emit Huffman-coded bitstream (LSB-first, 16-bit words)
-    using var bitStream = new MemoryStream(chunk.Length);
-    var bitBuf = 0u;
-    var bitsInBuf = 0;
-
-    void FlushWord() {
-      // Write current word little-endian
-      bitStream.WriteByte((byte)bitBuf);
-      bitStream.WriteByte((byte)(bitBuf >> 8));
-      bitBuf = 0;
-      bitsInBuf = 0;
-    }
-
-    void WriteBits(uint value, int count) {
-      // LSB first: pack bits from LSB of value into the buffer from low bits
-      var remaining = count;
-      while (remaining > 0) {
-        var space = 16 - bitsInBuf;
-        var take = Math.Min(space, remaining);
-        var mask = (1u << take) - 1u;
-        bitBuf |= (value & mask) << bitsInBuf;
-        value >>= take;
-        remaining -= take;
-        bitsInBuf += take;
-        if (bitsInBuf == 16)
-          FlushWord();
-      }
-    }
+    // Pass 3: emit the Huffman-coded bit stream with its raw bytes between the
+    // words. Each match is written symbol first, then the length bytes it needs,
+    // then the offset bits — the order a decoder unpicks them in, and the order
+    // that decides where in the run of bytes each one lands.
+    var bits = new XpressHuffmanOutputBitstream(chunk.Length);
 
     foreach (var (symbol, distance, length) in tokens) {
-      WriteBits(codes[symbol], codeLengths[symbol]);
+      bits.WriteBits(codes[symbol], codeLengths[symbol]);
 
       if (symbol < 256)
         continue;
 
-      // Write raw offset bits (offset_log2 bits, LSB of (distance - base))
-      var offsetLog2 = (symbol - 256) >> 4;
-      if (offsetLog2 > 0) {
-        var baseOffset = 1u << offsetLog2;
-        var extraOffset = (uint)(distance - (int)baseOffset);
-        WriteBits(extraOffset, offsetLog2);
-      }
-
-      // Extra length bytes (raw, not Huffman)
       var lengthHeader = (symbol - 256) & 0xF;
-      if (lengthHeader != 15)
-        continue;
-
-      var adj = length - XpressConstants.MinMatch;  // 0-based
-      if (adj < XpressConstants.LengthSentinel8)
-        WriteBits((uint)adj, 8);
-      else {
-        WriteBits(XpressConstants.LengthSentinel8, 8);
-        WriteBits((uint)length, 16);
+      if (lengthHeader == 15) {
+        // The byte carries what is left of the length once the fifteen in the
+        // symbol and the three every match has are taken off it. A byte of 255
+        // means even that did not fit, and the sixteen bits after it carry the
+        // length less the three, which is as much of it as they can hold.
+        var beyondHeader = length - XpressConstants.MinMatch - 15;
+        bits.WriteByte((byte)Math.Min(beyondHeader, XpressConstants.LengthSentinel8));
+        if (beyondHeader >= XpressConstants.LengthSentinel8)
+          bits.WriteUInt16((ushort)(length - XpressConstants.MinMatch));
       }
+
+      // The offset's own power of two is already in the symbol; what is left is
+      // how far above it the offset sits.
+      var offsetLog2 = (symbol - 256) >> 4;
+      if (offsetLog2 > 0)
+        bits.WriteBits((uint)(distance - (1 << offsetLog2)), offsetLog2);
     }
 
-    // Flush remaining bits (pad to full 16-bit word boundary)
-    if (bitsInBuf > 0)
-      FlushWord();
+    // One more symbol than the chunk needs, and a particular one.
+    //
+    // A decoder that stops the moment the output is full never reads this. Not
+    // every decoder does: one in wide use takes a symbol first and asks
+    // afterwards, and then a literal writes past the end of the chunk and a
+    // match with a long-length header reaches for bytes that are not there —
+    // either of which it reports as damaged data. The shortest match asks for
+    // nothing further and is simply clipped, so ending on it costs a few bits
+    // and leaves nothing for such a reader to trip over. Streams from the
+    // reference implementation end the same way.
+    bits.WriteBits(codes[MatchTerminatorSymbol], codeLengths[MatchTerminatorSymbol]);
 
-    output.Write(bitStream.GetBuffer(), 0, (int)bitStream.Length);
+    var payload = bits.Finish();
+    output.Write(payload, 0, payload.Length);
   }
+
+  /// <summary>
+  /// The match symbol every chunk ends on: the one meaning three bytes back one
+  /// byte, which needs no bits or bytes after it.
+  /// </summary>
+  private const int MatchTerminatorSymbol = 256;
 
   // ---- Helpers ----
 
@@ -234,7 +235,7 @@ public sealed partial class XpressHuffmanCompressor {
     var codes = new uint[lengths.Length];
     for (var i = 0; i < lengths.Length; ++i)
       if (lengths[i] > 0)
-        codes[i] = ReverseBits(nextCode[lengths[i]]++, lengths[i]);
+        codes[i] = nextCode[lengths[i]]++;
 
     return codes;
   }
@@ -243,15 +244,6 @@ public sealed partial class XpressHuffmanCompressor {
   internal static int Log2Floor(int x) {
     var result = 0;
     while (x > 1) { x >>= 1; ++result; }
-    return result;
-  }
-
-  private static uint ReverseBits(uint code, int length) {
-    uint result = 0;
-    for (var i = 0; i < length; ++i) {
-      result = (result << 1) | (code & 1);
-      code >>= 1;
-    }
     return result;
   }
 

@@ -34,6 +34,19 @@ public static class XpressConstants {
   /// <summary>Uncompressed chunk size for the XPRESS Huffman variant (64 KiB).</summary>
   public const int HuffChunkSize = 65536;
 
+  /// <summary>
+  /// Largest match offset the XPRESS Huffman variant can name. The symbol
+  /// carries the offset's power of two in four bits, so an offset of 65 536
+  /// would need a seventeenth one and a symbol past the end of the alphabet.
+  /// </summary>
+  public const int HuffWindowSize = 65535;
+
+  /// <summary>
+  /// Longest match the XPRESS Huffman variant can name: a length past this has
+  /// no room in the sixteen bits that carry it.
+  /// </summary>
+  public const int HuffMaxMatch = 65535;
+
   /// <summary>Size in bytes of the Huffman table header in each chunk (512 nibbles = 256 bytes).</summary>
   public const int HuffTableHeaderBytes = 256;
 

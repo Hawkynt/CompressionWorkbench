@@ -36,11 +36,38 @@ public static class LzxConstants {
 
   /// <summary>
   /// Minimum match distance that can be encoded as a new (non-repeated) offset.
-  /// Position slot 3 has base = 3, and the LZX offset bias is +2, so the smallest
-  /// distance expressible as a non-repeat slot is 3 + 0 + 2 = 5.
-  /// Distances 2–4 may only be encoded if they equal a current R0/R1/R2 value.
+  /// The formatted offset a position slot names is the distance plus this much.
+  /// Slots 0 to 2 are spoken for by the three remembered offsets, so the smallest
+  /// slot that can name a distance is slot 3, whose base is 3 — which is a
+  /// distance of 1 once the bias is taken off again.
   /// </summary>
-  public const int MinNonRepeatDistance = 5;
+  public const int OffsetBias = 2;
+
+  /// <summary>
+  /// The largest distance the position slots of a window of this size can name.
+  /// </summary>
+  /// <remarks>
+  /// The slots cover formatted offsets up to one below the window size, and a
+  /// formatted offset is two more than the distance, so the last two distances
+  /// the window could otherwise reach have no slot to name them. A match finder
+  /// left to offer them produces a slot past the end of the main alphabet.
+  /// </remarks>
+  /// <param name="windowSize">The window size in bytes.</param>
+  /// <returns>The largest usable match distance.</returns>
+  public static int MaxDistance(int windowSize) => windowSize - OffsetBias - 1;
+
+  /// <summary>
+  /// The smallest distance a non-repeat position slot can name, which is one:
+  /// every distance is expressible.
+  /// </summary>
+  /// <remarks>
+  /// It used to be five, because the bias was added where it should have been
+  /// taken off, and the four distances below that had to be refused outright
+  /// unless they happened to be a remembered offset. Refusing them cost the
+  /// shortest matches there are, and the streams that resulted were readable
+  /// only here.
+  /// </remarks>
+  public const int MinNonRepeatDistance = 1;
 
   /// <summary>Block type value: verbatim block.</summary>
   public const int BlockTypeVerbatim = 1;

@@ -261,19 +261,27 @@ public class LzxTests {
 
   [Category("EdgeCase")]
   [Test]
-  public void BuildCodeLengths_AllZeroFrequencies_ReturnsAllZero() {
+  public void BuildCodeLengths_AllZeroFrequencies_StillDescribesATree() {
+    // A block header describes its trees whether the block uses them or not, and
+    // a tree of nothing is one a reference decoder refuses outright. Two one-bit
+    // codes cost two code lengths in the header and are never emitted.
     var freq = new int[LzxConstants.NumChars];
     var lengths = LzxCompressor.BuildCodeLengths(freq, LzxConstants.NumChars, 16);
-    Assert.That(lengths, Is.All.EqualTo(0));
+    Assert.That(lengths[0], Is.EqualTo(1));
+    Assert.That(lengths[1], Is.EqualTo(1));
+    Assert.That(lengths.Skip(2), Is.All.EqualTo(0));
   }
 
   [Category("EdgeCase")]
   [Test]
-  public void BuildCodeLengths_SingleSymbol_LengthOne() {
+  public void BuildCodeLengths_SingleSymbol_GetsACompanion() {
+    // One symbol on its own takes a one-bit code and leaves the other half of the
+    // code space describing nothing, which is the same fault in smaller compass.
     var freq = new int[LzxConstants.NumChars];
     freq[65] = 10;
     var lengths = LzxCompressor.BuildCodeLengths(freq, LzxConstants.NumChars, 16);
     Assert.That(lengths[65], Is.EqualTo(1));
+    Assert.That(lengths.Count(l => l > 0), Is.EqualTo(2));
   }
 
   [Category("HappyPath")]

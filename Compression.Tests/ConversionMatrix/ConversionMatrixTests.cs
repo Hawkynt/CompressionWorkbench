@@ -137,7 +137,6 @@ public class ConversionMatrixTests {
       { "Dcs", "[other] DCS Amiga disk; exposed as track_NNN.raw not original names" },
       { "Dmg", "[other] DMG read-back returns 512-byte padded content (block padding, content mismatch)" },
       { "Dtb", "[other] Device-tree blob; names re-rooted under _root/ and de-extensioned (HELLO.bin)" },
-      { "Esd", "[other] ESD image; entries renamed to resource_NNNN.bin" },
       { "Fits", "[other] FITS; payload exposed as hdu_* header/data members not original names" },
       { "G64", "[other] G64 GCR disk; exposed as track_NN.bin not original names" },
       { "GameMaker", "[other] GameMaker data.win; exposed as chunks/GEN8.bin not original names" },
@@ -158,7 +157,6 @@ public class ConversionMatrixTests {
       { "TfRecord", "[other] TensorFlow TFRecord; entries renamed record_NNNNN.bin" },
       { "Tfc", "[other] UE texture cache; entries renamed bundle_NNNNN.bin" },
       { "Warc", "[other] WARC; entries listed as 'resource: <name>' so basename match fails" },
-      { "Wim", "[other] Windows Imaging; entries renamed resource_N" },
       { "Zap", "[other] Zap Amiga disk; exposed as track_NNN.raw not original names" },
     };
 

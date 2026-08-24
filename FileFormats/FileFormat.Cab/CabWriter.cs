@@ -74,6 +74,14 @@ public sealed class CabWriter {
         $"CabWriter only supports None, MsZip, Lzx, and Quantum compression; got {compressionType}.",
         nameof(compressionType));
 
+    if (compressionType == CabCompressionType.Quantum)
+      throw new NotSupportedException(
+        "Quantum cabinets here are not the ones a cabinet reader opens: the folder's window "
+        + "field is written on a scale of our own where the format wants window bits of 10 to 21, "
+        + "and the coded stream does not agree with the reference either. Writing one would "
+        + "produce a cabinet whose every file fails to extract. Use MsZip or Lzx, both of which "
+        + "cabextract and 7-Zip accept.");
+
     this._compressionType    = compressionType;
     this._deflateLevel       = deflateLevel;
     this._lzxWindowBits      = lzxWindowBits;
@@ -244,20 +252,24 @@ public sealed class CabWriter {
     }
 
     if (this._compressionType == CabCompressionType.Lzx) {
-      var blocks = new List<(byte[], int)>();
-      var offset = 0;
-      var compressor = new LzxCompressor(this._lzxWindowBits);
+      // A folder is one LZX stream, cut into data records — not one stream per
+      // record. Compressing each record on its own restarts the window, the
+      // remembered offsets and the delta-coded trees every 32 KB, and a reader
+      // decoding the folder as one stream finds a block header where the middle
+      // of a block should be.
+      var compressor = new LzxCompressor(this._lzxWindowBits,
+        MsZipCompressor.BlockSize, LzxCompressionLevel.Normal, LzxStreamFormat.Cab);
+      var compressed = compressor.Compress(data, out var emitted);
 
-      while (offset < data.Length) {
-        var len = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
-        var chunk = data.AsSpan(offset, len);
-        var compressed = compressor.Compress(chunk);
-        blocks.Add((compressed, len));
-        offset += len;
+      if (emitted.Count == 0)
+        return [([], 0)];
+
+      var blocks = new List<(byte[], int)>(emitted.Count);
+      var start = 0;
+      foreach (var (uncompressed, end) in emitted) {
+        blocks.Add((compressed[start..end], uncompressed));
+        start = end;
       }
-
-      if (blocks.Count == 0)
-        blocks.Add(([], 0));
 
       return blocks;
     }

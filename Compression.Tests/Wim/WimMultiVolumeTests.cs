@@ -18,7 +18,9 @@ public class WimMultiVolumeTests {
     ]);
     using var reader = new WimReader(cs);
 
-    Assert.That(reader.Resources, Has.Count.EqualTo(2));
+    // Two payloads and the image metadata that names them: a WIM that held only
+    // the payloads would be one no reader could list.
+    Assert.That(reader.Resources.Count(r => !r.IsMetadata), Is.EqualTo(2));
     Assert.That(reader.ReadResource(0), Is.EqualTo(MakeTestData(100, 0x41)));
     Assert.That(reader.ReadResource(1), Is.EqualTo(MakeTestData(200, 0x42)));
   }
@@ -40,7 +42,7 @@ public class WimMultiVolumeTests {
     using var cs = new ConcatenatedStream(streams);
     using var reader = new WimReader(cs);
 
-    Assert.That(reader.Resources, Has.Count.EqualTo(2));
+    Assert.That(reader.Resources.Count(r => !r.IsMetadata), Is.EqualTo(2));
     Assert.That(reader.ReadResource(0), Is.EqualTo(data1));
     Assert.That(reader.ReadResource(1), Is.EqualTo(data2));
   }

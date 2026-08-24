@@ -25,7 +25,45 @@ internal static class ZopfliBlockCost {
   public static int[] BuildCodeLengths(ReadOnlySpan<long> counts, int maxBits) {
     var lengths = DeterministicHuffman.BuildCodeLengths(counts);
     HuffmanTree.LimitCodeLengths(lengths, maxBits);
+    GiveASecondSymbolACode(lengths);
     return lengths;
+  }
+
+  /// <summary>
+  /// Gives a second symbol a code when only one symbol has one, so that the tree
+  /// covers the whole code space.
+  /// </summary>
+  /// <remarks>
+  /// <para>One symbol with a one-bit code leaves the other half of the code
+  /// space describing nothing, and a decoder that checks the arithmetic rejects
+  /// the block. Widely used ones do check — the block below is the shape a
+  /// cabinet ends up with when every back-reference happens to fall in the same
+  /// distance range, and <c>libmspack</c> refuses to decompress it while zlib
+  /// waves it through as a documented special case.</para>
+  ///
+  /// <para>The remedy is what every other encoder does: hand out a second
+  /// one-bit code to a symbol nothing will ever emit. It costs one code length
+  /// in the header and nothing at all in the block.</para>
+  /// </remarks>
+  /// <param name="lengths">Code lengths per symbol; modified in place.</param>
+  private static void GiveASecondSymbolACode(int[] lengths) {
+    if (lengths.Length < 2)
+      return;
+
+    var only = -1;
+    for (var symbol = 0; symbol < lengths.Length; ++symbol) {
+      if (lengths[symbol] == 0)
+        continue;
+      if (only >= 0)
+        return;                                   // more than one: already complete
+      only = symbol;
+    }
+
+    if (only < 0)
+      return;                                     // none at all: the caller invents one
+
+    lengths[only] = 1;
+    lengths[only == 0 ? 1 : 0] = 1;
   }
 
   /// <summary>

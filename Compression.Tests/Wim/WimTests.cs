@@ -9,39 +9,53 @@ public class WimTests {
   // Helpers
   // -------------------------------------------------------------------------
 
+  /// <summary>
+  /// Reads every file back out of a WIM by name.
+  /// </summary>
+  /// <remarks>
+  /// By name rather than by position in the lookup table: a WIM stores one copy
+  /// of each distinct content and an empty file gets no entry at all, so the
+  /// table is not a list of the files put in. What has to come back is the
+  /// files, which the image's directory tree names.
+  /// </remarks>
+  private static Dictionary<string, byte[]> ReadBack(byte[] image) {
+    using var ms = new MemoryStream(image);
+    using var reader = new WimReader(ms);
+
+    var seen = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+    foreach (var file in reader.GetNamedFiles())
+      seen[file.FileName] = file.ResourceIndex < 0 ? [] : reader.ReadResource(file.ResourceIndex);
+    return seen;
+  }
+
+  private static byte[] Build(
+    IReadOnlyList<byte[]> resources,
+    uint compressionType,
+    int chunkSize = WimConstants.DefaultChunkSize) {
+    using var ms = new MemoryStream();
+    new WimWriter(ms, compressionType, chunkSize).Write(resources);
+    return ms.ToArray();
+  }
+
   private static byte[] RoundTrip(
     IReadOnlyList<byte[]> resources,
     uint compressionType = WimConstants.CompressionXpress,
     int chunkSize = WimConstants.DefaultChunkSize) {
-    using var ms = new MemoryStream();
-    var writer = new WimWriter(ms, compressionType, chunkSize);
-    writer.Write(resources);
-
-    ms.Seek(0, SeekOrigin.Begin);
-    using var reader = new WimReader(ms);
-    Assert.That(reader.Resources.Count, Is.EqualTo(resources.Count));
-
-    // Return the first resource (or empty for zero-resource WIMs).
-    return reader.Resources.Count == 0 ? [] : reader.ReadResource(0);
+    var seen = ReadBack(Build(resources, compressionType, chunkSize));
+    Assert.That(seen.Count, Is.EqualTo(resources.Count));
+    return resources.Count == 0 ? [] : seen["resource_0"];
   }
 
   private static void RoundTripAll(
     IReadOnlyList<byte[]> resources,
     uint compressionType = WimConstants.CompressionXpress,
     int chunkSize = WimConstants.DefaultChunkSize) {
-    using var ms = new MemoryStream();
-    var writer = new WimWriter(ms, compressionType, chunkSize);
-    writer.Write(resources);
+    var seen = ReadBack(Build(resources, compressionType, chunkSize));
+    Assert.That(seen.Count, Is.EqualTo(resources.Count));
 
-    ms.Seek(0, SeekOrigin.Begin);
-    using var reader = new WimReader(ms);
-    Assert.That(reader.Resources.Count, Is.EqualTo(resources.Count));
-
-    for (var i = 0; i < resources.Count; ++i) {
-      var result = reader.ReadResource(i);
-      Assert.That(result, Is.EqualTo(resources[i]),
+    for (var i = 0; i < resources.Count; ++i)
+      Assert.That(seen["resource_" + i], Is.EqualTo(resources[i]),
         $"Resource {i} did not round-trip correctly.");
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -52,7 +66,7 @@ public class WimTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyResource() {
-    var result = RoundTrip([[]]);
+    var result = RoundTrip([[]], WimConstants.CompressionNone);
     Assert.That(result, Is.Empty);
   }
 
@@ -209,7 +223,10 @@ public class WimTests {
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
-  public void Reader_ImageCount_MatchesResourceCount() {
+  public void Reader_ImageCount_CountsImagesNotFiles() {
+    // A WIM holds images, and an image holds any number of files. Counting one
+    // image per file made every container we wrote claim several images while
+    // describing one, which is the first thing a reader checks.
     var resources = new byte[][] {
       [1, 2, 3],
       [4, 5, 6],
@@ -220,7 +237,61 @@ public class WimTests {
 
     ms.Seek(0, SeekOrigin.Begin);
     using var reader = new WimReader(ms);
-    Assert.That(reader.Header.ImageCount, Is.EqualTo(2u));
+    Assert.That(reader.Header.ImageCount, Is.EqualTo(1u));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void TheSameContentTwice_IsStoredOnce() {
+    // Contents are addressed by the hash of their bytes, so two files that are
+    // copies of each other are one resource with two names pointing at it.
+    var shared = Encoding.UTF8.GetBytes("the very same bytes, twice over");
+    var image = Build([shared, (byte[])shared.Clone(), Encoding.UTF8.GetBytes("different")],
+      WimConstants.CompressionNone);
+
+    using var ms = new MemoryStream(image);
+    using var reader = new WimReader(ms);
+
+    var payloads = reader.Resources.Count(r => !r.IsMetadata);
+    Assert.That(payloads, Is.EqualTo(2), "the two copies should share one resource");
+
+    var seen = ReadBack(image);
+    Assert.That(seen["resource_0"], Is.EqualTo(shared));
+    Assert.That(seen["resource_1"], Is.EqualTo(shared));
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void AnEmptyFile_KeepsItsNameWithoutAResource() {
+    // Nothing is stored for an empty file — it carries an all-zero hash instead
+    // of a pointer — but it is still a file in the image and has to come back.
+    var image = Build([[], Encoding.UTF8.GetBytes("not empty")], WimConstants.CompressionNone);
+
+    using var ms = new MemoryStream(image);
+    using var reader = new WimReader(ms);
+    Assert.That(reader.Resources.Count(r => !r.IsMetadata), Is.EqualTo(1));
+
+    var seen = ReadBack(image);
+    Assert.That(seen.Keys, Does.Contain("resource_0"));
+    Assert.That(seen["resource_0"], Is.Empty);
+    Assert.That(seen["resource_1"], Is.EqualTo(Encoding.UTF8.GetBytes("not empty")));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void APathInAName_BecomesDirectoriesInTheImage() {
+    using var ms = new MemoryStream();
+    new WimWriter(ms, WimConstants.CompressionNone).Write([
+      ("top.txt", "at the top"u8.ToArray()),
+      ("nested/deeper/leaf.txt", "further down"u8.ToArray()),
+    ]);
+
+    var seen = ReadBack(ms.ToArray());
+    Assert.That(seen["top.txt"], Is.EqualTo("at the top"u8.ToArray()));
+    Assert.That(seen["nested/deeper/leaf.txt"], Is.EqualTo("further down"u8.ToArray()));
   }
 
   // -------------------------------------------------------------------------
@@ -259,24 +330,32 @@ public class WimTests {
   // LZMS round-trip tests
   // -------------------------------------------------------------------------
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
+  /// <summary>
+  /// Asking for an LZMS image is refused rather than answered with one no WIM
+  /// reader will open.
+  /// </summary>
+  /// <remarks>
+  /// <para>The LZMS here is not the LZMS a WIM holds. A chunk carries two
+  /// streams, and the reference runs the range-coded one forwards from the start
+  /// and the Huffman-coded one backwards from the end; ours run the other way
+  /// about, which is plain in a reference chunk — read its tail backwards and the
+  /// literal text appears, because a fresh literal table gives every byte its own
+  /// value as an eight-bit code. The offset slots are a scheme of our own rather
+  /// than the format's table, and an image that uses LZMS is version 3584 with
+  /// 128 KB chunks, not 1.13 with 32 KB.</para>
+  ///
+  /// <para>Until those are put right, an image claiming LZMS is a claim about
+  /// somebody else's format that we cannot honour. Refusing says so at the point
+  /// of asking rather than handing back a container that opens nowhere. The
+  /// encoder itself stays, for the workbench's own use.</para>
+  /// </remarks>
+  [Category("Interop")]
   [Test]
-  public void RoundTrip_SingleResource_Lzms() {
-    var data = Encoding.UTF8.GetBytes("Hello, WIM LZMS world! DDDDDDDDDDDDDDDDDDDD");
-    var result = RoundTrip([data], WimConstants.CompressionLzms);
-    Assert.That(result, Is.EqualTo(data));
-  }
+  public void Lzms_IsRefusedRatherThanWrittenWrongly() {
+    var refusal = Assert.Throws<NotSupportedException>(
+      () => new WimWriter(new MemoryStream(), WimConstants.CompressionLzms));
 
-  [Category("Boundary")]
-  [Category("RoundTrip")]
-  [Test]
-  public void RoundTrip_LargeResource_Lzms() {
-    var data = new byte[64 * 1024 + 7];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(i % 200);
-
-    var result = RoundTrip([data], WimConstants.CompressionLzms);
-    Assert.That(result, Is.EqualTo(data));
+    Assert.That(refusal!.Message, Does.Contain("opposite directions"),
+      "the refusal should say what is wrong, not merely that something is");
   }
 }
