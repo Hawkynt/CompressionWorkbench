@@ -57,6 +57,7 @@ public sealed class LzmsDecompressor {
 
     var recent = new int[LzmsConstants.NumRecentLzOffsets];
     for (var i = 0; i < recent.Length; ++i) recent[i] = i + 1;
+    var nextSeed = LzmsConstants.NumRecentLzOffsets + 1;
     var output = new byte[uncompressedSize];
     var produced = 0;
     var state = 0;
@@ -154,7 +155,14 @@ public sealed class LzmsDecompressor {
 
           ++index;
         }
+
+        // Naming an entry spends it: the ones above it move down and the seed that
+        // has not been used yet takes the last place. Measured both ways - it is the
+        // only arrangement under which wimlib's own chunks all decode, and a chunk
+        // written to need it verifies.
         distance = recent[index];
+        for (var i = index; i < recent.Length - 1; ++i) recent[i] = recent[i + 1];
+        recent[^1] = nextSeed++;
       }
 
       lzPending = distance;
