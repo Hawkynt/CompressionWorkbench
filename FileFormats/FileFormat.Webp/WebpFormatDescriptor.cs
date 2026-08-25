@@ -3,18 +3,14 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using FileFormat.Core;
 
 namespace FileFormat.Webp;
 
 /// <summary>
-/// Exposes a WebP file as a pseudo-archive: <c>FULL.webp</c> (verbatim, Kind="Track")
-/// and <c>metadata.ini</c> (Kind="Tag") are always present, plus per-frame
-/// <c>frames/frame_NNN.webp</c> (Kind="Frame") for animated WebPs (VP8X + ANMF
-/// chunks) and ancillary metadata chunks (EXIF / XMP / ICCP) under
-/// <c>metadata/</c> (Kind="Tag"). The metadata summary records the RIFF size,
-/// canvas dimensions, animation flag, frame count, and loop count parsed from the
-/// VP8X / ANIM chunks. Malformed input never throws from <see cref="List"/> or
-/// <see cref="Extract"/> — it falls back to FULL + a partial metadata note.
+/// Exposes a WebP file as a pseudo-archive while delegating RIFF/WebP structure parsing
+/// to <c>Hawkynt.FileFormats.Images</c>. Workbench owns only archive naming and the
+/// reconstruction of standalone ANMF frame payloads.
 /// </summary>
 public sealed class WebpFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
@@ -28,7 +24,6 @@ public sealed class WebpFormatDescriptor :
   public IReadOnlyList<string> Extensions => [".webp"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // "RIFF" at 0 + "WEBP" at 8. Match the 4-byte "WEBP" at offset 8 for a tighter fit.
     new("WEBP"u8.ToArray(), Offset: 8, Confidence: 0.95),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "VP8/VP8L")];
@@ -61,10 +56,9 @@ public sealed class WebpFormatDescriptor :
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     var blob = ReadAll(input);
     foreach (var e in BuildEntries(blob)) {
-      if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
-        output.Write(e.Data);
-        return;
-      }
+      if (!e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      output.Write(e.Data);
+      return;
     }
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
@@ -80,24 +74,21 @@ public sealed class WebpFormatDescriptor :
       ("FULL.webp", "Track", blob),
     };
 
-    // Parsing can fail on malformed input — never let that take down the listing.
-    // Fall back to FULL + a partial metadata note so callers can still recover bytes.
-    WebpReader? reader = null;
-    try { reader = new WebpReader(blob); }
-    catch { /* keep reader null → partial metadata below */ }
+    IReadOnlyList<ChunkSpan> chunks;
+    try { chunks = Hawkynt.FileFormats.Images.FormatRegistry.EnumerateChunks(blob); }
+    catch { chunks = []; }
 
-    if (reader == null) {
+    if (chunks.Count <= 1) {
       entries.Add(("metadata.ini", "Tag", Encoding.UTF8.GetBytes(
         "; WebP container metadata\nparse_status=partial\nreason=not_a_valid_riff_webp\n")));
       return entries;
     }
 
-    // Index the chunks we care about for the metadata summary.
-    WebpReader.Chunk? vp8x = null, anim = null;
-    var frameChunks = new List<WebpReader.Chunk>();
+    ChunkSpan? vp8x = null, anim = null;
+    var frameChunks = new List<ChunkSpan>();
     string? stillCodec = null;
-    foreach (var chunk in reader.Chunks) {
-      switch (chunk.FourCc) {
+    foreach (var chunk in chunks) {
+      switch (chunk.Name) {
         case "VP8X": vp8x = chunk; break;
         case "ANIM": anim = chunk; break;
         case "ANMF": frameChunks.Add(chunk); break;
@@ -110,21 +101,20 @@ public sealed class WebpFormatDescriptor :
     meta.AppendLine("; WebP container metadata");
     meta.AppendLine("parse_status=ok");
     meta.Append("riff_size=").AppendLine(blob.Length.ToString(CultureInfo.InvariantCulture));
-    meta.Append("chunk_count=").AppendLine(reader.Chunks.Count.ToString(CultureInfo.InvariantCulture));
+    meta.Append("chunk_count=").AppendLine((chunks.Count - 1).ToString(CultureInfo.InvariantCulture));
 
     var animated = false;
-    if (vp8x != null) {
-      var v = reader.ReadBody(vp8x);
-      if (v.Length >= 10) {
-        var flags = v[0];
+    if (vp8x is { } x) {
+      var body = ReadBody(blob, x);
+      if (body.Length >= 10) {
+        var flags = body[0];
         animated = (flags & 0x02) != 0;
         var hasExif = (flags & 0x08) != 0;
         var hasXmp = (flags & 0x04) != 0;
         var hasIccp = (flags & 0x20) != 0;
         var hasAlpha = (flags & 0x10) != 0;
-        // Canvas width/height are 24-bit little-endian, stored as value minus one.
-        var width = (v[4] | (v[5] << 8) | (v[6] << 16)) + 1;
-        var height = (v[7] | (v[8] << 8) | (v[9] << 16)) + 1;
+        var width = (body[4] | (body[5] << 8) | (body[6] << 16)) + 1;
+        var height = (body[7] | (body[8] << 8) | (body[9] << 16)) + 1;
         meta.Append("width=").AppendLine(width.ToString(CultureInfo.InvariantCulture));
         meta.Append("height=").AppendLine(height.ToString(CultureInfo.InvariantCulture));
         meta.Append("has_alpha=").AppendLine(hasAlpha ? "true" : "false");
@@ -139,11 +129,10 @@ public sealed class WebpFormatDescriptor :
     meta.Append("animated=").AppendLine(animated ? "true" : "false");
     if (animated) {
       meta.Append("frame_count=").AppendLine(frameChunks.Count.ToString(CultureInfo.InvariantCulture));
-      if (anim != null) {
-        var a = reader.ReadBody(anim);
-        if (a.Length >= 6) {
-          // ANIM: 4-byte background color (BGRA) + 2-byte loop count (LE). 0 = infinite.
-          var loop = BinaryPrimitives.ReadUInt16LittleEndian(a.AsSpan(4));
+      if (anim is { } a) {
+        var body = ReadBody(blob, a);
+        if (body.Length >= 6) {
+          var loop = BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(4));
           meta.Append("loop_count=").AppendLine(loop == 0 ? "0 (infinite)" : loop.ToString(CultureInfo.InvariantCulture));
         }
       }
@@ -151,44 +140,48 @@ public sealed class WebpFormatDescriptor :
 
     entries.Add(("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));
 
-    // Per-frame standalone WebPs for animated files.
     var frameIndex = 0;
-    foreach (var chunk in reader.Chunks) {
-      switch (chunk.FourCc) {
-        case "ANMF":
-          // Animation frame. Body: 16-byte ANMF header + VP8/VP8L sub-chunk.
-          // Rebuild a standalone still WebP wrapping that sub-chunk so the extracted
-          // bytes open in any viewer.
-          var body = reader.ReadBody(chunk);
-          if (body.Length > 16) {
-            var sub = body.AsSpan(16).ToArray();
-            entries.Add(($"frames/frame_{frameIndex:D3}.webp", "Frame", WrapAsWebp(sub)));
-            ++frameIndex;
-          }
+    foreach (var chunk in chunks) {
+      switch (chunk.Name) {
+        case "ANMF": {
+          var body = ReadBody(blob, chunk);
+          if (body.Length <= 16) break;
+          var subChunk = body.AsSpan(16).ToArray();
+          entries.Add(($"frames/frame_{frameIndex:D3}.webp", "Frame", WrapAsWebp(subChunk)));
+          ++frameIndex;
           break;
+        }
         case "EXIF":
-          entries.Add(("metadata/exif.bin", "Tag", reader.ReadBody(chunk)));
+          entries.Add(("metadata/exif.bin", "Tag", ReadBody(blob, chunk)));
           break;
         case "XMP ":
-          entries.Add(("metadata/xmp.xml", "Tag", reader.ReadBody(chunk)));
+          entries.Add(("metadata/xmp.xml", "Tag", ReadBody(blob, chunk)));
           break;
         case "ICCP":
-          entries.Add(("metadata/icc.bin", "Tag", reader.ReadBody(chunk)));
+          entries.Add(("metadata/icc.bin", "Tag", ReadBody(blob, chunk)));
           break;
       }
     }
     return entries;
   }
 
-  // Wraps a VP8/VP8L/VP8X sub-chunk as a standalone RIFF/WEBP file.
-  private static byte[] WrapAsWebp(byte[] vp8Body) {
+  private static byte[] ReadBody(byte[] blob, ChunkSpan chunk) {
+    if (chunk.Offset < 0 || chunk.Offset + 8 > blob.Length || chunk.Length < 8)
+      return [];
+    var offset = checked((int)chunk.Offset);
+    var declared = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(offset + 4, 4));
+    var available = Math.Min((long)declared, Math.Min(chunk.Length - 8, blob.Length - (offset + 8L)));
+    return available <= 0 ? [] : blob.AsSpan(offset + 8, checked((int)available)).ToArray();
+  }
+
+  private static byte[] WrapAsWebp(byte[] subChunk) {
     using var ms = new MemoryStream();
     ms.Write("RIFF"u8);
-    Span<byte> sz = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32LittleEndian(sz, (uint)(4 + vp8Body.Length));
-    ms.Write(sz);
+    Span<byte> size = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(size, checked((uint)(4 + subChunk.Length)));
+    ms.Write(size);
     ms.Write("WEBP"u8);
-    ms.Write(vp8Body);
+    ms.Write(subChunk);
     return ms.ToArray();
   }
 }

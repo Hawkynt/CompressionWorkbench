@@ -22,11 +22,20 @@ public class WebpTests {
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// The container's chunks are read by the image package now, so what Workbench
+  /// still owns is what it says about them.
+  /// </summary>
   [Test]
-  public void ReaderFindsVp8lChunk() {
+  public void MetadataNamesTheStillCodec() {
     var data = MakeMinimalWebp();
-    var reader = new WebpReader(data);
-    Assert.That(reader.Chunks.Any(c => c.FourCc == "VP8L"), Is.True);
+    using var ms = new MemoryStream(data);
+    using var meta = new MemoryStream();
+    new WebpFormatDescriptor().ExtractEntry(ms, "metadata.ini", meta, null);
+
+    var text = System.Text.Encoding.UTF8.GetString(meta.ToArray());
+    Assert.That(text, Does.Contain("parse_status=ok"));
+    Assert.That(text, Does.Contain("codec=VP8L (lossless)"));
   }
 
   [Test]
@@ -37,9 +46,20 @@ public class WebpTests {
     Assert.That(entries.Any(e => e.Name == "FULL.webp"), Is.True);
   }
 
+  /// <summary>
+  /// Something that is not a RIFF/WebP is reported rather than thrown at the caller:
+  /// the full blob is still offered and the metadata says why it could not be read.
+  /// </summary>
   [Test]
-  public void BadHeader_Throws() {
-    // Need ≥12 bytes to reach the RIFF+WEBP magic check — anything shorter returns an empty chunk list.
-    Assert.Throws<InvalidDataException>(() => _ = new WebpReader(new byte[16]));
+  public void SomethingThatIsNotAWebp_IsReportedAsPartial() {
+    using var ms = new MemoryStream(new byte[16]);
+    var entries = new WebpFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "FULL.webp"), Is.True);
+
+    ms.Position = 0;
+    using var meta = new MemoryStream();
+    new WebpFormatDescriptor().ExtractEntry(ms, "metadata.ini", meta, null);
+    Assert.That(System.Text.Encoding.UTF8.GetString(meta.ToArray()),
+      Does.Contain("reason=not_a_valid_riff_webp"));
   }
 }

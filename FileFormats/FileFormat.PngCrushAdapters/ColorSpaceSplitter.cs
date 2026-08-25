@@ -373,7 +373,7 @@ public static class ColorSpaceSplitter {
     var Xb = new byte[n]; var Yb = new byte[n]; var Zb = new byte[n];
     for (var i = 0; i < n; i++) {
       var p = i * 4;
-      var (X, Y, Z) = Hdr.Xyz(rgba[p], rgba[p + 1], rgba[p + 2]);
+      var (X, Y, Z) = ColorSpaces.Hdr.Xyz(rgba[p], rgba[p + 1], rgba[p + 2]);
       Xb[i] = Range(X, 0f, ColorSpaces.Lab.Xn);
       Yb[i] = Range(Y, 0f, ColorSpaces.Lab.Yn);
       Zb[i] = Range(Z, 0f, ColorSpaces.Lab.Zn);
@@ -385,7 +385,7 @@ public static class ColorSpaceSplitter {
     var xb = new byte[n]; var yb = new byte[n]; var Yb = new byte[n];
     for (var i = 0; i < n; i++) {
       var p = i * 4;
-      var (x, y, Y) = Hdr.XyY(rgba[p], rgba[p + 1], rgba[p + 2]);
+      var (x, y, Y) = ColorSpaces.Hdr.XyY(rgba[p], rgba[p + 1], rgba[p + 2]);
       xb[i] = Range(x, 0f, 0.74f);
       yb[i] = Range(y, 0f, 0.74f);
       Yb[i] = Unit(Y);
@@ -397,7 +397,7 @@ public static class ColorSpaceSplitter {
     var Ib = new byte[n]; var Ctb = new byte[n]; var Cpb = new byte[n];
     for (var i = 0; i < n; i++) {
       var p = i * 4;
-      var (I, Ct, Cp) = Hdr.ICtCp(rgba[p], rgba[p + 1], rgba[p + 2]);
+      var (I, Ct, Cp) = ColorSpaces.Hdr.ICtCp(rgba[p], rgba[p + 1], rgba[p + 2]);
       Ib[i] = Unit(I);
       Ctb[i] = Signed(Ct, 0.5f);
       Cpb[i] = Signed(Cp, 0.5f);
@@ -409,7 +409,7 @@ public static class ColorSpaceSplitter {
     var Jb = new byte[n]; var ab = new byte[n]; var bb = new byte[n];
     for (var i = 0; i < n; i++) {
       var p = i * 4;
-      var (Jz, az, bz) = Hdr.JzAzBz(rgba[p], rgba[p + 1], rgba[p + 2]);
+      var (Jz, az, bz) = ColorSpaces.Hdr.JzAzBz(rgba[p], rgba[p + 1], rgba[p + 2]);
       Jb[i] = Range(Jz, 0f, 0.17f);
       ab[i] = Signed(az, 0.05f);
       bb[i] = Signed(bz, 0.05f);
@@ -421,7 +421,7 @@ public static class ColorSpaceSplitter {
     var Jb = new byte[n]; var Cb = new byte[n]; var hb = new byte[n];
     for (var i = 0; i < n; i++) {
       var p = i * 4;
-      var (Jz, Cz, hz) = Hdr.JzCzhz(rgba[p], rgba[p + 1], rgba[p + 2]);
+      var (Jz, Cz, hz) = ColorSpaces.Hdr.JzCzhz(rgba[p], rgba[p + 1], rgba[p + 2]);
       Jb[i] = Range(Jz, 0f, 0.17f);
       Cb[i] = Range(Cz, 0f, 0.07f);
       hb[i] = Hue(hz);

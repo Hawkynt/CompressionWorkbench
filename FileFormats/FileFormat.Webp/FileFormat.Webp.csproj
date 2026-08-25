@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.131" PrivateAssets="compile" />
   </ItemGroup>
 
 </Project>

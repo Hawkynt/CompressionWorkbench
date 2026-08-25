@@ -10,7 +10,7 @@ public class GifLayoutMapTests {
   /// <summary>
   /// Builds a minimal GIF89a with one or more 1x1 frames.
   /// </summary>
-  private static MemoryStream BuildTestGif(int frameCount = 1, bool includeGce = true) {
+  private static MemoryStream BuildTestGif(int frameCount = 1, bool includeGce = true, bool includeAppExtension = false) {
     var ms = new MemoryStream();
 
     // Header: "GIF89a"
@@ -26,6 +26,18 @@ public class GifLayoutMapTests {
     // Global Color Table (2 entries * 3 bytes = 6 bytes)
     ms.Write(new byte[] { 0x00, 0x00, 0x00 }); // black
     ms.Write(new byte[] { 0xFF, 0xFF, 0xFF }); // white
+
+    if (includeAppExtension) {
+      // Netscape looping extension
+      ms.WriteByte(0x21); // extension introducer
+      ms.WriteByte(0xFF); // application extension label
+      ms.WriteByte(0x0B); // block size
+      ms.Write("NETSCAPE2.0"u8);
+      ms.WriteByte(0x03); // sub-block size
+      ms.WriteByte(0x01); // loop sub-block id
+      ms.Write(new byte[] { 0x00, 0x00 }); // loop forever
+      ms.WriteByte(0x00); // block terminator
+    }
 
     for (var i = 0; i < frameCount; i++) {
       if (includeGce) {
@@ -84,9 +96,13 @@ public class GifLayoutMapTests {
       Assert.That(frames[i].FileName, Does.Contain($"Frame {i}"));
   }
 
+  /// <summary>
+  /// A frame's graphic control extension is reported inside the frame it controls,
+  /// so what stands on its own in the map is a file-level extension.
+  /// </summary>
   [Test]
   public void EnumerateChunks_HasExtensions() {
-    using var ms = BuildTestGif(frameCount: 1, includeGce: true);
+    using var ms = BuildTestGif(frameCount: 1, includeAppExtension: true);
     var chunks = GifLayoutMap.Enumerate(ms).ToList();
 
     var exts = chunks.Where(c => c.FileName != null && c.FileName.Contains("Extension")).ToList();
