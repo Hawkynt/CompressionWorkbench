@@ -1,81 +1,86 @@
 # Hawkynt.Compression.Core
 
 [![NuGet](https://img.shields.io/nuget/v/Hawkynt.Compression.Core.svg)](https://www.nuget.org/packages/Hawkynt.Compression.Core/)
-[![License](https://img.shields.io/badge/license-LGPL--3.0--or--later-blue)](https://www.gnu.org/licenses/lgpl-3.0.html)
+[![NuGet downloads](https://img.shields.io/nuget/dt/Hawkynt.Compression.Core.svg)](https://www.nuget.org/packages/Hawkynt.Compression.Core/)
+[![License](https://img.shields.io/github/license/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE)
+[![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
+![Target](https://img.shields.io/badge/target-net10.0-blue)
 
-> Pure-managed compression primitives extracted from
-[CompressionWorkbench](https://github.com/Hawkynt/CompressionWorkbench).
-Every algorithm is implemented from scratch — no native dependency on zlib, liblzma, libarchive, or any
-other third-party compression library. The package is single-purpose: it bundles only
-`Compression.Registry` (the building-block + format-descriptor interfaces) directly into `lib/`,
-so consumers add a single dependency and get the full primitive surface. PCM audio, archive
-formats, and filesystem readers ship as separate single-responsibility packages — alongside
-the sibling `Hawkynt.FileFormats.Images` — and are not pulled in transitively by
-`Hawkynt.Compression.Core`:
+> Pure-managed compression primitives, entropy coders, transforms, hashing, bit I/O, and reusable building blocks implemented clean-room in C# with no native compression dependency.
 
-- `Hawkynt.FileFormats.Audio` — PCM / FLAC / WAV / AIFF / AU / Vorbis / Opus / AAC / MP3
-- `Hawkynt.FileFormats.Archives` — ZIP / TAR / 7Z / RAR / and the long tail
-- `Hawkynt.FileFormats.FileSystems` — FAT / ext4 / NTFS / HFS+ / APFS / Btrfs / etc.
+## 📦 Installation
 
-## When to use this package
+```bash
+dotnet add package Hawkynt.Compression.Core
+```
 
-Reach for `Compression.Core` when **any** of these is true:
+The package also bundles `Compression.Registry`, so the common `IBuildingBlock` registry surface is available from the same NuGet installation.
 
-- You need a compression algorithm that's not in the BCL (LZW / LZMA / LZHAM / Brotli / Zopfli / FSE /
-  rANS / PAQ8 / context-mixing / Burrows-Wheeler / arithmetic / range / Tunstall / DMC / etc.)
-- You need a fully managed implementation (e.g. for AOT, deterministic-build, or environments where
-  binding against `libzlib` is forbidden by security review)
-- You need fine-grained control: bit-level I/O, raw entropy stages, transform composition, custom match
-  finders — building blocks compose freely
-- You're benchmarking algorithms against each other and want a level playing field — every codec here
-  uses the same `byte[] Compress(ReadOnlySpan<byte>)` / `byte[] Decompress(ReadOnlySpan<byte>)` shape
+## ✨ Features
 
-Skip it when:
+- Clean-room implementations based on public specifications and papers rather than ports of native compression libraries.
+- Composable dictionary coders, entropy coders, transforms, filters, integer codes, hashes, and bit-level I/O.
+- Uniform registry surface for comparing and composing building blocks.
+- Direct concrete APIs remain available when an algorithm exposes meaningful non-default parameters.
+- Pure managed code for environments where native `zlib`, `liblzma`, `libarchive`, or similar dependencies are undesirable.
+- Round-trip-oriented test coverage plus official/reference vectors where available.
 
-- You only need DEFLATE / GZIP / Brotli / ZLib at default settings — `System.IO.Compression` is faster
-  on hot paths because it ships with native code paths
-- You need format-level handling (ZIP / TAR / 7Z / RAR archives) — wait for
-  `Hawkynt.CompressionWorkbench.Lib` (sister package, not yet on NuGet) or use the source repo
+## 🧩 Support matrix
 
----
+This is a curated package-level map, not a hand-maintained claim to list every compiled building block. For the exact inventory in the version you reference, query `BuildingBlockRegistry.All`.
 
-## Quick start
+| Algorithm / primitive | Family | State | Notes | Reference |
+| --- | --- | :---: | --- | --- |
+| [DEFLATE](https://en.wikipedia.org/wiki/Deflate) | Dictionary + entropy | R/W | Raw RFC 1951 building block | [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951) |
+| [LZ77](https://en.wikipedia.org/wiki/LZ77_and_LZ78) | Dictionary | R/W | Sliding-window dictionary coding | [Ziv & Lempel 1977](https://ieeexplore.ieee.org/document/1055714) |
+| [LZ78](https://en.wikipedia.org/wiki/LZ77_and_LZ78) | Dictionary | R/W | Phrase-dictionary coding | [Ziv & Lempel 1978](https://ieeexplore.ieee.org/document/1055934) |
+| [LZW](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch) | Dictionary | R/W | Variable-width dictionary coding | [Welch 1984](https://ieeexplore.ieee.org/document/1659158) |
+| [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | Dictionary | R/W | Fast block compression | [LZ4 block format](https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md) |
+| [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) | Dictionary | R/W | Fast block compression | [Snappy format](https://github.com/google/snappy/blob/main/format_description.txt) |
+| [Brotli](https://en.wikipedia.org/wiki/Brotli) | Dictionary + entropy | R/W ⚠️ | Decoder accepts more of the format than the encoder chooses to emit | [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) |
+| [LZMA](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | Dictionary + range coding | R/W | LZMA primitive | [7-Zip LZMA SDK](https://www.7-zip.org/sdk.html) |
+| [LZX](https://en.wikipedia.org/wiki/LZX) | Dictionary + Huffman | R/W | Used by CAB/CHM/WIM families | [Microsoft LZX](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-patch/) |
+| [Zstandard entropy stages](https://en.wikipedia.org/wiki/Zstd) | FSE / Huffman | R/W | Reusable entropy components | [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) |
+| [Huffman coding](https://en.wikipedia.org/wiki/Huffman_coding) | Entropy | R/W | Static/canonical Huffman primitives | [Huffman 1952](https://ieeexplore.ieee.org/document/4051119) |
+| [Arithmetic coding](https://en.wikipedia.org/wiki/Arithmetic_coding) | Entropy | R/W | Adaptive arithmetic coder | [Witten, Neal & Cleary 1987](https://dl.acm.org/doi/10.1145/214762.214771) |
+| [Range coding](https://en.wikipedia.org/wiki/Range_coding) | Entropy | R/W | Arithmetic-coding family primitive | [Martin 1979](https://www.compressconsult.com/rangecoder/) |
+| [rANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) | Entropy | R/W | Range Asymmetric Numeral Systems | [Duda 2009](https://arxiv.org/abs/0902.0271) |
+| [FSE](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems#Tabled_variant_(tANS)) | Entropy | R/W | Finite State Entropy / tANS | [FSE project](https://github.com/Cyan4973/FiniteStateEntropy) |
+| [PPM](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | Context modelling | R/W | Prediction by Partial Matching | [Cleary & Witten 1984](https://ieeexplore.ieee.org/document/1096090) |
+| [Context Tree Weighting](https://en.wikipedia.org/wiki/Context_tree_weighting) | Context modelling | R/W | Universal context weighting | [Willems et al.](https://ieeexplore.ieee.org/document/382012) |
+| [Burrows-Wheeler transform](https://en.wikipedia.org/wiki/Burrows%E2%80%93Wheeler_transform) | Transform | R/W | Reversible block transform | [Burrows & Wheeler 1994](https://www.hpl.hp.com/techreports/Compaq-DEC/SRC-RR-124.pdf) |
+| [Move-to-front](https://en.wikipedia.org/wiki/Move-to-front_transform) | Transform | R/W | Often paired with BWT | [Bentley et al. 1986](https://dl.acm.org/doi/10.1145/6424.6429) |
+| [Run-length encoding](https://en.wikipedia.org/wiki/Run-length_encoding) | Transform | R/W | Generic RLE stages | [Overview](https://en.wikipedia.org/wiki/Run-length_encoding) |
+| [CRC-32C](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) | Hash/checksum | Compute | Hardware-assisted where available | [RFC 3720 Appendix B](https://www.rfc-editor.org/rfc/rfc3720#appendix-B) |
+| [xxHash](https://en.wikipedia.org/wiki/xxHash) | Hash | Compute | Fast non-cryptographic hashing | [xxHash](https://xxhash.com/) |
+| [BLAKE2](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE2) | Hash | Compute | Cryptographic hash family | [RFC 7693](https://www.rfc-editor.org/rfc/rfc7693) |
 
-### Algorithm round-trip
+`R/W` means the primitive exposes both compression/encoding and decompression/decoding paths. `⚠️` marks a deliberate subset whose limits matter for interoperability.
 
-Every building block exposes the same two-method shape via the
-`Compression.Registry.IBuildingBlock` interface:
+## 🚀 Quick start
+
+### Registry-based round trip
 
 ```csharp
-using Compression.Core.Dictionary.Lzw;
-using Compression.Registry;   // IBuildingBlock + BuildingBlockRegistry
+using Compression.Registry;
 
 IBuildingBlock lzw = BuildingBlockRegistry.GetById("BB_Lzw")!;
 byte[] compressed = lzw.Compress(originalBytes);
-byte[] roundTripped = lzw.Decompress(compressed);
+byte[] restored = lzw.Decompress(compressed);
 ```
 
-Or call the concrete codec directly when you want non-default parameters:
+### Concrete LZW parameters
 
 ```csharp
-using var ms = new MemoryStream();
-var encoder = new LzwEncoder(ms, minBits: 9, maxBits: 12);
+using Compression.Core.Dictionary.Lzw;
+
+using var stream = new MemoryStream();
+var encoder = new LzwEncoder(stream, minBits: 9, maxBits: 12);
 encoder.Encode(originalBytes);
 
-ms.Position = 0;
-var decoder = new LzwDecoder(ms, minBits: 9, maxBits: 12);
-byte[] roundTripped = decoder.Decode(originalBytes.Length);
-```
-
-### Hashing
-
-```csharp
-using Compression.Core.Hashing;
-
-uint crc      = Crc32C.Compute(data);  // hardware-accelerated SSE4.2 / ARM CRC32C
-uint xx32     = XxHash32.Compute(data);
-ulong fnv     = Fnv1a64.Compute(data);
-byte[] sha256 = Sha256.Compute(data);
+stream.Position = 0;
+var decoder = new LzwDecoder(stream, minBits: 9, maxBits: 12);
+byte[] restored = decoder.Decode(originalBytes.Length);
 ```
 
 ### Bit I/O
@@ -83,172 +88,147 @@ byte[] sha256 = Sha256.Compute(data);
 ```csharp
 using Compression.Core.BitIO;
 
-using var ms = new MemoryStream();
-var writer = new BitWriter(ms, BitOrder.MsbFirst);
+using var stream = new MemoryStream();
+var writer = new BitWriter(stream, BitOrder.MsbFirst);
 writer.WriteBits(0b1011_0010, count: 8);
-writer.WriteBits(0xF,         count: 4);
+writer.WriteBits(0xF, count: 4);
 writer.Flush();
 
-ms.Position = 0;
-var reader = new BitReader(ms, BitOrder.MsbFirst);
-int byteVal = reader.ReadBits(8);   // 0xB2
-int nibble  = reader.ReadBits(4);   // 0xF
+stream.Position = 0;
+var reader = new BitReader(stream, BitOrder.MsbFirst);
+int byteValue = reader.ReadBits(8);
+int nibble = reader.ReadBits(4);
 ```
 
-### Discovering building blocks
+### Hashing
 
 ```csharp
-foreach (var bb in BuildingBlockRegistry.All)
-  Console.WriteLine($"{bb.Id,-18} {bb.Family,-14} {bb.Description}");
+using Compression.Core.Hashing;
+
+uint crc = Crc32C.Compute(data);
+uint xx32 = XxHash32.Compute(data);
+ulong fnv = Fnv1a64.Compute(data);
+byte[] sha256 = Sha256.Compute(data);
 ```
 
-The benchmark tool in the source repo (`cwb benchmark <file>`) iterates this same list and ranks every
-algorithm by ratio + compress / decompress wall time on a single input.
+## 📚 Choosing a building block
 
----
+| Goal | Typical family to inspect |
+| --- | --- |
+| Fast dictionary compression | LZ4 / Snappy / LZO-style implementations present in the registry |
+| General-purpose dictionary + entropy compression | DEFLATE / LZMA / Brotli-related implementations present in the registry |
+| Transform pipelines | BWT → MTF → entropy coding |
+| Adaptive entropy coding | Arithmetic / range / ANS-family implementations |
+| Integer coding | Golomb/Rice, Exp-Golomb, Elias-family implementations |
+| Research/experimental comparison | Whatever the current registry exposes for that build |
 
-## Choosing the right algorithm
+The source-repository CLI can benchmark the currently registered building blocks on representative input:
 
-| You want… | Pick |
-|---|---|
-| Fastest possible round-trip on logs / JSON / mixed data | `BB_Lz4`, `BB_Snappy`, `BB_Pithy`, `BB_Lzfx`, `BB_Lzo`, `BB_Lzjb` |
-| Best ratio with reasonable CPU budget (general purpose) | `BB_Lzma`, `BB_Brotli`, `BB_Zstd-via-FSE` |
-| Best ratio at any CPU cost (research / archival) | `BB_PAQ8`, `BB_Cmix`, `BB_Mcm`, `BB_Bsc`, `BB_Csc`, `BB_Zpaq` |
-| Streamable byte-level codec (network / pipe) | `BB_Deflate`, `BB_Lz4`, `BB_Snappy` |
-| Lossless image-friendly | `BB_Deflate` (PNG layer), `BB_Lzma` (lossless), `BB_Brotli` (modern web) |
-| Domain transform first, then entropy code | `BB_Bwt` → `BB_Mtf` → `BB_Huffman` (the bzip2 stack) |
-| Adaptive entropy stage | `BB_Arithmetic`, `BB_RangeCoding`, `BB_rANS`, `BB_FSE` |
-| Static entropy stage (precomputed table) | `BB_Huffman`, `BB_Tunstall`, `BB_ShannonFano` |
-| Geometric integer distributions | `BB_Golomb`, `BB_Rice`, `BB_ExpGolomb`, `BB_EliasGamma`, `BB_EliasDelta` |
-| Universal integer codes (no model) | `BB_Unary`, `BB_Fibonacci`, `BB_Levenshtein` |
-| DNA / 4-symbol alphabets | `BB_Dna` (specialised) |
-| Hardware-friendly chunked compression | `BB_842` (IBM hardware-style 2 / 4 / 8-byte template matching) |
-| Network-protocol-style framing (packet sizes) | `BB_Lzs` (Stac LZS — RFC 1967 / RFC 2395) |
-| Templated grammar / repetition mining | `BB_RePair`, `BB_Sequitur`, `BB_Bpe`, `BB_Lzwl` |
+```bash
++cwb benchmark sample.bin
+```
 
-When in doubt: run `cwb benchmark` from the source repo on a representative sample of your data and let
-the numbers pick.
+`BuildingBlockRegistry.All` is the authoritative list of what the referenced build actually contains.
 
----
+## 🧭 Package boundary
 
-## Building blocks reference
+`Compression.Core/Hawkynt.Compression.Core.csproj` is packable and uses the project filename as the NuGet package ID: `Hawkynt.Compression.Core`.
 
-Every entry below registers via `IBuildingBlock`, exposes both `Compress` and `Decompress`, and was
-verified via the project's round-trip test matrix. Each row links to the algorithm's primary reference
-or canonical specification.
+The project references `Compression.Registry` with `PrivateAssets="all"` and adds the resolved registry assembly to the package's `lib/<tfm>` output. Consumers therefore install one NuGet package while still getting the registry contracts used by Core.
 
-| Id | Algorithm | Family | State | Description | Reference |
-|---|---|---|---|---|---|
-| `BB_Deflate` | [DEFLATE](https://en.wikipedia.org/wiki/Deflate) | Dictionary | R/W | LZ77 + Huffman, the algorithm inside gzip / zip / png | [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951) |
-| `BB_Deflate64` | [Deflate64](https://en.wikipedia.org/wiki/Deflate#Deflate64) | Dictionary | R/W | Enhanced DEFLATE with 64 KB window | [MS-ZIP](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-zip/) |
-| `BB_Lz77` | [LZ77](https://en.wikipedia.org/wiki/LZ77_and_LZ78) | Dictionary | R/W | Sliding-window dictionary with distance / length tokens | [Ziv & Lempel 1977](https://www2.cs.duke.edu/courses/spring03/cps296.5/papers/ziv_lempel_1977_universal_algorithm.pdf) |
-| `BB_Lz78` | [LZ78](https://en.wikipedia.org/wiki/LZ77_and_LZ78) | Dictionary | R/W | Phrase-dictionary precursor to LZW | [Ziv & Lempel 1978](https://ieeexplore.ieee.org/document/1055934) |
-| `BB_Lzw` | [LZW](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch) | Dictionary | R/W | Dictionary coding used in GIF / Unix `compress` | [Welch 1984](https://www.cs.duke.edu/courses/spring03/cps296.5/papers/welch_1984_technique_for.pdf) |
-| `BB_Lzo` | [LZO1X](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Oberhumer) | Dictionary | R/W | Extremely fast, decompression-optimised | [oberhumer.com](http://www.oberhumer.com/opensource/lzo/) |
-| `BB_Lzss` | [LZSS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Storer%E2%80%93Szymanski) | Dictionary | R/W | LZ77 variant with flag-bit encoding | [Storer & Szymanski 1982](https://dl.acm.org/doi/10.1145/322344.322346) |
-| `BB_Lz4` | [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | Dictionary | R/W | Extremely fast LZ77-family block compression | [LZ4 block format](https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md) |
-| `BB_Snappy` | [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) | Dictionary | R/W | Fast LZ77-family compression (Google) | [Snappy format](https://github.com/google/snappy/blob/main/format_description.txt) |
-| `BB_Brotli` | [Brotli](https://en.wikipedia.org/wiki/Brotli) | Dictionary | R/W | LZ77 + Huffman with static dictionary (Google). The decoder reads the whole format; the encoder uses literal context modelling, the distance ring buffer, run-length coded prefix code descriptors and cost-driven meta-block splitting, but emits no static dictionary references, no block-switch commands and no non-zero NPOSTFIX/NDIRECT. | [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) |
-| `BB_Lzma` | [LZMA](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | Dictionary | R/W | LZ + Markov chain + range coding | [7-Zip LZMA SDK](https://www.7-zip.org/sdk.html) |
-| `BB_Lzx` | [LZX](https://en.wikipedia.org/wiki/LZX) | Dictionary | R/W | LZ77 + Huffman used in CAB / CHM / WIM | [MS-PATCH LZX](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-patch/) |
-| `BB_Xpress` | [XPRESS Huffman](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/) | Dictionary | R/W | Windows XPRESS (NTFS / WIM / Hyper-V) | [MS-XCA](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/) |
-| `BB_Lzh` | [LZH (LH5)](https://en.wikipedia.org/wiki/LHA_(file_format)) | Dictionary | R/W ¹ | Lempel-Ziv with adaptive Huffman, used in LHA | [LZH format doc](http://web.archive.org/web/20021013020141/http://www.osirusoft.com/joejared/lzhformat.html) |
-| `BB_Arj` | [ARJ](https://en.wikipedia.org/wiki/ARJ) | Dictionary | R/W ¹ | Modified LZ77 + Huffman from ARJ archives | [ARJ technote](http://www.arjsoftware.com/) |
-| `BB_Lzms` | [LZMS](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/) | Dictionary | R/W | LZ + Markov + Shannon delta (Windows WIM / ESD) | [MS-XCA LZMS](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/) |
-| `BB_Lzp` | [LZP](https://en.wikipedia.org/wiki/LZP) | Dictionary | R/W | Lempel-Ziv Prediction with context-based match prediction | [Bloom 1996](https://encode.su/threads/1301-LZP) |
-| `BB_Ace` | [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | Dictionary | R/W | LZ77 + Huffman from ACE archive format | [unace-nonfree](https://gitlab.com/luser_droog/unace-nonfree) |
-| `BB_Rar` | [RAR5](https://en.wikipedia.org/wiki/RAR_(file_format)) | Dictionary | R/W | LZ + Huffman + PPM from RAR5 | [rarlab technote](https://www.rarlab.com/technote.htm) |
-| `BB_Sqx` | SQX | Dictionary | R/W ¹ | LZ + Huffman from the SQX archive format | [SqxFormat notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Compression.Core/SqxFormat/README.md) |
-| `BB_ROLZ` | [ROLZ](https://en.wikipedia.org/wiki/LZ77_and_LZ78#Variants) | Dictionary | R/W | Reduced-Offset LZ with context-based match tables | [encode.su](https://encode.su/threads/1909-ROLZ) |
-| `BB_LZHAM` | [LZHAM](https://github.com/richgel999/lzham_codec) | Dictionary | R/W | LZ77 + Huffman, inspired by LZHAM codec | [LZHAM repo](https://github.com/richgel999/lzham_codec) |
-| `BB_Lzs` | [LZS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Stac) | Dictionary | R/W | Stac LZS (7 / 11-bit offset LZSS for networking) | [RFC 1967](https://www.rfc-editor.org/rfc/rfc1967) / [RFC 2395](https://www.rfc-editor.org/rfc/rfc2395) |
-| `BB_Lzwl` | LZWL | Dictionary | R/W | LZW with variable-length initial alphabet from digram analysis | [LZWL paper](https://www.jucs.org/jucs_9_9/compression_with_finite_mixed/jucs_9_9_1055_1081_salomon.pdf) |
-| `BB_RePair` | [Re-Pair](https://en.wikipedia.org/wiki/Re-Pair) | Dictionary | R/W | Recursive Pairing, offline grammar-based compression | [Larsson & Moffat 1999](https://ieeexplore.ieee.org/document/755679) |
-| `BB_Sequitur` | [Sequitur](https://en.wikipedia.org/wiki/Sequitur_algorithm) | Dictionary | R/W | Online grammar inference by digram uniqueness and rule utility | [Nevill-Manning & Witten 1997](https://www.jair.org/index.php/jair/article/view/10151) |
-| `BB_842` | [842](https://en.wikipedia.org/wiki/842_(compression_algorithm)) | Dictionary | R/W | IBM 842 hardware compression with 2 / 4 / 8-byte template matching | [Linux `crypto/842*`](https://github.com/torvalds/linux/tree/master/crypto) |
-| `BB_PPM` | [PPM](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | Context-Mixing | R/W | Prediction by Partial Matching — order-3 contexts, escape method C, full exclusion, arithmetic coded | [Cleary & Witten 1984](https://ieeexplore.ieee.org/document/1096090) / [Moffat 1990](https://ieeexplore.ieee.org/document/61469) |
-| `BB_CTW` | [CTW](https://en.wikipedia.org/wiki/Context_tree_weighting) | Context-Mixing | R/W | Context Tree Weighting — optimal universal compression | [Willems 1995](https://ieeexplore.ieee.org/document/382012) |
-| `BB_Huffman` | [Huffman](https://en.wikipedia.org/wiki/Huffman_coding) | Entropy | R/W | Optimal prefix-free entropy coding | [Huffman 1952](https://ieeexplore.ieee.org/document/4051119) |
-| `BB_Arithmetic` | [Arithmetic](https://en.wikipedia.org/wiki/Arithmetic_coding) | Entropy | R/W | Order-0 arithmetic coding with frequency table | [Witten / Neal / Cleary 1987](https://dl.acm.org/doi/10.1145/214762.214771) |
-| `BB_ShannonFano` | [Shannon-Fano](https://en.wikipedia.org/wiki/Shannon%E2%80%93Fano_coding) | Entropy | R/W | Recursive frequency-splitting precursor to Huffman | Shannon 1948 |
-| `BB_Golomb` | [Golomb / Rice](https://en.wikipedia.org/wiki/Golomb_coding) | Entropy | R/W | Optimal coding for geometric distributions | [Golomb 1966](https://ieeexplore.ieee.org/document/1053899) |
-| `BB_Fibonacci` | [Fibonacci](https://en.wikipedia.org/wiki/Fibonacci_coding) | Entropy | R/W | Universal code with `11` terminators (Zeckendorf) | [Apostolico & Fraenkel 1987](https://ieeexplore.ieee.org/document/1057294) |
-| `BB_FSE` | [FSE / tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) | Entropy | R/W | Table-based ANS (Zstd's entropy stage) | [Duda 2013](https://arxiv.org/abs/1311.2540) / [Collet's blog](https://fastcompression.blogspot.com/) |
-| `BB_BPE` | [Byte Pair Encoding](https://en.wikipedia.org/wiki/Byte_pair_encoding) | Entropy | R/W | Iterative most-frequent-pair replacement | [Gage 1994](http://www.pennelynn.com/Documents/CUJ/HTML/94HTML/19940045.HTM) |
-| `BB_RangeCoding` | [Range coding](https://en.wikipedia.org/wiki/Range_coding) | Entropy | R/W | Byte-oriented arithmetic coding with carryless normalisation | [Martin 1979](https://en.wikipedia.org/wiki/Range_coding#References) |
-| `BB_rANS` | [rANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems#Range_variants_(rANS)_and_streaming) | Entropy | R/W | Range ANS, used in AV1 and LZFSE | [Duda 2013](https://arxiv.org/abs/1311.2540) |
-| `BB_ExpGolomb` | [Exp-Golomb](https://en.wikipedia.org/wiki/Exponential-Golomb_coding) | Entropy | R/W | Exponential Golomb, used in H.264 / H.265 | [Teuhola 1978](https://dl.acm.org/doi/10.1016/0020-0190(78)90043-2) |
-| `BB_Unary` | [Unary](https://en.wikipedia.org/wiki/Unary_coding) | Entropy | R/W | Simplest universal code: N ones followed by a zero | — |
-| `BB_EliasGamma` | [Elias gamma](https://en.wikipedia.org/wiki/Elias_gamma_coding) | Entropy | R/W | Universal code using a unary length prefix | [Elias 1975](https://ieeexplore.ieee.org/document/1055349) |
-| `BB_EliasDelta` | [Elias delta](https://en.wikipedia.org/wiki/Elias_delta_coding) | Entropy | R/W | Gamma-codes the bit length | [Elias 1975](https://ieeexplore.ieee.org/document/1055349) |
-| `BB_Levenshtein` | [Levenshtein](https://en.wikipedia.org/wiki/Levenshtein_coding) | Entropy | R/W | Self-delimiting universal code with recursive length prefixing | Levenshtein 1968 |
-| `BB_Tunstall` | [Tunstall](https://en.wikipedia.org/wiki/Tunstall_coding) | Entropy | R/W | Variable-to-fixed code, dual of Huffman | Tunstall 1967 (PhD thesis) |
-| `BB_Dmc` | [DMC](https://en.wikipedia.org/wiki/Dynamic_Markov_compression) | Entropy | R/W | Dynamic Markov Compression, bit-level FSM with state cloning | [Cormack & Horspool 1987](https://dl.acm.org/doi/10.1145/22899.22901) |
-| `BB_Bwt` | [BWT](https://en.wikipedia.org/wiki/Burrows%E2%80%93Wheeler_transform) | Transform | R/W | Burrows-Wheeler Transform, reorders bytes for better compression | [Burrows & Wheeler 1994](https://www.hpl.hp.com/techreports/Compaq-DEC/SRC-RR-124.pdf) |
-| `BB_Mtf` | [MTF](https://en.wikipedia.org/wiki/Move-to-front_transform) | Transform | R/W | Move-to-Front Transform | [Bentley et al. 1986](https://dl.acm.org/doi/10.1145/6138.6151) |
-| `BB_Delta` | [Delta](https://en.wikipedia.org/wiki/Delta_encoding) | Transform | R/W | Delta filter, stores differences between consecutive bytes | — |
-| `BB_DeltaRle` | [Delta](https://en.wikipedia.org/wiki/Delta_encoding) | Transform | R/W | Delta filter followed by run-length encoding of the delta stream; unlike `BB_Delta`, this compresses repetitive data | — |
-| `BB_Rle` | [RLE](https://en.wikipedia.org/wiki/Run-length_encoding) | Transform | R/W | Run-Length Encoding | — |
-| `BB_Dpcm` | [DPCM](https://en.wikipedia.org/wiki/Differential_pulse-code_modulation) | Transform | R/W | Differential PCM, sample-to-sample differences | — |
+The repository currently contains these other packable public package projects alongside Core:
 
-¹ Known edge cases on certain pathological inputs — see the source repo's known-fixes log. The mainline
-round-trip works for all real-world data we've tested.
+| Package | Project | Purpose |
+| --- | --- | --- |
+| `Hawkynt.FileFormats.Audio` | `Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj` | Audio codecs and audio/container formats |
+| `Hawkynt.FileFormats.Archives` | `Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj` | Compression streams and archive/container formats |
+| `Hawkynt.FileFormats.FileSystems` | `Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj` | Filesystems and disk-image formats |
 
----
+No additional package is named here unless a corresponding checked-in package surface actually exists.
 
-## Module overview
+## 🏗️ Implementation structure
 
-| Module | Surface | What's in it |
-|---|---|---|
-| `Compression.Core.BitIO` | `BitReader`, `BitWriter`, `BitBuffer`, `BitOrder` | LSB / MSB-first bit streams over `Stream`. Foundation for every entropy / variable-length coder in the package. |
-| `Compression.Core.Hashing` | `Crc32`, `Crc32C`, `Adler32`, `XxHash32`, `Fletcher16/32/64`, `MurmurHash3`, `Fnv1` / `Fnv1a`, `Sha1`, `Sha256`, `Md5`, `Blake2b` | Non-cryptographic checksums and a few crypto hashes. CRC-32C uses SSE4.2 / ARM CRC32C instructions where available, with a slicing-by-4 software fallback. |
-| `Compression.Core.Crypto` | `AesCbc`, `AesCtr`, `Blowfish`, `Pbkdf2`, `ZipCrypto` | Format-required ciphers (ZipCrypto for legacy ZIP, AES-256 for ZIP-AE). |
-| `Compression.Core.DataStructures` | `SlidingWindow`, `PriorityQueue`, `Trie`, `SuffixTree` | Generic structures used by match finders and grammar coders. |
-| `Compression.Core.Deflate` | `DeflateEncoder`, `DeflateDecoder`, `Zopfli`, `MsZip` | DEFLATE pipeline plus Zopfli's iterative ratio-optimisation pass and Microsoft's MS-ZIP variant. |
-| `Compression.Core.Dictionary.*` | One namespace per dictionary algorithm | LZ77 / LZ78 / LZW / LZSS / LZ4 / Snappy / Brotli / LZMA / LZX / XPRESS / LZH / ARJ / LZMS / LZP / ACE / RAR5 / SQX / LZO1X / LZHAM / LZS / LZWL / Re-Pair / 842, plus building-block variants (LZJB / LZF / LZRW1 / LZRW3 / FastLZ / Lizard / QuickLZ / Pithy / Crush / LZG / LZRLE / LZMAT / Shoco / DnaCompression). |
-| `Compression.Core.Entropy.*` | One namespace per entropy coder | Huffman (canonical) / Shannon-Fano / Arithmetic / Range / FSE / rANS / PPMd / context-mixing (PAQ8 / cmix / MCM / BCM / BSC / BALZ / CSC / Zling / Lizard / QuickLZ-as-entropy) / Golomb / Rice / Elias Gamma / Elias Delta / Fibonacci / Tunstall / Exp-Golomb / Unary / Levenshtein / DMC. |
-| `Compression.Core.Transforms` | `Bwt`, `Mtf`, `Rle`, `Delta`, `Bcj`, `Bcj2`, `Bpe`, `Dpcm`, `RePair` | Reversible byte-rearrangement passes — staged before entropy coding. The BCJ family is platform-specific branch-relative-to-absolute conversion at full liblzma parity (x86 / ARM / Thumb / ARM64 / PPC / SPARC / IA64 / RISC-V), each exposed as a standalone building block; ARM64 is validated byte-for-byte against xz. |
-| `Compression.Core.Simd` | `SimdMatchLength`, `SimdMemCopy`, `SimdHistogram`, `SimdRunScan` | Vector-accelerated primitives for hot match-finding paths. |
-| `Compression.Core.Streams` | `SubStream`, `ConcatStream`, etc. | Lightweight stream shims commonly needed when writing format readers. |
-| `Compression.Core.DiskImage` | `MbrParser`, `GptParser`, `PartitionTypeDatabase`, `PartitionEntry` | Header-only parsers for partition tables — handy when dealing with disk-image archives. |
-| `Compression.Core.Progress` | `IProgress<>`, `Progress` helpers | Cancellable progress reporting for long compressors. |
+Core is the reusable primitive layer. Its checked-in code is organised around concerns such as:
 
----
+| Area | Examples | Role |
+| --- | --- | --- |
+| Bit I/O | `BitReader`, `BitWriter`, `BitOrder` | Bit-level parsing and emission used by variable-length coders |
+| Dictionary coding | LZ-family implementations, DEFLATE-related primitives | Match-based compression building blocks |
+| Entropy coding | Huffman, arithmetic/range coding, ANS-family primitives | Symbol coding and probability-model stages |
+| Transforms | BWT, MTF, RLE, delta/BCJ-style transforms | Reversible preprocessing stages |
+| Hashing/checksums | CRC-family, xxHash-family and cryptographic hashes present in Core | Integrity, lookup and format support |
+| SIMD helpers | match-length/copy/histogram helpers | Accelerated hot-path primitives where supported |
+| Streams | sub/concatenated stream helpers | Reusable format-reader plumbing |
+| Disk-image helpers | MBR/GPT and partition-related primitives | Shared lower-level disk/container parsing |
 
-## Versioning
+The registry provides a common comparison surface; it does not erase algorithm-specific semantics. Concrete APIs remain appropriate when streaming, allocation, tuning parameters, or format-specific behavior matters.
 
-Versions follow `MAJOR.MINOR.PATCH.BUILD` where `BUILD` is `git rev-list --count HEAD` of the source
-repo, auto-stamped at release time by `scripts/version.pl`. The package is **pre-1.0** — public
-surface may rearrange between releases. Once we ship 1.0.0, breaking changes follow SemVer
-(`MAJOR` bump).
+A primitive used by a file format does not by itself imply full support for that format, and decode and encode coverage may legitimately be asymmetric. Documentation keeps those claims separate.
 
-If you need a pinned reference, lock the exact 4-segment version:
+## 🔬 Selected implementation caveats
+
+The public support matrix marks deliberate subsets with `⚠️`. Brotli is one example: the decoder accepts more of the format than the encoder chooses to emit. Such distinctions belong in the support table and implementation discussion rather than being hidden behind a generic “supported” label.
+
+For algorithm-specific investigations, inspect the implementation, nearby comments/tests, and dedicated repository documents where they exist. Examples include `docs/LZMS-ON-DISK.md` and `Compression.Core/SqxFormat/README.md`.
+
+## 🧪 Verification
+
+The repository test suite is the evidence source for implementation claims. Relevant test styles include:
+
+- compress → decompress byte-identical round trips;
+- official or specification-derived vectors where available;
+- external-tool interoperability tests where the repository provides them;
+- targeted regression tests for discovered edge cases.
+
+An intended feature, TODO, experiment, issue, or roadmap item is not a support claim until the implementation and corresponding evidence exist.
+
+## 🔖 Versioning
+
+The checked-in base version comes from the nearest MSBuild version declaration. At repository level, `Directory.Build.props` currently declares:
 
 ```xml
-<PackageReference Include="Compression.Core" Version="[1.0.0.123]" />
+<Version>1.0.0</Version>
 ```
 
----
+The repository's `.github/workflows/scripts/version.pl` composes .NET package versions as `X.Y.Z.BUILD`, where `BUILD` is derived from the commit count for the directory that declares the effective version. Release workflows may pass that computed version into packing.
 
-## Source, tests, and benchmarks
+A consumer should reference the actual NuGet package ID:
 
-Lives in [Hawkynt/CompressionWorkbench](https://github.com/Hawkynt/CompressionWorkbench). The source
-repo carries:
+```xml
+<PackageReference Include="Hawkynt.Compression.Core" Version="1.0.0" />
+```
 
-- A NUnit test suite (~10 000 cases including round-trip sweeps for every building block, the
-  `cwb benchmark` matrix, and an external-tool interop suite that round-trips through `gzip` / `7z` /
-  `xz` etc.)
-- A WPF UI (`Compression.UI`) with a benchmark visualiser and an archive browser
-- A CLI (`cwb`) with `compress` / `extract` / `benchmark` / `analyse` / `auto-extract` / `suggest`
-  subcommands
-- ~215 archive / file-system / image-format readers built on top of these primitives
+Use the concrete version you intend to consume; this document does not predict a future release number or stability milestone.
 
-## Contributing
+## 🔌 Dependencies
 
-Open an issue or PR on the source repo. The CI runs the full test matrix on Windows and Linux and
-gates merges on a green test run.
+| Dependency | Packaging behaviour |
+| --- | --- |
+| `Compression.Registry` | Project dependency bundled into Core's package output |
+| Native compression libraries | None required by the Core package design |
 
-## License
+Audio, archive and filesystem functionality lives in the separate package projects listed above and is not pulled into Core transitively.
 
-LGPL-3.0-or-later. See [LICENSE](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE)
-in the source repo.
+## ⚠️ Limitations
+
+- A common API shape does not imply identical streaming, memory, or parameter semantics across every algorithm; use concrete APIs when those distinctions matter.
+- Some encoders intentionally implement a standards-compliant subset while decoders accept a wider format.
+- Pure managed code is the design goal, not an automatic speed claim. BCL/native implementations may be faster for common algorithms on some workloads.
+- Do not infer a package, format, algorithm, profile, or release state from roadmap intent. Checked-in project files, the compiled registry/public API, and tests are the evidence sources.
+- Do not state volatile algorithm counts unless they are generated from the registry/build.
+- When code and prose disagree, the compiled registry/API and tests win; update the prose.
+
+## 🤝 Contributing
+
+Open issues and pull requests in [Hawkynt/CompressionWorkbench](https://github.com/Hawkynt/CompressionWorkbench). Repository contribution and CI rules are documented in `AGENTS.md` and `CONTRIBUTING.md`.
+
+## ❤️ Support
+
+If this project saves you time or money, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal)](https://www.paypal.me/hawkynt)
+
+## 📜 License
+
+Licensed under LGPL-3.0-or-later — see the repository [LICENSE](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE).

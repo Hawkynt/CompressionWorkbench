@@ -1,621 +1,638 @@
 # Hawkynt.FileFormats.Archives
 
 [![NuGet](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Archives.svg)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/)
-[![License](https://img.shields.io/badge/license-LGPL--3.0--or--later-blue)](https://www.gnu.org/licenses/lgpl-3.0.html)
+[![NuGet downloads](https://img.shields.io/nuget/dt/Hawkynt.FileFormats.Archives.svg)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/)
+[![License](https://img.shields.io/github/license/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE)
+[![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
+![Target](https://img.shields.io/badge/target-net10.0-blue)
 
-> Pure-managed compression streams + archive containers extracted from
-[CompressionWorkbench](https://github.com/Hawkynt/CompressionWorkbench). Sister package to
-`Hawkynt.FileFormats.Audio` / `Hawkynt.FileFormats.FileSystems` / `Hawkynt.FileFormats.Images`,
-all built on top of `Hawkynt.Compression.Core`.
+> Pure-managed compression streams, archive containers, software packages, document bundles, installer payloads, and game archives behind one NuGet package on top of `Hawkynt.Compression.Core`.
 
-The package bundles every archive-domain assembly into `lib/` and is the workbench's "swiss-army
-knife" surface — install it and you can read or write practically any compression stream or
-archive container in pure managed code, with no native runtime dependency on
-`zlib` / `liblzma` / `libarchive` / `libbz2`.
+## 📦 Installation
 
-## When to use this package
-
-- You're writing a tool that needs to **enumerate / extract / write archives** in a wide range
-  of formats from a single .NET process
-- You want to **inspect installer payloads** (.msi / .nsis / Inno Setup / BitRock-InstallBuilder /
-  PyInstaller / .appimage / .snap / .deb / .rpm / .apk / .ipa / .nupkg / .crx / .xpi / etc.)
-  without running the installer
-- You're processing **compression streams** without container framing — gzip / bzip2 / xz / zstd /
-  lz4 / snappy / brotli / lzma / lzop and the long historical tail (`compress` / `pack` / `arc` /
-  `lzh` / `quicklz` / `lzfse` / etc.)
-- You're handling **ZIP-based document bundles** (Office Open XML — docx / xlsx / pptx;
-  OpenDocument — odt / ods / odp; ePub; Comic-Book .cbz; KML .kmz; .vsdx)
-- You're investigating **game / engine / asset packages** — Bethesda BSA / BA2, Unreal pak / .upk,
-  Unity bundles, Quake / Doom WAD, Source Engine VPK, Mass Effect SFAR, RPG Maker RGSS, Ren'Py RPA,
-  Godot PCK, Mortal Kombat MIX, Total Annihilation HPI / TFC, Master of Orion, etc.
-
-Skip it when:
-
-- You only need ZIP at default settings — `System.IO.Compression.ZipArchive` does that with the
-  BCL's GZip / Deflate paths
-- You need format-specific RAR / 7z encoder quality at parity with the original tool — those
-  ship as native libraries with proprietary or LGPL fallback licensing concerns; this package
-  prioritises read-coverage and clean-room license over pixel-identical output
-
-## Quick start — extract a generic archive
-
-```csharp
-using Compression.Registry;       // FormatRegistry.DetectAndOpen
-using FileFormat.Tar;             // ensures TarFormatDescriptor is registered
-using FileFormat.SevenZip;        // ditto for 7z
-// (every IFormatDescriptor in the package self-registers via the
-//  source-generator at app start; just reference the assemblies you need)
-
-using var input = File.OpenRead("payload.tar.gz");
-var ops = FormatRegistry.DetectArchiveOperations(input);
-foreach (var entry in ops.List(input))
-  Console.WriteLine($"{entry.Name,-40}  {entry.Size,12:N0}");
+```bash
+dotnet add package Hawkynt.FileFormats.Archives
 ```
 
-## Quick start — round-trip a single compression stream
+The package bundles the archive-domain `FileFormat.*` assemblies while taking `Hawkynt.Compression.Core` as the shared NuGet dependency.
+
+## ✨ Features
+
+- Compression-stream readers/writers for modern and historical formats without native `zlib`, `liblzma`, `libarchive`, or `libbz2` runtime dependencies.
+- Multi-file archive enumeration, extraction, testing, and fresh archive creation where supported.
+- Software-package and installer inspection without executing the package/installer.
+- ZIP-derived document/package families exposed through the same archive surface.
+- Game, engine, Amiga, and vintage archive formats included alongside mainstream ZIP/TAR/7z/RAR families.
+- Common `IArchiveFormatOperations` model for formats that carry independently addressable payloads.
+
+## 🧩 Support matrix
+
+| State | Meaning |
+| --- | --- |
+| **R** | List/extract/test only. |
+| **WORM** | Read plus create a fresh archive/output; no in-place mutation. |
+| **R/W** | Read plus supported modification semantics. |
+| **⚠️** | Deliberate subset; see the row notes. |
+
+### Compression streams
+
+| Format | State | Notes | Reference |
+| --- | :---: | --- | --- |
+| [gzip](https://en.wikipedia.org/wiki/Gzip) | WORM | GZIP wrapper / DEFLATE payload | [RFC 1952](https://www.rfc-editor.org/rfc/rfc1952) |
+| [zlib](https://en.wikipedia.org/wiki/Zlib) | WORM | zlib wrapper / DEFLATE payload | [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) |
+| [bzip2](https://en.wikipedia.org/wiki/Bzip2) | WORM | BWT/MTF/Huffman stream | [bzip2 manual](https://sourceware.org/bzip2/manual/manual.html) |
+| [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | WORM | XZ container around LZMA2 and filters | [XZ file format](https://tukaani.org/xz/xz-file-format.txt) |
+| [LZMA](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | WORM | Raw/LZMA stream handling | [7-Zip LZMA SDK](https://www.7-zip.org/sdk.html) |
+| [Zstandard](https://en.wikipedia.org/wiki/Zstd) | WORM | Zstd frame stream | [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) |
+| [Brotli](https://en.wikipedia.org/wiki/Brotli) | WORM | Brotli stream | [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) |
+| [LZ4 frame](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | WORM | LZ4 framed stream | [LZ4 frame format](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md) |
+| [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) | WORM | Snappy stream/container surface | [Snappy format](https://github.com/google/snappy/blob/main/format_description.txt) |
+| [Unix compress](https://en.wikipedia.org/wiki/Compress) | WORM | `.Z` / LZW | [POSIX compress](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/compress.html) |
+| [Lzip](https://en.wikipedia.org/wiki/Lzip) | WORM | LZMA-based stream | [Lzip format](https://www.nongnu.org/lzip/manual/lzip_manual.html#File-format) |
+| [Lzop](https://en.wikipedia.org/wiki/Lzop) | WORM | LZO-framed stream | [lzop](https://www.lzop.org/) |
+| [LZFSE](https://en.wikipedia.org/wiki/LZFSE) | WORM ⚠️ | LZVN/uncompressed blocks; full LZFSE block families have limits noted below | [Apple LZFSE](https://github.com/lzfse/lzfse) |
+| [PAQ](https://en.wikipedia.org/wiki/PAQ) | WORM | PAQ8-family stream surface | [Matt Mahoney PAQ](https://mattmahoney.net/dc/paq.html) |
+| [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching#PPMd) | WORM | PPMd stream surface | [7-Zip SDK](https://www.7-zip.org/sdk.html) |
+
+### Archive containers
+
+| Format | State | Notes | Reference |
+| --- | :---: | --- | --- |
+| [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | WORM | Multi-file archive creation/extraction | [PKWARE APPNOTE](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
+| [TAR](https://en.wikipedia.org/wiki/Tar_(computing)) | WORM | POSIX/GNU/PAX tape archive | [POSIX pax](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) |
+| [7z](https://en.wikipedia.org/wiki/7z) | WORM | 7-Zip container | [7z format](https://www.7-zip.org/7z.html) |
+| [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | WORM ⚠️ | Clean-room creation; not a claim of WinRAR encoder parity | [RAR technote](https://www.rarlab.com/technote.htm) |
+| [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format)) | WORM | Microsoft Cabinet | [MS-CAB](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cab/) |
+| [WIM](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | WORM | Windows Imaging Format | [Microsoft WIM](https://learn.microsoft.com/windows-hardware/manufacture/desktop/) |
+| [CPIO](https://en.wikipedia.org/wiki/Cpio) | WORM | CPIO archive variants | [cpio(5)](https://www.freebsd.org/cgi/man.cgi?query=cpio&sektion=5) |
+| [ar](https://en.wikipedia.org/wiki/Ar_(Unix)) | WORM | Unix archive/library container | [ar(5)](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
+| [XAR](https://en.wikipedia.org/wiki/Xar_(archiver)) | WORM | Extensible Archive | [XAR on-disk format](https://github.com/mackyle/xar/wiki/xarformat) |
+| [LHA/LZH](https://en.wikipedia.org/wiki/LHA_(file_format)) | WORM | Historical LZH archive family | [LHA archive format](http://www.math.sci.hiroshima-u.ac.jp/m-mat/MT/hamamura-home/lha-en.html) |
+| [ARJ](https://en.wikipedia.org/wiki/ARJ) | WORM | ARJ archive | [ARJ Software](http://www.arjsoftware.com/) |
+| [StuffIt](https://en.wikipedia.org/wiki/StuffIt) | WORM | Classic Macintosh archive family | [XADMaster](https://github.com/MacPaw/XADMaster) |
+| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | WORM ⚠️ | Context-mixing/journaling family; reader VM limitation documented below | [ZPAQ specification](https://mattmahoney.net/dc/zpaq206.pdf) |
+
+### Software / document package formats
+
+| Format family | State | Notes | Reference |
+| --- | :---: | --- | --- |
+| [APK](https://en.wikipedia.org/wiki/Apk_(file_format)) | WORM | Android package container | [Android APK](https://source.android.com/docs/core/runtime/jit-compiler) |
+| [Debian `.deb`](https://en.wikipedia.org/wiki/Deb_(file_format)) | WORM | `ar` + TAR payload | [deb(5)](https://man7.org/linux/man-pages/man5/deb.5.html) |
+| [RPM](https://en.wikipedia.org/wiki/RPM_Package_Manager) | WORM | RPM package container | [RPM format](https://rpm-software-management.github.io/rpm/manual/format.html) |
+| [NuGet `.nupkg`](https://en.wikipedia.org/wiki/NuGet) | WORM | ZIP-based NuGet package | [NuGet nuspec](https://learn.microsoft.com/nuget/reference/nuspec) |
+| [APPX / MSIX](https://en.wikipedia.org/wiki/Appx) | WORM | Microsoft application packages | [MS APPX/MSIX](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/) |
+| [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | WORM | Java archive | [JAR specification](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html) |
+| [EPUB](https://en.wikipedia.org/wiki/EPUB) | WORM | ZIP-based publication bundle | [W3C EPUB 3](https://www.w3.org/TR/epub-33/) |
+| [Office Open XML](https://en.wikipedia.org/wiki/Office_Open_XML) | WORM | DOCX/XLSX/PPTX package families | [ECMA-376](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/) |
+| [OpenDocument](https://en.wikipedia.org/wiki/OpenDocument) | WORM | ODT/ODS/ODP package families | [OASIS ODF](https://www.oasis-open.org/standard/odf/) |
+| [CRX](https://en.wikipedia.org/wiki/Google_Chrome_Extension) | WORM ⚠️ | CRX3 envelope creation is unsigned | [Chrome extension hosting](https://developer.chrome.com/docs/extensions/mv3/linux_hosting/) |
+| [XPI](https://en.wikipedia.org/wiki/XPInstall) | WORM | Mozilla extension package | [Mozilla XPI](https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPI) |
+
+## 🚀 Quick start
+
+### Detect and list an archive
+
+```csharp
+using Compression.Registry;
+
+using var input = File.OpenRead("payload.tar.gz");
+var archive = FormatRegistry.DetectArchiveOperations(input);
+foreach (var entry in archive.List(input))
+  Console.WriteLine($"{entry.Name,-40} {entry.Size,12:N0}");
+```
+
+### Round-trip a compression stream
 
 ```csharp
 using FileFormat.Brotli;
 
-byte[] original   = File.ReadAllBytes("page.html");
-byte[] compressed = new BrotliFormatDescriptor().Compress(original);
-byte[] roundTrip  = new BrotliFormatDescriptor().Decompress(compressed);
-Debug.Assert(original.SequenceEqual(roundTrip));
+byte[] original = File.ReadAllBytes("page.html");
+var format = new BrotliFormatDescriptor();
+byte[] compressed = format.Compress(original);
+byte[] restored = format.Decompress(compressed);
 ```
 
-## Contents
+## 🧭 When to use this package
 
-State legend:
-- **R** — read-only: `List` / `Extract` / `Test`. Cannot create new archives.
-- **WORM** — Write-Once-Read-Many: read AND can synthesise a fresh archive from scratch
-  (`IArchiveCreatable`), but cannot modify an existing archive in place.
-- **R/W** — full read + write, including in-place add / replace / remove (`IArchiveInPlaceModify`).
-  Currently no archive in this package is R/W; modifying an archive means "extract → modify →
-  re-create from scratch".
+Use it when a .NET process needs to enumerate, extract, test, create or inspect a broad range of archives and compression streams without loading native archive libraries. Typical use cases include installer/package inspection, ZIP-derived documents, historical compression streams, game/engine assets, backup images, web bundles and scientific containers.
 
-#### Compression streams (single-file codecs without container framing)
+If all you need is ordinary ZIP at default BCL settings, `System.IO.Compression.ZipArchive` is usually simpler. Original-vendor encoder parity for proprietary formats is a different goal from clean-room readable/writable interoperability and is not implied here.
 
-| Format                   | State | Display name |
-| ------------------------ | ----- | ------------ |
-| `FileFormat.ApLib`       | WORM  | aPLib        |
-| `FileFormat.Balz`        | WORM  | BALZ         |
-| `FileFormat.Bcm`         | WORM  | BCM          |
-| `FileFormat.BinHex`      | WORM  | BinHex       |
-| `FileFormat.BriefLz`     | WORM  | BriefLZ      |
-| `FileFormat.Brotli`      | WORM  | Brotli       |
-| `FileFormat.Bsc`         | WORM  | BSC          |
-| `FileFormat.Bzip2`       | WORM  | BZip2        |
-| `FileFormat.Cmix`        | WORM  | cmix         |
-| `FileFormat.Compress`    | WORM  | Unix Compress|
-| `FileFormat.Crunch`      | WORM  | CP/M Crunch  |
-| `FileFormat.Csc`         | WORM  | CSC          |
-| `FileFormat.Density`     | WORM  | Density      |
-| `FileFormat.Freeze`      | WORM  | Freeze       |
-| `FileFormat.Gzip`        | WORM  | GZIP         |
-| `FileFormat.IcePacker`   | WORM  | ICE Packer   |
-| `FileFormat.Kwaj`        | WORM  | KWAJ         |
-| `FileFormat.Lizard`      | WORM  | Lizard (LZ5) |
-| `FileFormat.Lrzip`       | WORM  | Long Range Zip |
-| `FileFormat.Lz4`         | WORM  | LZ4          |
-| `FileFormat.Lzfse`       | WORM  | LZFSE        |
-| `FileFormat.Lzg`         | WORM  | LZG          |
-| `FileFormat.Lzham`       | WORM  | LZHAM        |
-| `FileFormat.Lzip`        | WORM  | Lzip         |
-| `FileFormat.Lzma`        | WORM  | LZMA         |
-| `FileFormat.Lzop`        | WORM  | LZOP         |
-| `FileFormat.Lzs`         | WORM  | LZS          |
-| `FileFormat.Lzx`         | WORM  | LZX          |
-| `FileFormat.MacBinary`   | WORM  | MacBinary    |
-| `FileFormat.Mcm`         | WORM  | MCM          |
-| `FileFormat.PackBits`    | WORM  | PackBits     |
-| `FileFormat.Paq8`        | WORM  | PAQ8         |
-| `FileFormat.PowerPacker` | WORM  | PowerPacker  |
-| `FileFormat.Ppmd`        | WORM  | PPMd         |
-| `FileFormat.QuickLz`     | WORM  | QuickLZ      |
-| `FileFormat.RefPack`     | WORM  | RefPack / QFS |
-| `FileFormat.Rnc`         | WORM  | RNC ProPack  |
-| `FileFormat.Rzip`        | WORM  | Rzip         |
-| `FileFormat.Snappy`      | WORM  | Snappy       |
-| `FileFormat.Squeeze`     | WORM  | Squeeze      |
-| `FileFormat.Szdd`        | WORM  | SZDD         |
-| `FileFormat.UuEncoding`  | WORM  | UUEncoding   |
-| `FileFormat.Xz`          | WORM  | XZ           |
-| `FileFormat.YEnc`        | WORM  | yEnc         |
-| `FileFormat.Yaz0`        | WORM  | Yaz0         |
-| `FileFormat.Zlib`        | WORM  | Zlib         |
-| `FileFormat.Zling`       | WORM  | Zling        |
-| `FileFormat.Zstd`        | WORM  | Zstandard    |
+## 📚 Exhaustive compression-stream inventory
 
-#### Archive containers (multi-file)
+| Format project | State | Display name |
+| --- | --- | --- |
+| `FileFormat.ApLib` | WORM | aPLib |
+| `FileFormat.Balz` | WORM | BALZ |
+| `FileFormat.Bcm` | WORM | BCM |
+| `FileFormat.BinHex` | WORM | BinHex |
+| `FileFormat.BriefLz` | WORM | BriefLZ |
+| `FileFormat.Brotli` | WORM | Brotli |
+| `FileFormat.Bsc` | WORM | BSC |
+| `FileFormat.Bzip2` | WORM | BZip2 |
+| `FileFormat.Cmix` | WORM | cmix |
+| `FileFormat.Compress` | WORM | Unix Compress |
+| `FileFormat.Crunch` | WORM | CP/M Crunch |
+| `FileFormat.Csc` | WORM | CSC |
+| `FileFormat.Density` | WORM | Density |
+| `FileFormat.Freeze` | WORM | Freeze |
+| `FileFormat.Gzip` | WORM | GZIP |
+| `FileFormat.IcePacker` | WORM | ICE Packer |
+| `FileFormat.Kwaj` | WORM | KWAJ |
+| `FileFormat.Lizard` | WORM | Lizard (LZ5) |
+| `FileFormat.Lrzip` | WORM | Long Range Zip |
+| `FileFormat.Lz4` | WORM | LZ4 |
+| `FileFormat.Lzfse` | WORM ⚠️ | LZFSE |
+| `FileFormat.Lzg` | WORM | LZG |
+| `FileFormat.Lzham` | WORM | LZHAM |
+| `FileFormat.Lzip` | WORM | Lzip |
+| `FileFormat.Lzma` | WORM | LZMA |
+| `FileFormat.Lzop` | WORM | LZOP |
+| `FileFormat.Lzs` | WORM | LZS |
+| `FileFormat.Lzx` | WORM | LZX |
+| `FileFormat.MacBinary` | WORM | MacBinary |
+| `FileFormat.Mcm` | WORM | MCM |
+| `FileFormat.PackBits` | WORM | PackBits |
+| `FileFormat.Paq8` | WORM | PAQ8 |
+| `FileFormat.PowerPacker` | WORM | PowerPacker |
+| `FileFormat.Ppmd` | WORM | PPMd |
+| `FileFormat.QuickLz` | WORM | QuickLZ |
+| `FileFormat.RefPack` | WORM | RefPack / QFS |
+| `FileFormat.Rnc` | WORM | RNC ProPack |
+| `FileFormat.Rzip` | WORM | Rzip |
+| `FileFormat.Snappy` | WORM | Snappy |
+| `FileFormat.Squeeze` | WORM | Squeeze |
+| `FileFormat.Szdd` | WORM | SZDD |
+| `FileFormat.UuEncoding` | WORM | UUEncoding |
+| `FileFormat.Xz` | WORM | XZ |
+| `FileFormat.YEnc` | WORM | yEnc |
+| `FileFormat.Yaz0` | WORM | Yaz0 |
+| `FileFormat.Zlib` | WORM | Zlib |
+| `FileFormat.Zling` | WORM | Zling |
+| `FileFormat.Zstd` | WORM | Zstandard |
 
-| Format                 | State | Display name      |
-| ---------------------- | ----- | ----------------- |
-| `FileFormat.Ace`       | WORM  | ACE               |
-| `FileFormat.AlZip`     | WORM  | ALZip             |
-| `FileFormat.AppleSingle` | R   | AppleSingle       |
-| `FileFormat.Ar`        | WORM  | AR                |
-| `FileFormat.Arc`       | WORM  | ARC               |
-| `FileFormat.Arj`       | WORM  | ARJ               |
-| `FileFormat.Cab`       | WORM  | CAB               |
-| `FileFormat.Cbr`       | WORM  | CBR               |
-| `FileFormat.Cbz`       | WORM  | CBZ               |
-| `FileFormat.Chm`       | WORM  | CHM               |
-| `FileFormat.CompactPro` | WORM | Compact Pro      |
-| `FileFormat.Cpio`      | WORM  | CPIO              |
-| `FileFormat.DiskDoubler` | WORM | DiskDoubler      |
-| `FileFormat.Dms`       | WORM  | DMS               |
-| `FileFormat.Esd`       | R     | ESD               |
-| `FileFormat.FreeArc`   | WORM  | FreeArc           |
-| `FileFormat.Ha`        | WORM  | HA                |
-| `FileFormat.IffCdaf`   | WORM  | IFF CDAF          |
-| `FileFormat.Lbr`       | WORM  | LBR               |
-| `FileFormat.LhF`       | WORM  | LhF (LhFloppy)    |
-| `FileFormat.Lzh`       | WORM  | LZH               |
-| `FileFormat.PackDisk`  | WORM  | PackDisk (Amiga)  |
-| `FileFormat.PackIt`    | WORM  | PackIt            |
-| `FileFormat.Rar`       | WORM  | RAR               |
-| `FileFormat.Sar`       | WORM  | SAR               |
-| `FileFormat.SevenZip`  | WORM  | 7z                |
-| `FileFormat.Shar`      | WORM  | SHAR              |
-| `FileFormat.Spark`     | WORM  | Spark             |
-| `FileFormat.SplitFile` | WORM  | Split File (.001) |
-| `FileFormat.Sqx`       | WORM  | SQX               |
-| `FileFormat.StuffIt`   | WORM  | StuffIt           |
-| `FileFormat.StuffItX`  | WORM  | StuffIt X         |
-| `FileFormat.Swm`       | R     | Split WIM         |
-| `FileFormat.Tar`       | WORM  | TAR               |
-| `FileFormat.Uharc`     | WORM  | UHARC             |
-| `FileFormat.Wim`       | WORM  | WIM               |
-| `FileFormat.Wrapster`  | WORM  | Wrapster          |
-| `FileFormat.Xar`       | WORM  | XAR               |
-| `FileFormat.Zip`       | WORM  | ZIP               |
-| `FileFormat.Zoo`       | WORM  | ZOO               |
-| `FileFormat.Zpaq`      | WORM  | ZPAQ              |
+## 📚 Exhaustive archive-container inventory
 
-#### Software-package containers
+| Format project | State | Display name |
+| --- | --- | --- |
+| `FileFormat.Ace` | WORM | ACE |
+| `FileFormat.AlZip` | WORM | ALZip |
+| `FileFormat.AppleSingle` | R | AppleSingle |
+| `FileFormat.Ar` | WORM | AR |
+| `FileFormat.Arc` | WORM | ARC |
+| `FileFormat.Arj` | WORM | ARJ |
+| `FileFormat.Cab` | WORM | CAB |
+| `FileFormat.Cbr` | WORM | CBR |
+| `FileFormat.Cbz` | WORM | CBZ |
+| `FileFormat.Chm` | WORM | CHM |
+| `FileFormat.CompactPro` | WORM | Compact Pro |
+| `FileFormat.Cpio` | WORM | CPIO |
+| `FileFormat.DiskDoubler` | WORM | DiskDoubler |
+| `FileFormat.Dms` | WORM | DMS |
+| `FileFormat.Esd` | R | ESD |
+| `FileFormat.FreeArc` | WORM | FreeArc |
+| `FileFormat.Ha` | WORM | HA |
+| `FileFormat.IffCdaf` | WORM | IFF CDAF |
+| `FileFormat.Lbr` | WORM | LBR |
+| `FileFormat.LhF` | WORM | LhF (LhFloppy) |
+| `FileFormat.Lzh` | WORM | LZH |
+| `FileFormat.PackDisk` | WORM | PackDisk (Amiga) |
+| `FileFormat.PackIt` | WORM | PackIt |
+| `FileFormat.Rar` | WORM | RAR |
+| `FileFormat.Sar` | WORM | SAR |
+| `FileFormat.SevenZip` | WORM | 7z |
+| `FileFormat.Shar` | WORM | SHAR |
+| `FileFormat.Spark` | WORM | Spark |
+| `FileFormat.SplitFile` | WORM | Split File (.001) |
+| `FileFormat.Sqx` | WORM | SQX |
+| `FileFormat.StuffIt` | WORM | StuffIt |
+| `FileFormat.StuffItX` | WORM ⚠️ | StuffIt X |
+| `FileFormat.Swm` | R | Split WIM |
+| `FileFormat.Tar` | WORM | TAR |
+| `FileFormat.Uharc` | WORM | UHARC |
+| `FileFormat.Wim` | WORM | WIM |
+| `FileFormat.Wrapster` | WORM | Wrapster |
+| `FileFormat.Xar` | WORM | XAR |
+| `FileFormat.Zip` | WORM | ZIP |
+| `FileFormat.Zoo` | WORM | ZOO |
+| `FileFormat.Zpaq` | WORM ⚠️ | ZPAQ |
 
-| Format                       | State | Display name                      |
-| ---------------------------- | ----- | --------------------------------- |
-| `FileFormat.AndroidBundle`   | R     | Android App Bundle / split-APK    |
-| `FileFormat.AndroidOta`      | R     | Android OTA payload               |
-| `FileFormat.Apk`             | WORM  | APK                               |
-| `FileFormat.ApkNativeLibs`   | R     | APK native libraries              |
-| `FileFormat.AppImage`        | WORM  | AppImage                          |
-| `FileFormat.Appx`            | WORM  | APPX                              |
-| `FileFormat.BitRock`         | R     | BitRock / InstallBuilder          |
-| `FileFormat.Crate`           | WORM  | Rust Crate                        |
-| `FileFormat.Crx`             | WORM  | CRX (Chrome extension)            |
-| `FileFormat.Deb`             | WORM  | DEB                               |
-| `FileFormat.Ear`             | WORM  | EAR                               |
-| `FileFormat.Gem`             | R     | Ruby Gem                          |
-| `FileFormat.InnoSetup`       | WORM  | Inno Setup                        |
-| `FileFormat.Ipa`             | WORM  | IPA                               |
-| `FileFormat.Jar`             | WORM  | JAR                               |
-| `FileFormat.Msi`             | WORM  | MSI (OLE Compound File)           |
-| `FileFormat.Msix`            | WORM  | MSIX                              |
-| `FileFormat.Nsis`            | WORM  | NSIS                              |
-| `FileFormat.NuPkg`           | WORM  | NuPkg                             |
-| `FileFormat.PyInstaller`     | R     | PyInstaller onefile               |
-| `FileFormat.Rpm`             | WORM  | RPM                               |
-| `FileFormat.Snap`            | R     | Snap package                      |
-| `FileFormat.War`             | WORM  | WAR                               |
-| `FileFormat.Wheel`           | R     | Python Wheel                      |
-| `FileFormat.Xpi`             | WORM  | XPI (Mozilla extension)           |
+## 📦 Software-package containers
 
-#### Office Open XML / OpenDocument / web archive zip-bundles
+| Format | State | Display name |
+| --- | --- | --- |
+| `FileFormat.AndroidBundle` | R | Android App Bundle / split-APK |
+| `FileFormat.AndroidOta` | R | Android OTA payload |
+| `FileFormat.Apk` | WORM | APK |
+| `FileFormat.ApkNativeLibs` | R | APK native libraries |
+| `FileFormat.AppImage` | WORM | AppImage |
+| `FileFormat.Appx` | WORM | APPX |
+| `FileFormat.BitRock` | R | BitRock / InstallBuilder |
+| `FileFormat.Crate` | WORM | Rust Crate |
+| `FileFormat.Crx` | WORM ⚠️ | CRX / Chrome extension |
+| `FileFormat.Deb` | WORM | DEB |
+| `FileFormat.Ear` | WORM | EAR |
+| `FileFormat.Gem` | R | Ruby Gem |
+| `FileFormat.InnoSetup` | WORM | Inno Setup |
+| `FileFormat.Ipa` | WORM | IPA |
+| `FileFormat.Jar` | WORM | JAR |
+| `FileFormat.Msi` | WORM ⚠️ | MSI / OLE CFB envelope |
+| `FileFormat.Msix` | WORM | MSIX |
+| `FileFormat.Nsis` | WORM ⚠️ | NSIS |
+| `FileFormat.NuPkg` | WORM | NuPkg |
+| `FileFormat.PyInstaller` | R | PyInstaller onefile |
+| `FileFormat.Rpm` | WORM | RPM |
+| `FileFormat.Snap` | R | Snap package |
+| `FileFormat.War` | WORM | WAR |
+| `FileFormat.Wheel` | R | Python Wheel |
+| `FileFormat.Xpi` | WORM | XPI / Mozilla extension |
 
-| Format            | State | Display name   |
-| ----------------- | ----- | -------------- |
-| `FileFormat.Docx` | WORM  | DOCX           |
-| `FileFormat.Xlsx` | WORM  | XLSX           |
-| `FileFormat.Pptx` | WORM  | PPTX           |
-| `FileFormat.Odt`  | WORM  | ODT            |
-| `FileFormat.Ods`  | WORM  | ODS            |
-| `FileFormat.Odp`  | WORM  | ODP            |
-| `FileFormat.Vsdx` | WORM  | Visio Drawing  |
-| `FileFormat.Epub` | WORM  | EPUB           |
-| `FileFormat.Kmz`  | WORM  | KMZ            |
-| `FileFormat.Maff` | WORM  | MAFF           |
-| `FileFormat.Wacz` | R     | WACZ           |
-| `FileFormat.Warc` | WORM  | WARC           |
-| `FileFormat.Wbn`  | R     | Web Bundle     |
+## 📄 Office, document and web bundles
 
-#### Game / engine / install / runtime / Amiga / vintage long-tail formats
+| Format | State | Display name |
+| --- | --- | --- |
+| `FileFormat.Docx` | WORM | DOCX |
+| `FileFormat.Xlsx` | WORM | XLSX |
+| `FileFormat.Pptx` | WORM | PPTX |
+| `FileFormat.Odt` | WORM | ODT |
+| `FileFormat.Ods` | WORM | ODS |
+| `FileFormat.Odp` | WORM | ODP |
+| `FileFormat.Vsdx` | WORM | Visio Drawing |
+| `FileFormat.Epub` | WORM | EPUB |
+| `FileFormat.Kmz` | WORM | KMZ |
+| `FileFormat.Maff` | WORM | MAFF |
+| `FileFormat.Wacz` | R | WACZ |
+| `FileFormat.Warc` | WORM | WARC |
+| `FileFormat.Wbn` | R | Web Bundle |
 
-| Format                  | State | Display name                       |
-| ----------------------- | ----- | ---------------------------------- |
-| `FileFormat.Afs`        | WORM  | Sega AFS                           |
-| `FileFormat.Ampk`       | WORM  | AMPK (Amiga Pack)                  |
-| `FileFormat.Ba2`        | WORM  | Bethesda Archive v2                |
-| `FileFormat.Big`        | WORM  | BIG (Westwood / EA)                |
-| `FileFormat.Bsa`        | WORM  | BSA                                |
-| `FileFormat.Dzip`       | WORM  | Bloodlines DZIP                    |
-| `FileFormat.Gar`        | WORM  | Nintendo 3DS GAR                   |
-| `FileFormat.Gob`        | WORM  | LucasArts GOB                      |
-| `FileFormat.GodotPck`   | WORM  | Godot PCK                          |
-| `FileFormat.Grp`        | WORM  | GRP (Build engine)                 |
-| `FileFormat.Hog`        | WORM  | HOG (Descent)                      |
-| `FileFormat.Hpi`        | WORM  | Total Annihilation HPI             |
-| `FileFormat.Lfd`        | WORM  | LucasArts LFD                      |
-| `FileFormat.Mhk`        | WORM  | Cyan Mohawk                        |
-| `FileFormat.Mix`        | WORM  | Westwood MIX                       |
-| `FileFormat.Mpq`        | WORM  | MPQ (Blizzard)                     |
-| `FileFormat.Narc`       | WORM  | Nintendo NARC                      |
-| `FileFormat.Nds`        | WORM  | NDS (Nintendo DS ROM)              |
-| `FileFormat.Nsa`        | WORM  | NSA (NScripter)                    |
-| `FileFormat.Pak`        | WORM  | PAK (Quake)                        |
-| `FileFormat.Pbp`        | WORM  | PSP PBP archive                    |
-| `FileFormat.Psarc`      | WORM  | PSARC (Sony)                       |
-| `FileFormat.Rgss`       | WORM  | RPG Maker RGSSAD                   |
-| `FileFormat.Rpa`        | WORM  | Ren'Py Archive                     |
-| `FileFormat.Sarc`       | WORM  | Nintendo SARC                      |
-| `FileFormat.Sfar`       | R     | BioWare SFAR (Mass Effect)         |
-| `FileFormat.Slf`        | WORM  | Sir-Tech SLF (Jagged Alliance)     |
-| `FileFormat.Swf`        | WORM  | SWF (Flash)                        |
-| `FileFormat.Tfc`        | WORM  | Mass Effect TFC                    |
-| `FileFormat.Tnef`       | WORM  | MS-TNEF (winmail.dat)              |
-| `FileFormat.U8`         | WORM  | Nintendo U8                        |
-| `FileFormat.Umx`        | WORM  | Unreal Music (UMX)                 |
-| `FileFormat.UnityBundle` | R    | Unity Asset Bundle                 |
-| `FileFormat.UnrealPak`  | R     | Unreal Pak                         |
-| `FileFormat.Upx`        | R     | UPX-packed executable              |
-| `FileFormat.Vpk`        | WORM  | VPK (Steam)                        |
-| `FileFormat.Vpp`        | WORM  | Volition Package (RF1)             |
-| `FileFormat.VppV2`      | WORM  | Volition VPP v2 (Saint's Row 2)    |
-| `FileFormat.Wad`        | WORM  | WAD (Doom)                         |
-| `FileFormat.Wad2`       | WORM  | WAD2 / WAD3 (Quake)                |
-| `FileFormat.Ypf`        | WORM  | YukaScript YPF                     |
-| `FileFormat.Zap`        | WORM  | ZAP (Amiga Disk Archiver)          |
+## 🎮 Game, engine, Amiga and vintage archives
 
-#### Backup-software disk images
+| Format | State | Display name |
+| --- | --- | --- |
+| `FileFormat.Afs` | WORM | Sega AFS |
+| `FileFormat.Ampk` | WORM | AMPK / Amiga Pack |
+| `FileFormat.Ba2` | WORM | Bethesda Archive v2 |
+| `FileFormat.Big` | WORM | BIG / Westwood-EA |
+| `FileFormat.Bsa` | WORM | BSA |
+| `FileFormat.Dzip` | WORM | Bloodlines DZIP |
+| `FileFormat.Gar` | WORM | Nintendo 3DS GAR |
+| `FileFormat.Gob` | WORM | LucasArts GOB |
+| `FileFormat.GodotPck` | WORM | Godot PCK |
+| `FileFormat.Grp` | WORM | GRP / Build engine |
+| `FileFormat.Hog` | WORM | HOG / Descent |
+| `FileFormat.Hpi` | WORM ⚠️ | Total Annihilation HPI |
+| `FileFormat.Lfd` | WORM | LucasArts LFD |
+| `FileFormat.Mhk` | WORM | Cyan Mohawk |
+| `FileFormat.Mix` | WORM | Westwood MIX |
+| `FileFormat.Mpq` | WORM | Blizzard MPQ |
+| `FileFormat.Narc` | WORM | Nintendo NARC |
+| `FileFormat.Nds` | WORM ⚠️ | Nintendo DS ROM / NitroFS-oriented creation |
+| `FileFormat.Nsa` | WORM | NScripter NSA |
+| `FileFormat.Pak` | WORM | Quake PAK |
+| `FileFormat.Pbp` | WORM | PSP PBP |
+| `FileFormat.Psarc` | WORM ⚠️ | Sony PSARC |
+| `FileFormat.Rgss` | WORM | RPG Maker RGSSAD |
+| `FileFormat.Rpa` | WORM | Ren'Py Archive |
+| `FileFormat.Sarc` | WORM | Nintendo SARC |
+| `FileFormat.Sfar` | R | BioWare SFAR |
+| `FileFormat.Slf` | WORM | Sir-Tech SLF |
+| `FileFormat.Swf` | WORM | SWF |
+| `FileFormat.Tfc` | WORM | Mass Effect TFC |
+| `FileFormat.Tnef` | WORM | MS-TNEF / winmail.dat |
+| `FileFormat.U8` | WORM | Nintendo U8 |
+| `FileFormat.Umx` | WORM ⚠️ | Unreal Music package shell |
+| `FileFormat.UnityBundle` | R | Unity Asset Bundle |
+| `FileFormat.UnrealPak` | R | Unreal Pak |
+| `FileFormat.Upx` | R | UPX-packed executable |
+| `FileFormat.Vpk` | WORM | Source/Steam VPK |
+| `FileFormat.Vpp` | WORM | Volition Package v1 |
+| `FileFormat.VppV2` | WORM | Volition VPP v2 |
+| `FileFormat.Wad` | WORM | Doom WAD |
+| `FileFormat.Wad2` | WORM | Quake/Half-Life WAD2/WAD3 |
+| `FileFormat.Ypf` | WORM | YukaScript YPF |
+| `FileFormat.Zap` | WORM | Amiga ZAP |
 
-Whole-system / partition backups from consumer + enterprise backup suites. Several were
-reverse-engineered directly from vendor binaries (no published spec) — the descriptor for
-each one names exactly which fields are decoded versus documented-TODO. R/W formats survive
-their own round-trip; WORM formats can produce a fresh image that the same reader walks back.
+## 💾 Backup-software disk images
 
-| Format                  | State | Display name                                                  |
-| ----------------------- | ----- | ------------------------------------------------------------- |
-| `FileFormat.Acronis`    | R     | Acronis True Image — classic `.tib` (FileMeta chain walk + InputItem attribute stream — filename + 4 FILETIMEs + DOS attrs) |
-| `FileFormat.AcronisTibx`| R     | Acronis True Image — modern `.tibx` (Stage-2 page-frame walk + LSM sub-header) |
-| `FileFormat.Aomei`      | WORM  | AOMEI Backupper `.adi` / `.afi` (BIFH/BIFT + BR\_STANDARD\_HEADER envelope + 5 INDEX\_TYPE\_* + 13 INFO\_TYPE\_* + BR\_IMAGE\_INDEX layout) |
-| `FileFormat.AppleSparse`| R     | Apple sparseimage + sparsebundle (Time Machine / hdiutil)     |
-| `FileFormat.Bkf`        | R     | Microsoft NTBackup `.bkf` (MTF Tape Format)                   |
-| `FileFormat.EaseUs`     | R     | EaseUS Todo Backup `.pbd` (R/O chunk stream)                  |
-| `FileFormat.Ghost`      | R/W   | Norton Ghost — modern 3.0 → 11.x (Fast LZ Z1 + zlib + CRC-16 cipher, in-place append via `GhostInPlaceModifier`) + pre-3.0 Ghost 1.x/2.x R/O Stage-1 (`FE EF` head + head-type byte) |
-| `FileFormat.Macrium`    | WORM  | Macrium Reflect X `.mrimgx`/`.mrbakx` (open spec) + Reflect pre-X 7/8 `.mrimg`/`.mrbak`/`.mrex`/`.mrsql` R/O Stage-1 |
-| `FileFormat.Paragon`    | WORM  | Paragon Backup & Recovery `.pbf` (CWBP write-once)            |
-| `FileFormat.Partclone`  | R     | Clonezilla partclone (`.img` partition clone)                 |
-| `FileFormat.Veeam`      | R     | Veeam B&R `.vbk` / `.vib` / `.vrb` (Stage-1 OibSummary trailer only) |
+| Format | State | Scope / evidence |
+| --- | --- | --- |
+| `FileFormat.Acronis` | R | Classic `.tib`; FileMeta chain / InputItem attribute stream fields decoded from reverse-engineered evidence |
+| `FileFormat.AcronisTibx` | R | Modern `.tibx`; page-frame walk + LSM sub-header; record-stream decode remains bounded as documented in source |
+| `FileFormat.Aomei` | WORM ⚠️ | `.adi` / `.afi`; BIFH/BIFT + BR standard-header/index structures; own writer round-trip is not claimed as vendor byte-compat |
+| `FileFormat.AppleSparse` | R | Apple sparseimage / sparsebundle |
+| `FileFormat.Bkf` | R | Microsoft NTBackup MTF |
+| `FileFormat.EaseUs` | R | EaseUS Todo Backup `.pbd`; chunk-stream extraction path |
+| `FileFormat.Ghost` | R/W | Norton Ghost modern record-stream path with in-place append/tombstone modifier plus legacy reader coverage |
+| `FileFormat.Macrium` | WORM ⚠️ | Reflect X open-spec path + older Reflect read path; rebuild helper is distinct from in-place mutation |
+| `FileFormat.Paragon` | WORM ⚠️ | Paragon `.pbf`; own clean-room container path, vendor byte-compat not implied |
+| `FileFormat.Partclone` | R | Clonezilla/partclone images |
+| `FileFormat.Veeam` | R ⚠️ | Veeam `.vbk`/`.vib`/`.vrb`; supported summary/trailer path rather than undocumented full block layer |
 
-## Detailed format reference
+## 🔬 Detailed archive-container reference
 
-The tables below mirror the canonical "what does each format actually support" reference from
-the source repo. Each row links to the upstream spec the implementation was validated against
-plus a one-line note covering scope / limitations. WORM = can produce a fresh archive that
-round-trips; **`-`** = read-only.
+| Format | Extensions | Read | Write | Reference | Notes |
+| --- | --- | --- | --- | --- | --- |
+| [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `.zip` | Yes | Yes | [APPNOTE.TXT](https://pkwaredownloads.blob.core.windows.net/pem/APPNOTE.txt) | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, PPMd, Zstd, AES |
+| [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `.rar` | Yes | Yes (v4/v5) | [rarlab technote](https://www.rarlab.com/technote.htm) | v1-v5 readers; creation scope is v4/v5 and is not original-tool parity |
+| [7z](https://en.wikipedia.org/wiki/7z) | `.7z` | Yes | Yes | [7-Zip format](https://www.7-zip.org/7z.html) | LZMA/LZMA2, Deflate, BZip2, PPMd, BCJ/BCJ2, AES-256, multi-volume paths |
+| [TAR](https://en.wikipedia.org/wiki/Tar_(computing)) | `.tar` | Yes | Yes | [POSIX ustar](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) | POSIX/GNU/PAX, multi-volume paths |
+| [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format)) | `.cab` | Yes | Yes | [MS-CAB](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cab/) | MSZIP, LZX, Quantum |
+| [LZH/LHA](https://en.wikipedia.org/wiki/LHA_(file_format)) | `.lzh`, `.lha` | Yes | Yes | [LHA archive format](http://www.math.sci.hiroshima-u.ac.jp/m-mat/MT/hamamura-home/lha-en.html) | lh0-lh7, lzs, lh1-lh3, pm0-pm2 paths |
+| [ARJ](https://en.wikipedia.org/wiki/ARJ) | `.arj` | Yes | Yes | [ARJ technical](http://www.arjsoftware.com/) | Methods 0-4, garble encryption path |
+| [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `.arc` | Yes | Yes | [ARC format](http://fileformats.archiveteam.org/wiki/ARC_(compression_format)) | Methods 0-9 |
+| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `.zoo` | Yes | Yes | [ZOO](http://fileformats.archiveteam.org/wiki/ZOO) | LZW/LZH paths |
+| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `.ace` | Yes | Yes | [acefile](https://github.com/droe/acefile) | ACE 1/2, solid/filter/encryption/recovery paths as implemented |
+| SQX | `.sqx` | Yes | Yes | [encode.su SQX discussion](https://encode.su/threads/1290-SQX-(by-SpeedProject)) | LZH/multimedia/audio/solid/AES/recovery paths |
+| [CPIO](https://en.wikipedia.org/wiki/Cpio) | `.cpio` | Yes | Yes | [cpio(5)](https://www.freebsd.org/cgi/man.cgi?query=cpio&sektion=5) | Binary, odc, newc, CRC |
+| [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `.ar` | Yes | Yes | [ar(5)](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) | Unix archive |
+| [WIM](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `.wim` | Yes | Yes | [Microsoft WIM](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/) | LZX/XPRESS paths |
+| [RPM](https://en.wikipedia.org/wiki/RPM_Package_Manager) | `.rpm` | Yes | Yes | [RPM spec](https://rpm-software-management.github.io/rpm/manual/format.html) | CPIO payload |
+| [DEB](https://en.wikipedia.org/wiki/Deb_(file_format)) | `.deb` | Yes | Yes | [deb(5)](https://man7.org/linux/man-pages/man5/deb.5.html) | AR + TAR with gz/xz/zst/bz2 |
+| [Shar](https://en.wikipedia.org/wiki/Shar) | `.shar` | Yes | Yes | [GNU sharutils](https://www.gnu.org/software/sharutils/) | Shell archive |
+| PAK | `.pak` | Yes | Yes | [PAK](http://fileformats.archiveteam.org/wiki/PAK) | ARC-compatible family where applicable |
+| [HA](https://en.wikipedia.org/wiki/HA_(file_format)) | `.ha` | Yes | Yes | [HA](http://fileformats.archiveteam.org/wiki/HA) | HSC/ASC arithmetic coding |
+| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `.zpaq` | Yes ⚠️ | Yes | [ZPAQ spec](https://mattmahoney.net/dc/zpaq206.pdf) | Writer surface exists; full reader requires ZPAQL VM support noted in limitations |
+| [StuffIt](https://en.wikipedia.org/wiki/StuffIt) | `.sit` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Multiple historical methods |
+| StuffIt X | `.sitx` | Yes | Yes ⚠️ | [XADMaster](https://github.com/MacPaw/XADMaster) | Writer emits the supported envelope shell; full proprietary element catalog is not claimed |
+| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `.exe` | Yes | Yes ⚠️ | [NSIS docs](https://nsis.sourceforge.io/Docs/) | Extraction + overlay-oriented WORM output, not a PE installer builder |
+| Inno Setup | `.exe` | Yes | Yes ⚠️ | [innounp](https://sourceforge.net/projects/innounp/) | Extraction + supported signature/container output, not an installer compiler |
+| [DMS](https://en.wikipedia.org/wiki/Disk_Masher_System) | `.dms` | Yes | Yes | [xDMS](https://github.com/markrabjohn/xDMS) | Amiga disk archiver |
+| [LZX (Amiga)](https://en.wikipedia.org/wiki/LZX) | `.lzx` | Yes | Yes | [Amiga LZX](http://fileformats.archiveteam.org/wiki/LZX) | Amiga LZX |
+| [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro) | `.cpt` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Classic Mac |
+| Spark | `.spark` | Yes | Yes | [Spark](http://fileformats.archiveteam.org/wiki/Spark) | RISC OS |
+| [LBR](https://en.wikipedia.org/wiki/LU_(software)) | `.lbr` | Yes | Yes | [CP/M LBR](http://www.gaby.de/cpm/manuals/archive/lbr.txt) | CP/M |
+| UHARC | `.uha` | Yes | Yes | [UHARC](http://www.uharc.com/) | LZP-oriented path |
+| [WAD](https://en.wikipedia.org/wiki/Doom_WAD) | `.wad` | Yes | Yes | [Doom Wiki](https://doomwiki.org/wiki/WAD) | Doom |
+| WAD2/WAD3 | `.wad` | Yes | Yes | [Quake Wiki](https://quakewiki.org/wiki/.wad) | Quake/Half-Life textures |
+| [XAR](https://en.wikipedia.org/wiki/Xar_(archiver)) | `.xar` | Yes | Yes | [XAR format](https://github.com/mackyle/xar/wiki/xarformat) | Apple package/container use |
+| [ALZip](https://en.wikipedia.org/wiki/ALZip) | `.alz` | Yes | Yes | [ALZ](http://fileformats.archiveteam.org/wiki/ALZ) | Deflate-oriented path |
+| VPK | `.vpk` | Yes | Yes | [Valve VPK](https://developer.valvesoftware.com/wiki/VPK_(file_format)) | Valve/Source |
+| BSA | `.bsa` | Yes | Yes | [UESP BSA](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BSA) | Bethesda generations supported by implementation |
+| BA2 | `.ba2` | Yes | Yes | [UESP BA2](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BA2) | BTDX/GNRL scope |
+| [MPQ](https://en.wikipedia.org/wiki/MPQ) | `.mpq` | Yes | Yes | [StormLib](https://github.com/ladislav-zezula/StormLib) | Blizzard MPQ path |
+| [GRP](https://moddingwiki.shikadi.net/wiki/GRP_(Build)_Format) | `.grp` | Yes | Yes | [Build GRP](https://moddingwiki.shikadi.net/wiki/GRP_(Build)_Format) | Build engine |
+| [HOG](https://en.wikipedia.org/wiki/HOG_(file_format)) | `.hog` | Yes | Yes | [Descent HOG](http://descent.wikia.com/wiki/HOG) | Descent |
+| BIG | `.big` | Yes | Yes | [EA BIG](http://wiki.xentax.com/index.php/EA_BIG) | EA/Westwood |
+| Godot PCK | `.pck` | Yes | Yes | [Godot PCK](https://docs.godotengine.org/en/stable/development/file_formats/pck.html) | Godot |
+| [WARC](https://en.wikipedia.org/wiki/Web_ARChive) | `.warc` | Yes | Yes | [ISO 28500](https://iipc.github.io/warc-specifications/) | WORM emits resource records for supplied files |
+| NDS | `.nds` | Yes | Yes ⚠️ | [GBATEK](https://problemkaputt.de/gbatek.htm) | NitroFS-oriented output, not ARM boot code synthesis |
+| NSA | `.nsa` | Yes | Yes | [NScripter](https://www.nscripter.com/) | Stored-entry writer path |
+| SAR | `.sar` | Yes | Yes | [NScripter](https://www.nscripter.com/) | Uncompressed NSA family |
+| PackIt | `.pit` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Classic Mac |
+| DiskDoubler | `.dd` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Classic Mac; supported stored writer path |
+| MSI | `.msi` | Yes | Yes ⚠️ | [MS-CFB](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) | CFB envelope; not a synthesized Windows Installer DB |
+| [PDF](https://en.wikipedia.org/wiki/PDF) | `.pdf` | Yes | Yes ⚠️ | [ISO 32000](https://www.iso.org/standard/75839.html) | Image extraction + file-attachment WORM surface, not a general PDF renderer/editor |
+| [TNEF](https://en.wikipedia.org/wiki/Transport_Neutral_Encapsulation_Format) | `.tnef`, `.dat` | Yes | Yes | [MS-OXTNEF](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxtnef/) | Outlook `winmail.dat` |
+| Split File | `.001` | Yes | Yes | — | Multi-part joining/splitting |
+| FreeArc | `.arc` | Yes | Yes | [FreeArc](https://github.com/Bulat-Ziganshin/FreeArc) | FreeArc |
+| [CHM](https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help) | `.chm` | Yes | Yes | [CHM spec archive](https://archive.org/details/chmspec) | Supported section-0/LZX creation paths |
+| Wrapster | — | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | MP3 wrapper archive |
+| LhF | `.lhf` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Amiga LhFloppy |
+| ZAP | `.zap` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Amiga disk archiver |
+| PackDisk | `.pdsk` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Amiga PackDisk family |
+| AMPK | — | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Amiga AMPK |
+| IFF-CDAF | — | Yes | Yes | [IFF](http://fileformats.archiveteam.org/wiki/IFF) | IFF-CDAF archive |
+| UMX | `.umx` | Yes | Yes ⚠️ | [Beyond Unreal package format](https://wiki.beyondunreal.com/Legacy:Package_File_Format) | Header/package-shell output only; full export-table music encoding not claimed |
+| PSARC | `.psarc` | Yes | Yes ⚠️ | [PSARC](https://www.psdevwiki.com/ps3/PlayStation_archive_(PSARC)) | zlib block path; unsupported encrypted/LZMA variants rejected |
+| MIX | `.mix` | Yes | Yes | [OpenRA MixFile](https://github.com/OpenRA/OpenRA/blob/bleed/OpenRA.Mods.Cnc/FileSystem/MixFile.cs) | Hash-keyed names; reader synthesizes hex names where original names are absent |
+| VPP | `.vpp` | Yes | Yes | [Red Faction VPP](http://www.redfactionwiki.com/wiki/RF1:VPP_File_Format) | Volition v1 |
+| PBP | `.pbp` | Yes | Yes | [PSP PBP](https://www.psdevwiki.com/psp/PBP) | Fixed EBOOT sections |
+| GOB | `.gob`, `.goo` | Yes | Yes | [GOB overview](https://www.moddb.com/games/star-wars-jedi-knight-jedi-academy/tutorials/gob-pak-format-explained) | LucasArts |
+| LFD | `.lfd` | Yes | Yes | [LucasArts LFD archive reference](https://web.archive.org/web/20140805170029/http://www.lucasforums.com/showthread.php?t=131803) | Type/name resources + RMAP index |
+| PFS0 | `.nsp`, `.pfs0` | Yes | Yes | [Switchbrew PFS0](https://switchbrew.org/wiki/NCA_Format#PFS0) | Nintendo Switch PartitionFS |
+| SLF | `.slf` | Yes | Yes | [JA2-Stracciatella](https://github.com/ja2-stracciatella/ja2-stracciatella/blob/master/src/sgp/SlfReader.cc) | Sir-Tech library |
+| HPI | `.hpi`, `.ufo`, `.ccx`, `.gp3` | Yes | Yes ⚠️ | [TA HPI](https://units.tauniverse.com/tutorials/tadesign/tutorials/hpi.htm) | Supported unencrypted/zlib-oriented subset |
+| SARC | `.sarc`, `.pack`, `.bars` | Yes | Yes | [3DBrew SARC](https://www.3dbrew.org/wiki/SARC) | Endian-aware reader; hash-sorted writer |
+| AFS | `.afs` | Yes | Yes | [AFS](http://wiki.xentax.com/index.php/SEGA_Athena_Filesystem_(AFS)) | Sega Athena FS, alignment/metadata paths |
+| NARC | `.narc`, `.carc` | Yes | Yes | [GBATEK NARC](https://problemkaputt.de/gbatek.htm#dscartridgenitrosdkbinaries) | Nintendo DS archive |
+| SFAR | `.sfar` | Yes | — | [ME3Tweaks SFAR](https://me3tweaks.com/me3tweaks-help-and-info/me3-modding-assistant/sfar-files) | BioWare Mass Effect 3 DLC; LZX payload limits documented in source |
+| PSF | `.psf`, `.minipsf`, `.ssf`, `.dsf`, `.gsf`, `.usf`, `.2sf`, `.ncsf`, `.snsf`, `.qsf` | Yes | Yes | [Neil Corlett PSF](https://web.archive.org/web/20060212232218/http://wiki.neillcorlett.com/PSFFormat) | Chiptune pseudo-archive surface |
+| MHK | `.mhk` | Yes | Yes | [ScummVM Mohawk](https://github.com/scummvm/scummvm/tree/master/engines/mohawk) | Cyan Mohawk |
+| YPF | `.ypf` | Yes | Yes | [crass](https://github.com/regomne/crass) | YukaScript v480-oriented path |
+| U8 | `.u8`, `.arc` | Yes | Yes | [Tockdom U8](https://wiki.tockdom.com/wiki/U8_(File_Format)) | Nintendo U8 |
+| AKB | `.akb` | Yes | Yes | [vgmstream AKB](https://github.com/vgmstream/vgmstream/blob/master/src/meta/akb.c) | Raw audio bytes + metadata surface |
+| AWB / AFS2 | `.awb`, `.acb` | Yes | Yes | [CRI Wave Bank](http://wiki.xentax.com/index.php/CRI_Wave_Bank) | Alignment/offset-width aware |
+| Web Bundle | `.wbn` | Yes | — | [Bundled Exchanges draft](https://datatracker.ietf.org/doc/draft-yasskin-wpack-bundled-exchanges/) | Minimal CBOR/pseudo-archive path |
+| LRZIP | `.lrz` | Yes | Yes ⚠️ | [lrzip](https://github.com/ckolivas/lrzip) | Supported LZMA wrapper subtype; other subtypes rejected |
+| GAR | `.gar` | Yes | Yes | [3DBrew GAR](https://www.3dbrew.org/wiki/GAR) | Nintendo 3DS asset resource |
+| ARSC | `.arsc` | Yes | — | [AOSP ResourceTypes](https://android.googlesource.com/platform/frameworks/base/+/master/libs/androidfw/include/androidfw/ResourceTypes.h) | Android resource-table pseudo-archive |
 
-### Archive containers (canonical)
+## 📦 ZIP-derived containers
 
-| Format                                                                | Extensions      | Read | Write       | Reference                                                                                                                                  | Notes                                                                                                                                                       |
-| --------------------------------------------------------------------- | --------------- | ---- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format))                | `.zip`          | Yes  | Yes         | [APPNOTE.TXT](https://pkwaredownloads.blob.core.windows.net/pem/APPNOTE.txt)                                                               | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, PPMd, Zstd, AES                                                                            |
-| [RAR](https://en.wikipedia.org/wiki/RAR_(file_format))                | `.rar`          | Yes  | Yes (v4/v5) | [rarlab technote](https://www.rarlab.com/technote.htm)                                                                                     | v1-v5 decoders, solid, multi-volume, encryption, recovery                                                                                                   |
-| [7z](https://en.wikipedia.org/wiki/7z)                                | `.7z`           | Yes  | Yes         | [7-Zip format](https://www.7-zip.org/7z.html)                                                                                              | LZMA/LZMA2, Deflate, BZip2, PPMd, BCJ/BCJ2, AES-256, multi-volume                                                                                           |
-| [TAR](https://en.wikipedia.org/wiki/Tar_(computing))                  | `.tar`          | Yes  | Yes         | [POSIX ustar](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html)                                                         | POSIX/GNU/PAX, multi-volume                                                                                                                                 |
-| [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format))            | `.cab`          | Yes  | Yes         | [MS-CAB](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cab/)                                                            | MSZIP, LZX, Quantum                                                                                                                                         |
-| [LZH/LHA](https://en.wikipedia.org/wiki/LHA_(file_format))            | `.lzh`,`.lha`   | Yes  | Yes         | [LHA archive format](http://www.math.sci.hiroshima-u.ac.jp/m-mat/MT/hamamura-home/lha-en.html)                                             | lh0-lh7, lzs, lh1-lh3 (adaptive Huffman), pm0-pm2                                                                                                           |
-| [ARJ](https://en.wikipedia.org/wiki/ARJ)                              | `.arj`          | Yes  | Yes         | [ARJ technical](http://www.arjsoftware.com/)                                                                                               | Methods 0-4, garble encryption                                                                                                                              |
-| [ARC](https://en.wikipedia.org/wiki/ARC_(file_format))                | `.arc`          | Yes  | Yes         | [ARC format](http://fileformats.archiveteam.org/wiki/ARC_(compression_format))                                                             | Methods 0-9 (RLE, LZW, Squeeze, Huffman)                                                                                                                    |
-| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format))                | `.zoo`          | Yes  | Yes         | [zoo format](http://fileformats.archiveteam.org/wiki/ZOO)                                                                                  | LZW, LZH                                                                                                                                                    |
-| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format))     | `.ace`          | Yes  | Yes         | [ACE unofficial spec](https://github.com/droe/acefile/blob/master/acefile.py)                                                              | ACE 1.0/2.0, solid, sound/picture filters, Blowfish, recovery                                                                                               |
-| SQX                                                                   | `.sqx`          | Yes  | Yes         | [SQX disassembly](https://encode.su/threads/1290-SQX-(by-SpeedProject))                                                                    | LZH, multimedia, audio, solid, AES-128, recovery                                                                                                            |
-| [CPIO](https://en.wikipedia.org/wiki/Cpio)                            | `.cpio`         | Yes  | Yes         | [cpio(5)](https://www.freebsd.org/cgi/man.cgi?query=cpio&sektion=5)                                                                        | Binary, odc, newc, CRC                                                                                                                                      |
-| [AR](https://en.wikipedia.org/wiki/Ar_(Unix))                         | `.ar`           | Yes  | Yes         | [ar(5)](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5)                                                                            | Unix archive                                                                                                                                                |
-| [WIM](https://en.wikipedia.org/wiki/Windows_Imaging_Format)           | `.wim`          | Yes  | Yes         | [Imagex WIM format](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/)                                               | LZX, XPRESS                                                                                                                                                 |
-| [RPM](https://en.wikipedia.org/wiki/RPM_Package_Manager)              | `.rpm`          | Yes  | Yes         | [RPM spec](https://rpm-software-management.github.io/rpm/manual/format.html)                                                               | CPIO payload                                                                                                                                                |
-| [DEB](https://en.wikipedia.org/wiki/Deb_(file_format))                | `.deb`          | Yes  | Yes         | [deb(5)](https://man7.org/linux/man-pages/man5/deb.5.html)                                                                                 | AR+TAR with gz/xz/zst/bz2                                                                                                                                   |
-| [Shar](https://en.wikipedia.org/wiki/Shar)                            | `.shar`         | Yes  | Yes         | [GNU sharutils](https://www.gnu.org/software/sharutils/)                                                                                   | Shell archive                                                                                                                                               |
-| PAK                                                                   | `.pak`          | Yes  | Yes         | [PAK spec](http://fileformats.archiveteam.org/wiki/PAK)                                                                                    | ARC-compatible                                                                                                                                              |
-| [HA](https://en.wikipedia.org/wiki/HA_(file_format))                  | `.ha`           | Yes  | Yes         | [HA specification](http://fileformats.archiveteam.org/wiki/HA)                                                                             | HSC/ASC arithmetic coding                                                                                                                                   |
-| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ)                            | `.zpaq`         | Yes  | Yes         | [ZPAQ spec PDF](https://mattmahoney.net/dc/zpaq206.pdf)                                                                                    | Context mixing, journaling                                                                                                                                  |
-| [StuffIt](https://en.wikipedia.org/wiki/StuffIt)                      | `.sit`          | Yes  | Yes         | [libxad sit.c](https://github.com/MacPaw/XADMaster)                                                                                        | Multiple methods                                                                                                                                            |
-| StuffIt X                                                             | `.sitx`         | Yes  | Yes         | [XADMaster StuffItX](https://github.com/MacPaw/XADMaster)                                                                                  | Detection-only; WORM emits a valid `StuffIt!` envelope (proprietary element-stream writer not implemented)                                                  |
-| [SquashFS](https://en.wikipedia.org/wiki/SquashFS)                    | `.sqfs`         | Yes  | Yes         | [SquashFS 4.0 spec](https://dr-emann.github.io/squashfs/)                                                                                  | Filesystem image                                                                                                                                            |
-| [CramFS](https://en.wikipedia.org/wiki/Cramfs)                        | `.cramfs`       | Yes  | Yes         | [Linux `fs/cramfs/`](https://github.com/torvalds/linux/tree/master/fs/cramfs)                                                              | Filesystem image                                                                                                                                            |
-| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `.exe`        | Yes  | Yes         | [NSIS wiki](https://nsis.sourceforge.io/Docs/)                                                                                             | Installer extraction + WORM emits overlay-only data (no PE stub)                                                                                            |
-| Inno Setup                                                            | `.exe`          | Yes  | Yes         | [innounp](https://sourceforge.net/projects/innounp/)                                                                                       | Installer extraction + WORM emits signature header (no PE stub)                                                                                             |
-| [DMS](https://en.wikipedia.org/wiki/Disk_Masher_System)               | `.dms`          | Yes  | Yes         | [xDMS source](https://github.com/markrabjohn/xDMS)                                                                                         | Amiga disk archiver                                                                                                                                         |
-| [LZX (Amiga)](https://en.wikipedia.org/wiki/LZX)                      | `.lzx`          | Yes  | Yes         | [Amiga LZX format](http://fileformats.archiveteam.org/wiki/LZX)                                                                            | Amiga LZX                                                                                                                                                   |
-| [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro)              | `.cpt`          | Yes  | Yes         | [XADMaster cpt.c](https://github.com/MacPaw/XADMaster)                                                                                     | Classic Mac format                                                                                                                                          |
-| Spark                                                                 | `.spark`        | Yes  | Yes         | [RISC OS Spark](http://fileformats.archiveteam.org/wiki/Spark)                                                                             | RISC OS format                                                                                                                                              |
-| [LBR](https://en.wikipedia.org/wiki/LU_(software))                    | `.lbr`          | Yes  | Yes         | [CP/M LBR](http://www.gaby.de/cpm/manuals/archive/lbr.txt)                                                                                 | CP/M format                                                                                                                                                 |
-| UHARC                                                                 | `.uha`          | Yes  | Yes         | [UHARC docs](http://www.uharc.com/)                                                                                                        | LZP compression                                                                                                                                             |
-| [WAD (Doom)](https://en.wikipedia.org/wiki/Doom_WAD)                  | `.wad`          | Yes  | Yes         | [Doom Wiki WAD](https://doomwiki.org/wiki/WAD)                                                                                             | Doom WAD format                                                                                                                                             |
-| WAD2/WAD3                                                             | `.wad`          | Yes  | Yes         | [Quake Wiki WAD](https://quakewiki.org/wiki/.wad)                                                                                          | Quake/Half-Life texture archive                                                                                                                             |
-| [XAR](https://en.wikipedia.org/wiki/Xar_(archiver))                   | `.xar`          | Yes  | Yes         | [XAR on-disk format](https://github.com/mackyle/xar/wiki/xarformat)                                                                        | Apple `.pkg` (zlib TOC)                                                                                                                                     |
-| [ALZip](https://en.wikipedia.org/wiki/ALZip)                          | `.alz`          | Yes  | Yes         | [ALZ format](http://fileformats.archiveteam.org/wiki/ALZ)                                                                                  | Korean archive (Deflate)                                                                                                                                    |
-| VPK                                                                   | `.vpk`          | Yes  | Yes         | [Valve VPK](https://developer.valvesoftware.com/wiki/VPK_(file_format))                                                                    | Valve game archive                                                                                                                                          |
-| BSA                                                                   | `.bsa`          | Yes  | Yes         | [BSA format](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BSA)                                                                         | Bethesda game archive (Morrowind / Oblivion / Skyrim)                                                                                                       |
-| BA2                                                                   | `.ba2`          | Yes  | Yes         | [BA2 (BTDX)](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BA2)                                                                         | Bethesda Archive v2 (Fallout 4 / Skyrim SE), GNRL subtype only — Bob Jenkins lookup3 hash                                                                   |
-| [MPQ](https://en.wikipedia.org/wiki/MPQ)                              | `.mpq`          | Yes  | Yes         | [ZezulaMPQ docs](https://github.com/ladislav-zezula/StormLib)                                                                              | Blizzard — WORM v1 with stored entries, encrypted hash+block tables, self-referential `(listfile)`                                                          |
-| [GRP](https://moddingwiki.shikadi.net/wiki/GRP_(Build)_Format)        | `.grp`          | Yes  | Yes         | [BUILD Engine docs](https://moddingwiki.shikadi.net/wiki/GRP_(Build)_Format)                                                               | BUILD Engine (Duke Nukem 3D)                                                                                                                                |
-| [HOG](https://en.wikipedia.org/wiki/HOG_(file_format))                | `.hog`          | Yes  | Yes         | [Descent HOG](http://descent.wikia.com/wiki/HOG)                                                                                           | Descent game archive                                                                                                                                        |
-| BIG                                                                   | `.big`          | Yes  | Yes         | [EA BIG format](http://wiki.xentax.com/index.php/EA_BIG)                                                                                   | EA Games (C&C, FIFA)                                                                                                                                        |
-| Godot PCK                                                             | `.pck`          | Yes  | Yes         | [Godot PCK spec](https://docs.godotengine.org/en/stable/development/file_formats/pck.html)                                                 | Godot Engine resource pack                                                                                                                                  |
-| [WARC](https://en.wikipedia.org/wiki/Web_ARChive)                     | `.warc`         | Yes  | Yes         | [ISO 28500](https://iipc.github.io/warc-specifications/)                                                                                   | Web archive — WORM emits one `resource` record per input file                                                                                               |
-| NDS                                                                   | `.nds`          | Yes  | Yes         | [GBATEK NDS](https://problemkaputt.de/gbatek.htm)                                                                                          | Nintendo DS ROM — WORM emits valid NitroFS (no ARM9/ARM7 boot code)                                                                                         |
-| NSA                                                                   | `.nsa`          | Yes  | Yes         | [NScripter docs](https://www.nscripter.com/)                                                                                               | NScripter — WORM writes stored entries (compression type 0)                                                                                                 |
-| SAR                                                                   | `.sar`          | Yes  | Yes         | [NScripter docs](https://www.nscripter.com/)                                                                                               | NScripter — uncompressed variant of NSA                                                                                                                     |
-| PackIt                                                                | `.pit`          | Yes  | Yes         | [XADMaster packit.c](https://github.com/MacPaw/XADMaster)                                                                                  | Classic Mac format — WORM emits stored entries                                                                                                              |
-| DiskDoubler                                                           | `.dd`           | Yes  | Yes         | [XADMaster DD](https://github.com/MacPaw/XADMaster)                                                                                        | Classic Mac compression — WORM stores data fork (method 0)                                                                                                  |
-| MSI                                                                   | `.msi`          | Yes  | Yes         | [MS-CFB](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/)                                                            | OLE Compound File — WORM produces a CFB envelope (not a functional Installer DB)                                                                            |
-| [PDF](https://en.wikipedia.org/wiki/PDF)                              | `.pdf`          | Yes  | Yes         | [ISO 32000](https://www.iso.org/standard/75839.html)                                                                                       | Image extraction + WORM via file attachments (EmbeddedFiles) — any file type round-trips                                                                    |
-| [TNEF](https://en.wikipedia.org/wiki/Transport_Neutral_Encapsulation_Format) | `.tnef`,`.dat` | Yes | Yes      | [MS-OXTNEF](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxtnef/)                                              | Outlook `winmail.dat`                                                                                                                                       |
-| Split File                                                            | `.001`          | Yes  | Yes         | —                                                                                                                                          | Multi-part file joining/splitting                                                                                                                           |
-| FreeArc                                                               | `.arc`          | Yes  | Yes         | [FreeArc source](https://github.com/Bulat-Ziganshin/FreeArc)                                                                               | FreeArc archive                                                                                                                                             |
-| [CHM](https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help)     | `.chm`          | Yes  | Yes         | [CHM file format](https://archive.org/details/chmspec)                                                                                     | MS Compiled HTML Help — WORM stores files in section 0 (uncompressed); LZX compression available via options                                                |
-| Wrapster                                                              | -               | Yes  | Yes         | [XADMaster wrapster.c](https://github.com/MacPaw/XADMaster)                                                                                | MP3 wrapper archive                                                                                                                                         |
-| LhF                                                                   | `.lhf`          | Yes  | Yes         | [XADMaster](https://github.com/MacPaw/XADMaster)                                                                                           | Amiga LhFloppy disk (LZH-compressed tracks)                                                                                                                 |
-| ZAP                                                                   | `.zap`          | Yes  | Yes         | [XADMaster](https://github.com/MacPaw/XADMaster)                                                                                           | Amiga disk archiver — WORM writes stored tracks                                                                                                             |
-| PackDisk                                                              | `.pdsk`         | Yes  | Yes         | [XADMaster](https://github.com/MacPaw/XADMaster)                                                                                           | Amiga PackDisk — WORM writes stored tracks. Same writer covers DCS / xDisk / xMash via different magics.                                                    |
-| AMPK                                                                  | -               | Yes  | Yes         | [XADMaster](https://github.com/MacPaw/XADMaster)                                                                                           | Amiga AMPK — WORM emits stored entries                                                                                                                      |
-| IFF-CDAF                                                              | -               | Yes  | Yes         | [IFF spec](http://fileformats.archiveteam.org/wiki/IFF)                                                                                    | IFF-CDAF archive — WORM emits stored entries                                                                                                                |
-| UMX                                                                   | `.umx`          | Yes  | Yes         | [Beyond Unreal wiki](https://wiki.beyondunreal.com/Legacy:Package_File_Format)                                                             | Unreal package — WORM emits valid header (detection-only)                                                                                                   |
-| PSARC                                                                 | `.psarc`        | Yes  | Yes         | [PSARC spec](https://www.psdevwiki.com/ps3/PlayStation_archive_(PSARC))                                                                    | Sony PlayStation archive (PS3/PS4/Vita) — zlib block compression (LZMA / encrypted-TOC rejected)                                                            |
-| MIX                                                                   | `.mix`          | Yes  | Yes         | [XCC / OpenRA](https://github.com/OpenRA/OpenRA/blob/bleed/OpenRA.Mods.Cnc/FileSystem/MixFile.cs)                                          | Westwood C&C / Red Alert 1 — hash-keyed, names not stored; reader synthesizes `<HEX>.bin`                                                                   |
-| VPP                                                                   | `.vpp`          | Yes  | Yes         | [Volition file format wiki](http://www.redfactionwiki.com/wiki/RF1:VPP_File_Format)                                                        | Volition Package v1 (Red Faction 1 / Summoner) — 2048-byte aligned                                                                                          |
-| PBP                                                                   | `.pbp`          | Yes  | Yes         | [PSP PBP layout](https://www.psdevwiki.com/psp/PBP)                                                                                        | PlayStation Portable EBOOT — 8 fixed sections (PARAM.SFO / ICON0.PNG / DATA.PSP / DATA.PSAR …)                                                              |
-| GOB                                                                   | `.gob`,`.goo`   | Yes  | Yes         | [Lucasarts GOB](https://www.moddb.com/games/star-wars-jedi-knight-jedi-academy/tutorials/gob-pak-format-explained)                         | LucasArts Jedi Knight / Outlaws — TOC-at-end, version 0x14 / 0x20                                                                                           |
-| LFD                                                                   | `.lfd`          | Yes  | Yes         | [LFD resource format](https://web.archive.org/web/20140805170029/http://www.lucasforums.com/showthread.php?t=131803)                       | LucasArts X-Wing / TIE Fighter — 4-char Type + 8-char Name; auto-emits valid `RMAP` index                                                                   |
-| PFS0                                                                  | `.nsp`,`.pfs0`  | Yes  | Yes         | [Switchbrew PFS0](https://switchbrew.org/wiki/NCA_Format#PFS0)                                                                             | Nintendo Switch PartitionFS / NSP package — alphabetically sorted; rejects HFS0 sibling                                                                     |
-| SLF                                                                   | `.slf`          | Yes  | Yes         | [JA2-Stracciatella SLF](https://github.com/ja2-stracciatella/ja2-stracciatella/blob/master/src/sgp/SlfReader.cc)                           | Sir-Tech library (Jagged Alliance 2) — 532-byte header / 280-byte entries; tombstoned (state=0xFF) entries skipped                                          |
-| HPI                                                                   | `.hpi`,`.ufo`,`.ccx`,`.gp3` | Yes | Yes  | [TA HPI format](https://units.tauniverse.com/tutorials/tadesign/tutorials/hpi.htm)                                                         | Total Annihilation HAPI — zlib subset only (encrypted HeaderKey≠0 + LZ77 chunks rejected); 64KB SQSH framing                                                |
-| SARC                                                                  | `.sarc`,`.pack`,`.bars` | Yes | Yes      | [3DBrew SARC](https://www.3dbrew.org/wiki/SARC)                                                                                            | Nintendo Sorted Archive (Wii U / 3DS / Switch) — endian-aware reads (BOM); LE writes; hash-sorted with key 0x65                                             |
-| AFS                                                                   | `.afs`          | Yes  | Yes         | [AFS format wiki](http://wiki.xentax.com/index.php/SEGA_Athena_Filesystem_(AFS))                                                           | Sega Athena Filesystem (Dreamcast / PS2 / GameCube) — optional metadata block; 0x800 alignment                                                              |
-| NARC                                                                  | `.narc`,`.carc` | Yes  | Yes         | [GBATEK NARC](https://problemkaputt.de/gbatek.htm#dscartridgenitrosdkbinaries)                                                             | Nintendo DS Archive Resource Compound — flat BTNF tree; BTAF + BTNF + GMIF                                                                                  |
-| SFAR                                                                  | `.sfar`         | Yes  | -           | [ME3Tweaks SFAR docs](https://me3tweaks.com/me3tweaks-help-and-info/me3-modding-assistant/sfar-files)                                      | BioWare Mass Effect 3 DLC — 5-byte LE integers; SHA-1 path hashes; LZX blocks not yet decompressed                                                          |
-| PSF                                                                   | `.psf`,`.minipsf`,`.ssf`,`.dsf`,`.gsf`,`.usf`,`.2sf`,`.ncsf`,`.snsf`,`.qsf` | Yes | Yes | [PSF spec (Corlett)](https://web.archive.org/web/20060212232218/http://wiki.neillcorlett.com/PSFFormat) | Portable Sound Format — chiptune container (zlib program + tag block); pseudo-archive entries: `header.bin / reserved.bin / program.bin / tags.txt`         |
-| MHK                                                                   | `.mhk`          | Yes  | Yes         | [ScummVM Mohawk](https://github.com/scummvm/scummvm/tree/master/engines/mohawk)                                                            | Cyan Mohawk archive (Myst Masterpiece / Riven / Cosmic Osmo / Living Books) — outer MHWK + inner RSRC (big-endian)                                          |
-| YPF                                                                   | `.ypf`          | Yes  | Yes         | [crass tools](https://github.com/regomne/crass)                                                                                            | YukaScript engine archive (Yu-No, Iyashi VN engine) — v480 only; raw ASCII names (engine obfuscation skipped)                                               |
-| U8                                                                    | `.u8`,`.arc`    | Yes  | Yes         | [U8 archive notes](https://wiki.tockdom.com/wiki/U8_(File_Format))                                                                         | Nintendo Wii / Wii U / 3DS archive — big-endian, 3-byte name offset, parent/end-index directory tree                                                        |
-| AKB                                                                   | `.akb`          | Yes  | Yes         | [vgmstream AKB](https://github.com/vgmstream/vgmstream/blob/master/src/meta/akb.c)                                                         | Square Enix audio bank — raw audio bytes surfaced (no codec decode), `metadata.ini` carries header info                                                     |
-| AWB / AFS2                                                            | `.awb`,`.acb`   | Yes  | Yes         | [VGMToolbox AFS2](http://wiki.xentax.com/index.php/CRI_Wave_Bank)                                                                          | CRI Audio Wave Bank — endian-agnostic offset width; alignment-aware (default 0x20); raw bytes per cue ID                                                    |
-| Web Bundle                                                            | `.wbn`          | Yes  | -           | [draft-yasskin-wpack-bundled-exchanges](https://datatracker.ietf.org/doc/draft-yasskin-wpack-bundled-exchanges/)                           | Bundled HTTP Exchanges — pseudo-archive (`FULL.wbn + metadata.ini`); minimal CBOR walker (no full decode)                                                   |
-| LRZIP                                                                 | `.lrz`          | Yes  | Yes         | [Long Range Zip](https://github.com/ckolivas/lrzip)                                                                                        | Single-stream LZMA wrapper (LZO/BZIP2/GZIP/ZPAQ subtypes rejected); 5-byte LZMA preamble + raw bounded stream                                               |
-| GAR                                                                   | `.gar`          | Yes  | Yes         | [3DBrew GAR](https://www.3dbrew.org/wiki/GAR)                                                                                              | Nintendo 3DS Generic Asset Resource — type-grouped layout where files sharing an extension share a type entry                                               |
-| ARSC                                                                  | `.arsc`         | Yes  | -           | [AOSP ResourceTypes.h](https://android.googlesource.com/platform/frameworks/base/+/master/libs/androidfw/include/androidfw/ResourceTypes.h) | Android compiled resource table (inside APK); pseudo-archive with package + string-pool counts; tolerant chunk walker                                       |
+All of these delegate to the ZIP reader/writer or a closely related archive implementation. WORM means a fresh container can be produced with the package-specific outer expectations; it does not imply signatures or application-specific semantics are synthesized.
 
-### ZIP-derived containers
+| Format | Extensions | Read | Write | Reference | Notes |
+| --- | --- | --- | --- | --- | --- |
+| [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | `.jar` | Yes | Yes | [JAR spec](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html) | Java archive |
+| WAR | `.war` | Yes | Yes | [Java EE WAR](https://docs.oracle.com/javaee/7/tutorial/packaging003.htm) | Java web archive |
+| EAR | `.ear` | Yes | Yes | [Java EE EAR](https://docs.oracle.com/javaee/7/tutorial/packaging004.htm) | Java enterprise archive |
+| [APK](https://en.wikipedia.org/wiki/Apk_(file_format)) | `.apk` | Yes | Yes | [Android APK](https://source.android.com/docs/core/runtime/jit-compiler) | Android package |
+| [IPA](https://en.wikipedia.org/wiki/.ipa) | `.ipa` | Yes | Yes | [Apple documentation](https://developer.apple.com/documentation/) | iOS package |
+| APPX | `.appx`, `.msix` | Yes | Yes | [MS-APPXPKG](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/) | Windows package |
+| [XPI](https://en.wikipedia.org/wiki/XPInstall) | `.xpi` | Yes | Yes | [Mozilla XPI](https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPI) | Firefox extension |
+| CRX | `.crx` | Yes | Yes ⚠️ | [Chrome CRX3](https://developer.chrome.com/docs/extensions/mv3/linux_hosting/) | Unsigned writer output is structurally useful but not browser-trusted |
+| [EPUB](https://en.wikipedia.org/wiki/EPUB) | `.epub` | Yes | Yes | [EPUB 3](https://www.w3.org/TR/epub-33/) | eBook |
+| MAFF | `.maff` | Yes | Yes | [MAFF](http://maf.mozdev.org/maff-specification.html) | Mozilla archive |
+| [KMZ](https://en.wikipedia.org/wiki/Keyhole_Markup_Language) | `.kmz` | Yes | Yes | [OGC KML](https://www.ogc.org/standards/kml) | Google Earth |
+| NuPkg | `.nupkg` | Yes | Yes | [NuGet nuspec](https://learn.microsoft.com/en-us/nuget/reference/nuspec) | NuGet package |
+| [DOCX](https://en.wikipedia.org/wiki/Office_Open_XML) | `.docx` | Yes | Yes | [ECMA-376](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/) | Word OOXML |
+| XLSX | `.xlsx` | Yes | Yes | [ECMA-376](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/) | Excel OOXML |
+| PPTX | `.pptx` | Yes | Yes | [ECMA-376](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/) | PowerPoint OOXML |
+| [ODT](https://en.wikipedia.org/wiki/OpenDocument) | `.odt` | Yes | Yes | [OASIS ODF](https://www.oasis-open.org/standard/odf/) | OpenDocument Text |
+| ODS | `.ods` | Yes | Yes | [OASIS ODF](https://www.oasis-open.org/standard/odf/) | Spreadsheet |
+| ODP | `.odp` | Yes | Yes | [OASIS ODF](https://www.oasis-open.org/standard/odf/) | Presentation |
+| CBZ | `.cbz` | Yes | Yes | [Comic book archive](https://en.wikipedia.org/wiki/Comic_book_archive) | ZIP comic book |
+| CBR | `.cbr` | Yes | Yes | [Comic book archive](https://en.wikipedia.org/wiki/Comic_book_archive) | RAR-backed comic book |
+| XPS / OXPS | `.xps`, `.oxps` | Yes | Yes | [ECMA-388](https://ecma-international.org/publications-and-standards/standards/ecma-388/) | OpenXPS |
+| VSDX | `.vsdx`, `.vstx` | Yes | Yes | [Visio formats](https://learn.microsoft.com/en-us/office/client-developer/visio/visio-file-formats) | Visio modern formats |
 
-All delegate to the ZIP reader/writer. WORM (`Yes`) means a fresh container can be produced
-with the correct internal layout for that flavour.
+## 🗄️ OLE2 Compound File variants
 
-| Format                                                                  | Extensions      | Read | Write | Reference                                                                                                          | Notes                                                                            |
-| ----------------------------------------------------------------------- | --------------- | ---- | ----- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| [JAR](https://en.wikipedia.org/wiki/JAR_(file_format))                  | `.jar`          | Yes  | Yes   | [JAR spec](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html)                                      | Java archive                                                                     |
-| WAR                                                                     | `.war`          | Yes  | Yes   | [Java EE WAR](https://docs.oracle.com/javaee/7/tutorial/packaging003.htm)                                          | Java web archive                                                                 |
-| EAR                                                                     | `.ear`          | Yes  | Yes   | [Java EE EAR](https://docs.oracle.com/javaee/7/tutorial/packaging004.htm)                                          | Java enterprise archive                                                          |
-| [APK](https://en.wikipedia.org/wiki/Apk_(file_format))                  | `.apk`          | Yes  | Yes   | [Android APK](https://source.android.com/docs/core/runtime/jit-compiler)                                           | Android package                                                                  |
-| [IPA](https://en.wikipedia.org/wiki/.ipa)                               | `.ipa`          | Yes  | Yes   | [Apple IPA bundle](https://developer.apple.com/documentation/)                                                     | iOS package                                                                      |
-| APPX                                                                    | `.appx`,`.msix` | Yes  | Yes   | [MS-APPXPKG](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/)                                           | Windows package                                                                  |
-| [XPI](https://en.wikipedia.org/wiki/XPInstall)                          | `.xpi`          | Yes  | Yes   | [Mozilla XPI](https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPI)                                           | Firefox extension                                                                |
-| CRX                                                                     | `.crx`          | Yes  | Yes   | [Chrome CRX3](https://developer.chrome.com/docs/extensions/mv3/linux_hosting/)                                     | Chrome extension — WORM emits unsigned CRX3 envelope (browser rejects signature) |
-| [EPUB](https://en.wikipedia.org/wiki/EPUB)                              | `.epub`         | Yes  | Yes   | [EPUB 3 spec](https://www.w3.org/TR/epub-33/)                                                                      | eBook                                                                            |
-| MAFF                                                                    | `.maff`         | Yes  | Yes   | [MAFF spec](http://maf.mozdev.org/maff-specification.html)                                                         | Mozilla Archive Format                                                           |
-| [KMZ](https://en.wikipedia.org/wiki/Keyhole_Markup_Language)            | `.kmz`          | Yes  | Yes   | [KML spec](https://www.ogc.org/standards/kml)                                                                      | Google Earth                                                                     |
-| NuPkg                                                                   | `.nupkg`        | Yes  | Yes   | [NuGet spec](https://learn.microsoft.com/en-us/nuget/reference/nuspec)                                             | NuGet package                                                                    |
-| [DOCX](https://en.wikipedia.org/wiki/Office_Open_XML)                   | `.docx`         | Yes  | Yes   | [ECMA-376](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/)                      | OOXML Word                                                                       |
-| XLSX                                                                    | `.xlsx`         | Yes  | Yes   | [ECMA-376](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/)                      | OOXML Excel                                                                      |
-| PPTX                                                                    | `.pptx`         | Yes  | Yes   | [ECMA-376](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/)                      | OOXML PowerPoint                                                                 |
-| [ODT](https://en.wikipedia.org/wiki/OpenDocument)                       | `.odt`          | Yes  | Yes   | [OASIS ODF](https://www.oasis-open.org/standard/odf/)                                                              | OpenDocument Text                                                                |
-| ODS                                                                     | `.ods`          | Yes  | Yes   | [OASIS ODF](https://www.oasis-open.org/standard/odf/)                                                              | OpenDocument Spreadsheet                                                         |
-| ODP                                                                     | `.odp`          | Yes  | Yes   | [OASIS ODF](https://www.oasis-open.org/standard/odf/)                                                              | OpenDocument Presentation                                                        |
-| CBZ                                                                     | `.cbz`          | Yes  | Yes   | [Comic book archive](https://en.wikipedia.org/wiki/Comic_book_archive)                                             | Comic book ZIP                                                                   |
-| CBR                                                                     | `.cbr`          | Yes  | Yes   | [Comic book archive](https://en.wikipedia.org/wiki/Comic_book_archive)                                             | Comic book RAR — delegates to RarWriter                                          |
-| XPS / OXPS                                                              | `.xps`,`.oxps`  | Yes  | Yes   | [ECMA-388 OpenXPS](https://ecma-international.org/publications-and-standards/standards/ecma-388/)                  | Microsoft / OpenXPS OPC PDF alternative                                          |
-| VSDX                                                                    | `.vsdx`,`.vstx` | Yes  | Yes   | [Visio file formats](https://learn.microsoft.com/en-us/office/client-developer/visio/visio-file-formats)           | Microsoft Visio modern (drawing / template / stencil ± macro)                    |
+DOC/XLS/PPT/MSG/Thumbs.db/MSI are built on [Compound File Binary](https://en.wikipedia.org/wiki/Compound_File_Binary_Format). WORM creation produces a structurally valid CFB envelope but does **not** synthesize the application-specific internal database/document streams. Known CFB writer boundaries include a limited DIFAT footprint, a single root storage model, and stream-name limits; treat these as container-level writers rather than application document generators.
 
-### OLE2 Compound File variants
+| Format | Extensions | Read | Write | Reference | Scope |
+| --- | --- | --- | --- | --- | --- |
+| DOC | `.doc` | Yes | Yes ⚠️ | [MS-DOC](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/) | CFB envelope, not Word binary document generation |
+| XLS | `.xls` | Yes | Yes ⚠️ | [MS-XLS](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/) | CFB envelope, not workbook generation |
+| PPT | `.ppt` | Yes | Yes ⚠️ | [MS-PPT](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ppt/) | CFB envelope, not presentation generation |
+| MSG | `.msg` | Yes | Yes ⚠️ | [MS-OXMSG](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/) | CFB envelope, not MAPI property synthesis |
+| Thumbs.db | `Thumbs.db` | Yes | Yes ⚠️ | [ForensicsWiki](https://www.forensicswiki.xyz/wiki/Thumbs.db) | CFB envelope, not Windows Catalog synthesis |
+| MSI | `.msi` | Yes | Yes ⚠️ | [MS-MSI](https://learn.microsoft.com/en-us/windows/win32/msi/windows-installer-file-format) | CFB envelope, not functional Installer DB synthesis |
 
-Microsoft binary-office formats built on the
-[OLE2 / Compound File Binary (CFB)](https://en.wikipedia.org/wiki/Compound_File_Binary_Format)
-container. WORM creation produces a structurally-valid CFB envelope (round-trips through our
-reader and other permissive CFB tools like libgsf / Apache POI) but is **not** a real
-Word/Excel/PowerPoint/Outlook document — those require generating each application's internal
-binary stream layout, which is out of scope. Limitations: ~6.8 MB total file size (109 FAT
-sectors, no DIFAT chain), single root storage, stream names ≤ 31 UTF-16 chars.
+## 🧰 Compression-stream format reference
 
-| Format    | Extensions  | Read | Write | Reference                                                                                  | Notes                                                           |
-| --------- | ----------- | ---- | ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| DOC       | `.doc`      | Yes  | Yes   | [MS-DOC](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/)          | Word 97-2003 (CFB envelope, not a real Word document)           |
-| XLS       | `.xls`      | Yes  | Yes   | [MS-XLS](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/)          | Excel 97-2003 (CFB envelope, not a real workbook)               |
-| PPT       | `.ppt`      | Yes  | Yes   | [MS-PPT](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ppt/)          | PowerPoint 97-2003 (CFB envelope, not a real presentation)      |
-| MSG       | `.msg`      | Yes  | Yes   | [MS-OXMSG](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/) | Outlook message (CFB envelope, not real MAPI properties)       |
-| Thumbs.db | `Thumbs.db` | Yes  | Yes   | [Forensics docs](https://www.forensicswiki.xyz/wiki/Thumbs.db)                             | Windows thumbnail cache (CFB envelope, not real Catalog layout) |
-| MSI       | `.msi`      | Yes  | Yes   | [MS-MSI](https://learn.microsoft.com/en-us/windows/win32/msi/windows-installer-file-format) | Windows Installer (CFB envelope, not a functional Installer DB) |
+| Format | Extensions | Compress | Decompress | Reference |
+| --- | --- | --- | --- | --- |
+| [Gzip](https://en.wikipedia.org/wiki/Gzip) | `.gz` | Yes | Yes | [RFC 1952](https://www.rfc-editor.org/rfc/rfc1952) |
+| [BZip2](https://en.wikipedia.org/wiki/Bzip2) | `.bz2` | Yes | Yes | [bzip2](https://sourceware.org/bzip2/) |
+| [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `.xz` | Yes | Yes | [XZ format](https://tukaani.org/xz/xz-file-format.txt) |
+| [Zstandard](https://en.wikipedia.org/wiki/Zstd) | `.zst` | Yes | Yes | [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) |
+| [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | `.lz4` | Yes | Yes | [LZ4 frame](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md) |
+| [Brotli](https://en.wikipedia.org/wiki/Brotli) | `.br` | Yes | Yes | [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) |
+| [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) | `.sz`, `.snappy` | Yes | Yes | [Snappy framing](https://github.com/google/snappy/blob/main/framing_format.txt) |
+| [LZOP](https://en.wikipedia.org/wiki/Lzop) | `.lzo` | Yes | Yes | [lzop](https://www.lzop.org/) |
+| [compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software)) | `.Z` | Yes | Yes | [ncompress](https://github.com/vapier/ncompress) |
+| [LZMA](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | `.lzma` | Yes | Yes | [LZMA SDK](https://www.7-zip.org/sdk.html) |
+| [Lzip](https://en.wikipedia.org/wiki/Lzip) | `.lz` | Yes | Yes | [lzip](https://www.nongnu.org/lzip/manual/lzip_manual.html) |
+| [Zlib](https://en.wikipedia.org/wiki/Zlib) | `.zlib` | Yes | Yes | [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) |
+| SZDD | `.sz_` | Yes | Yes | [stdlib format notes](https://www.stdlib.at/) |
+| KWAJ | — | Yes | Yes | [KWAJ](http://fileformats.archiveteam.org/wiki/KWAJ) |
+| [RZIP](https://en.wikipedia.org/wiki/Rzip) | `.rz` | Yes | Yes | [rzip](http://rzip.samba.org/) |
+| [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `.bin` | Yes | Yes | [RFC 1740](https://www.rfc-editor.org/rfc/rfc1740) |
+| [BinHex](https://en.wikipedia.org/wiki/BinHex) | `.hqx` | Yes | Yes | [RFC 1741](https://www.rfc-editor.org/rfc/rfc1741) |
+| Squeeze | `.sqz` | Yes | Yes | [SQ](http://fileformats.archiveteam.org/wiki/SQ) |
+| PowerPacker | `.pp` | Yes | Yes | [PowerPacker](http://fileformats.archiveteam.org/wiki/Powerpacker) |
+| ICE Packer | `.ice` | Yes | Yes | [ICE](http://fileformats.archiveteam.org/wiki/ICE) |
+| [PackBits](https://en.wikipedia.org/wiki/PackBits) | `.packbits` | Yes | Yes | [Apple PackBits](https://en.wikipedia.org/wiki/PackBits) |
+| Yaz0 | `.yaz0`, `.szs` | Yes | Yes | [YAZ0](https://wiki.tockdom.com/wiki/YAZ0) |
+| BriefLZ | `.blz` | Yes | Yes | [brieflz](https://github.com/jibsen/brieflz) |
+| RNC | `.rnc` | Yes | Yes | [Rob Northen](http://segaretro.org/Rob_Northen_compression) |
+| RefPack/QFS | `.qfs`, `.refpack` | Yes | Yes | [RefPack](http://wiki.niotso.org/RefPack) |
+| aPLib | `.aplib` | Yes | Yes | [aPLib](http://ibsensoftware.com/products_aPLib.html) |
+| [LZFSE](https://en.wikipedia.org/wiki/LZFSE) | `.lzfse` | Yes ⚠️ | Yes ⚠️ | [Apple LZFSE](https://github.com/lzfse/lzfse) |
+| Freeze | `.f`, `.freeze` | Yes | Yes | [Freeze](http://fileformats.archiveteam.org/wiki/Freeze) |
+| [uuencoding](https://en.wikipedia.org/wiki/Uuencoding) | `.uu`, `.uue` | Yes | Yes | [POSIX uuencode](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
+| [yEnc](https://en.wikipedia.org/wiki/YEnc) | `.yenc` | Yes | Yes | [yEnc draft](http://www.yenc.org/yenc-draft.1.3.txt) |
+| Density | `.density` | Yes | Yes | [density](https://github.com/k0dai/density) |
+| LZG | `.lzg` | Yes | Yes | [liblzg](https://github.com/mbitsnbites/liblzg) |
+| BCM | `.bcm` | Yes | Yes | [BCM](https://github.com/encode84/bcm) |
+| BSC | `.bsc` | Yes | Yes | [libbsc](https://github.com/IlyaGrebnov/libbsc) |
+| BALZ | `.balz` | Yes | Yes | [BALZ](https://sourceforge.net/projects/balz/) |
+| CSC | `.csc` | Yes | Yes | [CSC](https://github.com/fusiyuan2010/CSC) |
+| Zling | `.zling` | Yes | Yes | [libzling](https://github.com/richox/libzling) |
+| Lizard | `.lizard` | Yes | Yes | [Lizard](https://github.com/inikep/lizard) |
+| QuickLZ | `.quicklz` | Yes | Yes | [QuickLZ](http://www.quicklz.com/) |
+| cmix | `.cmix` | Yes | Yes | [cmix](https://github.com/byronknoll/cmix) |
+| MCM | `.mcm` | Yes | Yes | [mcm](https://github.com/mathieuchartier/mcm) |
+| [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `.paq8` | Yes | Yes | [Matt Mahoney](https://mattmahoney.net/dc/) |
+| [SWF](https://en.wikipedia.org/wiki/SWF) | `.swf` | Yes | Yes | [SWF 19](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
+| CP/M Crunch | `.cru` | Yes | Yes | [CP/M archive docs](http://www.retroarchive.org/docs/cpm.html) |
+| [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `.pmd` | Yes | Yes | [PPMd](https://github.com/jk-jeon/PPMd) |
+| LZHAM | `.lzham` | Yes | Yes | [LZHAM](https://github.com/richgel999/lzham_codec) |
+| LZS | `.lzs` | Yes | Yes | [RFC 1967](https://www.rfc-editor.org/rfc/rfc1967) / [RFC 2395](https://www.rfc-editor.org/rfc/rfc2395) |
 
-### Compression-stream formats (single-file codecs)
+## 🔗 Compound formats
 
-| Format                                                                                  | Extensions          | Compress | Decompress | Reference                                                                                              |
-| --------------------------------------------------------------------------------------- | ------------------- | -------- | ---------- | ------------------------------------------------------------------------------------------------------ |
-| [Gzip](https://en.wikipedia.org/wiki/Gzip)                                              | `.gz`               | Yes      | Yes        | [RFC 1952](https://www.rfc-editor.org/rfc/rfc1952)                                                     |
-| [BZip2](https://en.wikipedia.org/wiki/Bzip2)                                            | `.bz2`              | Yes      | Yes        | [bzip2 source](https://sourceware.org/bzip2/)                                                          |
-| [XZ](https://en.wikipedia.org/wiki/XZ_Utils)                                            | `.xz`               | Yes      | Yes        | [XZ format](https://tukaani.org/xz/xz-file-format.txt)                                                 |
-| [Zstandard](https://en.wikipedia.org/wiki/Zstd)                                         | `.zst`              | Yes      | Yes        | [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878)                                                     |
-| [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm))                        | `.lz4`              | Yes      | Yes        | [LZ4 frame format](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md)                        |
-| [Brotli](https://en.wikipedia.org/wiki/Brotli)                                          | `.br`               | Yes      | Yes        | [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932)                                                     |
-| [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression))                            | `.sz`,`.snappy`     | Yes      | Yes        | [Snappy framing](https://github.com/google/snappy/blob/main/framing_format.txt)                        |
-| [LZOP](https://en.wikipedia.org/wiki/Lzop)                                              | `.lzo`              | Yes      | Yes        | [lzop source](https://www.lzop.org/)                                                                   |
-| [compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software))                      | `.Z`                | Yes      | Yes        | [ncompress](https://github.com/vapier/ncompress)                                                       |
-| [LZMA](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | `.lzma`             | Yes      | Yes        | [7-Zip LZMA SDK](https://www.7-zip.org/sdk.html)                                                       |
-| [Lzip](https://en.wikipedia.org/wiki/Lzip)                                              | `.lz`               | Yes      | Yes        | [lzip format](https://www.nongnu.org/lzip/manual/lzip_manual.html)                                     |
-| [Zlib](https://en.wikipedia.org/wiki/Zlib)                                              | `.zlib`             | Yes      | Yes        | [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950)                                                     |
-| SZDD                                                                                    | `.sz_`              | Yes      | Yes        | [compress.exe format](https://www.stdlib.at/)                                                          |
-| KWAJ                                                                                    | -                   | Yes      | Yes        | [MS compress formats](http://fileformats.archiveteam.org/wiki/KWAJ)                                    |
-| [RZIP](https://en.wikipedia.org/wiki/Rzip)                                              | `.rz`               | Yes      | Yes        | [rzip docs](http://rzip.samba.org/)                                                                    |
-| [MacBinary](https://en.wikipedia.org/wiki/MacBinary)                                    | `.bin`              | Yes      | Yes        | [RFC 1740](https://www.rfc-editor.org/rfc/rfc1740)                                                     |
-| [BinHex](https://en.wikipedia.org/wiki/BinHex)                                          | `.hqx`              | Yes      | Yes        | [RFC 1741](https://www.rfc-editor.org/rfc/rfc1741)                                                     |
-| [Squeeze](https://en.wikipedia.org/wiki/Squeeze_(file_format))                          | `.sqz`              | Yes      | Yes        | [Squeeze format](http://fileformats.archiveteam.org/wiki/SQ)                                           |
-| PowerPacker                                                                             | `.pp`               | Yes      | Yes        | [Amiga PP20](http://fileformats.archiveteam.org/wiki/Powerpacker)                                      |
-| ICE Packer                                                                              | `.ice`              | Yes      | Yes        | [Atari ST ICE](http://fileformats.archiveteam.org/wiki/ICE)                                            |
-| [PackBits](https://en.wikipedia.org/wiki/PackBits)                                      | `.packbits`         | Yes      | Yes        | [Apple PackBits](https://en.wikipedia.org/wiki/PackBits)                                               |
-| Yaz0 (SZS)                                                                              | `.yaz0`,`.szs`      | Yes      | Yes        | [Nintendo Yaz0 RE](https://wiki.tockdom.com/wiki/YAZ0)                                                 |
-| BriefLZ                                                                                 | `.blz`              | Yes      | Yes        | [BriefLZ source](https://github.com/jibsen/brieflz)                                                    |
-| RNC                                                                                     | `.rnc`              | Yes      | Yes        | [Rob Northen RE](http://segaretro.org/Rob_Northen_compression)                                         |
-| RefPack / QFS                                                                           | `.qfs`,`.refpack`   | Yes      | Yes        | [RefPack RE](http://wiki.niotso.org/RefPack)                                                           |
-| aPLib                                                                                   | `.aplib`            | Yes      | Yes        | [aPLib docs](http://ibsensoftware.com/products_aPLib.html)                                             |
-| [LZFSE](https://en.wikipedia.org/wiki/LZFSE)                                            | `.lzfse`            | Yes      | Yes        | [Apple LZFSE source](https://github.com/lzfse/lzfse)                                                   |
-| Freeze                                                                                  | `.f`,`.freeze`      | Yes      | Yes        | [Unix Freeze](http://fileformats.archiveteam.org/wiki/Freeze)                                          |
-| [uuencoding](https://en.wikipedia.org/wiki/Uuencoding)                                  | `.uu`,`.uue`        | Yes      | Yes        | [POSIX uuencode](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html)             |
-| [yEnc](https://en.wikipedia.org/wiki/YEnc)                                              | `.yenc`             | Yes      | Yes        | [yEnc spec](http://www.yenc.org/yenc-draft.1.3.txt)                                                    |
-| Density                                                                                 | `.density`          | Yes      | Yes        | [Density source](https://github.com/k0dai/density)                                                     |
-| LZG                                                                                     | `.lzg`              | Yes      | Yes        | [LZG source](https://github.com/mbitsnbites/liblzg)                                                    |
-| BCM                                                                                     | `.bcm`              | Yes      | Yes        | [BCM source](https://github.com/encode84/bcm)                                                          |
-| BSC                                                                                     | `.bsc`              | Yes      | Yes        | [libbsc](https://github.com/IlyaGrebnov/libbsc)                                                        |
-| BALZ                                                                                    | `.balz`             | Yes      | Yes        | [BALZ source](https://sourceforge.net/projects/balz/)                                                  |
-| CSC                                                                                     | `.csc`              | Yes      | Yes        | [CSC source](https://github.com/fusiyuan2010/CSC)                                                      |
-| Zling                                                                                   | `.zling`            | Yes      | Yes        | [libzling](https://github.com/richox/libzling)                                                         |
-| [Lizard](https://github.com/inikep/lizard)                                              | `.lizard`           | Yes      | Yes        | [Lizard source](https://github.com/inikep/lizard)                                                      |
-| QuickLZ                                                                                 | `.quicklz`          | Yes      | Yes        | [QuickLZ docs](http://www.quicklz.com/)                                                                |
-| [cmix](https://www.byronknoll.com/cmix.html)                                            | `.cmix`             | Yes      | Yes        | [cmix source](https://github.com/byronknoll/cmix)                                                      |
-| MCM                                                                                     | `.mcm`              | Yes      | Yes        | [MCM source](https://github.com/mathieuchartier/mcm)                                                   |
-| [PAQ8](https://en.wikipedia.org/wiki/PAQ)                                               | `.paq8`             | Yes      | Yes        | [Matt Mahoney PAQ page](https://mattmahoney.net/dc/)                                                   |
-| [SWF](https://en.wikipedia.org/wiki/SWF)                                                | `.swf`              | Yes      | Yes        | [SWF 19 spec](https://open-flash.github.io/mirrors/swf-spec-19.pdf)                                    |
-| CP/M Crunch                                                                             | `.cru`              | Yes      | Yes        | [CP/M CRUNCH](http://www.retroarchive.org/docs/cpm.html)                                               |
-| [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching)                    | `.pmd`              | Yes      | Yes        | [Shkarin PPMd](https://github.com/jk-jeon/PPMd)                                                        |
-| LZHAM                                                                                   | `.lzham`            | Yes      | Yes        | [LZHAM source](https://github.com/richgel999/lzham_codec)                                              |
-| LZS                                                                                     | `.lzs`              | Yes      | Yes        | [RFC 1967](https://www.rfc-editor.org/rfc/rfc1967) / [RFC 2395](https://www.rfc-editor.org/rfc/rfc2395)|
+`tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `tar.lz4`, `tar.lz`, and `tar.br` are composed from the inner TAR archive and the matching outer stream format. Read detection and writing reuse those two layers instead of introducing a second independent TAR implementation.
 
-### Compound formats
+## 🧩 Pseudo-archive containers
 
-`tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `tar.lz4`, `tar.lz`, `tar.br` — auto-detected on
-read; matching writer composes the inner TAR with the outer compression stream.
+Some formats are not conventionally called archives but naturally contain independently addressable payloads. They expose `IArchiveFormatOperations.List` entries for those payloads.
 
-### Pseudo-archive containers
+| Container | State | Description |
+| --- | --- | --- |
+| `FileFormat.PeResources` | R | PE/COFF `.rsrc` resources |
+| `FileFormat.ResourceDll` | WORM | Pure-resource DLL surface + fresh DLL creation |
+| `FileFormat.ExePackers` | R | Packer/protector detection evidence as `metadata.ini` + payload where available |
+| `FileFormat.Ico` | WORM | ICO/CUR entries as image payloads |
+| `FileFormat.Ani` | R | Animated cursor frames |
+| `FileFormat.FontCollection` | R | TTC/OTC member fonts and supported glyph surfaces |
+| `FileFormat.Gettext` | R | gettext `.mo`/`.po` message entries |
 
-Formats whose binary structure already addresses N independent payloads, even though they're
-not traditionally seen as archives. Each surfaces an `IArchiveFormatOperations.List` with one
-entry per inner payload (resource / icon / font / glyph / message / segment / track …).
+## 🎞️ Streaming, video and subtitle containers
 
-| Container                 | State | Description                                                                            |
-| ------------------------- | ----- | -------------------------------------------------------------------------------------- |
-| `FileFormat.PeResources`  | R     | PE/COFF `.rsrc` directory — one entry per `RT_*` resource, `.ico`/`.bmp`/`.xml`/`.txt` |
-| `FileFormat.ResourceDll`  | WORM  | Pure-resource DLL — same surface as `PeResources` but can also synthesise a fresh DLL  |
-| `FileFormat.ExePackers`   | R     | Demoscene + classic DOS / PE packer detection (PKLITE / LZEXE / Petite / FSG / MEW / MPRESS / Crinkler / kkrunchy / ASPack / NsPack / Yoda / ASProtect / Themida / VMProtect …) — surfaces a `metadata.ini` evidence record |
-| `FileFormat.Ico`          | WORM  | ICO / CUR — one `.png` / `.bmp` per `ICONDIRENTRY`                                     |
-| `FileFormat.Ani`          | R     | Animated cursor — one `.cur` per frame                                                 |
-| `FileFormat.FontCollection` | R   | TTC / OTC — one `.ttf` / `.otf` per member font; per-glyph `.svg` for single fonts     |
-| `FileFormat.Gettext`      | R     | gettext `.mo` / `.po` — one `.txt` per `msgid` / `msgstr` pair                         |
+| Container | State | Description |
+| --- | --- | --- |
+| `FileFormat.Mp4` | R | MP4/MOV atom walker; tracks surfaced as elementary/carried payloads |
+| `FileFormat.Matroska` | R | MKV/WebM EBML tracks, attachments and chapters |
+| `FileFormat.Avi` | R | AVI RIFF `movi` demux surface |
+| `FileFormat.MpegTs` | R | MPEG-2 transport stream per-PID elementary streams |
+| `FileFormat.Sup` | R | Blu-ray PGS subtitle epochs/segments |
+| `FileFormat.VobSub` | R | DVD VobSub entry slices |
+| `FileFormat.M3u8` | R | HLS segments and variant metadata |
 
-### Streaming / video / subtitle containers
+## 🧪 Scientific / ML data containers
 
-Multi-track / multi-segment containers from the streaming and broadcast world. Each demuxes
-into per-track or per-segment archive entries.
+| Container | State | Reference | Notes |
+| --- | --- | --- | --- |
+| `FileFormat.Numpy` | R | [NEP 1](https://numpy.org/neps/nep-0001-npy-format.html) | `.npy` and `.npz`; shape/dtype/fortran metadata |
+| `FileFormat.Hdf4` | R | [HDF4](https://support.hdfgroup.org/release4/doc/) | DD linked-list walker |
+| `FileFormat.Hdf5` | R | [HDF5 format](https://docs.hdfgroup.org/hdf5/v1_14/_f_m_t3.html) | Superblock/group pseudo-archive surface |
+| `FileFormat.Nifti` | R | [NIfTI](https://nifti.nimh.nih.gov/nifti-1/documentation) | v1/v2 header + voxel data, gzip transparent |
+| `FileFormat.Onnx` | R | [ONNX proto](https://github.com/onnx/onnx/blob/main/onnx/onnx.proto) | Managed protobuf reader; graph initializers surfaced |
+| `FileFormat.Dicom` | R | [DICOM](https://www.dicomstandard.org/current) | Image + DICOMDIR study/series surface |
 
-| Container             | State | Description                                                                            |
-| --------------------- | ----- | -------------------------------------------------------------------------------------- |
-| `FileFormat.Mp4`      | R     | MP4 / MOV / Apple QuickTime — atom walker; tracks → H.264 Annex-B + AAC ADTS           |
-| `FileFormat.Matroska` | R     | MKV / WebM — EBML walker; tracks + attachments + chapters                              |
-| `FileFormat.Avi`      | R     | AVI RIFF — `LIST/movi` per-stream demuxer                                              |
-| `FileFormat.MpegTs`   | R     | MPEG-2 Transport Stream (`.ts` / `.m2ts` / `.mts`) — per-PID elementary streams        |
-| `FileFormat.Sup`      | R     | Blu-ray PGS subtitle — segments grouped by epoch                                       |
-| `FileFormat.VobSub`   | R     | DVD VobSub `.idx + .sub` pair — per-entry slices of the sibling `.sub` PES stream      |
-| `FileFormat.M3u8`     | R     | HLS playlist — one entry per segment + per-variant metadata                            |
+## 🧊 CAD / 3D scene formats
 
-### Scientific / ML data containers
+| Container | State | Reference | Notes |
+| --- | --- | --- | --- |
+| `FileFormat.Stl` | R | [STL](http://www.ennex.com/~fabbers/StL.asp) | ASCII/binary triangle data |
+| `FileFormat.Ply` | R | [Stanford PLY](http://paulbourke.net/dataformats/ply/) | ASCII/binary LE/BE schema |
+| `FileFormat.Dxf` | R | [Autodesk DXF](https://help.autodesk.com/view/OARX/2022/ENU/?guid=GUID-235B22E0-A567-4CF6-92D3-38A2306D73F3) | ASCII sections/entities |
+| `FileFormat.Collada` | R | [Khronos COLLADA](https://www.khronos.org/files/collada_spec_1_5.pdf) | XML scene interchange |
+| `FileFormat.Obj` | R | [Wavefront OBJ](https://en.wikipedia.org/wiki/Wavefront_.obj_file) | Mesh/material surface |
 
-| Container          | State | Reference                                                                                          | Notes                                                                                                                  |
-| ------------------ | ----- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `FileFormat.Numpy` | R     | [NEP 1 / npy-format](https://numpy.org/neps/nep-0001-npy-format.html)                              | NumPy `.npy` (single ndarray) and `.npz` (ZIP of NPYs); header parser surfaces shape / dtype / fortran-order metadata |
-| `FileFormat.Hdf4`  | R     | [HDF4 reference](https://support.hdfgroup.org/release4/doc/)                                       | HDF4 DD linked-list walker; per-DD entry with tag histogram                                                            |
-| `FileFormat.Hdf5`  | R     | [HDF5 file format spec](https://docs.hdfgroup.org/hdf5/v1_14/_f_m_t3.html)                         | HDF5 superblock + group walk; pseudo-archive surface for now                                                           |
-| `FileFormat.Nifti` | R     | [NIfTI spec](https://nifti.nimh.nih.gov/nifti-1/documentation)                                     | Medical imaging (MRI); 352-byte v1 / 540-byte v2 header + voxel data; transparent gzip                                 |
-| `FileFormat.Onnx`  | R     | [ONNX proto](https://github.com/onnx/onnx/blob/main/onnx/onnx.proto)                               | Pure-C# protobuf reader; surfaces graph initializers as entries                                                        |
-| `FileFormat.Dicom` | R     | [NEMA DICOM PS3](https://www.dicomstandard.org/current)                                            | Medical imaging (CT / MRI / X-ray); single DICOM image + DICOMDIR multi-study patient/series index                     |
+## 🛡️ Executable packer detection
 
-### CAD / 3D scene formats
+`FileFormat.ExePackers` surfaces evidence about packers/protectors such as PKLITE, LZEXE, Petite, Shrinkler, FSG, MEW, MPRESS, Crinkler, kkrunchy, ASPack, NsPack, Yoda's Crypter, ASProtect, Themida and VMProtect. UPX has its own descriptor with signature/evidence-based detection and supported in-process payload decompression paths; PE-header reconstruction that requires vendor-tool semantics is not misrepresented as an internal capability.
 
-| Container             | State | Reference                                                                                                              | Notes                                                                                |
-| --------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `FileFormat.Stl`      | R     | [STL spec](http://www.ennex.com/~fabbers/StL.asp)                                                                      | ASCII + binary; triangle count, bounding box, name                                   |
-| `FileFormat.Ply`      | R     | [Stanford PLY](http://paulbourke.net/dataformats/ply/)                                                                 | ASCII / binary LE/BE, element schema                                                 |
-| `FileFormat.Dxf`      | R     | [Autodesk DXF ref](https://help.autodesk.com/view/OARX/2022/ENU/?guid=GUID-235B22E0-A567-4CF6-92D3-38A2306D73F3)       | AutoCAD ASCII; section list + entity histogram                                       |
-| `FileFormat.Collada`  | R     | [Khronos Collada 1.5](https://www.khronos.org/files/collada_spec_1_5.pdf)                                              | XML 3D interchange                                                                   |
-| `FileFormat.Obj`      | R     | [Wavefront OBJ](https://en.wikipedia.org/wiki/Wavefront_.obj_file)                                                     | Wavefront mesh; ASCII triangles + materials                                          |
+## 🧪 Known limitations
 
-### Executable packer detection
+| Area | State |
+| --- | --- |
+| LZFSE V1/V2 compressed blocks | Full FSE/tANS backend is not implemented; supported uncompressed/LZVN paths remain usable. |
+| ZPAQ reader | Full ZPAQL virtual-machine execution is not implemented. |
+| StuffIt X writer | Proprietary element-catalog/P2-varint writer is not implemented; the supported envelope shell is explicitly partial. |
+| UMX writer | Full export-table + compact-index music encoding is not implemented; supported header/package shell is partial. |
+| OLE2 application streams | CFB envelope creation does not synthesize Word/Excel/PowerPoint/MAPI/Catalog/Installer application databases. |
+| Inno Setup | Some versions do not expose full individual-file extraction through the current reader. |
+| RAR create | Fresh creation targets the implemented v4/v5 paths rather than every historical RAR writer version. |
+| SFAR | LZX-compressed payload extraction remains limited. |
+| Veeam | Only the documented/implemented summary/trailer path is claimed; undocumented chunk storage is not guessed. |
+| Acronis/AOMEI/EaseUS/other reverse-engineered formats | Claims are limited to fields/structures evidenced by source, public binaries, tests, or clean-room analysis. Unknown encrypted/index layers remain unknown rather than invented. |
 
-`FileFormat.ExePackers` is a pseudo-archive that detects-and-surfaces evidence about
-executable packers / PE protectors. Each detected packer produces a `metadata.ini` (signature
-offset, version byte, packer-header fields) plus a `packed_payload.bin` (or in-process
-decompressed body for UPX). The detector handles: PKLITE / LZEXE / Petite / Shrinkler / FSG /
-MEW / MPRESS / Crinkler / kkrunchy / ASPack / NsPack / Yoda's Crypter / ASProtect / Themida /
-VMProtect.
+## 📦 Modern packaging details
 
-UPX gets its own descriptor (`FileFormat.Upx`) with a hardened detection pipeline (BSS-style
-first-section + RWX flags + entry-in-last-section + payload-entropy fingerprint that catches
-binaries with the `UPX!` magic wiped) and an in-process decompressor for NRV2B / NRV2D /
-NRV2E (LE32 + LE16 + LE8 variants) and LZMA payloads via the `BB_Nrv2{b,d,e}` and `BB_Lzma`
-building blocks. PE header reconstruction (IAT / OEP) is delegated to the original `upx -d`.
+| Format | Extensions | Read | Write | Reference | Notes |
+| --- | --- | --- | --- | --- | --- |
+| [AppImage](https://en.wikipedia.org/wiki/AppImage) | `.AppImage` | Yes | Yes | [AppImage spec](https://github.com/AppImage/AppImageSpec) | ELF stub + appended SquashFS; WORM delegates to supported filesystem image writer |
+| [Snap](https://en.wikipedia.org/wiki/Snap_(software)) | `.snap` | Yes | — | [snapd](https://github.com/snapcore/snapd) | SquashFS package |
+| [MSIX](https://en.wikipedia.org/wiki/MSIX) | `.msix`, `.msixbundle` | Yes | Yes | [MSIX](https://learn.microsoft.com/en-us/windows/msix/) | Unsigned fresh package output |
+| ESD | `.esd` | Yes | — | [WIM/ESD](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) | WIM-family compressed image |
+| Split WIM | `.swm`, `.swmN` | Yes | — | [WIM](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/) | Multi-part WIM |
+| [WACZ](https://specs.webrecorder.net/wacz/1.0.0/) | `.wacz` | Yes | — | [WACZ 1.0.0](https://specs.webrecorder.net/wacz/1.0.0/) | ZIP around WARC + package metadata |
+| [Python Wheel](https://en.wikipedia.org/wiki/Wheel_(software)) | `.whl` | Yes | — | [PEP 427](https://peps.python.org/pep-0427/) | ZIP + dist-info |
+| [Ruby Gem](https://en.wikipedia.org/wiki/RubyGems) | `.gem` | Yes | — | [Gem specification](https://guides.rubygems.org/specification-reference/) | TAR with compressed metadata/data members |
+| Rust Crate | `.crate` | Yes | Yes | [Cargo registries](https://doc.rust-lang.org/cargo/reference/registries.html) | TAR.GZ with crate directory layout |
 
-### Backup-software disk images
+## 📚 Archive state model
 
-Whole-system / partition backups from consumer + enterprise backup suites. Closed-source
-formats were elevated from Stage-0 detection-only via direct binary reverse engineering of
-publicly-distributed vendor binaries; each descriptor's `Description` field names exactly
-which fields are decoded against the binary versus documented-TODO. R/W = our writer +
-reader round-trip; WORM = our writer emits a fresh image our reader walks back, but vendor
-byte-compat stays explicitly out of scope (no real vendor samples available for clean-room
-validation, or vendor tooling is restore-only).
+CompressionWorkbench distinguishes **fresh creation** from **modifying an existing archive**. A correct writer does not imply safe in-place mutation.
 
-| Container                | State | Reference                                                                                                    | Notes                                                                                                                                                                                       |
-| ------------------------ | ----- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FileFormat.Bkf`         | R     | [MS-MTF](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mtf/)                              | NTBackup MTF Tape Format; DBLK-chain walker, FILE + DATA entry types, `TAPE` magic at offset 0                                                                                              |
-| `FileFormat.AppleSparse` | R     | [hdiutil(1)](https://www.unix.com/man-page/osx/1/hdiutil/) + Time Machine band layout                        | sparseimage band-allocation table + sparsebundle band fan-out; inner HFS+ / APFS delegated                                                                                                  |
-| `FileFormat.Partclone`   | R     | [Clonezilla partclone source](https://github.com/Tomas-M/partclone)                                          | `image_head` + `fs_info` + bitmap → sector reconstruction; per-FS family backed by the matching FS reader                                                                                   |
-| `FileFormat.Ghost`       | R/W   | Reverse-engineered from Symantec Ghost Explorer 2003 + Ghost 1.6 / 2.0 GHOST.EXE (archive.org)               | Modern 3.0 → 11.x with Fast LZ Z1 + zlib Z3-Z9 codecs + CRC-16 stream cipher; `GhostInPlaceModifier` provides TRUE in-place R/W via the record stream — Add overwrites the trailing end-of-image record and re-emits it at the new EOF (untouched bytes [0, original-end-offset) stay byte-identical), Replace + Remove append CWB GHO1-magic annotation tombstones (record type 0x00FE) that the reader honours via latest-write-wins; legacy rebuild-based `GhostModifier` still provided for forensic-delete callers; pre-3.0 DOS-era Ghost 1.x / 2.x R/O Stage-1 via FE EF head + head-type byte (1=disk / 2=partition / 3=boot) |
-| `FileFormat.Macrium`     | WORM  | [Macrium mrimgx file layout](https://github.com/macrium/mrimgx_file_layout) (MIT) + Reflect Free v8.0.7783 binary RE | Reflect X `.mrimgx`/`.mrbakx` per the open spec — AES-CBC + PBKDF2-HMAC-SHA256 600k-iter + ESSIV-style per-block IV + zstd; Reflect pre-X 7/8 `.mrimg`/`.mrbak`/`.mrex`/`.mrsql` R/O Stage-1; `ModifyRebuilder` provides rebuild-based add/remove as a CLI/UI wrapper helper — the format itself stays WORM |
-| `FileFormat.Acronis`     | R     | Reverse-engineered from `ti_tools.dll` (ATI 2018 32-bit) and dennisss's prior framing                        | Classic `.tib` — Listing → RecordIndex chain walk via `MetaOffset` anchors; FileMeta 102/1/2/5 body decoded as InputItem attribute stream (uint32 count + N tuples + bit-23 dedup flag); ItemCommon 0x10 surfaces filenames + altnames + DOS attrs + 4× FILETIME (creation/write/access/change); typed decoders for Replica 0x17, ItemCommonExtra 0x18, SliceItem 0x80, SliceItemBlob 0x90; ACL handler documented-TODO |
-| `FileFormat.AcronisTibx` | R     | Reverse-engineered from `libarchive3.so` (ATI 2021 Linux ELF) + `archive3.dll` (ATI 2018 Windows)            | Modern `.tibx` — Stage-2 page-frame walk: `"ARCH"` magic, 4096-byte page-zero header, 8-byte typed-page preamble (sentinel + page-type tag + BE32 CRC + content magic) + LSM sub-header (version / encoding / count / len / zlen / seq / ctree-id); per-page-type histogram + `pages.tsv` synthetic entry; Golomb-coded LSM record stream (file-listing extraction) is documented-TODO  |
-| `FileFormat.Aomei`       | WORM  | Reverse-engineered from AOMEI Backupper Standard binaries (Binary Research `d:\work\br\src\imgfile`, codename `BRCloudv2`) | `.adi` / `.afi` via BIFH (0x65C) head + BIFT (0x674) tail envelope; 5 INDEX\_TYPE\_* (ROOT 0x200 / VOLUME 0x201 / DATABLOCK 0x202 / DIRTREE 0x300 / DATAAREA 0x301) + 13 INFO\_TYPE\_* (incl. DISK\_INFO / VOLUME\_INFO / IMAGE\_SPLIT\_SIZE / IMAGE\_COMMENT / BACKUP\_TIME / BACKUP\_OPTION / FLB\_PATH\_LIST / FLB\_BACKUP\_OPTION) + BR\_IMAGE\_INDEX layout (EntryCount @ +0x14, EntrySize @ +0x18, VDB entry sizeof 0x20); vendor BR\_STANDARD\_HEADER is 16 bytes (Type+Size+CRC+Reserved) — our writer's 12-byte alias rounds-trips our own reader but is not vendor byte-compat; VDB field byte-offsets + AES variant + IV derivation documented-TODO |
-| `FileFormat.Paragon`     | WORM  | Reverse-engineered from Paragon Hard Disk Manager 18                                                         | `.pbf` — vendor-literal `PImg` magic + Major 0x0002 / FormatVersion 0x0003 prefix; CWBP write-once chunk-offset table + per-chunk zlib + Adler-32; HDM 16+ is restore-only so no byte-compat |
-| `FileFormat.Veeam`       | R     | [Synacktiv Velociraptor artifact](https://github.com/synacktiv/veeam-velociraptor)                           | `.vbk` / `.vib` / `.vrb` — Stage-1 trailing `<OibSummary>` plaintext XML island only; chunked compressed block layer has no published spec (CBT chain + dedup pool + AES-256 gated)         |
-| `FileFormat.EaseUs`      | R     | Reverse-engineered from EaseUS Todo Backup + Rune-Server thread 694189                                       | `.pbd` — `IMGF` / `FIMG` magic; zlib chunk stream extracted via linear-scan + trial-inflate; full container chain replay is documented-TODO                                                 |
+| Capability | Meaning |
+| --- | --- |
+| `IArchiveFormatOperations` | Detect/list/extract/test surface |
+| `IArchiveCreatable` | Can synthesize a new archive from entries → WORM |
+| `IArchiveInPlaceModify` or equivalent supported modifier | Existing archive can be changed under its documented semantics → R/W |
 
-### Known limitations
+The Ghost backup path is one example where the detailed implementation exposes modification semantics; most ordinary archive writers in this package remain WORM.
 
-Code paths that throw `NotSupportedException` or `NotImplementedException` rather than
-silently producing wrong output:
+## 🔖 Versioning
 
-| Area                              | State                                                                                                                                                                                                                      |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| LZFSE V1 / V2 blocks              | FSE/tANS backend not implemented — uncompressed (`bvxn`) + LZVN blocks work. Full LZFSE needs ~1500 LOC new code                                                                                                          |
-| ZPAQ                              | Reader requires a ZPAQL virtual machine (not implemented). Multi-week bytecode-VM project                                                                                                                                  |
-| StuffIt X writer                  | Proprietary element-catalog / P2-varint writer not implemented — WORM emits valid `StuffIt!` envelope shell. No public spec                                                                                               |
-| UMX writer                        | Full export table + compact-index music encoding not implemented — WORM emits valid header only                                                                                                                            |
-| OLE2 application streams (DOC/XLS/PPT/MSG/ThumbsDb/MSI) | CFB envelope round-trips through our reader and libgsf/Apache POI, but the internal `WordDocument` / `WorkBook` / `PowerPoint Document` / MAPI / Catalog / Installer-DB streams are not synthesised |
-| Inno Setup reader                 | Individual file extraction from `Setup.1` not implemented for some installer versions                                                                                                                                      |
-| RAR create                        | Only v4 and v5 archive creation are implemented                                                                                                                                                                            |
+This package is built against the repository's shared Core version. Consume a mutually compatible `Hawkynt.Compression.Core` version; release tooling determines the concrete package version rather than README predictions.
 
-### Modern packaging (read-only)
+## 🔌 Dependencies
 
-| Format                                                          | Extensions              | Read | Write | Reference                                                                                                                          | Notes                                                                                |
-| --------------------------------------------------------------- | ----------------------- | ---- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [AppImage](https://en.wikipedia.org/wiki/AppImage)              | `.AppImage`             | Yes  | Yes   | [AppImage spec](https://github.com/AppImage/AppImageSpec)                                                                          | ELF stub + appended SquashFS; offset located by ELF section-end + magic scan; WORM via ELF stub + SquashFsWriter delegate |
-| [Snap](https://en.wikipedia.org/wiki/Snap_(software))           | `.snap`                 | Yes  | -     | [snapd source](https://github.com/snapcore/snapd)                                                                                  | SquashFS with `meta/snap.yaml`                                                       |
-| [MSIX](https://en.wikipedia.org/wiki/MSIX)                      | `.msix`,`.msixbundle`   | Yes  | Yes   | [MSIX spec](https://learn.microsoft.com/en-us/windows/msix/)                                                                       | Modern Windows app package (mirrors APPX); WORM emits unsigned bundle               |
-| ESD                                                             | `.esd`                  | Yes  | -     | [WIM/ESD overview](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) | Windows Update encrypted-LZMS WIM; shares `MSWIM\0\0\0` magic, extension-only        |
-| Split WIM                                                       | `.swm`,`.swmN`          | Yes  | -     | [WIM spec](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/)                                                | Multi-part WIM volume                                                                |
-| [WACZ](https://specs.webrecorder.net/wacz/1.0.0/)               | `.wacz`                 | Yes  | -     | [WACZ 1.0.0](https://specs.webrecorder.net/wacz/1.0.0/)                                                                            | Web Archive Collection Zipped — ZIP around WARC + `datapackage.json`                 |
-| [Python Wheel](https://en.wikipedia.org/wiki/Wheel_(software))  | `.whl`                  | Yes  | -     | [PEP 427](https://peps.python.org/pep-0427/)                                                                                       | ZIP with `dist-info/METADATA`, `WHEEL`, `RECORD`                                     |
-| [Ruby Gem](https://en.wikipedia.org/wiki/RubyGems)              | `.gem`                  | Yes  | -     | [gem spec](https://guides.rubygems.org/specification-reference/)                                                                   | TAR with `metadata.gz`, `data.tar.gz`, `checksums.yaml.gz`                           |
-| Rust Crate                                                      | `.crate`                | Yes  | Yes   | [cargo spec](https://doc.rust-lang.org/cargo/reference/registries.html)                                                            | TAR.GZ with single `name-version/` directory containing `Cargo.toml`; WORM auto-derives `<name-version>/` from supplied manifest |
+| Dependency | Role |
+| --- | --- |
+| [`Hawkynt.Compression.Core`](https://www.nuget.org/packages/Hawkynt.Compression.Core/) | Shared compression, entropy, transform, bit-I/O, and registry primitives |
+| Native archive/compression libraries | **None required at runtime.** |
 
-## Versioning
+## ⚠️ Limitations
 
-Version-locked 1:1 with `Hawkynt.Compression.Core`. Pin both at the same version.
+- WORM is intentionally not labeled R/W: creating a fresh valid archive is different from safely mutating an existing one.
+- Proprietary formats may support correct extraction/creation without reproducing every encoder heuristic or private extension of the original vendor tool.
+- Installer/package parsing is for inspection and archive operations; it does not emulate installation logic or execute package scripts.
+- Internal round trips are useful but do not prove interoperability on their own; public specs, external tools, third-party corpora and regression tests provide independent evidence where available.
+- Reverse-engineered proprietary structures are documented only to the depth evidenced by code/tests/reference binaries. Unknown structure is not filled with guesses.
 
-## License
+## ❤️ Support
 
-LGPL-3.0-or-later. See the source repository for the full license text.
+If this project saves you time or money, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal)](https://www.paypal.me/hawkynt)
+
+## 📜 License
+
+Licensed under LGPL-3.0-or-later — see the repository [LICENSE](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE).
