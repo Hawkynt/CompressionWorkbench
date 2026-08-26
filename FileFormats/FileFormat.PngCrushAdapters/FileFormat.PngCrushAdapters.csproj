@@ -2,91 +2,21 @@
 
   <PropertyGroup>
     <RootNamespace>FileFormat.PngCrushAdapters</RootNamespace>
-    <!--
-      Adapter project for the sibling PngCrushCS repo. When that repo is checked
-      out at ..\..\..\PNGCrushCS (sibling of the workbench root, NOT a subdir),
-      this project compiles the adapter sources and pulls in its descriptors
-      (Apng/Tiff/Mpo/etc.). When the sibling is ABSENT (e.g. on CI runners),
-      the project produces an empty assembly so the .slnx still builds cleanly.
-      The triple "..\..\..\" is because this csproj lives at
-      <repo>/FileFormats/FileFormat.PngCrushAdapters/, three levels deep.
-    -->
-    <SiblingPresent>false</SiblingPresent>
-    <!-- The sibling reorganized its leaf FileFormat.* projects into a
-         FileFormats/ subdirectory while keeping Compression.Core /
-         FileFormat.Core at the root. PngCrushFormatsDir captures whichever
-         layout we find on disk so the gate AND the ProjectReferences below
-         both pick the right path. Falls back to "" (= no sibling) when
-         neither layout matches — consumers see an empty assembly. -->
-    <PngCrushFormatsDir Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormats\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\..\PNGCrushCS\FileFormats\</PngCrushFormatsDir>
-    <PngCrushFormatsDir Condition="'$(PngCrushFormatsDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\..\PNGCrushCS\</PngCrushFormatsDir>
-    <!-- Require EVERY adapter dependency. The sibling is sometimes mid-refactor
-         with Core present but sub-projects (Apng, Tiff, BigTiff, Mng, Fli, Dcx,
-         Icns, Mpo, Jpeg, Png, Bmp) missing — that half-state would still set
-         SiblingPresent to true under a Core-only check and then fail with CS0234
-         for the missing namespaces. -->
-    <SiblingPresent Condition="
-      '$(PngCrushFormatsDir)' != '' and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Png\FileFormat.Png.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Bmp\FileFormat.Bmp.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Apng\FileFormat.Apng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Tiff\FileFormat.Tiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mng\FileFormat.Mng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Fli\FileFormat.Fli.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Dcx\FileFormat.Dcx.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Icns\FileFormat.Icns.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mpo\FileFormat.Mpo.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Jpeg\FileFormat.Jpeg.csproj')
-      ">true</SiblingPresent>
-    <!-- Suppress default *.cs compile globbing when sibling is absent so adapter sources don't try to build. -->
-    <EnableDefaultCompileItems Condition="'$(SiblingPresent)' != 'true'">false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
-    <!-- GIF reader/decoder lives in FileFormat.Gif (dependency-free); the
-         color-aware GIF descriptor here uses GifPixelDecoder + the colorspace
-         pipeline. Always reference it (no sibling guard) so projects that DO
-         have the sibling get the rich descriptor without conditional plumbing. -->
     <ProjectReference Include="..\FileFormat.Gif\FileFormat.Gif.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(SiblingPresent)' == 'true'">
-    <!-- PngCrushCS sibling transitively requires System.IO.Hashing 10.0.3+
-         (FileFormat.Jpeg → FrameworkExtensions.Backports). Pin here to satisfy
-         the floor and avoid NU1605 downgrade. -->
-    <PackageReference Include="System.IO.Hashing" Version="10.0.3" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(SiblingPresent)' == 'true'">
+  <ItemGroup>
     <!--
-      Cross-repo: PngCrushCS's image format library. We reference the specific
-      sub-projects our adapters use directly; the unified meta-package
-      Hawkynt.FileFormats.Images is intentionally NOT referenced because its
-      transitive Compression.Core (sibling's Zopfli/Deflate one) collides with
-      our own Compression.Core in fully-qualified type names like
-      Compression.Core.BitIO.BitOrder. Going through extern-alias plumbing to
-      disambiguate is more cost than the meta-package's convenience justifies.
+      Image parsing/encoding belongs to PNGCrushCS. Keep its compile assets private to this
+      bridge assembly because the package also carries support assemblies with namespaces that
+      overlap CompressionWorkbench internals. Runtime assets still flow to applications that
+      consume the bridge; public bridge APIs expose only CompressionWorkbench contracts.
     -->
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Png\FileFormat.Png.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Bmp\FileFormat.Bmp.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Apng\FileFormat.Apng.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Tiff\FileFormat.Tiff.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.BigTiff\FileFormat.BigTiff.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Mng\FileFormat.Mng.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Fli\FileFormat.Fli.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Dcx\FileFormat.Dcx.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Icns\FileFormat.Icns.csproj" />
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Mpo\FileFormat.Mpo.csproj" />
-    <!-- PrivateAssets="all" keeps the dependency available to PngCrushAdapters'
-         own JpegFormatDescriptor sources while preventing the transitive
-         FrameworkExtensions.Backports (which exposes a duplicate
-         Compression.Core.BitIO.BitOrder type, colliding with our own
-         Compression.Core.dll, CS0433) from leaking to consumers. -->
-    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Jpeg\FileFormat.Jpeg.csproj" PrivateAssets="all" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.131" PrivateAssets="compile" />
   </ItemGroup>
 
 </Project>
