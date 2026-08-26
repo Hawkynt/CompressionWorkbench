@@ -68,8 +68,29 @@ one unless explicitly asked.
 
 ## README & repo conventions
 
-- Standard frame: title → badges → one-line `>` blockquote; fixed emoji
-  mapping for the standard sections (`## 📦 Quick start`, `## ❤️ Support`,
-  `## 📜 License`); the architecture/format sections keep plain headers.
+- Public NuGet package READMEs follow `docs/PACKAGE_README_TEMPLATE.md`.
+  Common order: title → badges → one-line `>` blockquote →
+  `## 📦 Installation` → `## ✨ Features` → `## 🧩 Support matrix` →
+  `## 🚀 Quick start` → package-specific API/architecture →
+  `## 🔌 Dependencies` → `## ⚠️ Limitations` → `## ❤️ Support` →
+  `## 📜 License`.
+- Support varies by algorithm/format/profile, so prefer tables over prose
+  lists. Link the public format/algorithm name to a neutral overview and
+  keep a separate Reference column for the specification, original paper,
+  standards body, or canonical author/project site.
+- Do not flatten useful technical history for presentation. If a package
+  README becomes too deep for a NuGet landing page, move the useful detail
+  into `IMPLEMENTATION_NOTES.md` and link it from the standard README.
+- `IMPLEMENTATION_NOTES.md` uses the same emoji vocabulary for equivalent
+  headings. A deep technical page may be denser, but it should not regress
+  to an unrelated visual structure.
+- Package documentation describes **existing evidence only**: checked-in
+  packable projects, compiled/public APIs and registries, tests, and release
+  tooling. Never invent or advertise a planned / “coming soon” / “not yet
+  published” package ID, predict a release milestone, or turn roadmap intent
+  into a support claim.
+- Avoid hand-maintained claims of an exhaustive registry inventory when the
+  registry itself can answer the question exactly. Prefer a curated table
+  plus instructions for querying the authoritative runtime source.
 - License is LGPL-3.0-or-later; the `## ❤️ Support` section and
   `.github/FUNDING.yml` stay intact.
