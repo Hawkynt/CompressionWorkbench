@@ -31,6 +31,21 @@ public interface IFilesystemMetadataMover {
   IReadOnlySet<string> RelocatableMetadata { get; }
 
   /// <summary>
+  /// Gives the filesystem a chance to make the destination safe before the raw
+  /// bytes are copied there.
+  /// </summary>
+  /// <remarks>
+  /// Most metadata movers need no work here and the default is deliberately a
+  /// no-op. Copy-on-write and self-hosting allocators are different: if an
+  /// allocation-bitmap page itself moves, the destination bit must be recorded
+  /// in the source page <em>before</em> that page is copied. Otherwise the moved
+  /// copy can forget that its own new home is allocated. Filesystems with that
+  /// invariant override this hook and normally claim the destination here.
+  /// </remarks>
+  void PrepareMetadataMove(Stream image, string metadataName,
+    long oldOffset, long newOffset, long length) { }
+
+  /// <summary>
   /// Repoints whatever locates <paramref name="metadataName" /> after its bytes
   /// have been copied from <paramref name="oldOffset" /> to
   /// <paramref name="newOffset" />, and moves the allocation with it.

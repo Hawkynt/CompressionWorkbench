@@ -78,7 +78,7 @@ cannot claim something the code does not do.
 | [ProDOS](ProDos.md) | moving (`ProDosBlockMover`) | yes | yes |
 | [QNX4 FS](Qnx4.md) | moving (`Qnx4BlockMover`) | yes | yes |
 | [QNX6 Neutrino FS](Qnx6.md) | moving (`Qnx6BlockMover`) | yes | yes |
-| [ReFS](Refs.md) | — | no | no |
+| [ReFS](Refs.md) | moving (`RefsBlockMover`) | no | no |
 | [Reiser4](Reiser4.md) | moving (`Reiser4BlockMover`) | yes | yes |
 | [ReiserFS](ReiserFs.md) | moving (`ReiserFsBlockMover`) | yes | yes |
 | [ROMFS](RomFs.md) | moving (`RomFsBlockMover`) | yes | yes |
