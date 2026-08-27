@@ -7,93 +7,250 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Refs;
 
 /// <summary>
-/// Read-only descriptor for Microsoft ReFS (Resilient File System) volume images.
-/// Surfaces the parsed boot sector / FSRS header as a structured metadata bundle
-/// plus the raw image. Walking the object table / directory B+trees is explicitly
-/// out of scope — that's a multi-week effort and Microsoft's documentation is
-/// minimal. Detection alone is the primary win here.
+/// Microsoft ReFS (Resilient File System) volume descriptor.
 ///
-/// References:
-/// <list type="bullet">
-///   <item><description><c>https://github.com/libyal/libfsrefs</c> — reverse-engineered ReFS documentation + reader (libyal)</description></item>
-///   <item><description><c>https://learn.microsoft.com/en-us/windows-server/storage/refs/refs-overview</c> — Microsoft's ReFS overview — no on-disk spec is published</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/ReFS</c> — Wikipedia article</description></item>
-/// </list>
+/// Read/list/extract follows metadata reachable from the active checkpoint.
+/// Offline layout writes are coordinated by the ReFS placement manager, which
+/// can relocate file data, live MSB+ metadata and checkpoint pages while
+/// preserving the format-fixed VBR/SUPB bootstrap anchors.
 /// </summary>
-public sealed class RefsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class RefsFormatDescriptor :
+  IFormatDescriptor,
+  IArchiveFormatOperations,
+  IFilesystemExtentMap,
+  IArchiveDefragmentable,
+  ILayoutOptimizable {
+
   public string Id => "Refs";
   public string DisplayName => "ReFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".refs";
   public IReadOnlyList<string> Extensions => [".refs"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // OEM-ID "ReFS\0\0\0\0" at offset 3 of the boot sector — matches Microsoft's
-    // documented and reverse-engineered ReFS volume header. Same slot where NTFS
-    // stores "NTFS    ", but the trailing nulls disambiguate.
     new([0x52, 0x65, 0x46, 0x53, 0x00, 0x00, 0x00, 0x00], Offset: 3, Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("resident", "Resident / inline"),
+    new("extent", "Extent-backed"),
+    new("stored", "Raw image"),
+  ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Microsoft ReFS volume image — boot sector / FSRS header surface only.";
+  public string Description => "Microsoft ReFS 3.x volume image with namespace, allocation, in-place data relocation and filesystem-metadata placement support.";
+
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => RefsExtentMap.Enumerate(image);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions());
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    new RefsPlacementManager(archive).Execute(options);
+  }
+
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    try {
+      var metadata = RefsMetadataReader.Open(image);
+      var files = new RefsNamespaceReader(metadata).ReadAll();
+      var graph = new RefsMetadataGraph(image, metadata);
+      var bootstrap = RefsBootstrapState.Open(image);
+      long slack = 0;
+      foreach (var file in files) {
+        if (file.IsDirectory) continue;
+        var allocated = Math.Max(0, file.AllocatedSize);
+        var size = Math.Max(0, file.Size);
+        if (allocated > size) slack = checked(slack + allocated - size);
+      }
+      var movableMetadata = new RefsMetadataMover(image).RelocatableMetadata.Count;
+      return new LayoutAnalysis {
+        ImageSize = image.CanSeek ? image.Length : 0,
+        CurrentUnitSize = metadata.ClusterSize,
+        CurrentSlackBytes = slack,
+        OptimalUnitSize = metadata.ClusterSize,
+        OptimalSlackBytes = slack,
+        InPlaceChanges = [
+          "File extent placement / consolidation / interleave",
+          "Live ReFS MSB+ metadata-page placement",
+          "ReFS checkpoint placement through SUPB repointing",
+        ],
+        Notes = [
+          $"Active graph contains {graph.Pages.Count:N0} live MSB+ page(s); {movableMetadata:N0} metadata/checkpoint region(s) are currently allocator-addressable and relocatable.",
+          $"The winning SUPB is fixed at LCN 0x{bootstrap.WinningSuperblockLcn:X}; VBR and all three SUPB slots are format-fixed bootstrap anchors, not movable extents.",
+          "ReFS cluster geometry is preserved; placement changes physical location while retaining the volume's allocation-unit size.",
+          "Resident non-empty files are promoted to extent-backed storage when they must participate in physical layout.",
+          "Sparse, integrity-checksummed, snapshot/shared and otherwise undecoded stream allocations remain pinned rather than being guessed.",
+        ],
+        RequiresRebuild = ["Changing ReFS cluster size requires formatting/rebuilding the volume."],
+      };
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException) {
+      return new LayoutAnalysis {
+        ImageSize = image.CanSeek ? image.Length : 0,
+        Notes = [$"ReFS layout analysis could not traverse the active metadata: {e.Message}"],
+      };
+    }
+  }
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
-    byte[] image;
     try {
-      image = ReadAll(stream);
-    } catch {
-      entries.Add(new ArchiveEntryInfo(0, "FULL.refs", 0, 0, "stored", false, false, null));
+      var metadata = RefsMetadataReader.Open(stream);
+      var files = new RefsNamespaceReader(metadata).ReadAll();
+      var index = 0;
+      foreach (var file in files) {
+        entries.Add(new ArchiveEntryInfo(
+          index++,
+          file.Path,
+          file.Size,
+          file.IsResident ? file.Size : file.AllocatedSize,
+          file.IsDirectory ? "directory" : file.IsResident ? "resident" : "extent",
+          file.IsDirectory,
+          false,
+          file.Modified,
+          file.IsDirectory ? "directory" : "stream"));
+      }
+      if (entries.Count > 0) return entries;
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException) {
+      // Preserve the cheap diagnostic surface for damaged or synthetic images.
+    }
+    return ListDiagnosticSurface(stream);
+  }
+
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    try {
+      var metadata = RefsMetadataReader.Open(stream);
+      var records = new RefsNamespaceReader(metadata).ReadAll();
+      if (records.Count > 0) {
+        foreach (var record in records) {
+          if (!MatchesRequested(record.Path, files)) continue;
+          if (record.IsDirectory) {
+            Directory.CreateDirectory(Path.Combine(outputDir, record.Path.Replace('/', Path.DirectorySeparatorChar)));
+            continue;
+          }
+
+          using var target = CreateEntryFile(outputDir, record.Path);
+          if (record.IsResident) {
+            if (record.ResidentContent != null) target.Write(record.ResidentContent);
+            continue;
+          }
+
+          var remaining = record.Size;
+          foreach (var extent in record.Extents.OrderBy(e => e.FileVcn)) {
+            if (remaining <= 0) break;
+            if (extent.IsSparse) {
+              var zeros = Math.Min(remaining, checked((long)extent.ClusterCount * metadata.ClusterSize));
+              WriteZeros(target, zeros);
+              remaining -= zeros;
+              continue;
+            }
+            for (uint i = 0; i < extent.ClusterCount && remaining > 0; ++i) {
+              var physical = metadata.TranslateVirtualLcn(checked(extent.VirtualLcn + i));
+              var sourceOffset = checked((long)physical * metadata.ClusterSize);
+              if (sourceOffset < 0 || sourceOffset + metadata.ClusterSize > stream.Length)
+                throw new InvalidDataException($"ReFS extent for '{record.Path}' points outside the image.");
+              stream.Position = sourceOffset;
+              var take = checked((int)Math.Min(remaining, metadata.ClusterSize));
+              CopyExactly(stream, target, take);
+              remaining -= take;
+            }
+          }
+          if (remaining != 0)
+            throw new InvalidDataException($"ReFS extents for '{record.Path}' do not cover its logical size.");
+        }
+        return;
+      }
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {
+      // Diagnostic fallback below remains useful for partially damaged images.
+    }
+
+    ExtractDiagnosticSurface(stream, outputDir, files);
+  }
+
+  private static List<ArchiveEntryInfo> ListDiagnosticSurface(Stream stream) {
+    var entries = new List<ArchiveEntryInfo>();
+    var imageLength = stream.CanSeek ? stream.Length : 0;
+    byte[] header;
+    try { header = ReadHeader(stream); }
+    catch {
+      entries.Add(new ArchiveEntryInfo(0, "FULL.refs", imageLength, imageLength, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
       return entries;
     }
 
     RefsVolumeHeader hdr;
-    try {
-      hdr = RefsVolumeHeader.TryParse(image);
-    } catch {
-      entries.Add(new ArchiveEntryInfo(0, "FULL.refs", image.LongLength, image.LongLength, "stored", false, false, null));
+    try { hdr = RefsVolumeHeader.TryParse(header); }
+    catch {
+      entries.Add(new ArchiveEntryInfo(0, "FULL.refs", imageLength, imageLength, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
       return entries;
     }
 
-    entries.Add(new ArchiveEntryInfo(0, "FULL.refs", image.LongLength, image.LongLength, "stored", false, false, null));
+    entries.Add(new ArchiveEntryInfo(0, "FULL.refs", imageLength, imageLength, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
     if (hdr.Valid)
       entries.Add(new ArchiveEntryInfo(2, "volume_header.bin", hdr.RawBytes.LongLength, hdr.RawBytes.LongLength, "stored", false, false, null));
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    byte[] image;
-    try {
-      image = ReadAll(stream);
-    } catch {
+  private static void ExtractDiagnosticSurface(Stream stream, string outputDir, string[]? files) {
+    byte[] header;
+    try { header = ReadHeader(stream); }
+    catch {
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
       return;
     }
 
     RefsVolumeHeader hdr;
-    try {
-      hdr = RefsVolumeHeader.TryParse(image);
-    } catch {
-      WriteIfMatch(outputDir, "FULL.refs", image, files);
+    try { hdr = RefsVolumeHeader.TryParse(header); }
+    catch {
       WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
       return;
     }
 
-    WriteIfMatch(outputDir, "FULL.refs", image, files);
+    if (MatchesRequested("FULL.refs", files)) {
+      var outPath = Path.Combine(outputDir, "FULL.refs");
+      Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+      using var output = File.Create(outPath);
+      if (stream.CanSeek) stream.Position = 0;
+      stream.CopyTo(output);
+    }
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
-    if (hdr.Valid)
-      WriteIfMatch(outputDir, "volume_header.bin", hdr.RawBytes, files);
+    if (hdr.Valid) WriteIfMatch(outputDir, "volume_header.bin", hdr.RawBytes, files);
   }
 
+  private static bool MatchesRequested(string name, string[]? filter)
+    => filter == null || filter.Length == 0 || MatchesFilter(name, filter);
+
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
-    if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
+    if (!MatchesRequested(name, filter)) return;
     WriteFile(outputDir, name, data);
+  }
+
+  private static void WriteZeros(Stream target, long count) {
+    var buffer = new byte[64 * 1024];
+    while (count > 0) {
+      var take = (int)Math.Min(count, buffer.Length);
+      target.Write(buffer, 0, take);
+      count -= take;
+    }
+  }
+
+  private static void CopyExactly(Stream source, Stream target, int count) {
+    var buffer = new byte[Math.Min(64 * 1024, Math.Max(1, count))];
+    var remaining = count;
+    while (remaining > 0) {
+      var take = Math.Min(remaining, buffer.Length);
+      var read = source.Read(buffer, 0, take);
+      if (read == 0) throw new EndOfStreamException();
+      target.Write(buffer, 0, read);
+      remaining -= read;
+    }
   }
 
   private static byte[] BuildMetadata(RefsVolumeHeader hdr) {
@@ -101,27 +258,33 @@ public sealed class RefsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     bldr.Append(CultureInfo.InvariantCulture, $"parse_status={(hdr.Valid ? "ok" : "partial")}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"oem_id={hdr.OemId}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"sector_size={hdr.SectorSize}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"sectors_per_cluster={hdr.SectorsPerCluster}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"bytes_per_cluster={hdr.BytesPerCluster}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"total_sectors={hdr.TotalSectors}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"total_clusters={hdr.TotalClusters}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"version_major={hdr.MajorVersion}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"version_minor={hdr.MinorVersion}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"checksum_algorithm=0x{hdr.ChecksumAlgorithm:X4}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"volume_flags=0x{hdr.VolumeFlags:X8}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"volume_serial=0x{hdr.VolumeSerialNumber:X16}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"bytes_per_container={hdr.BytesPerContainer}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"fsrs_found={hdr.FsrsFound}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"fsrs_offset={hdr.FsrsOffset}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"fsrs_length={hdr.FsrsLength}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"fsrs_checksum=0x{hdr.FsrsCheckSum:X4}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"vbr_checksum_valid={hdr.FsrsChecksumValid}\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  // Bounded read — we only need the boot sector for header inspection. Avoid
-  // materialising multi-GB streams when the carver runs us speculatively.
-  private const int HeaderReadCap = 64 * 1024;
-
-  private static byte[] ReadAll(Stream stream) {
-    using var ms = new MemoryStream();
-    var buf = new byte[8192];
-    int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
-      ms.Write(buf, 0, read);
-    return ms.ToArray();
+  private static byte[] ReadHeader(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    var buffer = new byte[512];
+    var total = 0;
+    while (total < buffer.Length) {
+      var read = stream.Read(buffer, total, buffer.Length - total);
+      if (read == 0) break;
+      total += read;
+    }
+    return total == buffer.Length ? buffer : buffer[..total];
   }
 }
