@@ -358,7 +358,7 @@ public static class DefragPlanner {
     return profile switch {
       LayoutProfile.Quick => PlanQuick(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, allowMemoryStaging),
       _ => interleaveStride > 1
-        ? PlanInterleaved(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, mode, interleaveStride, allowMemoryStaging)
+        ? PlanInterleaved(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode, interleaveStride, allowMemoryStaging)
         : PlanPerformance(byFile, fileSizes, dataOrigin, imageSize, clusterSize, freeRegions, forbidden, mode, allowMemoryStaging),
     };
   }
@@ -719,6 +719,7 @@ public static class DefragPlanner {
     Dictionary<string, long> fileSizes,
     long dataOrigin, long imageSize, int clusterSize,
     List<(long Offset, long Length)> freeRegions,
+    List<(long Start, long End)> forbidden,
     DefragMode mode,
     int stride,
     bool allowMemoryStaging) {
@@ -754,7 +755,12 @@ public static class DefragPlanner {
     // Per-lane cursor tracks how many blocks have been placed in that lane.
     var laneCursors = new long[stride]; // intra-lane block index per lane
     var dataOriginCluster = AlignUp(dataOrigin, clusterSize);
-    var availableClusters = (imageSize - dataOriginCluster) / clusterSize;
+
+    // Lanes are laid out over the clusters that may actually be written, not over
+    // every cluster in the image. Striding straight across the address space puts
+    // whichever lane lands on the metadata on top of it.
+    var usableRuns = UsableClusterRuns(dataOriginCluster, imageSize, clusterSize, forbidden);
+    var availableClusters = usableRuns.Sum(r => r.Clusters);
 
     // For ConsolidateAtEnd, shift every lane's base toward the tail so the
     // entire interleaved layout lands near imageSize instead of dataOrigin.
@@ -797,7 +803,7 @@ public static class DefragPlanner {
           throw new InvalidOperationException(
             $"Interleaved layout with stride {stride} requires {clusterIndex + 1} clusters " +
             $"but only {availableClusters} are available. Reduce the stride or free more space.");
-        targets[k] = dataOriginCluster + clusterIndex * clusterSize;
+        targets[k] = ClusterOffsetAt(usableRuns, clusterIndex, clusterSize);
       }
       laneCursors[lane] += blockCount;
       fileTargets.Add((fileName, targets));
@@ -1413,6 +1419,50 @@ public static class DefragPlanner {
 
   private static long AlignUp(long value, long alignment)
     => alignment <= 1 ? value : (value + alignment - 1) / alignment * alignment;
+
+  private static long AlignDown(long value, long alignment)
+    => alignment <= 1 ? value : value / alignment * alignment;
+
+  /// <summary>
+  /// The stretches of cluster-aligned space at or after <paramref name="origin" />
+  /// that no immovable region touches, in address order.
+  /// </summary>
+  /// <remarks>
+  /// A cluster that overlaps a forbidden region at all is unusable, so a run ends
+  /// at the last cluster boundary before one begins and resumes at the first
+  /// boundary after it ends.
+  /// </remarks>
+  private static List<(long Start, long Clusters)> UsableClusterRuns(long origin, long imageSize,
+      int clusterSize, List<(long Start, long End)> forbidden) {
+    var runs = new List<(long Start, long Clusters)>();
+    var cursor = origin;
+
+    foreach (var (start, end) in forbidden.OrderBy(f => f.Start)) {
+      if (end <= cursor) continue;
+      if (start >= imageSize) break;
+
+      var runEnd = AlignDown(Math.Min(start, imageSize), clusterSize);
+      if (runEnd > cursor) runs.Add((cursor, (runEnd - cursor) / clusterSize));
+
+      cursor = Math.Max(cursor, AlignUp(end, clusterSize));
+      if (cursor >= imageSize) return runs;
+    }
+
+    var tail = AlignDown(imageSize, clusterSize);
+    if (tail > cursor) runs.Add((cursor, (tail - cursor) / clusterSize));
+    return runs;
+  }
+
+  /// <summary>Where the <paramref name="index" />th usable cluster begins.</summary>
+  private static long ClusterOffsetAt(List<(long Start, long Clusters)> runs, long index,
+      int clusterSize) {
+    foreach (var (start, clusters) in runs) {
+      if (index < clusters) return start + index * clusterSize;
+      index -= clusters;
+    }
+
+    throw new InvalidOperationException("Interleaved layout ran past the usable clusters.");
+  }
 
   // ── Layout-template path ───────────────────────────────────────────────
 

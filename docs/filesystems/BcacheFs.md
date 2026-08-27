@@ -1,6 +1,6 @@
 # BcacheFS (`BcacheFs`)
 
-BcacheFS Linux filesystem image — R/W (WORM, SB-validated only — fsck parity pending).
+BcacheFS Linux filesystem image — native b-tree R/W with true in-place add/replace/remove, purge, defragment, optimize/layout maintenance and free-space/slack wiping.
 
 > Generated from the implementation. Edit the doc comments on the descriptor,
 > reader or writer rather than this file; a test regenerates it and fails on drift.
@@ -51,11 +51,7 @@ the bytes that actually move rather than the whole volume.
 
 ### BcacheFsFormatDescriptor
 
-Descriptor for bcachefs volumes: a superblock at offset 4096, and b-trees under it holding the names, the metadata and the positions of every file's bytes. Volumes written here are read by the kernel driver, and read back by `BcacheFsReader` — which understands both the packed keys `mkfs.bcachefs` writes and the plain ones this project does.
-
-Such a volume carries its allocation information — what each bucket holds, every bucket's generation, and the runs of buckets nothing was laid into — so one volume serves a read-only and a read-write mount alike, and bcachefs fsck walks it and finds nothing to fix. See `BcacheFsWriter`.
-
-References:
+Full workbench descriptor for the single-device bcachefs profile implemented here: native b-trees, true in-place CRUD, allocation/accounting maintenance, in-place defragmentation, purge and unused-space wiping.
 
 ### BcacheFsReader
 
@@ -98,7 +94,6 @@ The replicas counters say how many sectors of each kind of content there are per
 
 ## Further reading
 
-- https://bcachefs.org — official site, incl. the "Principles of Operation" on-disk documentation
-- https://github.com/koverstreet/bcachefs — canonical source tree (Kent Overstreet); bcachefs_format.h defines bch_sb
-- https://en.wikipedia.org/wiki/Bcachefs — Wikipedia overview
+The implementation cites no sources. Adding a `<list type="bullet">` of them
+to the descriptor's doc comment will bring them through to here.
 

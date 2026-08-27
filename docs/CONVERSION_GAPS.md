@@ -72,7 +72,6 @@ The target collapses an arbitrary file tree into a single stream or whole-image 
 | `AndroidOta` | OTA update payload; writer emits a whole-image blob that re-lists as 0 files |
 | `AndroidSparse` | Android sparse image; Create sparsifies a single raw image and re-lists as metadata.ini+image.raw, not a file tree |
 | `Awb` | CRI AWB audio bank; writer collapses the tree to a single FULL.amr stream |
-| `BcacheFs` | bcachefs image writer emits a whole-image (FULL.bcachefs+superblock.bin stub) not a file tree |
 | `CpcDsk` | Amstrad CPC disk image; reader exposes raw 512-byte track/sector blocks (T00S0_C1…) with no AMSDOS/CP/M filesystem layer, so padded sectors can't content-match the payload |
 | `DiskDoubler` | single-fork compressor; carries only one payload (lists 1 file) |
 | `Ewf` | EnCase EWF (.E01) wraps raw media as opaque chunks; the reader surfaces section blobs (volume/sectors/table/...), not the original files |

@@ -54,7 +54,16 @@ internal static class BcacheFsFormat {
     0xD9, 0x6A, 0x60, 0xCF, 0x80, 0x3D, 0xF7, 0xEF,
   ];
 
-  /// <summary>Metadata version 1.38, which is what a current kernel writes.</summary>
+  /// <summary>
+  /// Metadata version 1.38 — <c>need_discard_by_journal_seq</c>.
+  /// </summary>
+  /// <remarks>
+  /// One below what the current tools write: bcachefs-tools v1.39.2 stamps 1.39,
+  /// <c>per_dev_fragmentation_lru</c>, and a volume claiming that version is
+  /// claiming per-device fragmentation LRUs this writer does not build. An older
+  /// version is a supported volume that the kernel upgrades on mount; a newer one
+  /// promising structures that are not there is not.
+  /// </remarks>
   internal const ushort Version = (1 << 10) | 38;
 
   /// <summary>The floor an initialised volume is held to.</summary>

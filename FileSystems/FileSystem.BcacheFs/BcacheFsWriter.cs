@@ -866,11 +866,6 @@ public sealed class BcacheFsWriter {
     return new Key(KeyAllocV4, new Bpos(0, (ulong)bucket, 0), 0, value);
   }
 
-  /// <summary>The generations of one run of 256 buckets.</summary>
-  /// <remarks>
-  /// Every bucket here is on its first use, so every generation is zero and the
-  /// key is a run of zero bytes. It is written even so: the tree is what the
-  /// checker walks to learn a bucket's generation, and a missing key does not
   /// <summary>
   /// An accounting key: a counter, positioned by what it counts.
   /// </summary>
@@ -1015,6 +1010,13 @@ public sealed class BcacheFsWriter {
     AccountingKey([AccountingDevDataType, 0, dataType],
       buckets, sectors, dataType == DataFree ? 0 : buckets * BucketSectors - sectors);
 
+  /// <summary>The generations of one run of 256 buckets.</summary>
+  /// <remarks>
+  /// Every bucket here is on its first use, so every generation is zero and the
+  /// key is a run of zero bytes. It is written even so: the tree is what the
+  /// checker walks to learn a bucket's generation, and a missing key does not
+  /// read as zero, it reads as a hole to be repaired.
+  /// </remarks>
   private static Key BucketGensKey(long first) =>
     new(KeyBucketGens, new Bpos(0, (ulong)(first / BucketGensNr), 0), 0, new byte[BucketGensNr]);
 
