@@ -183,9 +183,21 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
     // Where the run began is what the pass names it by, and no two runs began in
     // the same place. Where it happens to be now is not usable as a name: another
     // run may have been laid down there in the meantime.
-    var slot = this._slots.FirstOrDefault(s => s.OriginalSector == sourceSector && s.Sectors == sectors)
-      ?? this._slots.FirstOrDefault(s => s.OriginalSector == sourceSector)
-      ?? this._slots.FirstOrDefault(s => s.Sector == sourceSector && s.Sectors == sectors);
+    //
+    // One move can carry several pointers. A pointer may not cross a bucket, so a
+    // run spanning n buckets holds at least n of them; repointing only the one
+    // that starts where the run starts moves everybody's bytes and leaves all but
+    // the first pointing at the bytes left behind.
+    var delta = (destinationOffset - sourceOffset) / SectorSize;
+    var end = sourceSector + sectors;
+    var carried = this._slots.Where(s => s.OriginalSector >= sourceSector && s.OriginalSector < end).ToArray();
+    if (carried.Length != 0) {
+      foreach (var moved in carried)
+        moved.Sector = moved.OriginalSector + delta;
+      return;
+    }
+
+    var slot = this._slots.FirstOrDefault(s => s.Sector == sourceSector && s.Sectors == sectors);
     if (slot == null) return;
 
     slot.Sector = destinationOffset / SectorSize;

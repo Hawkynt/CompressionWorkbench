@@ -21,6 +21,7 @@ The package bundles the filesystem and disk-image `FileSystem.*` / `FileFormat.*
 - Inspect filesystems in-process without `libguestfs`, loop mounts, kernel drivers, or elevated privileges.
 - Cross-platform parsing: inspect NTFS from Linux, ext filesystems from Windows, HFS+ from either, and so on.
 - Fresh filesystem-image creation for many formats, with true modification semantics where implemented.
+- True in-place bcachefs add/replace/remove and purge for the supported single-device profile: unchanged file extents stay at the same physical sectors while allocation, freespace, backpointer and accounting metadata is committed in the reserved metadata zone.
 - Disk-image container support for VM, optical, forensic, firmware, and emulator workflows.
 - Layout/cluster/block-size optimization, defragmentation, and unused-space/slack wiping on supporting filesystems.
 - External conformance validation against real filesystem tools where the platform/test environment provides them.
@@ -51,7 +52,7 @@ The descriptor's implemented interfaces and `FormatCapabilities` are authoritati
 | [Expert Witness Format](https://en.wikipedia.org/wiki/EnCase#Expert_Witness_File_Format) | R | EWF/EnCase forensic images | [libewf documentation](https://github.com/libyal/libewf/tree/main/documentation) |
 | [UEFI Firmware Volume](https://en.wikipedia.org/wiki/UEFI) | R | Firmware volume / FFS-oriented inspection | [UEFI specification](https://uefi.org/specifications) |
 | [Device Tree Blob](https://en.wikipedia.org/wiki/Devicetree) | R | Flattened Device Tree property traversal | [Devicetree specification](https://www.devicetree.org/specifications/) |
-| [Intel HEX](https://en.wikipedia.org/wiki/Intel_HEX) / [S-record](https://en.wikipedia.org/wiki/SREC_(file_format)) | R | Firmware records normalized to payload + metadata | [Intel HEX description](https://www.keil.com/support/docs/1584/_hlp_hexfile.htm) / [S-record manual](https://srecord.sourceforge.net/man/man5/srec_motorola.5.html) |
+| [Intel HEX](https://en.wikipedia.org/wiki/Intel_HEX) / [S-record](https://en.wikipedia.org/wiki/SREC) | R | Firmware records normalized to payload + metadata | [Intel HEX description](https://www.keil.com/support/docs/1584/_hlp_hexfile.htm) / [S-record manual](https://srecord.sourceforge.net/man/man5/srec_motorola.5.html) |
 
 ### Microsoft / DOS filesystems
 
@@ -77,7 +78,7 @@ The descriptor's implemented interfaces and `FormatCapabilities` are authoritati
 | [ZFS](https://en.wikipedia.org/wiki/ZFS) | R/W | Supported OpenZFS-style structures; rebuild-based mutation where documented | [OpenZFS documentation](https://openzfs.github.io/openzfs-docs/) |
 | [JFFS2](https://en.wikipedia.org/wiki/JFFS2) | R/W | Log-structured flash filesystem | [Linux JFFS2 documentation](https://www.kernel.org/doc/html/latest/filesystems/jffs2.html) |
 | [UBIFS](https://en.wikipedia.org/wiki/UBIFS) | R | Read path only | [Linux UBIFS documentation](https://www.kernel.org/doc/html/latest/filesystems/ubifs.html) |
-| [bcachefs](https://en.wikipedia.org/wiki/Bcachefs) | WORM ⚠️ | Superblock/creation subset; B-tree work remains | [bcachefs](https://bcachefs.org/) |
+| [bcachefs](https://en.wikipedia.org/wiki/Bcachefs) | R/W ⚠️ | Native b-trees; true in-place add/replace/remove + purge; in-place defrag/optimize and wipe/clean; alloc/freespace/backpointer/accounting metadata kept consistent. Mutation is limited to the supported single-device regular-extent profile. | [bcachefs](https://bcachefs.org/) |
 
 ### Apple / optical / portable filesystems
 
@@ -151,7 +152,7 @@ Creatable filesystem implementations build real nested directory trees rather th
 | `FileFormat.Qcow2` | QEMU Copy-On-Write v2 | [QCOW](https://en.wikipedia.org/wiki/Qcow) |
 | `FileFormat.Dmg` | Apple Disk Image | [Apple Disk Image](https://en.wikipedia.org/wiki/Apple_Disk_Image) |
 | `FileFormat.Cso` | Compressed ISO, PSP/homebrew | [CSO](https://en.wikipedia.org/wiki/CSO_(file_format)) |
-| `FileFormat.BinCue` | CD/DVD raw tracks + cue sheet | [Cue sheet](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) |
+| `FileFormat.BinCue` | CD/DVD raw optical tracks + cue sheet | [Cue sheet](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) |
 | `FileFormat.Mdf` | Alcohol 120% Media Disc Format | [Alcohol 120%](https://en.wikipedia.org/wiki/Alcohol_120%25) |
 | `FileFormat.Nrg` | Nero Burning ROM image | [Nero Burning ROM](https://en.wikipedia.org/wiki/Nero_Burning_ROM) |
 | `FileFormat.Cdi` | DiscJuggler image | [DiscJuggler](https://en.wikipedia.org/wiki/DiscJuggler) |
@@ -195,7 +196,7 @@ The long-form table preserves the original implementation detail, but avoids fre
 | `FileSystem.F2fs` | Superblock/checkpoint/SIT/NAT/SSA and hash-bucket directory blocks | [F2FS](https://en.wikipedia.org/wiki/F2FS) |
 | `FileSystem.Zfs` | fat-ZAP directories, Fletcher-4, big-endian XDR labels; rebuild-based supported mutation | [ZFS](https://en.wikipedia.org/wiki/ZFS) |
 | `FileSystem.Ufs` | BSD UFS reader, `fs_magic=0x011954` path | [UFS](https://en.wikipedia.org/wiki/Unix_File_System) |
-| `FileSystem.BcacheFs` | Superblock-oriented creation subset; B-tree completeness is not implied | [bcachefs](https://en.wikipedia.org/wiki/Bcachefs) |
+| `FileSystem.BcacheFs` | Native b-tree reader/writer plus true in-place CRUD for the supported single-device regular-extent profile. Unchanged file data stays at its physical sectors; add/replace allocate free buckets; remove/purge zero released extents; alloc/freespace/backpointer/accounting trees are committed in the metadata reservation. In-place defrag/optimize and wipe/clean are supported. | [bcachefs](https://en.wikipedia.org/wiki/Bcachefs) |
 | `FileSystem.Ubifs` | UBIFS log-structured read path; LPT/TNC writer complexity is intentionally not guessed | [UBIFS](https://en.wikipedia.org/wiki/UBIFS) |
 | `FileSystem.Jffs2` | JFFS2 log-structured paths, rebuild-oriented mutation | [JFFS2](https://en.wikipedia.org/wiki/JFFS2) |
 | `FileSystem.Yaffs2` | YAFFS2 rebuild-oriented mutation + defrag paths | [YAFFS](https://en.wikipedia.org/wiki/YAFFS) |
@@ -299,7 +300,7 @@ Selected writers/readers are tested against external filesystem utilities where 
 | HFS classic | `hmount` / `hls` | Historical notes record a malformed B-tree report against the writer; current tests/source decide present status |
 | ZFS | `zdb -l` | Label/NVList parsing path, gated on ZFS userland tools |
 | UFS1/FFS | Linux mount when kernel supports UFS; optional FreeBSD `fsck_ffs` under QEMU | Often unavailable on stock WSL kernels |
-| bcachefs | `bcachefs show-super` plus checker witness tests | Superblock-oriented subset; B-tree completeness not implied |
+| bcachefs | `bcachefs show-super`, `bcachefs fsck -n`, internal alloc/freespace/backpointer witness tests | Fresh images and supported in-place CRUD/defrag/purge metadata commits are checked for b-tree/allocation consistency; external bcachefs tools remain the authority where installed. |
 | Reiser4 | `fsck.reiser4` / `mkfs.reiser4` | Empty-FS/reference-block path, gated on `reiser4progs` |
 | DoubleSpace / DriveSpace | DOSBox-X + DOS utilities when legally staged | Optional historical-validator path |
 | HAMMER / HAMMER2 | DragonFly BSD | Linux lacks the canonical validator/mount stack |
@@ -372,7 +373,8 @@ The filesystem package is built against the repository's shared Core version. Re
 ## ⚠️ Limitations
 
 - Some modern filesystems are intentionally partial; a readable superblock or WORM creator is not presented as full R/W support.
-- R/W can be rebuild-based rather than live in-place journaling. Block placement, journals, snapshots, reflinks, quotas, encryption and crash consistency are format-specific capabilities.
+- bcachefs mutation is deliberately profile-gated: the in-place writer currently owns single-device, generation-zero, regular pointer extents as emitted by this package. Foreign volumes with extra live b-trees, reused bucket generations, inline/reflink/compressed/other extent-key forms, or unsupported inode/dirent object types are refused for mutation rather than rewritten speculatively; read support remains broader.
+- R/W can be rebuild-based rather than live in-place journaling. Block placement, journals, snapshots, reflinks, quotas, encryption and crash consistency are format-specific capabilities. bcachefs' supported R/W profile is an explicit exception here: its CRUD and layout maintenance paths are true in-place operations.
 - Disk-image container support and inner-filesystem support are separate capabilities.
 - External-validator parity varies by platform and available tooling; tests are the current evidence source.
 - Historical deep-reference prose can become stale as capabilities improve. Descriptor interfaces/`FormatCapabilities`, code and tests take precedence over an older state label.
