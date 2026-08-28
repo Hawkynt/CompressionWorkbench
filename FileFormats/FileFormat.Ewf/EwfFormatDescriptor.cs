@@ -2,193 +2,427 @@
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using FileFormat.Zlib;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ewf;
 
 /// <summary>
-/// Pseudo-archive descriptor for EnCase Expert Witness Format (EWF) forensic
-/// images (.e01/.ewf/.l01). Surfaces each parsed section as a separate entry
-/// along with a <c>metadata.ini</c> summarising acquisition parameters pulled
-/// from the <c>header</c>/<c>header2</c>/<c>hash</c>/<c>digest</c> sections.
-/// Full sector decompression + segment chaining across multi-file sets is
-/// deferred to a later phase — forensic tooling (libewf, EnCase) can decode
-/// the per-section data directly.
-///
-/// References:
-/// <list type="bullet">
-///   <item><description><c>https://github.com/libyal/libewf</c> — libewf — canonical open-source implementation; its documentation folder carries Joachim Metz's EWF/EWF2 format specs</description></item>
-///   <item><description>ASR Data "Expert Witness Compression Format" — the original format the EnCase .E01 family derives from</description></item>
-/// </list>
+/// EnCase Expert Witness Format (EWF/E01) descriptor. The mutable archive
+/// surface is the forensic image's logical <c>media.raw</c> payload; parsed
+/// section payloads remain available as read-only diagnostic entries. Existing
+/// physical EVF images can therefore be replaced, purged, canonicalized,
+/// compressed and shrunk without pretending their internal sections are user
+/// files.
 /// </summary>
-public sealed class EwfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class EwfFormatDescriptor :
+  IFormatDescriptor,
+  IArchiveFormatOperations,
+  IArchiveCreatable,
+  IArchiveModifiable,
+  IArchiveDefragmentable,
+  IArchiveShrinkable,
+  IArchiveLayoutMap,
+  ILayoutOptimizable,
+  IFormatOptionsSchema {
+
   public string Id => "Ewf";
   public string DisplayName => "EnCase EWF (E01)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.SupportsOptimize | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".e01";
   public IReadOnlyList<string> Extensions => [".e01", ".ewf", ".l01"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new([0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95), // "EVF\t\r\n\xFF\x00"
-    new([0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95), // "LVF\t\r\n\xFF\x00"
+    new([0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95),
+    new([0x4C, 0x56, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.80),
+    new([0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("stored", "Stored chunks", SupportsOptimize: true),
+    new("zlib", "Zlib-compressed chunks", SupportsOptimize: true),
+  ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "EnCase Expert Witness Format forensic image; surfaces section descriptors " +
-    "(header, volume, sectors, table, hash, digest, done/next) as entries.";
+    "EnCase EWF forensic media image with logical-media R/W, canonical repack and chunk compression optimization.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null
-    )).ToList();
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "CompressChunks",
+      DisplayName: "Compress media chunks",
+      Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Zlib-compress each 32 KiB EWF media chunk when compression makes that chunk smaller."),
+  ];
+
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    var image = ReadImage(stream);
+    var result = new List<ArchiveEntryInfo>();
+    var index = 0;
+    if (!image.IsLogical) {
+      try {
+        var media = EwfReader.ExtractMedia(image);
+        result.Add(new ArchiveEntryInfo(index++, "media.raw", media.LongLength, MediaStoredBytes(image),
+          HasCompressedChunks(image) ? "mixed/zlib" : "stored", false, false, null, "media"));
+      } catch (NotSupportedException) {
+        // Keep diagnostics available even when this EWF profile cannot expose media.raw.
+      } catch (InvalidDataException) { }
+    }
+
+    var metadata = BuildMetadata(image);
+    result.Add(new ArchiveEntryInfo(index++, "metadata.ini", metadata.LongLength, metadata.LongLength,
+      "generated", false, false, null, "metadata"));
+    foreach (var (section, i) in image.Sections.Select((s, i) => (s, i))) {
+      var name = $"section_{i:D2}_{SafeNameSegment(section.Type)}.bin";
+      result.Add(new ArchiveEntryInfo(index++, name, section.Payload.LongLength, section.Payload.LongLength,
+        "stored", false, false, null, "section"));
+    }
+    return result;
+  }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var e in BuildEntries(stream)) {
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, e.Data);
+    var image = ReadImage(stream);
+    if (!image.IsLogical && MatchesRequested("media.raw", files)) {
+      try { WriteFile(outputDir, "media.raw", EwfReader.ExtractMedia(image)); }
+      catch (NotSupportedException) { }
+    }
+    if (MatchesRequested("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(image));
+    for (var i = 0; i < image.Sections.Count; ++i) {
+      var section = image.Sections[i];
+      var name = $"section_{i:D2}_{SafeNameSegment(section.Type)}.bin";
+      if (MatchesRequested(name, files)) WriteFile(outputDir, name, section.Payload);
     }
   }
 
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    var image = ReadImage(archive);
+    byte[] data;
+    if (string.Equals(entryName, "media.raw", StringComparison.OrdinalIgnoreCase))
+      data = EwfReader.ExtractMedia(image);
+    else if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase))
+      data = BuildMetadata(image);
+    else {
+      data = [];
+      for (var i = 0; i < image.Sections.Count; ++i) {
+        var section = image.Sections[i];
+        var name = $"section_{i:D2}_{SafeNameSegment(section.Type)}.bin";
+        if (!string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+        data = section.Payload;
+        break;
+      }
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+  }
+
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var entry = this.OpenEntry(archive, entryName, password);
+    using var result = new MemoryStream();
+    entry.CopyTo(result);
+    return result.ToArray();
+  }
+
   /// <summary>
-  /// Creates a single-segment .E01 image wrapping the supplied input(s) as raw
-  /// media. EWF is a media-wrapper format, so file inputs are concatenated into
-  /// one contiguous raw image (the common case is a single disk-image input).
-  /// The produced image is accepted by libewf's <c>ewfverify</c>.
+  /// Creates a physical EVF image. A named <c>media.raw</c> input is preferred;
+  /// otherwise non-directory inputs are concatenated for backward compatibility
+  /// with the original media-wrapper API.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-
-    byte[] media;
-    var files = inputs.Where(i => !i.IsDirectory).ToList();
-    if (files.Count == 0)
-      media = [];
-    else if (files.Count == 1)
-      media = files[0].ReadContent();
-    else {
-      using var ms = new MemoryStream();
-      foreach (var f in files) ms.Write(f.ReadContent());
-      media = ms.ToArray();
-    }
-
-    var image = new EwfWriter().Build(media);
-    output.Write(image);
+    var media = ReadCreateMedia(inputs);
+    var compress = ParseBool(options?.FormatSpecific?.GetValueOrDefault("CompressChunks"), false);
+    var writer = new EwfWriter { CompressChunks = compress };
+    output.Write(writer.Build(media));
   }
 
-  private static List<(string Name, byte[] Data)> BuildEntries(Stream stream) {
+  /// <summary>Replaces the logical media payload of an existing EVF image.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var files = inputs.Where(i => !i.IsDirectory).ToArray();
+    if (files.Length == 0) return;
+    if (files.Length != 1 || !string.Equals(files[0].ArchiveName, "media.raw", StringComparison.OrdinalIgnoreCase))
+      throw new NotSupportedException("EWF existing-image mutation accepts exactly one logical entry named 'media.raw'.");
+
+    var existing = ReadImage(archive);
+    if (existing.IsLogical)
+      throw new NotSupportedException("LVF logical-evidence mutation is not implemented; physical EVF/E01 is R/W.");
+    RewriteMedia(archive, files[0].ReadContent(), existing, HasCompressedChunks(existing));
+  }
+
+  /// <summary>
+  /// Removing <c>media.raw</c> leaves a valid zero-sector EVF. Diagnostic
+  /// section/metadata names are generated views and cannot be removed separately.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    if (!entryNames.Any(n => string.Equals(n, "media.raw", StringComparison.OrdinalIgnoreCase))) {
+      if (entryNames.Length > 0)
+        throw new NotSupportedException("EWF section_*/metadata.ini entries are diagnostic views; remove 'media.raw' to empty the forensic image.");
+      return;
+    }
+    var existing = ReadImage(archive);
+    if (existing.IsLogical)
+      throw new NotSupportedException("LVF logical-evidence mutation is not implemented; physical EVF/E01 is R/W.");
+    RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions());
+
+  /// <summary>
+  /// Canonicalizes descriptor/table/chunk placement by reconstructing the media
+  /// and writing a fresh single-segment EVF while preserving decoded acquisition
+  /// metadata and the existing chunk-compression policy.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    var existing = ReadImage(archive);
+    var media = EwfReader.ExtractMedia(existing);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, archive.Length, this.EnumerateLayout(archive).ToList(),
+      "Reading EWF media/chunk table"));
+    options.CancellationToken.ThrowIfCancellationRequested();
+
+    var writer = WriterFrom(existing, HasCompressedChunks(existing));
+    var rebuilt = writer.Build(media);
+    VerifyMedia(rebuilt, media);
+    options.CancellationToken.ThrowIfCancellationRequested();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "writing", 0.9, Math.Max(0, archive.Length - 1), Math.Max(0, rebuilt.LongLength - 1),
+      Math.Max(archive.Length, rebuilt.LongLength), null, "Staged canonical EVF complete"));
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "committing", 0.99, -1, -1, rebuilt.LongLength, null,
+      "Committing verified EVF rebuild"));
+    CommitBytes(archive, rebuilt);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, this.EnumerateLayout(archive).ToList(),
+      "EWF canonicalization complete"));
+  }
+
+  /// <summary>
+  /// Emits the smallest of the original, canonical stored-chunk and canonical
+  /// compressed-chunk EVF representations of the same logical media.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    var original = ReadAll(input);
+    var image = EwfReader.Read(original);
+    var media = EwfReader.ExtractMedia(image);
+    var stored = WriterFrom(image, false).Build(media);
+    var compressed = WriterFrom(image, true).Build(media);
+    VerifyMedia(stored, media);
+    VerifyMedia(compressed, media);
+    var best = new[] { original, stored, compressed }.MinBy(a => a.LongLength)!;
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(best);
+  }
+
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    var parsed = ReadImage(image);
+    long mediaBytes = 0;
+    try { mediaBytes = EwfReader.ExtractMedia(parsed).LongLength; } catch { }
+    return new LayoutAnalysis {
+      ImageSize = image.CanSeek ? image.Length : parsed.TotalFileSize,
+      CurrentUnitSize = EwfWriter.ChunkSize,
+      CurrentSlackBytes = Math.Max(0, parsed.TotalFileSize - mediaBytes),
+      OptimalUnitSize = EwfWriter.ChunkSize,
+      OptimalSlackBytes = 0,
+      RequiresRebuild = ["Changing chunk compression rewrites sectors/table/hash sections."],
+      Notes = [
+        $"{parsed.Sections.Count} section(s); chunk size {EwfWriter.ChunkSize:N0} bytes.",
+        HasCompressedChunks(parsed) ? "At least one media chunk is zlib-compressed." : "Media chunks are stored; compression optimization is available.",
+        "Re-layout is a staged forensic-image rebuild; the source remains unchanged until commit.",
+      ],
+    };
+  }
+
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.MakeSparse || options.DeduplicateWithLinks)
+      throw new NotSupportedException("EWF cannot express filesystem sparse files or hard-link deduplication.");
+    var image = ReadImage(source);
+    var media = EwfReader.ExtractMedia(image);
+    var compress = options.Parameters != null && options.Parameters.TryGetValue("CompressChunks", out var raw)
+      ? ParseBool(raw, HasCompressedChunks(image))
+      : HasCompressedChunks(image);
+    var rebuilt = WriterFrom(image, compress).Build(media);
+    VerifyMedia(rebuilt, media);
+    target.Position = 0;
+    target.SetLength(0);
+    target.Write(rebuilt);
+    options.OnProgress?.Invoke(media.LongLength, media.LongLength);
+  }
+
+  /// <summary>
+  /// EWF sections are tightly framed; this layout map marks every live section
+  /// byte. A canonical image consequently has no generic free gaps to wipe.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    var image = ReadImage(archive);
+    yield return new DefragBlockInfo(0, Math.Min(EwfReader.FileHeaderSize, image.TotalFileSize),
+      DefragBlockKind.MetadataReserved, "$EWF/header");
+    foreach (var section in image.Sections) {
+      var length = section.SectionSize == 0
+        ? EwfReader.SectionDescriptorSize
+        : checked((long)section.SectionSize);
+      if (section.DescriptorOffset >= image.TotalFileSize) continue;
+      length = Math.Min(length, image.TotalFileSize - section.DescriptorOffset);
+      if (length <= 0) continue;
+      yield return new DefragBlockInfo(
+        section.DescriptorOffset,
+        length,
+        section.Type == "sectors" ? DefragBlockKind.Used : DefragBlockKind.MetadataReserved,
+        section.Type == "sectors" ? "media.raw" : "$EWF/" + section.Type);
+    }
+  }
+
+  private static bool MatchesRequested(string name, string[]? files)
+    => files == null || files.Length == 0 || MatchesFilter(name, files);
+
+  private static EwfReader.EwfImage ReadImage(Stream stream)
+    => EwfReader.Read(ReadAll(stream));
+
+  private static byte[] ReadAll(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    var img = EwfReader.Read(ms.GetBuffer().AsSpan(0, (int)ms.Length));
-
-    var result = new List<(string, byte[])> {
-      ("metadata.ini", BuildMetadata(img)),
-    };
-
-    // Section file names: `section_{index:D2}_{type}.bin`. The index keeps the
-    // walk order stable even when multiple sections share a type (e.g. table/table2).
-    for (var i = 0; i < img.Sections.Count; i++) {
-      var s = img.Sections[i];
-      var safeType = SafeNameSegment(s.Type);
-      result.Add(($"section_{i:D2}_{safeType}.bin", s.Payload));
-    }
-    return result;
+    return ms.ToArray();
   }
+
+  private static byte[] ReadCreateMedia(IReadOnlyList<ArchiveInputInfo> inputs) {
+    var files = inputs.Where(i => !i.IsDirectory).ToArray();
+    var named = files.LastOrDefault(i => string.Equals(i.ArchiveName, "media.raw", StringComparison.OrdinalIgnoreCase));
+    if (named != null) return named.ReadContent();
+    if (files.Length == 0) return [];
+    if (files.Length == 1) return files[0].ReadContent();
+    using var ms = new MemoryStream();
+    foreach (var file in files) ms.Write(file.ReadContent());
+    return ms.ToArray();
+  }
+
+  private static void RewriteMedia(Stream archive, byte[] media, EwfReader.EwfImage existing, bool compress) {
+    var rebuilt = WriterFrom(existing, compress).Build(media);
+    VerifyMedia(rebuilt, media);
+    CommitBytes(archive, rebuilt);
+  }
+
+  private static void CommitBytes(Stream archive, byte[] rebuilt) {
+    if (!archive.CanWrite || !archive.CanSeek)
+      throw new ArgumentException("EWF mutation requires a writable, seekable stream.", nameof(archive));
+    archive.Position = 0;
+    archive.SetLength(0);
+    archive.Write(rebuilt);
+    archive.Flush();
+  }
+
+  private static void VerifyMedia(byte[] rebuilt, ReadOnlySpan<byte> media) {
+    var decoded = EwfReader.ExtractMedia(EwfReader.Read(rebuilt));
+    if (decoded.Length < media.Length || !decoded.AsSpan(0, media.Length).SequenceEqual(media))
+      throw new InvalidOperationException("EWF rebuild did not reproduce the logical media; refusing to commit it.");
+  }
+
+  private static EwfWriter WriterFrom(EwfReader.EwfImage image, bool compress) {
+    var fields = ReadAcquisitionFields(image);
+    return new EwfWriter {
+      CompressChunks = compress,
+      Description = fields.GetValueOrDefault("a", ""),
+      CaseNumber = fields.GetValueOrDefault("c", ""),
+      EvidenceNumber = fields.GetValueOrDefault("n", ""),
+      ExaminerName = fields.GetValueOrDefault("e", ""),
+      Notes = fields.GetValueOrDefault("t", ""),
+    };
+  }
+
+  private static bool HasCompressedChunks(EwfReader.EwfImage image) {
+    var table = image.Sections.FirstOrDefault(s => s.Type is "table" or "table2");
+    if (table == null || table.Payload.Length < 28) return false;
+    var count = Math.Min(
+      BinaryPrimitives.ReadUInt32LittleEndian(table.Payload.AsSpan(0)),
+      (uint)Math.Max(0, (table.Payload.Length - 28) / 4));
+    for (var i = 0; i < count; ++i)
+      if ((BinaryPrimitives.ReadUInt32LittleEndian(table.Payload.AsSpan(24 + i * 4)) & 0x80000000U) != 0)
+        return true;
+    return false;
+  }
+
+  private static long MediaStoredBytes(EwfReader.EwfImage image)
+    => image.Sections.FirstOrDefault(s => s.Type == "sectors")?.Payload.LongLength ?? -1;
+
+  private static bool ParseBool(string? value, bool fallback)
+    => bool.TryParse(value, out var parsed) ? parsed : fallback;
 
   private static string SafeNameSegment(string raw) {
     var sb = new StringBuilder(raw.Length);
-    foreach (var c in raw) {
-      if (char.IsLetterOrDigit(c) || c == '_' || c == '-') sb.Append(c);
-      else sb.Append('_');
-    }
+    foreach (var c in raw)
+      sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_');
     return sb.Length == 0 ? "unknown" : sb.ToString();
   }
 
-  private static byte[] BuildMetadata(EwfReader.EwfImage img) {
+  private static byte[] BuildMetadata(EwfReader.EwfImage image) {
     var sb = new StringBuilder();
     sb.AppendLine("[ewf]");
-    sb.Append("signature = ").AppendLine(img.IsLogical ? "LVF (logical)" : "EVF (physical)");
-    sb.Append(CultureInfo.InvariantCulture, $"segment_number = {img.SegmentNumber}\n");
-    sb.Append(CultureInfo.InvariantCulture, $"file_size = {img.TotalFileSize}\n");
-    sb.Append(CultureInfo.InvariantCulture, $"section_count = {img.Sections.Count}\n");
-
-    var headerSection = img.Sections.FirstOrDefault(s => s.Type is "header" or "header2");
-    if (headerSection is not null) {
-      var parsed = ParseAcquisitionHeader(headerSection.Payload);
-      if (parsed.Count > 0) {
-        sb.AppendLine();
-        sb.AppendLine("[acquisition]");
-        foreach (var kv in parsed)
-          sb.Append(CultureInfo.InvariantCulture, $"{kv.Key} = {kv.Value}\n");
-      }
+    sb.Append("signature = ").AppendLine(image.IsLogical ? "LVF (logical)" : "EVF (physical)");
+    sb.Append(CultureInfo.InvariantCulture, $"segment_number = {image.SegmentNumber}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"file_size = {image.TotalFileSize}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"section_count = {image.Sections.Count}\n");
+    if (!image.IsLogical) {
+      try { sb.Append(CultureInfo.InvariantCulture, $"media_size = {EwfReader.ExtractMedia(image).LongLength}\n"); }
+      catch { sb.AppendLine("media_size = unavailable"); }
     }
 
-    var hashSection = img.Sections.FirstOrDefault(s => s.Type == "hash");
-    if (hashSection is not null && hashSection.Payload.Length >= 16) {
+    var fields = ReadAcquisitionFields(image);
+    if (fields.Count > 0) {
+      sb.AppendLine();
+      sb.AppendLine("[acquisition]");
+      foreach (var kv in fields) sb.Append(CultureInfo.InvariantCulture, $"{kv.Key} = {kv.Value}\n");
+    }
+
+    var hash = image.Sections.FirstOrDefault(s => s.Type == "hash");
+    if (hash is { Payload.Length: >= 16 }) {
       sb.AppendLine();
       sb.AppendLine("[hash]");
-      sb.Append("md5 = ").AppendLine(Convert.ToHexString(hashSection.Payload.AsSpan(0, 16)));
-    }
-
-    var digestSection = img.Sections.FirstOrDefault(s => s.Type == "digest");
-    if (digestSection is not null && digestSection.Payload.Length >= 36) {
-      sb.AppendLine();
-      sb.AppendLine("[digest]");
-      sb.Append("md5 = ").AppendLine(Convert.ToHexString(digestSection.Payload.AsSpan(0, 16)));
-      sb.Append("sha1 = ").AppendLine(Convert.ToHexString(digestSection.Payload.AsSpan(16, 20)));
+      sb.Append("md5 = ").AppendLine(Convert.ToHexString(hash.Payload.AsSpan(0, 16)));
     }
 
     sb.AppendLine();
     sb.AppendLine("[sections]");
-    for (var i = 0; i < img.Sections.Count; i++) {
-      var s = img.Sections[i];
+    for (var i = 0; i < image.Sections.Count; ++i) {
+      var section = image.Sections[i];
       sb.Append(CultureInfo.InvariantCulture,
-        $"section_{i:D2} = type={s.Type} offset={s.DescriptorOffset} size={s.SectionSize} next=0x{s.NextSectionOffset:X} checksum=0x{s.Checksum:X8}\n");
+        $"section_{i:D2} = type={section.Type} offset={section.DescriptorOffset} size={section.SectionSize} next=0x{section.NextSectionOffset:X} checksum=0x{section.Checksum:X8}\n");
     }
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
-  private static Dictionary<string, string> ParseAcquisitionHeader(byte[] payload) {
-    // header/header2 payloads are typically zlib-compressed UTF-8/UTF-16 text
-    // organised as tab-separated rows (category, key..., value...). Surface
-    // the raw printable text when we can't decompress — leaves forensic tools
-    // something to work with without us re-implementing zlib here.
-    var result = new Dictionary<string, string>(StringComparer.Ordinal);
-    if (payload.Length == 0) return result;
-
-    try {
-      // header2 is UTF-16LE with BOM (0xFF 0xFE); header is ASCII/UTF-8.
-      var text = payload.Length >= 2 && payload[0] == 0xFF && payload[1] == 0xFE
-        ? Encoding.Unicode.GetString(payload, 2, payload.Length - 2)
-        : Encoding.UTF8.GetString(payload);
-
-      // Strip non-printable / control chars except tab and newline for safety.
-      var sb = new StringBuilder(text.Length);
-      foreach (var c in text) {
-        if (c == '\t' || c == '\n' || c == '\r' || (c >= 0x20 && c < 0x7F) || c > 0xA0) sb.Append(c);
-      }
-      var printable = sb.ToString();
-
-      var lines = printable.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-      if (lines.Length >= 2) {
+  private static Dictionary<string, string> ReadAcquisitionFields(EwfReader.EwfImage image) {
+    foreach (var section in image.Sections.Where(s => s.Type is "header2" or "header")) {
+      try {
+        var payload = ZlibStream.Decompress(section.Payload);
+        var text = payload.Length >= 2 && payload[0] == 0xFF && payload[1] == 0xFE
+          ? Encoding.Unicode.GetString(payload, 2, payload.Length - 2)
+          : Encoding.UTF8.GetString(payload);
+        var lines = text.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length < 3) continue;
         var keys = lines[1].Split('\t');
-        if (lines.Length >= 3) {
-          var values = lines[2].Split('\t');
-          for (var i = 0; i < Math.Min(keys.Length, values.Length); i++) {
-            var k = keys[i].Trim().Trim('\r');
-            var v = values[i].Trim().Trim('\r');
-            if (k.Length > 0) result[k] = v;
-          }
+        var values = lines[2].Split('\t');
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < Math.Min(keys.Length, values.Length); ++i) {
+          var key = keys[i].Trim();
+          if (key.Length > 0) result[key] = values[i].Trim();
         }
-      }
-    } catch {
-      // Swallow — payload isn't a header2 text block (may be raw / compressed).
+        if (result.Count > 0) return result;
+      } catch { }
     }
-    return result;
+    return [];
   }
 }
