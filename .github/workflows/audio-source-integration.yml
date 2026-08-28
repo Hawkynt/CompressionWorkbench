@@ -44,7 +44,7 @@ jobs:
       - name: Restore
         run: dotnet restore CompressionWorkbench.slnx
 
-      - name: Apply repository formatting and safe C# modernization
+      - name: Apply repository formatting and safe C# 14 modernization
         shell: bash
         run: |
           set -euo pipefail
@@ -57,19 +57,39 @@ jobs:
           for project in "${projects[@]}"; do
             dotnet format whitespace "$project" --no-restore
             dotnet format style "$project" --no-restore --severity info \
-              --diagnostics IDE0005 IDE0028 IDE0090 IDE0300 IDE0301 IDE0305
+              --diagnostics IDE0005 IDE0028 IDE0090 IDE0161 IDE0290 IDE0300 IDE0301 IDE0305
+            # Foreign source is maintained as first-class repository source. Apply any
+            # safe fixes exposed by the same warning-level analyzers used by the build.
+            dotnet format analyzers "$project" --no-restore --severity warning
           done
 
-      - name: Verify no vendored nullable opt-out exists
+      - name: Verify vendored sources inherit repository policy
         shell: bash
         run: |
           set -euo pipefail
-          if grep -R --line-number --include='*.cs' '^#nullable disable' \
-            Codecs/Codec.Opus/Vendored \
-            Codecs/Codec.Vorbis/Vendored \
-            Codecs/Codec.Mp3/Vendored \
-            Codecs/Codec.AmrWb/Vendored; then
-            echo '::error::Vendored source must inherit repository nullable/code-analysis settings.'
+          vendored=(
+            Codecs/Codec.Opus/Vendored
+            Codecs/Codec.Vorbis/Vendored
+            Codecs/Codec.Mp3/Vendored
+            Codecs/Codec.AmrWb/Vendored
+          )
+
+          if grep -R --line-number --include='*.cs' '^#nullable disable' "${vendored[@]}"; then
+            echo '::error::Vendored source must inherit repository nullable analysis.'
+            exit 1
+          fi
+
+          if grep -R --line-number --include='*.cs' -E \
+            '\[(DllImport|LibraryImport)\(|NativeLibrary\.(Load|TryLoad)|using[[:space:]]+Concentus\.Native' \
+            "${vendored[@]}"; then
+            echo '::error::Vendored codec source must remain fully managed; native interop is forbidden.'
+            exit 1
+          fi
+
+          if grep -R --line-number --include='*.csproj' -E \
+            '<PackageReference[^>]+Include="(Concentus|OggVorbisEncoder|GroovyMp3|SipLib|AmrWbLib)' \
+            Codecs/Codec.Opus Codecs/Codec.Vorbis Codecs/Codec.Mp3 Codecs/Codec.AmrWb; then
+            echo '::error::Vendored codec implementations must not regain third-party codec package references.'
             exit 1
           fi
 
