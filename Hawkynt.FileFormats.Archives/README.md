@@ -3222,7 +3222,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 #### `CscStream`
 
-CSC: Context Stream Compression by Fu Siyuan. Format: 10-byte big-endian property header + 4-byte uncompressed size, then range-coded LZ77. Header layout: uint32 dict_size \| uint24 csc_blocksize \| uint24 raw_blocksize \| uint32 actual_size
+CSC: Context Stream Compression by Fu Siyuan. Format: 10-byte big-endian property header + 4-byte uncompressed size, then range-coded LZ77. Header layout: uint32 dict_size | uint24 csc_blocksize | uint24 raw_blocksize | uint32 actual_size
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4820,7 +4820,7 @@ DEFLATE (RFC 1951) decoder for the PEtite dialect: block type 1 carries the dyna
 
 #### `PetiteUnpacker`
 
-Container format of a PEtite-packed Win32 PE, reconstructed from the on-disk layout and the entry stub of the samples themselves. A PEtite image keeps the original section virtual addresses. The packed bytes live in one oversized section mapped at the first original section's RVA; a second section holds the untouched resources; the last section (the one the entry point falls into) holds the loader stub. Right behind the stub code sits a block table that drives unpacking:a record whose first dword has bit 31 set is a descending `rep movsd` — `{0x80000000\|dwordCount, sourceEndRva, destinationEndRva}`, 12 bytes — which lifts the packed bytes out of the way of the image that is about to be written over them;any other record is `{sourceRva, decompressedSize, destinationRva, unused}`, 16 bytes, and expands one original section in place. A zero length marks an original section without initialised data and is skipped; a zero source ends the table.The compressed streams are DEFLATE (RFC 1951) with one deviation: the stub has no fixed-Huffman tables, so block type `1` selects the dynamic Huffman tables that standard DEFLATE assigns to type `2`, and types 2 and 3 are rejected. Everything else — LSB-first bit order, the 14-bit HLIT/HDIST/HCLEN header, the code-length alphabet, the length/distance base and extra-bit tables — matches RFC 1951 byte for byte; those five tables are stored verbatim at the head of the stub section and were read from there.Code blocks are additionally stored with relative branch targets converted to absolute ones: scanning forward, every `E8`/`E9` and every `0F 80..0F 8F` has the block offset of its opcode added to the following dword, and the scan then skips the whole instruction. Reversing it subtracts the same offset again. References: `https://www.rfc-editor.org/rfc/rfc1951` — DEFLATE compressed data format`https://www.un4seen.com/petite/` — PEtite (Ian Luck / Un4seen Developments)
+Container format of a PEtite-packed Win32 PE, reconstructed from the on-disk layout and the entry stub of the samples themselves. A PEtite image keeps the original section virtual addresses. The packed bytes live in one oversized section mapped at the first original section's RVA; a second section holds the untouched resources; the last section (the one the entry point falls into) holds the loader stub. Right behind the stub code sits a block table that drives unpacking:a record whose first dword has bit 31 set is a descending `rep movsd` — `{0x80000000|dwordCount, sourceEndRva, destinationEndRva}`, 12 bytes — which lifts the packed bytes out of the way of the image that is about to be written over them;any other record is `{sourceRva, decompressedSize, destinationRva, unused}`, 16 bytes, and expands one original section in place. A zero length marks an original section without initialised data and is skipped; a zero source ends the table.The compressed streams are DEFLATE (RFC 1951) with one deviation: the stub has no fixed-Huffman tables, so block type `1` selects the dynamic Huffman tables that standard DEFLATE assigns to type `2`, and types 2 and 3 are rejected. Everything else — LSB-first bit order, the 14-bit HLIT/HDIST/HCLEN header, the code-length alphabet, the length/distance base and extra-bit tables — matches RFC 1951 byte for byte; those five tables are stored verbatim at the head of the stub section and were read from there.Code blocks are additionally stored with relative branch targets converted to absolute ones: scanning forward, every `E8`/`E9` and every `0F 80..0F 8F` has the block offset of its opcode added to the following dword, and the scan then skips the whole instruction. Reversing it subtracts the same offset again. References: `https://www.rfc-editor.org/rfc/rfc1951` — DEFLATE compressed data format`https://www.un4seen.com/petite/` — PEtite (Ian Luck / Un4seen Developments)
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9003,8 +9003,8 @@ WORM writer for the NumPy NPY array serialization format (NEP 1). Emits a v1 fil
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DefaultDtype` | `const string DefaultDtype` | Default dtype string used when no explicit type is supplied. |
-| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> payload, string dtype = "|u1", string shape = null, bool fortranOrder = false)` | Writes an NPY file from `payload` with the supplied dtype/shape header. When `shape` is null, a 1-D shape matching the payload's element count is inferred from the dtype's item-size. |
-| `Write` | `static void Write(Stream output, byte[] payload, string dtype = "|u1", string shape = null, bool fortranOrder = false)` | Convenience: writes an NPY file from a byte array. See span overload for parameter docs. |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> payload, string dtype = "\|u1", string shape = null, bool fortranOrder = false)` | Writes an NPY file from `payload` with the supplied dtype/shape header. When `shape` is null, a 1-D shape matching the payload's element count is inferred from the dtype's item-size. |
+| `Write` | `static void Write(Stream output, byte[] payload, string dtype = "\|u1", string shape = null, bool fortranOrder = false)` | Convenience: writes an NPY file from a byte array. See span overload for parameter docs. |
 
 #### `NpzFormatDescriptor`
 
@@ -11909,8 +11909,8 @@ Reader and writer for the Microsoft SZDD / COMPRESS.EXE file format. SZDD uses a
 | --- | --- | --- |
 | `CompressQBasic` | `static byte[] CompressQBasic(ReadOnlySpan<byte> data)` | Compresses `data` in the older "SZ " (QBasic) COMPRESS variant and returns the result. The body is the same LZSS stream as SZDD, wrapped in the 12-byte "SZ " header (8-byte magic + little-endian u32 uncompressed length). Round-trips through `Decompress`. |
 | `CompressQBasic` | `static void CompressQBasic(Stream input, Stream output)` | Stream overload of `CompressQBasic`. |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, char missingChar = _)` | Compresses `data` in SZDD format and returns the result as a new byte array. |
-| `Compress` | `static void Compress(Stream input, Stream output, char missingChar = _)` | Compresses `input` in SZDD format and writes the result to `output`. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, char missingChar = '_')` | Compresses `data` in SZDD format and returns the result as a new byte array. |
+| `Compress` | `static void Compress(Stream input, Stream output, char missingChar = '_')` | Compresses `input` in SZDD format and writes the result to `output`. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an SZDD-encoded byte array and returns the raw data. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an SZDD-encoded stream and writes the raw data to `output`. |
 | `GetMissingChar` | `static char GetMissingChar(Stream input)` | Returns the "missing character" stored in the SZDD header — the last character of the original filename extension before it was replaced with `'_'`. |
