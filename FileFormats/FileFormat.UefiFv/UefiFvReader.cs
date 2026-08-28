@@ -8,33 +8,12 @@ namespace FileFormat.UefiFv;
 /// Reader for UEFI Platform Initialization (PI) Firmware Volumes. Locates the
 /// FV header by scanning for the <c>_FVH</c> signature at offset 40 from the
 /// start of each 16-byte-aligned candidate (UEFI PI Volume 3). Walks the FFS
-/// file list and returns one <see cref="FfsFile"/> record per file.
+/// file list and returns one <see cref="FfsFile"/> record per live file.
 /// </summary>
-/// <remarks>
-/// The FV header layout per UEFI PI Spec Vol. 3, §3.2:
-/// <code>
-///   ZeroVector         16 bytes
-///   FileSystemGuid     16 bytes (EFI_FIRMWARE_FILE_SYSTEM2/3_GUID)
-///   FvLength            8 bytes (u64 LE)
-///   Signature           4 bytes ("_FVH")
-///   Attributes          4 bytes (u32 LE)
-///   HeaderLength        2 bytes (u16 LE)
-///   Checksum            2 bytes (u16 LE)
-///   ExtHeaderOffset     2 bytes (u16 LE)  — v2 only
-///   Reserved            1 byte
-///   Revision            1 byte
-///   BlockMap[] { u32 NumBlocks, u32 Length } terminated by {0,0}
-/// </code>
-/// </remarks>
 public sealed class UefiFvReader {
-
-  /// <summary>FV signature bytes (<c>_FVH</c>) at FV offset 40.</summary>
   public static readonly byte[] Signature = [(byte)'_', (byte)'F', (byte)'V', (byte)'H'];
-
-  /// <summary>Signature offset from FV start.</summary>
   public const int SignatureOffset = 40;
 
-  /// <summary>FV header (excluding block map + extended header body).</summary>
   public sealed record FvHeader(
     Guid FileSystemGuid,
     ulong FvLength,
@@ -46,13 +25,6 @@ public sealed class UefiFvReader {
     IReadOnlyList<(uint NumBlocks, uint Length)> BlockMap
   );
 
-  /// <summary>A single FFS (Firmware File System) file inside the FV.</summary>
-  /// <param name="Name">File GUID (<c>EFI_FFS_FILE_HEADER.Name</c>).</param>
-  /// <param name="Type">Raw FFS type byte (see <see cref="FileTypeName"/>).</param>
-  /// <param name="Attributes">FFS file attributes byte.</param>
-  /// <param name="State">FFS file state byte.</param>
-  /// <param name="Size">Declared file size including the 24-byte header.</param>
-  /// <param name="Contents">File contents (size minus the 24-byte header).</param>
   public sealed record FfsFile(
     Guid Name,
     byte Type,
@@ -62,14 +34,12 @@ public sealed class UefiFvReader {
     byte[] Contents
   );
 
-  /// <summary>Parsed firmware volume.</summary>
   public sealed record FirmwareVolume(
     int StartOffset,
     FvHeader Header,
     IReadOnlyList<FfsFile> Files
   );
 
-  /// <summary>Parses a firmware volume located at the given file offset.</summary>
   public static FirmwareVolume Read(ReadOnlySpan<byte> data, int fvStart = 0) {
     if (data.Length < fvStart + 56)
       throw new InvalidDataException("UefiFv: file shorter than minimum FV header.");
@@ -79,8 +49,6 @@ public sealed class UefiFvReader {
       throw new InvalidDataException(
         $"UefiFv: '_FVH' signature not found at offset {fvStart + SignatureOffset}.");
 
-    // GUID is stored in EFI format: Data1/Data2/Data3 LE + Data4 BE (.NET's
-    // little-endian constructor matches).
     var fsGuid = new Guid(data.Slice(fvStart + 16, 16));
     var fvLength = BinaryPrimitives.ReadUInt64LittleEndian(data[(fvStart + 32)..]);
     var attributes = BinaryPrimitives.ReadUInt32LittleEndian(data[(fvStart + 44)..]);
@@ -100,16 +68,12 @@ public sealed class UefiFvReader {
     }
 
     var header = new FvHeader(fsGuid, fvLength, attributes, headerLength, checksum, extOff, revision, blockMap);
-
-    // FFS files begin at the end of the FV header, 8-byte aligned. fvLength bounds the FV payload.
     var ffsStart = fvStart + headerLength;
-    var ffsEnd = (int)Math.Min((long)data.Length, fvStart + (long)fvLength);
+    var ffsEnd = checked((int)Math.Min((long)data.Length, fvStart + (long)fvLength));
     var files = ReadFfsFiles(data, ffsStart, ffsEnd);
-
     return new FirmwareVolume(fvStart, header, files);
   }
 
-  /// <summary>Scans <paramref name="data"/> for the first <c>_FVH</c> signature and returns the FV start.</summary>
   public static int? FindFirst(ReadOnlySpan<byte> data) {
     for (var i = 0; i + SignatureOffset + 4 <= data.Length; i += 16) {
       if (data.Slice(i + SignatureOffset, 4).SequenceEqual(Signature))
@@ -122,26 +86,36 @@ public sealed class UefiFvReader {
     var files = new List<FfsFile>();
     var pos = Align8(start);
     while (pos + 24 <= end) {
-      var name = new Guid(data.Slice(pos, 16));
-      var type = data[pos + 18];
-      var attrs = data[pos + 19];
-      var size = (uint)(data[pos + 20] | (data[pos + 21] << 8) | (data[pos + 22] << 16));
-      var state = data[pos + 23];
+      var header = data.Slice(pos, 24);
+      if (IsErased(header)) {
+        // Free/deleted regions may occur between live files after offline
+        // mutation. Advance one alignment quantum until the next header.
+        pos += 8;
+        continue;
+      }
 
-      // An all-0xFF header region marks the end of the file list (unallocated space).
-      if (type == 0xFF && size == 0xFFFFFFu) break;
-      if (size < 24 || pos + (int)size > end) break;
+      var name = new Guid(header[..16]);
+      var type = header[18];
+      var attrs = header[19];
+      var size = (uint)(header[20] | (header[21] << 8) | (header[22] << 16));
+      var state = header[23];
+      if (size < 24 || pos + (long)size > end) break;
 
-      var contents = data.Slice(pos + 24, (int)size - 24).ToArray();
+      var contents = data.Slice(pos + 24, checked((int)size - 24)).ToArray();
       files.Add(new FfsFile(name, type, attrs, state, size, contents));
-      pos = Align8(pos + (int)size);
+      pos = Align8(pos + checked((int)size));
     }
     return files;
+
+    static bool IsErased(ReadOnlySpan<byte> bytes) {
+      foreach (var b in bytes)
+        if (b != 0xFF) return false;
+      return true;
+    }
 
     static int Align8(int v) => (v + 7) & ~7;
   }
 
-  /// <summary>Decodes the FFS type byte to the UEFI PI spec name.</summary>
   public static string FileTypeName(byte t) => t switch {
     0x00 => "EFI_FV_FILETYPE_ALL",
     0x01 => "EFI_FV_FILETYPE_RAW",
@@ -163,7 +137,6 @@ public sealed class UefiFvReader {
     _ => $"EFI_FV_FILETYPE_UNKNOWN_0x{t:X2}",
   };
 
-  /// <summary>Returns a short type tag for use in entry names (e.g. <c>RAW</c>, <c>DRIVER</c>).</summary>
   public static string ShortTypeTag(byte t) {
     var n = FileTypeName(t);
     const string prefix = "EFI_FV_FILETYPE_";
