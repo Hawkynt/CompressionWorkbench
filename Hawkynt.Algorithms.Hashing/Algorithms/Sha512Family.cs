@@ -5,13 +5,18 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>SHA-384, SHA-512, SHA-512/224 and SHA-512/256 from FIPS 180-4.</summary>
 public static class Sha512Family {
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
+    new(224, 256, 32),
+    new(384, 512, 128)
+  ];
+
   private static readonly ulong[] K = [
     0x428A2F98D728AE22UL, 0x7137449123EF65CDUL, 0xB5C0FBCFEC4D3B2FUL, 0xE9B5DBA58189DBBCUL,
     0x3956C25BF348B538UL, 0x59F111F1B605D019UL, 0x923F82A4AF194F9BUL, 0xAB1C5ED5DA6D8118UL,
     0xD807AA98A3030242UL, 0x12835B0145706FBEUL, 0x243185BE4EE4B28CUL, 0x550C7DC3D5FFB4E2UL,
     0x72BE5D74F27B896FUL, 0x80DEB1FE3B1696B1UL, 0x9BDC06A725C71235UL, 0xC19BF174CF692694UL,
     0xE49B69C19EF14AD2UL, 0xEFBE4786384F25E3UL, 0x0FC19DC68B8CD5B5UL, 0x240CA1CC77AC9C65UL,
-    0x2DE92C6F592B0275UL, 0x4A7484AA6EA6E483UL, 0x5CB0A9DCBD41BFD4UL, 0x76F988DA831153B5UL,
+    0x2DE92C6F592B0275UL, 0x4A7484AA6EA6E483UL, 0x5CB0A9DCBD41FBD4UL, 0x76F988DA831153B5UL,
     0x983E5152EE66DFABUL, 0xA831C66D2DB43210UL, 0xB00327C898FB213FUL, 0xBF597FC7BEEF0EE4UL,
     0xC6E00BF33DA88FC2UL, 0xD5A79147930AA725UL, 0x06CA6351E003826FUL, 0x142929670A0E6E70UL,
     0x27B70A8546D22FFCUL, 0x2E1B21385C26C926UL, 0x4D2C6DFC5AC42AEDUL, 0x53380D139D95B3DFUL,
@@ -48,12 +53,20 @@ public static class Sha512Family {
     0x96283EE2A88EFFE3UL, 0xBE5E1E2553863992UL, 0x2B0199FC2C85B8AAUL, 0x0EB72DDC81C52CA2UL
   ];
 
-  public static byte[] Compute512(ReadOnlySpan<byte> data) => Compute(data, Sha512Initial, 64);
-  public static byte[] Compute384(ReadOnlySpan<byte> data) => Compute(data, Sha384Initial, 48);
-  public static byte[] Compute512_224(ReadOnlySpan<byte> data) => Compute(data, Sha512_224Initial, 28);
-  public static byte[] Compute512_256(ReadOnlySpan<byte> data) => Compute(data, Sha512_256Initial, 32);
+  public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512) => hashSizeBits switch {
+    224 => ComputeCore(data, Sha512_224Initial, 28),
+    256 => ComputeCore(data, Sha512_256Initial, 32),
+    384 => ComputeCore(data, Sha384Initial, 48),
+    512 => ComputeCore(data, Sha512Initial, 64),
+    _ => throw new ArgumentOutOfRangeException(nameof(hashSizeBits))
+  };
 
-  private static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<ulong> initial, int outputBytes) {
+  public static byte[] Compute512(ReadOnlySpan<byte> data) => Compute(data, 512);
+  public static byte[] Compute384(ReadOnlySpan<byte> data) => Compute(data, 384);
+  public static byte[] Compute512_224(ReadOnlySpan<byte> data) => Compute(data, 224);
+  public static byte[] Compute512_256(ReadOnlySpan<byte> data) => Compute(data, 256);
+
+  private static byte[] ComputeCore(ReadOnlySpan<byte> data, ReadOnlySpan<ulong> initial, int outputBytes) {
     var state = initial.ToArray();
 
     var paddingBytes = 1 + 16;
