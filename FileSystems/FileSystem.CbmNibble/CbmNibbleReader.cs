@@ -5,40 +5,28 @@ using System.Text;
 namespace FileSystem.CbmNibble;
 
 /// <summary>
-/// Reader for Commodore 1541/1571 nibble dumps — both the raw .nib format
-/// (used by nibtools and ZoomFloppy) and the .g64 GCR track container
-/// produced by emulators like VICE. Converting GCR back to a cleanly
-/// sectored D64 is outside scope for this sweep; this reader detects the
-/// format variant and surfaces each track as a raw byte buffer for
-/// downstream tools to consume.
+/// Reader for Commodore 1541/1571 nibble dumps — both raw .nib fixed-slot
+/// images and VICE .g64 track containers. The pseudo-archive surface is one
+/// opaque GCR payload per half-track; callers that need filesystem semantics
+/// can explicitly decode those tracks to a D64 through <see cref="CbmNibbleWriter.DecodeToD64"/>.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>NIB format</b>: a flat dump of 84 half-tracks × 0x2000 (8192) bytes
-/// each — the raw 1541 read-head stream including sync marks and jitter.
-/// There is no magic header; detection is extension-only, and the typical
-/// file size is exactly <c>84 × 8192 = 688 128</c> bytes.
-/// </para>
-/// <para>
-/// <b>G64 format</b>: per VICE spec, a 12-byte signature
-/// <c>"GCR-1541\0\x00\x00\xA2\xA2"</c> (byte 8 = version, byte 9 = track
-/// count, bytes 10-11 = max track-data size in bytes little-endian),
-/// followed by an offset table of <c>track_count</c> u32 LE entries
-/// (0 = empty track), an equal-length u32 LE speed-zone table, and the
-/// raw track data blocks. Each track block starts with a u16 LE length
-/// followed by the GCR bytes.
-/// </para>
-/// </remarks>
 public sealed class CbmNibbleReader {
 
   public static readonly byte[] G64Signature = "GCR-1541"u8.ToArray();
-  public const int NibTrackCount = 84;          // standard nibtools: 84 half-tracks
-  public const int NibTrackSize = 0x2000;       // 8192 bytes per half-track
-  public const int NibExpectedFileSize = NibTrackCount * NibTrackSize; // 688128
+  public const int NibTrackCount = 84;
+  public const int NibTrackSize = 0x2000;
+  public const int NibExpectedFileSize = NibTrackCount * NibTrackSize;
 
   public enum ImageKind { Nib, G64 }
 
-  public sealed record Track(int Index, byte[] Data, uint SpeedZone);
+  /// <param name="PhysicalOffset">Start of the physical slot/block in the container.</param>
+  /// <param name="PhysicalLength">Physical bytes occupied by this track block/slot.</param>
+  public sealed record Track(
+    int Index,
+    byte[] Data,
+    uint SpeedZone,
+    long PhysicalOffset = -1,
+    long PhysicalLength = 0);
 
   public sealed record NibbleImage(
     ImageKind Kind,
@@ -52,7 +40,6 @@ public sealed class CbmNibbleReader {
     if (data.Length >= G64Signature.Length && data[..G64Signature.Length].SequenceEqual(G64Signature))
       return ReadG64(data);
 
-    // NIB has no magic — fall back on extension or raw size.
     if (fileName is not null && fileName.EndsWith(".nib", StringComparison.OrdinalIgnoreCase))
       return ReadNib(data);
     if (data.Length == NibExpectedFileSize)
@@ -64,21 +51,22 @@ public sealed class CbmNibbleReader {
   }
 
   private static NibbleImage ReadNib(ReadOnlySpan<byte> data) {
-    // Most nib dumps are exactly 84 × 8192; truncated / short dumps are
-    // tolerated by surfacing however many whole tracks fit.
-    var trackCount = data.Length / NibTrackSize;
+    var trackCount = Math.Min(NibTrackCount, data.Length / NibTrackSize);
     var tracks = new List<Track>(trackCount);
     for (var i = 0; i < trackCount; i++) {
       var offset = i * NibTrackSize;
-      tracks.Add(new Track(i, data.Slice(offset, NibTrackSize).ToArray(), SpeedZone: 0));
+      var slot = data.Slice(offset, NibTrackSize);
+      // NIB has no absent-track marker. CompressionWorkbench reserves an
+      // all-zero fixed slot as its canonical empty representation: a useful
+      // GCR track cannot be all zero, and the physical slot is still retained.
+      var empty = true;
+      foreach (var b in slot)
+        if (b != 0) { empty = false; break; }
+      tracks.Add(new Track(i, empty ? [] : slot.ToArray(), SpeedZone: 0,
+        PhysicalOffset: offset, PhysicalLength: NibTrackSize));
     }
     return new NibbleImage(
-      Kind: ImageKind.Nib,
-      Version: 0,
-      TrackCount: trackCount,
-      MaxTrackSize: NibTrackSize,
-      Tracks: tracks,
-      TotalFileSize: data.Length);
+      ImageKind.Nib, Version: 0, trackCount, NibTrackSize, tracks, data.Length);
   }
 
   private static NibbleImage ReadG64(ReadOnlySpan<byte> data) {
@@ -88,7 +76,6 @@ public sealed class CbmNibbleReader {
     var version = data[8];
     int trackCount = data[9];
     var maxTrackSize = BinaryPrimitives.ReadUInt16LittleEndian(data[10..]);
-
     if (trackCount == 0 || trackCount > 84)
       throw new InvalidDataException($"G64: implausible track count {trackCount} (valid range 1-84).");
 
@@ -102,28 +89,22 @@ public sealed class CbmNibbleReader {
       var offset = BinaryPrimitives.ReadUInt32LittleEndian(data[(offsetTableStart + i * 4)..]);
       var speed = BinaryPrimitives.ReadUInt32LittleEndian(data[(speedTableStart + i * 4)..]);
       if (offset == 0) {
-        // Empty track — no data recorded for this half-track.
         tracks.Add(new Track(i, [], speed));
         continue;
       }
       if (offset + 2 > (uint)data.Length) {
-        tracks.Add(new Track(i, [], speed));
+        tracks.Add(new Track(i, [], speed, offset, 0));
         continue;
       }
       var trackLen = BinaryPrimitives.ReadUInt16LittleEndian(data[(int)offset..]);
       var payloadStart = (int)offset + 2;
       var copyLen = Math.Min(trackLen, Math.Max(0, data.Length - payloadStart));
       var buf = copyLen > 0 ? data.Slice(payloadStart, copyLen).ToArray() : [];
-      tracks.Add(new Track(i, buf, speed));
+      tracks.Add(new Track(i, buf, speed, offset, 2L + copyLen));
     }
 
     return new NibbleImage(
-      Kind: ImageKind.G64,
-      Version: version,
-      TrackCount: trackCount,
-      MaxTrackSize: maxTrackSize,
-      Tracks: tracks,
-      TotalFileSize: data.Length);
+      ImageKind.G64, version, trackCount, maxTrackSize, tracks, data.Length);
   }
 
   public static byte[] BuildMetadata(NibbleImage img) {
@@ -147,8 +128,6 @@ public sealed class CbmNibbleReader {
     sb.AppendLine();
     sb.AppendLine("[tracks]");
     foreach (var t in img.Tracks) {
-      // Half-tracks 0,2,4... are whole tracks 1,2,3... — expose both numbers
-      // so operators can cross-reference with nibtools / c64 docs.
       var halfTrack = t.Index;
       var track = (halfTrack / 2) + 1;
       var half = halfTrack % 2 == 0 ? "" : ".5";
