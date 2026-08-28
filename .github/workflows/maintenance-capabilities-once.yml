@@ -13,7 +13,6 @@ env:
 
 jobs:
   promote:
-    if: github.event.head_commit.message == 'ci: run maintenance capability audit'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +35,7 @@ jobs:
         run: dotnet build Compression.Tests/Compression.Tests.csproj -c Release
 
       - name: Run maintenance contract tests
-        run: dotnet test Compression.Tests/Compression.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~MarkerInterfaceCoverageTests|FullyQualifiedName~WriteCapabilityHonestyTests"
+        run: dotnet test Compression.Tests/Compression.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~MarkerInterfaceCoverageTests|FullyQualifiedName~WriteCapabilityHonestyTests'
 
       - name: Commit promoted capabilities
         run: |
