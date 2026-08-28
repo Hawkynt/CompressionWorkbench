@@ -4,4 +4,8 @@
     <RootNamespace>Codec.Opus</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Concentus" Version="2.2.2" />
+  </ItemGroup>
+
 </Project>
