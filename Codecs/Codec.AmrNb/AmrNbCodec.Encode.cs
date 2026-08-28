@@ -179,13 +179,10 @@ public static partial class AmrNbCodec {
       var signed = split == 2;
       var index = FindNearestMr122Split(
         tables[split], midTarget, endTarget, offset, widths[split], signed,
-        out var sign, out var mid0, out var mid1, out var end0, out var end1);
+        out var sign, out _, out _, out var end0, out var end1);
       words[split] = signed ? (index << 1) | sign : index;
       state.PreviousLsfResidual[offset] = end0;
       state.PreviousLsfResidual[offset + 1] = end1;
-
-      _ = mid0;
-      _ = mid1;
     }
   }
 
@@ -724,12 +721,11 @@ public static partial class AmrNbCodec {
   }
 
   private static double BestPairScore(ReadOnlySpan<float> residual, int pos1, int pos2, out int signBit) {
-    var plusSecond = pos2 < pos1 ? -1f : 1f;
-    var correlationPositive = residual[pos1] + residual[pos2] * plusSecond;
-    var correlationNegative = -correlationPositive;
-    signBit = Math.Abs(correlationNegative) > Math.Abs(correlationPositive) && correlationNegative > correlationPositive ? 1 : 0;
-    var correlation = signBit == 0 ? correlationPositive : correlationNegative;
-    var energy = pos1 == pos2 ? Square(1 + plusSecond) : 2d;
+    var secondSign = pos2 < pos1 ? -1f : 1f;
+    var correlation = residual[pos1] + residual[pos2] * secondSign;
+    signBit = correlation >= 0 ? 0 : 1;
+    correlation = Math.Abs(correlation);
+    var energy = pos1 == pos2 ? Square(1 + secondSign) : 2d;
     return energy > 0 ? correlation * correlation / energy : 0;
   }
 
