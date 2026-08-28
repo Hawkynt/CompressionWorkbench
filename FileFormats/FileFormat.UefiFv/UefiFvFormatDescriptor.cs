@@ -7,29 +7,30 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.UefiFv;
 
 /// <summary>
-/// Pseudo-archive descriptor for UEFI PI Firmware Volumes (<c>.fv</c>/<c>.fd</c>).
-/// Locates the FV by scanning for the <c>_FVH</c> signature at offset 40 and
-/// emits one entry per FFS file, named <c>{GUID}_{TYPE_TAG}.bin</c>.
+/// UEFI PI Firmware Volume (<c>.fv</c>/<c>.fd</c>) archive surface. FFS files are
+/// exposed as <c>{GUID}_{TYPE_TAG}.bin</c>; standalone volumes can be created and
+/// ordinary FFS2 records can be added/replaced/removed through erased free space.
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://uefi.org/specifications</c> — UEFI Platform Initialization (PI) Specification — Volume 3 defines Firmware Volumes and FFS</description></item>
-///   <item><description><c>https://github.com/LongSoft/UEFITool</c> — UEFITool — canonical firmware-volume parser/editor</description></item>
+///   <item><description><c>https://uefi.org/specifications</c> — UEFI Platform Initialization (PI) Specification, Volume 3: Firmware Storage Design</description></item>
+///   <item><description><c>https://github.com/LongSoft/UEFITool</c> — UEFITool firmware-volume parser/editor</description></item>
 /// </list>
 /// </summary>
-public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+  IArchiveCreatable, IArchiveModifiable {
 
   public string Id => "UefiFv";
   public string DisplayName => "UEFI Firmware Volume";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".fv";
   public IReadOnlyList<string> Extensions => [".fv", ".fd"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // '_FVH' signature is at offset 40 (not 0) — callers must respect the Offset.
     new([(byte)'_', (byte)'F', (byte)'V', (byte)'H'],
       Offset: UefiFvReader.SignatureOffset, Confidence: 0.95),
   ];
@@ -37,7 +38,7 @@ public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "UEFI PI Firmware Volume — container for FFS files (PEI/DXE/driver modules).";
+    "UEFI PI Firmware Volume — create and offline R/W for ordinary FFS2 files in fixed-capacity volumes.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
@@ -52,10 +53,25 @@ public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var files = FilesOnly(inputs).Where(f => !string.Equals(f.Name, "metadata.ini", StringComparison.OrdinalIgnoreCase));
+    output.Write(UefiFvWriter.Build(files));
+  }
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => UefiFvInPlaceModifier.Add(archive, inputs);
+
+  public void Remove(Stream archive, string[] entryNames)
+    => UefiFvInPlaceModifier.Remove(archive,
+      entryNames.Where(n => !string.Equals(n, "metadata.ini", StringComparison.OrdinalIgnoreCase)).ToArray());
+
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    var data = ms.GetBuffer().AsSpan(0, (int)ms.Length);
+    var data = ms.GetBuffer().AsSpan(0, checked((int)ms.Length));
     var fvStart = UefiFvReader.FindFirst(data) ?? 0;
     var fv = UefiFvReader.Read(data, fvStart);
 
@@ -63,8 +79,8 @@ public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       ("metadata.ini", BuildMetadata(fv), "stored"),
     };
     foreach (var f in fv.Files) {
-      var tag = UefiFvReader.ShortTypeTag(f.Type);
-      entries.Add(($"{f.Name:D}_{tag}.bin", f.Contents, "stored"));
+      if (f.Type == 0xF0) continue;
+      entries.Add((UefiFvWriter.EntryName(f.Name, f.Type), f.Contents, "stored"));
     }
     return entries;
   }
