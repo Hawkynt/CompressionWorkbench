@@ -2,12 +2,12 @@
 namespace Codec.AmrWb;
 
 /// <summary>
-/// AMR wideband (G.722.2 / 3GPP TS 26.190) speech <b>decoder</b>. Nine active ACELP modes
+/// AMR wideband (G.722.2 / 3GPP TS 26.190) speech codec. Nine active ACELP modes
 /// (6.60 / 8.85 / 12.65 / 14.25 / 15.85 / 18.25 / 19.85 / 23.05 / 23.85 kbit/s) plus the SID and
 /// NO_DATA frame types. Each 20 ms frame decodes to exactly 320 samples of 16-bit PCM at 16 kHz
 /// mono.
 /// <para>
-/// A faithful float port of ffmpeg <c>libavcodec/amrwbdec.c</c>: ISF dequantisation → ISP →
+/// The decoder is a faithful float port of ffmpeg <c>libavcodec/amrwbdec.c</c>: ISF dequantisation → ISP →
 /// 16th-order LPC, four subframes of fractional-pitch adaptive codebook + the 5-track algebraic
 /// codebook, gain VQ, then the full wideband post-processing — high-band synthesis (white-noise
 /// excitation via the seeded lagged-Fibonacci PRNG, ISF extrapolation for 6k60), de-emphasis, the
@@ -15,7 +15,7 @@ namespace Codec.AmrWb;
 /// only DTX/SID comfort noise is left as silence.
 /// </para>
 /// </summary>
-public static class AmrWbCodec {
+public static partial class AmrWbCodec {
 
   /// <summary>Samples produced per frame (320 @ 16 kHz = 20 ms).</summary>
   public const int SamplesPerFrame = AmrWbData.SamplesPerFrame;
