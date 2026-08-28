@@ -141,7 +141,8 @@ public class GemTests {
     });
 
     output.Position = 0;
-    Assert.That(descriptor.ExtractEntryToMemory(output, "data/lib/demo.rb", null), Is.EqualTo(library).AsCollection);
+    Assert.That(((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(output, "data/lib/demo.rb", null),
+      Is.EqualTo(library).AsCollection);
   }
 
   [Test, Category("EdgeCase")]
