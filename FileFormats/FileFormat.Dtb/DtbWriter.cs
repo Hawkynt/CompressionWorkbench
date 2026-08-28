@@ -4,142 +4,105 @@ using System.Text;
 
 namespace FileFormat.Dtb;
 
-/// <summary>
-/// WORM writer for the Flattened Device Tree Blob (FDT v17) format. Produces a
-/// minimal valid DTB where every input becomes a leaf property on the root node.
-/// The root node carries spec-required <c>#address-cells = &lt;2&gt;</c> and
-/// <c>#size-cells = &lt;2&gt;</c> properties so the blob round-trips through
-/// <c>fdtdump</c> / <c>dtc</c> consumers without warnings.
-/// </summary>
-/// <remarks>
-/// Layout per Devicetree Specification v0.4:
-/// <list type="bullet">
-///   <item>40-byte BE header: magic, totalsize, off_dt_struct, off_dt_strings,
-///         off_mem_rsvmap, version=17, last_comp_version=16, boot_cpuid_phys=0,
-///         size_dt_strings, size_dt_struct.</item>
-///   <item>Memory reservation block: one terminating <c>{0, 0}</c> 16-byte entry.</item>
-///   <item>Structure block: <c>FDT_BEGIN_NODE "" \0 (padding)</c>
-///         + per-property <c>FDT_PROP len nameoff data (padding)</c>
-///         + <c>FDT_END_NODE</c> + <c>FDT_END</c>.</item>
-///   <item>Strings block: NUL-terminated property names.</item>
-/// </list>
-/// All values are big-endian per the spec. Structure-block tokens and property
-/// payloads are 4-byte aligned.
-/// </remarks>
+/// <summary>Writer for Flattened Device Tree Blob (FDT v17) images.</summary>
 public sealed class DtbWriter {
+  internal sealed record PropertySpec(string NodePath, string Name, byte[] Data);
 
-  /// <summary>
-  /// Writes a minimal FDT blob to <paramref name="output"/> whose root node
-  /// contains one property per input. Each input's archive-name leaf is used as
-  /// the property name; the raw bytes become the property value. Names are
-  /// deduplicated in the strings block, but each occurrence still gets its own
-  /// FDT_PROP record (multiple identical property names on one node are
-  /// technically nonconforming, but matching the input list verbatim is the
-  /// honest WORM behaviour).
-  /// </summary>
   public static void Write(Stream output, IReadOnlyList<(string Name, byte[] Data)> inputs) {
-    ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
+    var properties = inputs.Select(i => FromArchiveEntry(i.Name, i.Data)).ToList();
+    Write(output, properties, [], 0, addDefaultRootCells: true);
+  }
 
-    // Build the strings block first so we can compute name offsets up front.
+  internal static void Write(Stream output, IReadOnlyList<PropertySpec> properties,
+      IReadOnlyList<DtbReader.Reservation> reservations, uint bootCpuidPhys,
+      bool addDefaultRootCells = false) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(properties);
+    ArgumentNullException.ThrowIfNull(reservations);
+
+    var root = new Node("");
+    foreach (var property in properties) {
+      var node = root;
+      foreach (var segment in property.NodePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+        node = node.GetOrAdd(SanitiseNodeName(segment));
+      node.Properties.Add(new PropertySpec(property.NodePath,
+        SanitisePropertyName(property.Name), property.Data));
+    }
+
+    if (addDefaultRootCells) {
+      EnsureCellProperty(root, "#address-cells", 2);
+      EnsureCellProperty(root, "#size-cells", 2);
+    }
+
     using var strings = new MemoryStream();
     var stringOffsets = new Dictionary<string, uint>(StringComparer.Ordinal);
-
     uint InternName(string name) {
-      if (stringOffsets.TryGetValue(name, out var off)) return off;
-      off = (uint)strings.Length;
-      stringOffsets[name] = off;
+      if (stringOffsets.TryGetValue(name, out var existing)) return existing;
+      var offset = checked((uint)strings.Length);
+      stringOffsets[name] = offset;
       var bytes = Encoding.ASCII.GetBytes(name);
-      strings.Write(bytes, 0, bytes.Length);
+      strings.Write(bytes);
       strings.WriteByte(0);
-      return off;
+      return offset;
     }
 
-    // Pre-intern the spec-required root-node properties so they appear early in
-    // the strings block (fdtdump-friendly).
-    var addrCellsOff = InternName("#address-cells");
-    var sizeCellsOff = InternName("#size-cells");
+    foreach (var node in root.Walk())
+      foreach (var property in node.Properties)
+        _ = InternName(property.Name);
 
-    // Build the structure block.
-    using var structBlk = new MemoryStream();
+    using var structBlock = new MemoryStream();
+    WriteNode(root, structBlock, InternName);
+    WriteToken(structBlock, DtbReader.FDT_END);
 
-    void WriteToken(uint token) {
-      Span<byte> tk = stackalloc byte[4];
-      BinaryPrimitives.WriteUInt32BigEndian(tk, token);
-      structBlk.Write(tk);
-    }
+    const int headerSize = 40;
+    var reservationSize = checked((reservations.Count + 1) * 16);
+    var structOffset = checked(headerSize + reservationSize);
+    var structSize = checked((uint)structBlock.Length);
+    var stringsOffset = checked((uint)(structOffset + structSize));
+    var stringsSize = checked((uint)strings.Length);
+    var totalSize = checked(stringsOffset + stringsSize);
 
-    void AlignStruct() {
-      while ((structBlk.Length & 3) != 0) structBlk.WriteByte(0);
-    }
-
-    void WriteProp(uint nameOff, ReadOnlySpan<byte> data) {
-      WriteToken(DtbReader.FDT_PROP);
-      Span<byte> hdr = stackalloc byte[8];
-      BinaryPrimitives.WriteUInt32BigEndian(hdr[..4], (uint)data.Length);
-      BinaryPrimitives.WriteUInt32BigEndian(hdr[4..], nameOff);
-      structBlk.Write(hdr);
-      if (data.Length > 0) structBlk.Write(data);
-      AlignStruct();
-    }
-
-    // FDT_BEGIN_NODE for root ("" name, NUL-terminated, padded).
-    WriteToken(DtbReader.FDT_BEGIN_NODE);
-    structBlk.WriteByte(0);
-    AlignStruct();
-
-    // Root: #address-cells = <2>, #size-cells = <2> (big-endian u32).
-    Span<byte> twoCells = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32BigEndian(twoCells, 2);
-    WriteProp(addrCellsOff, twoCells);
-    WriteProp(sizeCellsOff, twoCells);
-
-    // One FDT_PROP per input, in order.
-    foreach (var (name, data) in inputs) {
-      var safe = SanitisePropertyName(name);
-      var off = InternName(safe);
-      WriteProp(off, data);
-    }
-
-    WriteToken(DtbReader.FDT_END_NODE);
-    WriteToken(DtbReader.FDT_END);
-
-    // Assemble final blob.
-    const int HeaderSize = 40;
-    const int MemRsvmapSize = 16; // one terminator {0, 0}
-    var structOff = HeaderSize + MemRsvmapSize;
-    var structSize = (uint)structBlk.Length;
-    var stringsOff = (uint)(structOff + structSize);
-    var stringsSize = (uint)strings.Length;
-    var totalSize = stringsOff + stringsSize;
-
-    Span<byte> header = stackalloc byte[HeaderSize];
+    Span<byte> header = stackalloc byte[headerSize];
     BinaryPrimitives.WriteUInt32BigEndian(header[0..4], DtbReader.Magic);
     BinaryPrimitives.WriteUInt32BigEndian(header[4..8], totalSize);
-    BinaryPrimitives.WriteUInt32BigEndian(header[8..12], (uint)structOff);
-    BinaryPrimitives.WriteUInt32BigEndian(header[12..16], stringsOff);
-    BinaryPrimitives.WriteUInt32BigEndian(header[16..20], HeaderSize); // off_mem_rsvmap
-    BinaryPrimitives.WriteUInt32BigEndian(header[20..24], 17);          // version
-    BinaryPrimitives.WriteUInt32BigEndian(header[24..28], 16);          // last_comp_version
-    BinaryPrimitives.WriteUInt32BigEndian(header[28..32], 0);           // boot_cpuid_phys
+    BinaryPrimitives.WriteUInt32BigEndian(header[8..12], (uint)structOffset);
+    BinaryPrimitives.WriteUInt32BigEndian(header[12..16], stringsOffset);
+    BinaryPrimitives.WriteUInt32BigEndian(header[16..20], headerSize);
+    BinaryPrimitives.WriteUInt32BigEndian(header[20..24], 17);
+    BinaryPrimitives.WriteUInt32BigEndian(header[24..28], 16);
+    BinaryPrimitives.WriteUInt32BigEndian(header[28..32], bootCpuidPhys);
     BinaryPrimitives.WriteUInt32BigEndian(header[32..36], stringsSize);
     BinaryPrimitives.WriteUInt32BigEndian(header[36..40], structSize);
-
     output.Write(header);
-    // 16-byte memory reservation terminator (both 64-bit fields zero).
-    Span<byte> rsv = stackalloc byte[MemRsvmapSize];
-    output.Write(rsv);
-    structBlk.Position = 0;
-    structBlk.CopyTo(output);
+
+    Span<byte> reservation = stackalloc byte[16];
+    foreach (var item in reservations) {
+      reservation.Clear();
+      BinaryPrimitives.WriteUInt64BigEndian(reservation[..8], item.Address);
+      BinaryPrimitives.WriteUInt64BigEndian(reservation[8..], item.Size);
+      output.Write(reservation);
+    }
+    reservation.Clear();
+    output.Write(reservation);
+
+    structBlock.Position = 0;
+    structBlock.CopyTo(output);
     strings.Position = 0;
     strings.CopyTo(output);
   }
 
-  /// <summary>
-  /// Coerces an input archive name into a property name valid per
-  /// devicetree-specification §2.2.4 (ASCII subset of property-name chars).
-  /// Reserved chars are replaced with <c>_</c>; the leaf of any path is used.
-  /// </summary>
+  internal static PropertySpec FromArchiveEntry(string archiveName, byte[] data) {
+    var normalized = archiveName.Replace('\\', '/').Trim('/');
+    var slash = normalized.LastIndexOf('/');
+    var nodePath = slash < 0 ? "/" : "/" + normalized[..slash];
+    var leaf = slash < 0 ? normalized : normalized[(slash + 1)..];
+    if (leaf.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ||
+        leaf.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+      leaf = leaf[..^4];
+    return new PropertySpec(nodePath, SanitisePropertyName(leaf), data);
+  }
+
   public static string SanitisePropertyName(string archiveName) {
     var leaf = archiveName;
     var slash = leaf.LastIndexOfAny(['/', '\\']);
@@ -148,13 +111,86 @@ public sealed class DtbWriter {
 
     var sb = new StringBuilder(leaf.Length);
     foreach (var c in leaf) {
-      var keep =
-        c is >= '0' and <= '9'
+      var keep = c is >= '0' and <= '9'
         || c is >= 'a' and <= 'z'
         || c is >= 'A' and <= 'Z'
         || c is ',' or '.' or '_' or '+' or '?' or '#' or '-';
       sb.Append(keep ? c : '_');
     }
     return sb.Length == 0 ? "_" : sb.ToString();
+  }
+
+  private static string SanitiseNodeName(string name) {
+    if (name.Length == 0) return "_";
+    var sb = new StringBuilder(name.Length);
+    foreach (var c in name) {
+      var keep = c is >= '0' and <= '9'
+        || c is >= 'a' and <= 'z'
+        || c is >= 'A' and <= 'Z'
+        || c is ',' or '.' or '_' or '+' or '?' or '#' or '-' or '@';
+      sb.Append(keep ? c : '_');
+    }
+    return sb.ToString();
+  }
+
+  private static void EnsureCellProperty(Node root, string name, uint value) {
+    if (root.Properties.Any(p => string.Equals(p.Name, name, StringComparison.Ordinal))) return;
+    var data = new byte[4];
+    BinaryPrimitives.WriteUInt32BigEndian(data, value);
+    root.Properties.Insert(0, new PropertySpec("/", name, data));
+  }
+
+  private static void WriteNode(Node node, Stream output, Func<string, uint> internName) {
+    WriteToken(output, DtbReader.FDT_BEGIN_NODE);
+    var name = Encoding.ASCII.GetBytes(node.Name);
+    output.Write(name);
+    output.WriteByte(0);
+    Align4(output);
+
+    foreach (var property in node.Properties) {
+      WriteToken(output, DtbReader.FDT_PROP);
+      Span<byte> header = stackalloc byte[8];
+      BinaryPrimitives.WriteUInt32BigEndian(header[..4], checked((uint)property.Data.Length));
+      BinaryPrimitives.WriteUInt32BigEndian(header[4..], internName(property.Name));
+      output.Write(header);
+      output.Write(property.Data);
+      Align4(output);
+    }
+
+    foreach (var child in node.Children)
+      WriteNode(child, output, internName);
+    WriteToken(output, DtbReader.FDT_END_NODE);
+  }
+
+  private static void WriteToken(Stream output, uint token) {
+    Span<byte> bytes = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32BigEndian(bytes, token);
+    output.Write(bytes);
+  }
+
+  private static void Align4(Stream output) {
+    while ((output.Position & 3) != 0) output.WriteByte(0);
+  }
+
+  private sealed class Node(string name) {
+    private readonly Dictionary<string, Node> _childrenByName = new(StringComparer.Ordinal);
+    public string Name { get; } = name;
+    public List<PropertySpec> Properties { get; } = [];
+    public List<Node> Children { get; } = [];
+
+    public Node GetOrAdd(string childName) {
+      if (_childrenByName.TryGetValue(childName, out var child)) return child;
+      child = new Node(childName);
+      _childrenByName.Add(childName, child);
+      Children.Add(child);
+      return child;
+    }
+
+    public IEnumerable<Node> Walk() {
+      yield return this;
+      foreach (var child in Children)
+        foreach (var descendant in child.Walk())
+          yield return descendant;
+    }
   }
 }
