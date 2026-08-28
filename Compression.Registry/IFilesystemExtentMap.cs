@@ -9,23 +9,32 @@ namespace Compression.Registry;
 /// superblock, MFT, root directory, inode table, BAM, group descriptor table,
 /// etc.), and optionally every free region.
 ///
-/// <para>Coverage may be sparse — gaps in the returned set are interpreted by
-/// the caller as <see cref="DefragBlockKind.Free"/>. The yielded extents
-/// don't need to be sorted; the caller is responsible for sorting + gap
-/// filling. Implementations must not throw for malformed or partially-walked
-/// images — they should yield whatever they can identify and return.</para>
+/// <para><b>Fail-closed contract:</b> gaps in the returned set are interpreted
+/// as free space by maintenance consumers. Therefore an implementation that
+/// encounters an allocated-but-undecoded, damaged, ambiguous, or otherwise
+/// unproven region MUST emit that region as
+/// <see cref="DefragBlockKind.MetadataReserved"/> rather than silently omit it.
+/// If the image cannot be walked safely at all, yield no extents; the inherited
+/// generic <see cref="IWipeEmpty"/> implementation then wipes nothing.</para>
+///
+/// <para>Because this contract identifies all bytes that must be preserved,
+/// every extent map is also an <see cref="IWipeEmpty"/> implementation: the
+/// default wiper zeros only proven gaps (and cluster tips when a trustworthy
+/// logical-size lookup exists). Formats that know about deleted directory
+/// records or other hidden remnants may override the wipe for deeper cleaning.</para>
 ///
 /// <para>Drives the Defragment-window block-map preview so the user sees the
 /// real fragmented layout before pressing "Defragment" rather than the
 /// post-defrag approximation.</para>
 /// </summary>
-public interface IFilesystemExtentMap {
+public interface IFilesystemExtentMap : IWipeEmpty {
   /// <summary>
   /// Enumerates the actual on-disk layout of <paramref name="image"/>.
-  /// Coverage may be sparse; callers fill the gaps with
-  /// <see cref="DefragBlockKind.Free"/>. The stream's position may be
-  /// modified during enumeration but the caller owns the lifetime —
-  /// implementations must not dispose <paramref name="image"/>.
+  /// Coverage may be sparse only where the omitted bytes are proven free;
+  /// callers fill those gaps with <see cref="DefragBlockKind.Free"/>. Unknown
+  /// allocated bytes must be returned as <see cref="DefragBlockKind.MetadataReserved"/>.
+  /// The stream's position may be modified during enumeration but the caller
+  /// owns its lifetime — implementations must not dispose <paramref name="image"/>.
   /// </summary>
   /// <param name="image">The filesystem image to walk. Must be readable and
   /// seekable.</param>
