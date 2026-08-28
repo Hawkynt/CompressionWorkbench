@@ -1,5 +1,7 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
+using Compression.Registry;
 using FileFormat.Gem;
 using FileFormat.Tar;
 
@@ -48,18 +50,16 @@ public class GemTests {
   private static byte[] BuildSimpleTar(IEnumerable<(string Name, byte[] Data)> files) {
     using var ms = new MemoryStream();
     using var writer = new TarWriter(ms, leaveOpen: true);
-    foreach (var (name, data) in files) {
+    foreach (var (name, data) in files)
       writer.AddEntry(new TarEntry { Name = name, Size = data.Length }, data);
-    }
     writer.Finish();
     return ms.ToArray();
   }
 
   private static void AddGzippedEntry(TarWriter writer, string name, byte[] data) {
     using var gzMs = new MemoryStream();
-    using (var gz = new GZipStream(gzMs, CompressionLevel.Fastest, leaveOpen: true)) {
+    using (var gz = new GZipStream(gzMs, CompressionLevel.Fastest, leaveOpen: true))
       gz.Write(data);
-    }
     var gzipped = gzMs.ToArray();
     writer.AddEntry(new TarEntry { Name = name, Size = gzipped.Length }, gzipped);
   }
@@ -67,9 +67,12 @@ public class GemTests {
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
     var d = new GemFormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("Gem"));
-    Assert.That(d.Extensions, Contains.Item(".gem"));
-    Assert.That(d.MagicSignatures, Is.Empty);
+    Assert.Multiple(() => {
+      Assert.That(d.Id, Is.EqualTo("Gem"));
+      Assert.That(d.Extensions, Contains.Item(".gem"));
+      Assert.That(d.MagicSignatures, Is.Empty);
+      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    });
   }
 
   [Test, Category("HappyPath")]
@@ -105,11 +108,71 @@ public class GemTests {
     }
   }
 
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Create_RoundTripsPayloadAndWritesRealChecksums() {
+    var library = "module Demo; end\n"u8.ToArray();
+    var readme = "# Demo\n"u8.ToArray();
+    ArchiveInputInfo[] inputs = [
+      ArchiveInputInfo.InMemory("lib/demo.rb", library),
+      ArchiveInputInfo.InMemory("README.md", readme),
+    ];
+
+    using var output = new MemoryStream();
+    var descriptor = new GemFormatDescriptor();
+    descriptor.Create(output, inputs, new FormatCreateOptions());
+
+    output.Position = 0;
+    var listed = descriptor.List(output, null).Select(entry => entry.Name).ToArray();
+    Assert.Multiple(() => {
+      Assert.That(listed, Does.Contain("data/lib/demo.rb"));
+      Assert.That(listed, Does.Contain("data/README.md"));
+      Assert.That(listed, Does.Contain("metadata.yaml"));
+      Assert.That(listed, Does.Contain("checksums.yaml"));
+    });
+
+    output.Position = 0;
+    var outer = ReadOuterMembers(output);
+    var checksums = Encoding.UTF8.GetString(Gunzip(outer["checksums.yaml.gz"]));
+    Assert.Multiple(() => {
+      Assert.That(checksums, Does.Contain(Convert.ToHexStringLower(SHA256.HashData(outer["metadata.gz"]))));
+      Assert.That(checksums, Does.Contain(Convert.ToHexStringLower(SHA256.HashData(outer["data.tar.gz"]))));
+      Assert.That(checksums, Does.Contain(Convert.ToHexStringLower(SHA512.HashData(outer["metadata.gz"]))));
+      Assert.That(checksums, Does.Contain(Convert.ToHexStringLower(SHA512.HashData(outer["data.tar.gz"]))));
+    });
+
+    output.Position = 0;
+    Assert.That(descriptor.ExtractEntryToMemory(output, "data/lib/demo.rb", null), Is.EqualTo(library).AsCollection);
+  }
+
   [Test, Category("EdgeCase")]
   public void List_PlainTar_NoCanonicalLayout_Throws() {
     var bogus = BuildSimpleTar([("hello.txt", "world\n"u8.ToArray())]);
     using var ms = new MemoryStream(bogus);
     Assert.That(() => new GemFormatDescriptor().List(ms, null),
       Throws.InstanceOf<InvalidDataException>());
+  }
+
+  private static Dictionary<string, byte[]> ReadOuterMembers(Stream stream) {
+    var result = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+    var reader = new TarReader(stream);
+    while (reader.GetNextEntry() is { } entry) {
+      if (entry.IsDirectory) {
+        reader.Skip();
+        continue;
+      }
+      using var entryStream = reader.GetEntryStream();
+      using var copy = new MemoryStream();
+      entryStream.CopyTo(copy);
+      result[entry.Name] = copy.ToArray();
+    }
+    return result;
+  }
+
+  private static byte[] Gunzip(byte[] data) {
+    using var input = new MemoryStream(data);
+    using var gzip = new GZipStream(input, CompressionMode.Decompress);
+    using var output = new MemoryStream();
+    gzip.CopyTo(output);
+    return output.ToArray();
   }
 }
