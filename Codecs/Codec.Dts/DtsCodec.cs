@@ -9,22 +9,18 @@ public sealed record DtsStreamInfo(
   int SampleRate, int Channels, int Bitrate, int Amode, bool Lfe, long DurationSamples);
 
 /// <summary>
-/// Clean-room DTS Coherent Acoustics (DCA) core decoder, a faithful port of the FFmpeg reference
-/// decoder (<c>libavcodec/dcadec.c</c> + <c>dcadata.c</c> + <c>dcahuff.h</c>). Decodes the core
-/// sub-stream of a DTS frame to interleaved little-endian signed 16-bit PCM at the stream's native
-/// channel count (the AMODE full-bandwidth channels in document order, with the LFE channel last
-/// when present). The full DCA core pipeline is implemented: the primary audio coding header, the
-/// per-sub-subframe bit allocation / scale factors / quantized subband samples (Huffman, block-code
-/// and plain quantization), inverse ADPCM prediction, high-frequency VQ, the LFE decimation FIR and
-/// the 32-band cosine-modulated QMF synthesis.
+/// Clean-room DTS Coherent Acoustics (DCA) core codec. The decoder is a faithful managed port of
+/// the FFmpeg reference decoder (<c>libavcodec/dcadec.c</c> + <c>dcadata.c</c> +
+/// <c>dcahuff.h</c>) and the encoder lives in the companion partial source file. The core decoder
+/// emits interleaved little-endian signed 16-bit PCM at the stream's native channel count (the
+/// AMODE full-bandwidth channels in document order, with the LFE channel last when present).
 /// <para>
 /// Scope: only the standard 16-bit big-endian framing (sync 0x7FFE8001) is decoded; the 14-bit and
-/// byte-swapped framings throw <see cref="NotSupportedException"/>. The DTS-HD extension substreams
-/// (XCH / XXCH / X96 / XBR / XLL and the EXSS container) are not decoded — when present the embedded
-/// core is still decoded and the extensions are skipped.
+/// byte-swapped framings throw <see cref="NotSupportedException"/>. DTS-HD extension substreams
+/// (XCH / XXCH / X96 / XBR / XLL and EXSS) are not decoded; an embedded core remains decodable.
 /// </para>
 /// </summary>
-public static class DtsCodec {
+public static partial class DtsCodec {
 
   /// <summary>Reads stream-level info (sample rate, native channel count, bitrate, duration) from the first core frame.</summary>
   public static DtsStreamInfo ReadStreamInfo(Stream input) {
@@ -36,11 +32,9 @@ public static class DtsCodec {
 
     var channels = DtsFrameHeader.AmodeChannelCount(h.Amode) + (h.Lfe > 0 ? 1 : 0);
 
-    long frames = 0;
     long totalSamples = 0;
     var pos = offset;
     while (pos + 14 <= data.Length && DtsFrameHeader.TryParse(data, pos) is { } fh && fh.FrameSize > 0) {
-      ++frames;
       totalSamples += (long)fh.SampleBlocks * 32;
       pos += fh.FrameSize;
     }
@@ -69,11 +63,11 @@ public static class DtsCodec {
       if (DtsFrameHeader.TryParse(data, pos) is not { } header || header.FrameSize <= 0)
         break;
       if (pos + header.FrameSize > data.Length)
-        break;                                  // truncated trailing frame
+        break;
 
       var pcm = decoder.DecodeFrame(data, pos, header, out var channels);
       if (pcm == null || channels <= 0)
-        break;                                  // undecodable frame — stop gracefully
+        break;
 
       WriteInterleaved(output, pcm, channels);
       pos += header.FrameSize;
@@ -88,8 +82,6 @@ public static class DtsCodec {
       return null;
     return new DtsFrameDecoder().DecodeFrame(data, pos, header, out channels);
   }
-
-  // -- helpers ---------------------------------------------------------------
 
   private static void WriteInterleaved(Stream output, float[][] pcm, int channels) {
     if (channels == 0 || pcm[0].Length == 0)
@@ -109,9 +101,7 @@ public static class DtsCodec {
   }
 
   private static void RejectUnsupportedFraming(byte[] data) {
-    // 14-bit packed (0x1FFFE800) and byte-swapped LE (0xFE7F0180) core framings are out of scope.
     for (var i = 0; i + 4 <= data.Length && i < 1 << 20; ++i) {
-      // 16-bit BE core sync is handled — bail out of the scan as soon as we find it.
       if (data[i] == 0x7F && data[i + 1] == 0xFE && data[i + 2] == 0x80 && data[i + 3] == 0x01)
         return;
       var le = data[i] == 0xFE && data[i + 1] == 0x7F && data[i + 2] == 0x01 && data[i + 3] == 0x80;
