@@ -70,6 +70,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Codecs\Codec.ALaw\Codec.ALaw.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\Codecs\Codec.Aac\Codec.Aac.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Codecs\Codec.Bonk\Codec.Bonk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Codecs\Codec.Dfpwm\Codec.Dfpwm.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\Codecs\Codec.Flac\Codec.Flac.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\Codecs\Codec.Gsm610\Codec.Gsm610.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\Codecs\Codec.ImaAdpcm\Codec.ImaAdpcm.csproj" PrivateAssets="all" />
@@ -79,6 +81,7 @@
     <ProjectReference Include="..\Codecs\Codec.MuLaw\Codec.MuLaw.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\Codecs\Codec.Opus\Codec.Opus.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\Codecs\Codec.Pcm\Codec.Pcm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Codecs\Codec.Qoa\Codec.Qoa.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\Codecs\Codec.Vorbis\Codec.Vorbis.csproj" PrivateAssets="all" />
   </ItemGroup>
 
@@ -90,6 +93,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Ape\FileFormat.Ape.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Au\FileFormat.Au.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Awb\FileFormat.Awb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bonk\FileFormat.Bonk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dfpwm\FileFormat.Dfpwm.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Flac\FileFormat.Flac.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Fmod\FileFormat.Fmod.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.It\FileFormat.It.csproj" PrivateAssets="all" />
@@ -98,6 +103,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Mp3\FileFormat.Mp3.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ogg\FileFormat.Ogg.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Qoa\FileFormat.Qoa.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.S3m\FileFormat.S3m.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Wav\FileFormat.Wav.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.WavPack\FileFormat.WavPack.csproj" PrivateAssets="all" />
