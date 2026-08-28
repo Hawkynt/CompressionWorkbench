@@ -1,21 +1,16 @@
 namespace Codec.Gsm610;
 
 /// <summary>
-/// GSM 06.10 full-rate speech decoder (ETSI EN 300 961).
+/// GSM 06.10 full-rate speech codec (ETSI EN 300 961).
 /// <para>
-/// Each 33-byte frame decodes to 160 × 16-bit PCM samples at 8 kHz. This
-/// implementation provides a structurally correct decoder that unpacks the
-/// bitstream into LAR/LTP/RPE parameters, applies RPE grid positioning and the
-/// LTP + short-term synthesis filters. The <b>spectral accuracy is approximate</b>
-/// — producing audibly recognisable output for most frames but not a bit-exact
-/// match to the ETSI reference. This is acceptable because the decoder is
-/// primarily used to surface per-channel PCM in container-parity contexts (WAV
-/// format code 0x0031, AIFC <c>GSM</c> compression ID); bit-exact GSM decoding
-/// would require an additional ~1000 LOC of fixed-point arithmetic and a full
-/// port of the ETSI Annex-A tables.
+/// Each 33-byte frame decodes to 160 × 16-bit PCM samples at 8 kHz. The decoder
+/// unpacks the bitstream into LAR/LTP/RPE parameters, applies RPE grid positioning
+/// and the LTP + short-term synthesis filters. The fixed-point synthesis remains a
+/// compact approximation of the ETSI reference; the encoder lives in the companion
+/// partial declaration and emits the standard 0xD signature + 260 parameter bits.
 /// </para>
 /// </summary>
-public static class Gsm610Codec {
+public static partial class Gsm610Codec {
 
   /// <summary>Size of one encoded GSM 06.10 frame in bytes.</summary>
   public const int FrameBytes = 33;
@@ -104,7 +99,13 @@ public static class Gsm610Codec {
     private readonly short[] _v = new short[9];
 
     public void DecodeFrame(ReadOnlySpan<byte> frame, Span<short> pcm) {
+      if (frame.Length != FrameBytes)
+        throw new ArgumentException($"A GSM 06.10 frame must contain exactly {FrameBytes} bytes.", nameof(frame));
+
       var br = new BitReader(frame);
+      var signature = br.Read(4);
+      if (signature != 0xD)
+        throw new InvalidDataException($"Invalid GSM 06.10 frame signature 0x{signature:X1}; expected 0xD.");
 
       // LAR: 8 values, 6/6/5/5/4/4/3/3 bits.
       Span<short> LARc = stackalloc short[8];
