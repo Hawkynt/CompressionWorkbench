@@ -2746,6 +2746,42 @@ MS LZH decompressor — reads back the bit stream produced by `MsLzhCompressor`.
 | `MsLzhDecompressor` | `MsLzhDecompressor()` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an MS LZH bit stream. |
 
+### Namespace `Compression.Core.Dictionary.Nintendo`
+
+[`Yay0BuildingBlock`](#yay0buildingblock) · [`Yaz0BuildingBlock`](#yaz0buildingblock)
+
+#### `Yay0BuildingBlock`
+
+Exposes Nintendo Yay0 split-table LZ compression as a benchmarkable building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Yay0BuildingBlock` | `Yay0BuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `Yaz0BuildingBlock`
+
+Exposes Nintendo Yaz0 grouped-flag LZ compression as a benchmarkable building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Yaz0BuildingBlock` | `Yaz0BuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
 ### Namespace `Compression.Core.Dictionary.Nrv2b`
 
 [`Nrv2bBuildingBlock`](#nrv2bbuildingblock)
