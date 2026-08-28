@@ -5,23 +5,18 @@ using System.Text;
 namespace FileFormat.Dmg;
 
 /// <summary>
-/// Writes Apple Disk Image (DMG) files in WORM mode. Each input file becomes
-/// one partition with a single raw (uncompressed) mish block. The output
-/// roundtrips through <see cref="DmgReader"/>:
-/// <list type="bullet">
-///   <item>Layout: [partition data sectors] [XML plist] [512-byte koly trailer].</item>
-///   <item>Each partition has a mish table with one <c>BlockTypeRaw</c> entry covering all its sectors plus a terminator.</item>
-///   <item>No compression -- DMG's zlib/bz2/lzfse encoders aren't paired here, and raw is fully spec-valid.</item>
-///   <item>No checksums -- mish/koly checksum-type fields set to 0 ("none"), which the reader accepts.</item>
-/// </list>
+/// Writes Apple Disk Image (DMG/UDIF) files using raw <c>mish</c> blocks.
+/// Each input becomes one partition and the exact caller-visible byte length is
+/// carried in a private plist key so non-sector-aligned inputs round-trip without
+/// exposing the mandatory 512-byte UDIF sector padding.
 /// </summary>
 public sealed class DmgWriter {
-  private const int SectorSize = 512;
-  private const int KolySize = 512;
-  private const int MishHeaderSize = 204;
-  private const int MishBlockSize = 40;
-  private const uint BlockTypeRaw = 0x00000001;
-  private const uint BlockTypeTerminator = 0xFFFFFFFF;
+  internal const int SectorSize = 512;
+  internal const int KolySize = 512;
+  internal const int MishHeaderSize = 204;
+  internal const int MishBlockSize = 40;
+  internal const uint BlockTypeRaw = 0x00000001;
+  internal const uint BlockTypeTerminator = 0xFFFFFFFF;
   private static readonly byte[] KolyMagic = "koly"u8.ToArray();
   private static readonly byte[] MishMagic = "mish"u8.ToArray();
 
@@ -38,17 +33,15 @@ public sealed class DmgWriter {
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
-    // Pad each partition to a sector boundary so sectorCount is exact.
-    var padded = new (string name, byte[] data)[_partitions.Count];
+    var padded = new (string name, byte[] data, long logicalSize)[_partitions.Count];
     for (var i = 0; i < _partitions.Count; i++) {
       var (name, data) = _partitions[i];
-      var paddedLen = ((data.Length + SectorSize - 1) / SectorSize) * SectorSize;
+      var paddedLen = AlignSector(data.Length);
       var buf = new byte[paddedLen];
       data.CopyTo(buf, 0);
-      padded[i] = (name, buf);
+      padded[i] = (name, buf, data.LongLength);
     }
 
-    // Compute layout: partition data sequentially from offset 0.
     var partitionOffsets = new long[padded.Length];
     long pos = 0;
     for (var i = 0; i < padded.Length; i++) {
@@ -57,7 +50,6 @@ public sealed class DmgWriter {
     }
     var dataForkLength = pos;
 
-    // Build mish blob per partition (raw block + terminator).
     var mishBlobs = new byte[padded.Length][];
     for (var i = 0; i < padded.Length; i++) {
       var sectorCount = (ulong)(padded[i].data.Length / SectorSize);
@@ -68,85 +60,90 @@ public sealed class DmgWriter {
         rawDataLength: (ulong)padded[i].data.Length);
     }
 
-    // Build XML plist after data fork.
     var xml = BuildXmlPlist(padded, mishBlobs);
     var xmlBytes = Encoding.UTF8.GetBytes(xml);
     var xmlOffset = pos;
-    pos += xmlBytes.Length;
 
-    // ---- Write data fork ----
-    foreach (var (_, data) in padded)
+    foreach (var (_, data, _) in padded)
       output.Write(data);
-
-    // ---- Write XML plist ----
     output.Write(xmlBytes);
 
-    // ---- Write koly trailer ----
-    Span<byte> koly = stackalloc byte[KolySize];
-    koly.Clear();
-    KolyMagic.CopyTo(koly);
-    BinaryPrimitives.WriteUInt32BigEndian(koly[4..], 4);              // version
-    BinaryPrimitives.WriteUInt32BigEndian(koly[8..], KolySize);       // header size
-    BinaryPrimitives.WriteUInt32BigEndian(koly[12..], 1);             // flags
-    BinaryPrimitives.WriteUInt64BigEndian(koly[16..], 0);             // running data fork offset
-    BinaryPrimitives.WriteUInt64BigEndian(koly[24..], 0);             // data fork offset (always 0 for unsegmented)
-    BinaryPrimitives.WriteUInt64BigEndian(koly[32..], (ulong)dataForkLength);
-    BinaryPrimitives.WriteUInt64BigEndian(koly[40..], 0);             // resource fork offset
-    BinaryPrimitives.WriteUInt64BigEndian(koly[48..], 0);             // resource fork length
-    BinaryPrimitives.WriteUInt32BigEndian(koly[56..], 1);             // segment number
-    BinaryPrimitives.WriteUInt32BigEndian(koly[60..], 1);             // segment count
-    // Segment GUID (16 bytes at 64): leave zero
-    BinaryPrimitives.WriteUInt32BigEndian(koly[80..], 0);             // data checksum type = none
-    BinaryPrimitives.WriteUInt32BigEndian(koly[84..], 0);             // data checksum size = 0
-    // 128 bytes data checksum at 88: zeros
-    BinaryPrimitives.WriteUInt64BigEndian(koly[216..], (ulong)xmlOffset);
-    BinaryPrimitives.WriteUInt64BigEndian(koly[224..], (ulong)xmlBytes.Length);
-    // 120 bytes reserved at 232: zeros
-    BinaryPrimitives.WriteUInt32BigEndian(koly[352..], 0);            // master checksum type = none
-    BinaryPrimitives.WriteUInt32BigEndian(koly[356..], 0);            // master checksum size = 0
-    // 128 bytes master checksum at 360: zeros
-    BinaryPrimitives.WriteUInt32BigEndian(koly[488..], 1);            // image variant
-    var totalSectors = (ulong)(dataForkLength / SectorSize);
-    BinaryPrimitives.WriteUInt64BigEndian(koly[492..], totalSectors); // sector count
-    output.Write(koly);
+    var totalSectors = padded.Aggregate<(string name, byte[] data, long logicalSize), ulong>(0,
+      (current, partition) => current + (ulong)(partition.data.Length / SectorSize));
+    output.Write(BuildKoly(xmlOffset, xmlBytes.LongLength, dataForkLength, totalSectors));
   }
 
-  // ── Mish blob ─────────────────────────────────────────────────────────────
+  internal static int AlignSector(int length) {
+    if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
+    return checked((length + SectorSize - 1) / SectorSize * SectorSize);
+  }
 
-  private static byte[] BuildMishBlob(ulong firstSector, ulong sectorCount,
+  internal static byte[] BuildMishBlob(ulong firstSector, ulong sectorCount,
       ulong rawDataOffset, ulong rawDataLength) {
-    // Two block entries: one raw covering all sectors, plus terminator.
     var blob = new byte[MishHeaderSize + 2 * MishBlockSize];
 
     MishMagic.CopyTo(blob, 0);
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(4), 1);                       // version
+    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(4), 1);
     BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(8), firstSector);
     BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(16), sectorCount);
-    BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(24), 0);                      // dataStart (unused by reader)
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(32), (uint)SectorSize);       // decompressedBufferRequested
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(36), 0);                      // blocksDescriptor
-    // 24 reserved + 4 checksumType + 4 checksumSize + 128 checksum data = zeros
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(200), 2);                     // numBlockEntries
+    BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(24), 0);
+    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(32), SectorSize);
+    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(36), 0);
+    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(200), 2);
 
-    // Block 0: raw
     var off = MishHeaderSize;
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(off + 0), BlockTypeRaw);
-    // 4 reserved bytes
-    BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(off + 8), 0);                 // sectorOffset (within partition)
+    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(off), BlockTypeRaw);
+    BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(off + 8), 0);
     BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(off + 16), sectorCount);
-    BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(off + 24), rawDataOffset);    // absolute file offset
+    BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(off + 24), rawDataOffset);
     BinaryPrimitives.WriteUInt64BigEndian(blob.AsSpan(off + 32), rawDataLength);
 
-    // Block 1: terminator
     off += MishBlockSize;
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(off + 0), BlockTypeTerminator);
-
+    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(off), BlockTypeTerminator);
     return blob;
   }
 
-  // ── XML plist ─────────────────────────────────────────────────────────────
+  internal static string BuildBlkxDict(string name, byte[] mish, long logicalSize) {
+    var sb = new StringBuilder();
+    sb.AppendLine("      <dict>");
+    sb.Append("        <key>Name</key><string>").Append(EscapeXml(name)).AppendLine("</string>");
+    sb.Append("        <key>CWBLogicalSize</key><integer>").Append(logicalSize).AppendLine("</integer>");
+    sb.Append("        <key>Data</key><data>").Append(Convert.ToBase64String(mish)).AppendLine("</data>");
+    sb.Append("      </dict>");
+    return sb.ToString();
+  }
 
-  private static string BuildXmlPlist((string name, byte[] data)[] partitions, byte[][] mishBlobs) {
+  internal static byte[] BuildKoly(long xmlOffset, long xmlLength, long dataForkLength, ulong totalSectors,
+      byte[]? template = null) {
+    if (xmlOffset < 0 || xmlLength < 0 || dataForkLength < 0)
+      throw new ArgumentOutOfRangeException(nameof(xmlOffset));
+
+    var koly = template is { Length: KolySize } ? (byte[])template.Clone() : new byte[KolySize];
+    KolyMagic.CopyTo(koly, 0);
+    BinaryPrimitives.WriteUInt32BigEndian(koly.AsSpan(4), 4);
+    BinaryPrimitives.WriteUInt32BigEndian(koly.AsSpan(8), KolySize);
+    if (template == null) {
+      BinaryPrimitives.WriteUInt32BigEndian(koly.AsSpan(12), 1);
+      BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(16), 0);
+      BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(24), 0);
+      BinaryPrimitives.WriteUInt32BigEndian(koly.AsSpan(56), 1);
+      BinaryPrimitives.WriteUInt32BigEndian(koly.AsSpan(60), 1);
+      BinaryPrimitives.WriteUInt32BigEndian(koly.AsSpan(488), 1);
+    }
+
+    BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(32), (ulong)dataForkLength);
+    BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(216), (ulong)xmlOffset);
+    BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(224), (ulong)xmlLength);
+    BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(492), totalSectors);
+
+    // The plist and/or data fork changed. A checksum of type "none" is valid
+    // UDIF and avoids retaining a checksum that now describes stale bytes.
+    koly.AsSpan(80, 136).Clear();
+    koly.AsSpan(352, 136).Clear();
+    return koly;
+  }
+
+  private static string BuildXmlPlist((string name, byte[] data, long logicalSize)[] partitions, byte[][] mishBlobs) {
     var sb = new StringBuilder();
     sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     sb.AppendLine("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">");
@@ -156,12 +153,8 @@ public sealed class DmgWriter {
     sb.AppendLine("  <dict>");
     sb.AppendLine("    <key>blkx</key>");
     sb.AppendLine("    <array>");
-    for (var i = 0; i < partitions.Length; i++) {
-      sb.AppendLine("      <dict>");
-      sb.Append("        <key>Name</key><string>").Append(EscapeXml(partitions[i].name)).AppendLine("</string>");
-      sb.Append("        <key>Data</key><data>").Append(Convert.ToBase64String(mishBlobs[i])).AppendLine("</data>");
-      sb.AppendLine("      </dict>");
-    }
+    for (var i = 0; i < partitions.Length; i++)
+      sb.AppendLine(BuildBlkxDict(partitions[i].name, mishBlobs[i], partitions[i].logicalSize));
     sb.AppendLine("    </array>");
     sb.AppendLine("  </dict>");
     sb.AppendLine("</dict>");
@@ -169,7 +162,7 @@ public sealed class DmgWriter {
     return sb.ToString();
   }
 
-  private static string EscapeXml(string s) {
+  internal static string EscapeXml(string s) {
     return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
             .Replace("\"", "&quot;").Replace("'", "&apos;");
   }
