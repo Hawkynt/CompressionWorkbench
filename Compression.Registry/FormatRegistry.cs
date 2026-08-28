@@ -74,6 +74,47 @@ public static class FormatRegistry {
   public static IArchiveFormatOperations? GetArchiveOps(string id)
     => _archiveOps.GetValueOrDefault(id);
 
+  /// <summary>
+  /// Probe a registered descriptor through the common filesystem-driver layer.
+  /// Native providers are preferred; otherwise a safe read-only projection is
+  /// derived from List/OpenEntry when available.
+  /// </summary>
+  public static FilesystemDriverProfile ProbeFilesystem(
+      string id,
+      Stream image,
+      string? password = null) {
+    var descriptor = GetById(id)
+      ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
+    return FilesystemDriverDerivation.Probe(descriptor, image, password);
+  }
+
+  /// <summary>
+  /// Open a filesystem session for a registered descriptor. Writable mode is
+  /// never inferred from archive CanModify: it is available only through a
+  /// native <see cref="IFilesystemDriverProvider"/> that advertises it for the
+  /// exact image profile.
+  /// </summary>
+  public static IFilesystemSession OpenFilesystem(
+      string id,
+      Stream image,
+      FilesystemOpenOptions options,
+      string? password = null) {
+    var descriptor = GetById(id)
+      ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
+    return FilesystemDriverDerivation.Open(descriptor, image, options, password);
+  }
+
+  /// <summary>Describe what remains before a registered filesystem can meet a read-only or read/write driver target.</summary>
+  public static FilesystemDriverReadinessReport AssessFilesystemDriver(
+      string id,
+      Stream image,
+      FilesystemDriverTarget target,
+      string? password = null) {
+    var descriptor = GetById(id)
+      ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
+    return FilesystemDriverDerivation.Assess(descriptor, image, target, password);
+  }
+
   /// <summary>Get async archive operations for a format ID, or null if the format doesn't support async listing.</summary>
   public static IAsyncArchiveOperations? GetAsyncArchiveOps(string id)
     => _asyncArchiveOps.GetValueOrDefault(id);
