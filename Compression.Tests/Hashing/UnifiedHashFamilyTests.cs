@@ -63,4 +63,26 @@ public sealed class UnifiedHashFamilyTests {
       Assert.That(Sha512Family.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 224, 256, 384, 512 }));
     });
   }
+
+  [Test]
+  public void RequestedFamiliesExposeEnumerableRangeMetadata() {
+    Assert.Multiple(() => {
+      Assert.That(HamsiFamily.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 224, 256, 384, 512 }));
+      Assert.That(Kupyna.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 256, 384, 512 }));
+      Assert.That(Fugue.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 224, 256, 384, 512 }));
+      Assert.That(Tiger.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 192 }));
+    });
+  }
+
+  [Test]
+  public void RequestedFamilyRangesDriveOutputLength() {
+    foreach (var bits in HamsiFamily.SupportedHashSizes.EnumerateSizes())
+      Assert.That(HamsiFamily.Compute(Data, bits), Has.Length.EqualTo(bits / 8), $"Hamsi-{bits}");
+    foreach (var bits in Kupyna.SupportedHashSizes.EnumerateSizes())
+      Assert.That(Kupyna.Compute(Data, bits), Has.Length.EqualTo(bits / 8), $"Kupyna-{bits}");
+    foreach (var bits in Fugue.SupportedHashSizes.EnumerateSizes())
+      Assert.That(Fugue.Compute(Data, bits), Has.Length.EqualTo(bits / 8), $"Fugue-{bits}");
+    foreach (var bits in Tiger.SupportedHashSizes.EnumerateSizes())
+      Assert.That(Tiger.Compute(Data, bits), Has.Length.EqualTo(bits / 8), $"Tiger-{bits}");
+  }
 }
