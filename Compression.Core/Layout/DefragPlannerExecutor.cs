@@ -17,7 +17,8 @@ public static class DefragPlannerExecutor {
   /// calling <see cref="IFilesystemBlockMover.MoveExtent"/> and
   /// <see cref="IFilesystemBlockMover.UpdateAllocationAfterMove(Stream, string, long, long, long)"/> for each move.
   /// Emits a <see cref="DefragProgressEvent"/> per move so the UI can animate
-  /// read/write head positions in real time.
+  /// read/write head positions in real time. Cancellation is checked between
+  /// safe move units; already-completed in-place moves are intentionally not rolled back.
   /// </summary>
   public static void Execute(
     Stream archive,
@@ -28,6 +29,7 @@ public static class DefragPlannerExecutor {
     Action? reinitAfterMove = null,
     IFilesystemMetadataMover? metadataMover = null) {
 
+    options.CancellationToken.ThrowIfCancellationRequested();
     var metadataNames = metadataMover?.RelocatableMetadata ?? (IReadOnlySet<string>)new HashSet<string>();
     bool IsMetadata(string owner) => metadataNames.Contains(owner);
 
@@ -65,6 +67,10 @@ public static class DefragPlannerExecutor {
     using var staging = parks ? new DefragStagingBuffer(options.StagingMemoryBudgetBytes) : null;
 
     for (var i = 0; i < moves.Count; i++) {
+      // This is the native/in-place cancellation boundary. A previous move may
+      // already be durable; stopping here preserves validity rather than trying
+      // to reverse arbitrary filesystem pointer updates.
+      options.CancellationToken.ThrowIfCancellationRequested();
       var move = moves[i];
       var what = move.Staging switch {
         DefragStaging.Park => "Holding",
@@ -117,6 +123,7 @@ public static class DefragPlannerExecutor {
       reinitAfterMove?.Invoke();
     }
 
+    options.CancellationToken.ThrowIfCancellationRequested();
     if (relink != null) {
       var live = new HashSet<long>(relink.BlocksInUseAfterMoves);
       if (metadataNames.Count > 0) {
@@ -129,8 +136,10 @@ public static class DefragPlannerExecutor {
         }
       }
 
-      foreach (var (owner, oldBlocks, newBlocks) in relink.Owners())
+      foreach (var (owner, oldBlocks, newBlocks) in relink.Owners()) {
+        options.CancellationToken.ThrowIfCancellationRequested();
         mover.UpdateAllocationScattered(archive, owner, oldBlocks, newBlocks, live);
+      }
     }
   }
 
