@@ -254,6 +254,7 @@ public static class AacEncoder {
 
   private static byte[] BuildRawDataBlock(
     EncodedChannel[] channels, int sampleRateIndex, AacEncoderWindowShape shape, bool midSide) {
+    ActiveLongOffsets.Value = AacScaleFactorBands.Long1024[sampleRateIndex];
     var writer = new AacBitWriter();
     var maxSfb = AacScaleFactorBands.NumSwbLong[sampleRateIndex];
 
