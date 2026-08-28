@@ -19,7 +19,9 @@ public sealed class RefsFormatDescriptor :
   IArchiveFormatOperations,
   IFilesystemExtentMap,
   IArchiveDefragmentable,
-  ILayoutOptimizable {
+  ILayoutOptimizable,
+  IFilesystemDriverProvider,
+  IFilesystemDriverReadinessProvider {
 
   public string Id => "Refs";
   public string DisplayName => "ReFS";
@@ -40,7 +42,18 @@ public sealed class RefsFormatDescriptor :
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Microsoft ReFS 3.x volume image with namespace, allocation, in-place data relocation and filesystem-metadata placement support.";
+  public string Description => "Microsoft ReFS 3.x volume image with native read-only driver projection, namespace/allocation parsing, and offline filesystem-metadata placement support.";
+
+  public FilesystemDriverProfile ProbeFilesystem(Stream image)
+    => RefsFilesystemDriver.Probe(image);
+
+  public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)
+    => RefsFilesystemDriver.Open(image, options);
+
+  public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
+      Stream image,
+      FilesystemDriverTarget target)
+    => RefsFilesystemDriver.Readiness(image, target);
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => RefsExtentMap.Enumerate(image);
