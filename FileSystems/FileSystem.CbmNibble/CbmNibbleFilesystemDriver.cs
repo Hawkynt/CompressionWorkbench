@@ -63,7 +63,7 @@ internal static class CbmNibbleFilesystemDriver {
         d64 = new byte[D64BlockDevice.DataLength];
         if (block.ReadBlocks(0, d64) != D64BlockDevice.SectorCount)
           throw new EndOfStreamException("GCR sector device did not return all 683 1541 sectors.");
-      } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or IOException or EndOfStreamException) {
+      } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or IOException) {
         limitations.Add(ex.Message);
         return BuildProfile(id, profileName, false, false, limitations);
       }
