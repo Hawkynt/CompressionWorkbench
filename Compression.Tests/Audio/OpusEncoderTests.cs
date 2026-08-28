@@ -33,9 +33,41 @@ public class OpusEncoderTests {
       Assert.That(info.SampleRate, Is.EqualTo(48000));
       Assert.That(info.InputSampleRate, Is.EqualTo(sampleRate));
       Assert.That(info.Channels, Is.EqualTo(channels));
+      Assert.That(info.ChannelMappingFamily, Is.Zero);
       Assert.That(info.PreSkip, Is.GreaterThan(0));
       Assert.That(info.Vendor, Is.EqualTo("CompressionWorkbench tests"));
     });
+  }
+
+  [TestCase(3)]
+  [TestCase(4)]
+  [TestCase(5)]
+  [TestCase(6)]
+  [TestCase(7)]
+  [TestCase(8)]
+  public void Encode_MappingFamily1_AllSurroundChannelCounts_RoundTrip(int channels) {
+    var pcm = BuildSignal(4800, channels, 48000);
+    var encoded = OpusCodec.Encode(pcm, new OpusEncoderOptions(
+      48000, channels,
+      Bitrate: Math.Min(480000, channels * 64000),
+      Complexity: 5,
+      UseVbr: true,
+      FrameDurationMilliseconds: 20));
+
+    using (var stream = new MemoryStream(encoded, writable: false)) {
+      var info = OpusCodec.ReadStreamInfo(stream);
+      Assert.Multiple(() => {
+        Assert.That(info.Channels, Is.EqualTo(channels));
+        Assert.That(info.ChannelMappingFamily, Is.EqualTo(1));
+        Assert.That(info.StreamCount, Is.GreaterThan(0));
+        Assert.That(info.CoupledStreamCount, Is.GreaterThan(0));
+        Assert.That(info.ChannelMapping, Has.Count.EqualTo(channels));
+      });
+    }
+
+    var decoded = Decode48k(encoded);
+    Assert.That(decoded.Length, Is.GreaterThanOrEqualTo(pcm.Length));
+    Assert.That(SignalCorrelation(pcm, decoded.AsSpan(0, pcm.Length)), Is.GreaterThan(0.45));
   }
 
   [TestCase(false, false)]
@@ -127,12 +159,12 @@ public class OpusEncoderTests {
 
   private static double SignalCorrelation(ReadOnlySpan<short> expected, ReadOnlySpan<short> actual) {
     Assert.That(actual.Length, Is.GreaterThanOrEqualTo(expected.Length));
-    double ex = 0, ac = 0, ee = 0, aa = 0;
+    double dot = 0, ee = 0, aa = 0;
     for (var i = 0; i < expected.Length; ++i) {
-      ex += expected[i] * (double)actual[i];
+      dot += expected[i] * (double)actual[i];
       ee += expected[i] * (double)expected[i];
       aa += actual[i] * (double)actual[i];
     }
-    return ex / Math.Sqrt(ee * aa);
+    return dot / Math.Sqrt(ee * aa);
   }
 }
