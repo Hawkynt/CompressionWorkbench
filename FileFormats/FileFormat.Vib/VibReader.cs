@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Xml.Linq;
 using Compression.Core.Streams;
 using FileFormat.Ar;
 using FileFormat.Gzip;
@@ -11,12 +14,13 @@ namespace FileFormat.Vib;
 /// <c>ar</c> archive holding three members:
 /// <list type="bullet">
 ///   <item><c>descriptor.xml</c> — bundle metadata (name, version, payloads).</item>
-///   <item><c>sig.pkcs7</c> — the detached PKCS#7 signature.</item>
-///   <item>a payload member — a <c>.vgz</c> (gzip-compressed tar), an
+///   <item><c>sig.pkcs7</c> — the detached PKCS#7 signature (empty for an unsigned CommunitySupported VIB).</item>
+///   <item>a payload member — a <c>.vgz</c>/<c>tgz</c> (gzip-compressed tar), an
 ///   xz-compressed tar, or a bare tar — whose name matches the payload id.</item>
 /// </list>
 /// The reader surfaces the descriptor XML, the raw signature and the fully
-/// decompressed payload tree (tar entries).
+/// decompressed payload tree (tar entries). When the descriptor contains payload
+/// size/checksum metadata, extraction verifies those declarations before returning data.
 /// </summary>
 public sealed class VibReader : IDisposable {
   private readonly ArReader _ar;
@@ -48,17 +52,24 @@ public sealed class VibReader : IDisposable {
     => this._ar.Entries.FirstOrDefault(IsPayload)?.Data;
 
   /// <summary>
-  /// Decompresses the payload member (gzip/xz/stored) and returns its bytes.
+  /// Decompresses the payload member (gzip/xz/stored), verifies any payload size and
+  /// checksum declarations present in <c>descriptor.xml</c>, and returns its bytes.
   /// Returns an empty array when there is no payload.
   /// </summary>
   public byte[] DecompressPayload() {
     var payload = this._ar.Entries.FirstOrDefault(IsPayload);
-    return payload is null ? [] : Decompress(payload.Data);
+    if (payload is null)
+      return [];
+
+    var decompressed = Decompress(payload.Data);
+    this.ValidatePayloadMetadata(payload, decompressed);
+    return decompressed;
   }
 
   /// <summary>
   /// Reads the payload's tar tree. Returns an empty list when the payload is
-  /// absent or is not a tar (best-effort; never throws for a non-tar payload).
+  /// absent or is not a tar (best-effort; never throws solely because the payload is non-tar).
+  /// Descriptor checksum failures remain hard errors because they occur before TAR parsing.
   /// </summary>
   public IReadOnlyList<VibEntry> ReadPayloadEntries() {
     var decompressed = this.DecompressPayload();
@@ -83,10 +94,60 @@ public sealed class VibReader : IDisposable {
         result.Add(new VibEntry(entry.Name, buf.ToArray(), false));
       }
     } catch (InvalidDataException) {
-      // Payload was not a tar (or was truncated) — surface nothing rather than throw.
+      return [];
     } catch (EndOfStreamException) {
+      return [];
     }
     return result;
+  }
+
+  private void ValidatePayloadMetadata(ArEntry payload, byte[] decompressed) {
+    var descriptor = this.DescriptorXml;
+    if (descriptor is null || descriptor.Length == 0)
+      return;
+
+    XElement root;
+    try {
+      root = XElement.Parse(Encoding.UTF8.GetString(descriptor));
+    } catch (Exception e) when (e is System.Xml.XmlException or InvalidOperationException) {
+      // Preserve the reader's historical tolerance for minimal/non-schema descriptors.
+      return;
+    }
+
+    var payloadName = Leaf(payload.Name);
+    var payloadElement = root.Descendants()
+      .FirstOrDefault(e => e.Name.LocalName == "payload" &&
+        string.Equals((string?)e.Attribute("name"), payloadName, StringComparison.Ordinal));
+    if (payloadElement is null)
+      return;
+
+    if (long.TryParse((string?)payloadElement.Attribute("size"), System.Globalization.NumberStyles.Integer,
+          System.Globalization.CultureInfo.InvariantCulture, out var declaredSize) &&
+        declaredSize != payload.Data.LongLength)
+      throw new InvalidDataException(
+        $"VIB payload '{payloadName}' size mismatch: descriptor declares {declaredSize}, archive stores {payload.Data.LongLength}.");
+
+    foreach (var checksum in payloadElement.Elements().Where(e => e.Name.LocalName == "checksum")) {
+      var algorithm = ((string?)checksum.Attribute("checksum-type"))?.Trim();
+      var expected = checksum.Value.Trim();
+      if (string.IsNullOrEmpty(algorithm) || string.IsNullOrEmpty(expected))
+        continue;
+
+      var verifyProcess = ((string?)checksum.Attribute("verify-process"))?.Trim();
+      var source = string.Equals(verifyProcess, "gunzip", StringComparison.OrdinalIgnoreCase)
+        ? decompressed
+        : payload.Data;
+
+      var actual = algorithm.ToLowerInvariant() switch {
+        "sha-256" or "sha256" => Convert.ToHexStringLower(SHA256.HashData(source)),
+        "sha-1" or "sha1" => Convert.ToHexStringLower(SHA1.HashData(source)),
+        _ => null,
+      };
+      if (actual is not null && !actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidDataException(
+          $"VIB payload '{payloadName}' {algorithm} checksum mismatch" +
+          (string.IsNullOrEmpty(verifyProcess) ? "." : $" after '{verifyProcess}'."));
+    }
   }
 
   private static bool IsPayload(ArEntry e) {
