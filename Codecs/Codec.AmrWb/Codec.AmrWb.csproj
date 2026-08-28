@@ -8,4 +8,9 @@
     <InternalsVisibleTo Include="Compression.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Pure managed BSD-3-Clause reference implementation of the 3GPP AMR-WB encoder. -->
+    <PackageReference Include="SipLib" Version="1.2.0" />
+  </ItemGroup>
+
 </Project>
