@@ -77,9 +77,8 @@ internal static class CbmNibbleEntries {
 }
 
 /// <summary>
-/// VICE G64 raw-GCR track container. Archive-level R/W operates on half-track
-/// entries, while <see cref="IRawTrackDeviceProvider"/> exposes the lower media
-/// layer for a future sector decoder / CBM-DOS filesystem driver.
+/// VICE G64 raw-GCR track container. Archive-level operations expose tracks;
+/// block/filesystem providers expose only strict canonical 1541 sector media.
 /// </summary>
 public sealed class G64FormatDescriptor :
   IFormatDescriptor,
@@ -89,7 +88,9 @@ public sealed class G64FormatDescriptor :
   IArchiveDefragmentable,
   IArchiveCreatable,
   IArchiveLayoutMap,
-  IRawTrackDeviceProvider {
+  IRawTrackDeviceProvider,
+  IRandomAccessBlockDeviceProvider,
+  IFilesystemDriverProvider {
 
   public string Id => "G64";
   public string DisplayName => "G64 (Commodore GCR)";
@@ -105,10 +106,21 @@ public sealed class G64FormatDescriptor :
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored GCR tracks")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "VICE G64 Commodore GCR track image with direct half-track R/W and canonical re-layout";
+  public string Description => "VICE G64 Commodore GCR track image with raw-track, strict sector, and CBM DOS driver layers";
 
   public IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)
     => CbmNibbleRawTrackDevices.OpenG64(image, writable, leaveOpen);
+
+  public IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)
+    => CbmNibbleFilesystemDriver.OpenBlockDevice(
+      image, CbmNibbleFilesystemDriver.ContainerKind.G64, writable, leaveOpen);
+
+  public FilesystemDriverProfile ProbeFilesystem(Stream image)
+    => CbmNibbleFilesystemDriver.Probe(image, CbmNibbleFilesystemDriver.ContainerKind.G64);
+
+  public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)
+    => CbmNibbleFilesystemDriver.OpenFilesystem(
+      image, CbmNibbleFilesystemDriver.ContainerKind.G64, options);
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => CbmNibbleEntries.List(stream, "image.g64");
@@ -280,8 +292,8 @@ public sealed class G64FormatDescriptor :
 }
 
 /// <summary>
-/// Fixed-slot NIB raw nibble dump. Each of the 84 half-tracks occupies 8192
-/// bytes, making the raw-track device genuinely positional and directly writable.
+/// Fixed-slot NIB raw nibble dump. Archive-level operations expose track slots;
+/// block/filesystem providers expose strict canonical 1541 sector media.
 /// </summary>
 public sealed class NibFormatDescriptor :
   IFormatDescriptor,
@@ -290,7 +302,9 @@ public sealed class NibFormatDescriptor :
   IArchiveModifiable,
   IArchiveDefragmentable,
   IArchiveLayoutMap,
-  IRawTrackDeviceProvider {
+  IRawTrackDeviceProvider,
+  IRandomAccessBlockDeviceProvider,
+  IFilesystemDriverProvider {
 
   public string Id => "Nib";
   public string DisplayName => "NIB (Commodore nibble dump)";
@@ -305,10 +319,21 @@ public sealed class NibFormatDescriptor :
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Fixed 8192-byte GCR slots")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Commodore raw nibble dump with fixed-slot half-track R/W";
+  public string Description => "Commodore raw nibble dump with raw-track, strict sector, and CBM DOS driver layers";
 
   public IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)
     => CbmNibbleRawTrackDevices.OpenNib(image, writable, leaveOpen);
+
+  public IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)
+    => CbmNibbleFilesystemDriver.OpenBlockDevice(
+      image, CbmNibbleFilesystemDriver.ContainerKind.Nib, writable, leaveOpen);
+
+  public FilesystemDriverProfile ProbeFilesystem(Stream image)
+    => CbmNibbleFilesystemDriver.Probe(image, CbmNibbleFilesystemDriver.ContainerKind.Nib);
+
+  public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)
+    => CbmNibbleFilesystemDriver.OpenFilesystem(
+      image, CbmNibbleFilesystemDriver.ContainerKind.Nib, options);
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => CbmNibbleEntries.List(stream, "image.nib");
