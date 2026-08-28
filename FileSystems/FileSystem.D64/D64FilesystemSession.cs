@@ -15,6 +15,7 @@ public sealed class D64FilesystemSession : IFilesystemSession {
   private const int DirectoryTrack = 18;
   private const int DirectoryStartSector = 1;
   private const int TotalTracks = 35;
+  private const int MaximumFileBytes = 664 * 254;
 
   private static readonly int[] SectorsPerTrack = [
     0,
@@ -68,11 +69,11 @@ public sealed class D64FilesystemSession : IFilesystemSession {
         throw new FileNotFoundException($"CBM DOS node {nodeId.Value}:{nodeId.Generation} is unknown.");
       if (!state.Linked)
         return new FilesystemNodeInfo(nodeId, FilesystemNodeKind.RegularFile,
-          state.Data?.LongLength ?? 0, 0, 0);
+          state.Data?.LongLength ?? 0, 0, 0, state.FileType);
       var record = FindRecord(state.Name);
       return new FilesystemNodeInfo(nodeId, FilesystemNodeKind.RegularFile,
         state.Data?.LongLength ?? record.Size, record.SectorCount * (long)SectorSize,
-        1, record.FileType);
+        1, state.FileType);
     }
   }
 
@@ -103,6 +104,8 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       if (access != FileAccess.Read && _readOnly)
         throw new NotSupportedException("The CBM DOS session was opened read-only.");
       var state = RequireLinkedState(nodeId);
+      if (access != FileAccess.Read && state.IsLocked)
+        throw new UnauthorizedAccessException($"CBM DOS entry '{state.Name}' is locked.");
       state.Data ??= ReadFileData(_image, FindRecord(state.Name));
       return new FileHandle(this, state, access);
     }
@@ -116,10 +119,10 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       ValidateName(name);
       if (_idsByName.ContainsKey(name)) throw new IOException($"CBM DOS entry '{name}' already exists.");
 
-      ApplyStreamMutation(stream => D64Modifier.AddFile(stream, name, []));
+      ApplyStreamMutation(stream => D64Modifier.AddFile(stream, name, [], 0x82));
       var nodeId = new FilesystemNodeId(_nextNodeId++, 1);
       var canonicalName = FindRecord(name).Name;
-      var state = new NodeState(nodeId, canonicalName) { Data = [] };
+      var state = new NodeState(nodeId, canonicalName, 0x82) { Data = [] };
       _states[nodeId] = state;
       _idsByName[canonicalName] = nodeId;
       return nodeId;
@@ -136,6 +139,7 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       RequireRoot(parentDirectory);
       if (!_idsByName.TryGetValue(name, out var nodeId)) throw new FileNotFoundException(name);
       var state = _states[nodeId];
+      EnsureUnlocked(state);
       ApplyStreamMutation(stream => {
         if (!D64Modifier.RemoveFile(stream, state.Name, wipeData: true))
           throw new FileNotFoundException(state.Name);
@@ -162,10 +166,13 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       RequireRoot(newParent);
       ValidateName(newName);
       if (!_idsByName.TryGetValue(oldName, out var sourceId)) throw new FileNotFoundException(oldName);
+      var source = _states[sourceId];
+      EnsureUnlocked(source);
 
       if (_idsByName.TryGetValue(newName, out var targetId) && targetId != sourceId) {
         if (!replace) throw new IOException($"CBM DOS entry '{newName}' already exists.");
         var target = _states[targetId];
+        EnsureUnlocked(target);
         ApplyStreamMutation(stream => {
           if (!D64Modifier.RemoveFile(stream, target.Name, wipeData: true))
             throw new IOException($"Unable to replace existing CBM DOS entry '{newName}'.");
@@ -175,7 +182,6 @@ public sealed class D64FilesystemSession : IFilesystemSession {
         target.Dirty = false;
       }
 
-      var source = _states[sourceId];
       var record = FindRecord(source.Name);
       var renamed = _image.ToArray();
       WriteDirectoryName(renamed, record.DirectoryEntryOffset, newName);
@@ -232,7 +238,7 @@ public sealed class D64FilesystemSession : IFilesystemSession {
         throw new InvalidDataException($"CBM DOS directory contains duplicate name '{record.Name}'; mount would be ambiguous.");
       var nodeId = new FilesystemNodeId(_nextNodeId++, 1);
       _idsByName[record.Name] = nodeId;
-      _states[nodeId] = new NodeState(nodeId, record.Name);
+      _states[nodeId] = new NodeState(nodeId, record.Name, record.FileType);
     }
   }
 
@@ -240,11 +246,12 @@ public sealed class D64FilesystemSession : IFilesystemSession {
     lock (_gate) {
       ThrowIfDisposed();
       if (!state.Linked || !state.Dirty || state.Data == null) return;
+      EnsureUnlocked(state);
       var oldName = state.Name;
       ApplyStreamMutation(stream => {
         if (!D64Modifier.RemoveFile(stream, oldName, wipeData: false))
           throw new IOException($"CBM DOS entry '{oldName}' disappeared while flushing an open handle.");
-        D64Modifier.AddFile(stream, oldName, state.Data);
+        D64Modifier.AddFile(stream, oldName, state.Data, state.FileType);
       });
       state.Name = FindRecord(oldName).Name;
       state.Dirty = false;
@@ -386,6 +393,10 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       throw new ArgumentException("CBM DOS file names cannot contain path separators or NUL.", nameof(name));
   }
 
+  private static void EnsureUnlocked(NodeState state) {
+    if (state.IsLocked) throw new UnauthorizedAccessException($"CBM DOS entry '{state.Name}' is locked.");
+  }
+
   private void RequireRoot(FilesystemNodeId nodeId) {
     if (nodeId != RootNodeId) throw new DirectoryNotFoundException("CBM DOS 2.6 has only the root directory.");
   }
@@ -396,9 +407,11 @@ public sealed class D64FilesystemSession : IFilesystemSession {
 
   private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-  private sealed class NodeState(FilesystemNodeId nodeId, string name) {
+  private sealed class NodeState(FilesystemNodeId nodeId, string name, byte fileType) {
     public FilesystemNodeId NodeId { get; } = nodeId;
     public string Name { get; set; } = name;
+    public byte FileType { get; } = fileType;
+    public bool IsLocked => (FileType & 0x40) != 0;
     public byte[]? Data { get; set; }
     public bool Dirty { get; set; }
     public bool Linked { get; set; } = true;
@@ -445,9 +458,10 @@ public sealed class D64FilesystemSession : IFilesystemSession {
         ThrowIfDisposed();
         if (access == FileAccess.Read) throw new NotSupportedException("This handle was opened read-only.");
         session.EnsureWritable();
-        if (offset < 0 || offset > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(offset));
+        EnsureUnlocked(state);
+        if (offset < 0 || offset > MaximumFileBytes) throw new ArgumentOutOfRangeException(nameof(offset));
         var end = checked(offset + source.Length);
-        if (end > int.MaxValue) throw new IOException("CBM DOS file is too large for the 1541 image.");
+        if (end > MaximumFileBytes) throw new IOException("CBM DOS file exceeds the maximum 1541 data capacity.");
         var data = state.Data ?? [];
         if (end > data.LongLength) Array.Resize(ref data, (int)end);
         source.CopyTo(data.AsSpan((int)offset));
@@ -461,7 +475,8 @@ public sealed class D64FilesystemSession : IFilesystemSession {
         ThrowIfDisposed();
         if (access == FileAccess.Read) throw new NotSupportedException("This handle was opened read-only.");
         session.EnsureWritable();
-        if (length < 0 || length > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(length));
+        EnsureUnlocked(state);
+        if (length < 0 || length > MaximumFileBytes) throw new ArgumentOutOfRangeException(nameof(length));
         var data = state.Data ?? [];
         Array.Resize(ref data, (int)length);
         state.Data = data;
