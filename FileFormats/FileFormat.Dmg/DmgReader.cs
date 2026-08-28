@@ -1,18 +1,16 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Net;
 using System.Text;
 
 namespace FileFormat.Dmg;
 
-
 /// <summary>
-/// Read-only reader for Apple Disk Image (DMG) files.
-/// Parses the koly trailer, XML plist, and mish block tables to expose each
-/// partition as an extractable entry.
+/// Reader for Apple Disk Image (DMG/UDIF) files. Parses the koly trailer,
+/// XML plist, and mish block tables to expose each partition as an entry.
 /// </summary>
 public sealed class DmgReader : IDisposable {
-  // Block types in the mish block table
   private const uint BlockTypeZeroFill  = 0x00000000;
   private const uint BlockTypeRaw       = 0x00000001;
   private const uint BlockTypeZlib      = 0x80000005;
@@ -32,16 +30,19 @@ public sealed class DmgReader : IDisposable {
   /// <summary>All partitions found in the DMG, each exposed as a named entry.</summary>
   public IReadOnlyList<DmgEntry> Entries => _entries;
 
+  internal long XmlOffset { get; private set; }
+  internal long XmlLength { get; private set; }
+  internal byte[] KolyTrailer { get; private set; } = [];
+  internal IReadOnlyList<PartitionInfo> Partitions => _partitions;
+
   public DmgReader(Stream stream, bool leaveOpen = false) {
+    ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
     Parse();
+    _ = leaveOpen;
   }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Parsing
-  // ──────────────────────────────────────────────────────────────────────────
 
   private void Parse() {
     if (_data.Length < KolySize)
@@ -49,69 +50,29 @@ public sealed class DmgReader : IDisposable {
 
     var kolyOff = _data.Length - KolySize;
     var kolySpan = _data.AsSpan(kolyOff, KolySize);
-
-    // Check "koly" signature
-    if (kolySpan[0] != 'k' || kolySpan[1] != 'o' || kolySpan[2] != 'l' || kolySpan[3] != 'y')
+    if (!kolySpan[..4].SequenceEqual("koly"u8))
       throw new InvalidDataException("DMG: missing 'koly' trailer signature.");
 
-    // Parse koly fields (all big-endian)
-    // Offset  4: uint32 version
-    // Offset  8: uint32 headerSize
-    // Offset 12: uint32 flags
-    // Offset 16: uint64 runningDataForkOffset
-    // Offset 24: uint64 dataForkOffset
-    // Offset 32: uint64 dataForkLength
-    // Offset 40: uint64 rsrcForkOffset
-    // Offset 48: uint64 rsrcForkLength
-    // Offset 56: uint32 segmentNumber
-    // Offset 60: uint32 segmentCount
-    // Offset 64: Guid   segmentId (16 bytes)
-    // Offset 80: uint32 dataChecksumType
-    // Offset 84: uint32 dataChecksumSize
-    // Offset 88: uint32[32] dataChecksum  (128 bytes)
-    // Offset 216: uint64 xmlOffset
-    // Offset 224: uint64 xmlLength
-    // Offset 232: reserved (120 bytes, brings us to 352)
-    // Offset 352: uint32 masterChecksumType
-    // Offset 356: uint32 masterChecksumSize
-    // Offset 360: uint32[32] masterChecksum (128 bytes)
-    // Offset 488: uint32 imageVariant
-    // Offset 492: uint64 sectorCount
-    // Offset 500: 12 bytes reserved
+    XmlOffset = checked((long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[216..]));
+    XmlLength = checked((long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[224..]));
+    KolyTrailer = kolySpan.ToArray();
 
-    var xmlOffset = (long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[216..]);
-    var xmlLength = (long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[224..]);
-
-    if (xmlLength <= 0 || xmlOffset < 0 || xmlOffset + xmlLength > _data.Length)
+    if (XmlLength <= 0 || XmlOffset < 0 || XmlOffset + XmlLength > kolyOff)
       throw new InvalidDataException("DMG: invalid XML plist region in koly trailer.");
 
-    var xmlText = Encoding.UTF8.GetString(_data, (int)xmlOffset, (int)xmlLength);
+    var xmlText = Encoding.UTF8.GetString(_data, (int)XmlOffset, (int)XmlLength);
     ParseXmlPlist(xmlText);
   }
 
   private void ParseXmlPlist(string xml) {
-    // We use simple string search — no XML parser dependency.
-    // Structure we're looking for (may repeat for multiple partitions):
-    //
-    //   <key>blkx</key>
-    //   <array>
-    //     <dict>
-    //       <key>Name</key><string>…</string>
-    //       <key>Data</key><data>BASE64…</data>
-    //     </dict>
-    //     …
-    //   </array>
-
     var blkxPos = xml.IndexOf("<key>blkx</key>", StringComparison.Ordinal);
-    if (blkxPos < 0) return; // no partitions
+    if (blkxPos < 0) return;
 
     var arrayStart = xml.IndexOf("<array>", blkxPos, StringComparison.Ordinal);
-    var arrayEnd   = xml.IndexOf("</array>", blkxPos, StringComparison.Ordinal);
+    var arrayEnd = xml.IndexOf("</array>", blkxPos, StringComparison.Ordinal);
     if (arrayStart < 0 || arrayEnd < 0 || arrayEnd <= arrayStart) return;
 
     var arrayBody = xml.Substring(arrayStart + 7, arrayEnd - arrayStart - 7);
-
-    // Parse each <dict> element
     var dictStart = 0;
     var partIndex = 0;
     while (true) {
@@ -121,11 +82,14 @@ public sealed class DmgReader : IDisposable {
       if (dEnd < 0) break;
 
       var dictBody = arrayBody.Substring(dStart + 6, dEnd - dStart - 6);
-      var (name, mish) = ParseBlkxDict(dictBody, partIndex);
-      if (mish != null) {
-        var size = ComputePartitionSize(mish);
-        _entries.Add(new DmgEntry { Name = name, Size = size });
-        _partitions.Add(new PartitionInfo(name, mish));
+      var parsed = ParseBlkxDict(dictBody, partIndex);
+      if (parsed.Mish != null) {
+        var physicalSize = ComputePartitionSize(parsed.Mish);
+        var logicalSize = parsed.LogicalSize is >= 0 and <= long.MaxValue
+          ? Math.Min(parsed.LogicalSize.Value, physicalSize)
+          : physicalSize;
+        _entries.Add(new DmgEntry { Name = parsed.Name, Size = logicalSize });
+        _partitions.Add(new PartitionInfo(parsed.Name, parsed.Mish, logicalSize));
         partIndex++;
       }
 
@@ -133,28 +97,35 @@ public sealed class DmgReader : IDisposable {
     }
   }
 
-  private static (string name, byte[]? mish) ParseBlkxDict(string dictBody, int index) {
-    // Extract <key>Name</key><string>…</string>
+  private static (string Name, byte[]? Mish, long? LogicalSize) ParseBlkxDict(string dictBody, int index) {
     var name = $"partition_{index}.img";
     var nameKeyPos = dictBody.IndexOf("<key>Name</key>", StringComparison.Ordinal);
     if (nameKeyPos >= 0) {
       var strStart = dictBody.IndexOf("<string>", nameKeyPos, StringComparison.Ordinal);
-      var strEnd   = dictBody.IndexOf("</string>", nameKeyPos, StringComparison.Ordinal);
+      var strEnd = dictBody.IndexOf("</string>", nameKeyPos, StringComparison.Ordinal);
       if (strStart >= 0 && strEnd > strStart) {
-        var raw = dictBody.Substring(strStart + 8, strEnd - strStart - 8).Trim();
-        if (raw.Length > 0)
-          name = SanitizeName(raw, index);
+        var raw = WebUtility.HtmlDecode(dictBody.Substring(strStart + 8, strEnd - strStart - 8).Trim());
+        if (raw.Length > 0) name = SanitizeName(raw, index);
       }
     }
 
-    // Extract <key>Data</key><data>BASE64</data>
+    long? logicalSize = null;
+    var logicalKey = dictBody.IndexOf("<key>CWBLogicalSize</key>", StringComparison.Ordinal);
+    if (logicalKey >= 0) {
+      var valueStart = dictBody.IndexOf("<integer>", logicalKey, StringComparison.Ordinal);
+      var valueEnd = dictBody.IndexOf("</integer>", logicalKey, StringComparison.Ordinal);
+      if (valueStart >= 0 && valueEnd > valueStart &&
+          long.TryParse(dictBody.AsSpan(valueStart + 9, valueEnd - valueStart - 9), out var parsed) && parsed >= 0)
+        logicalSize = parsed;
+    }
+
     byte[]? mish = null;
     var dataKeyPos = dictBody.IndexOf("<key>Data</key>", StringComparison.Ordinal);
     if (dataKeyPos < 0)
-      dataKeyPos = dictBody.IndexOf("<key>data</key>", StringComparison.Ordinal); // lowercase fallback
+      dataKeyPos = dictBody.IndexOf("<key>data</key>", StringComparison.Ordinal);
     if (dataKeyPos >= 0) {
       var dataStart = dictBody.IndexOf("<data>", dataKeyPos, StringComparison.Ordinal);
-      var dataEnd   = dictBody.IndexOf("</data>", dataKeyPos, StringComparison.Ordinal);
+      var dataEnd = dictBody.IndexOf("</data>", dataKeyPos, StringComparison.Ordinal);
       if (dataStart >= 0 && dataEnd > dataStart) {
         var b64 = dictBody.Substring(dataStart + 6, dataEnd - dataStart - 6)
                           .Replace("\n", "").Replace("\r", "").Replace(" ", "").Replace("\t", "");
@@ -162,87 +133,55 @@ public sealed class DmgReader : IDisposable {
       }
     }
 
-    return (name, mish);
+    return (name, mish, logicalSize);
   }
 
   private static string SanitizeName(string raw, int index) {
-    // Strip common Apple partition decorators like "(Apple_HFS : 2)"
     var paren = raw.IndexOf('(');
     if (paren > 0) raw = raw[..paren].Trim();
-    // Replace characters that are bad in filenames
-    foreach (var ch in Path.GetInvalidFileNameChars())
-      raw = raw.Replace(ch, '_');
+    foreach (var ch in Path.GetInvalidFileNameChars()) raw = raw.Replace(ch, '_');
     raw = raw.Trim().Replace(' ', '_');
     if (raw.Length == 0) raw = $"partition_{index}";
     if (!raw.Contains('.')) raw += ".img";
     return raw;
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Mish (block table) parsing
-  // ──────────────────────────────────────────────────────────────────────────
+  internal sealed record BlockEntry(uint Type, ulong SectorOffset, ulong SectorCount,
+                                    ulong CompressedOffset, ulong CompressedLength);
 
-  private sealed record BlockEntry(uint Type, ulong SectorOffset, ulong SectorCount,
-                                   ulong CompressedOffset, ulong CompressedLength);
+  internal sealed record MishTable(ulong FirstSector, ulong SectorCount, ulong DataStart,
+                                   List<BlockEntry> Blocks);
 
-  private sealed record MishTable(ulong FirstSector, ulong SectorCount, ulong DataStart,
-                                  List<BlockEntry> Blocks);
+  internal static MishTable? ParseMish(byte[] mish) {
+    if (mish.Length < 204 || !mish.AsSpan(0, 4).SequenceEqual("mish"u8)) return null;
 
-  private static MishTable? ParseMish(byte[] mish) {
-    if (mish == null || mish.Length < 204) return null;
+    var firstSector = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(8));
+    var sectorCount = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(16));
+    var dataStart = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(24));
+    var numEntries = BinaryPrimitives.ReadUInt32BigEndian(mish.AsSpan(200));
+    if (numEntries > 100_000) return null;
 
-    // "mish" signature
-    if (mish[0] != 'm' || mish[1] != 'i' || mish[2] != 's' || mish[3] != 'h') return null;
-
-    // All big-endian
-    // Offset  4: uint32 version
-    // Offset  8: uint64 firstSector
-    // Offset 16: uint64 sectorCount
-    // Offset 24: uint64 dataStart
-    // Offset 32: uint32 decompressedBufferRequested
-    // Offset 36: uint32 blocksDescriptor
-    // Offset 40: reserved 24 bytes
-    // Offset 64: checksum type/size/data (136 bytes total: 4+4+128)
-    // Offset 200: uint32 numBlockEntries
-    // Then block entries at offset 204, each 40 bytes
-
-    var firstSector  = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(8));
-    var sectorCount  = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(16));
-    var dataStart    = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(24));
-    var numEntries   = BinaryPrimitives.ReadUInt32BigEndian(mish.AsSpan(200));
-
-    if (numEntries > 100_000) return null; // sanity guard
     var blocks = new List<BlockEntry>((int)numEntries);
-
     var off = 204;
     for (var i = 0u; i < numEntries; i++) {
       if (off + 40 > mish.Length) break;
-      var blockType        = BinaryPrimitives.ReadUInt32BigEndian(mish.AsSpan(off));
-      // offset 4 = uint32 reserved
-      var sectorOffset     = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 8));
-      var blockSectorCount = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 16));
-      var compressedOffset = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 24));
-      var compressedLength = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 32));
-      blocks.Add(new BlockEntry(blockType, sectorOffset, blockSectorCount, compressedOffset, compressedLength));
+      blocks.Add(new BlockEntry(
+        BinaryPrimitives.ReadUInt32BigEndian(mish.AsSpan(off)),
+        BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 8)),
+        BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 16)),
+        BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 24)),
+        BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 32))));
       off += 40;
     }
-
     return new MishTable(firstSector, sectorCount, dataStart, blocks);
   }
 
   private static long ComputePartitionSize(byte[] mish) {
     var table = ParseMish(mish);
-    if (table == null) return 0;
-    return (long)table.SectorCount * SectorSize;
+    return table == null ? 0 : checked((long)table.SectorCount * SectorSize);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Extraction
-  // ──────────────────────────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Reassembles and returns the raw sector data for <paramref name="entry"/>.
-  /// </summary>
+  /// <summary>Reassembles and returns the raw sector data for <paramref name="entry"/>.</summary>
   public byte[] Extract(DmgEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var pi = _partitions.FirstOrDefault(p => p.Name == entry.Name);
@@ -251,87 +190,60 @@ public sealed class DmgReader : IDisposable {
     var table = ParseMish(pi.Mish);
     if (table == null) return [];
 
-    var totalBytes = (long)table.SectorCount * SectorSize;
-    if (totalBytes <= 0 || totalBytes > 2L * 1024 * 1024 * 1024)
-      totalBytes = Math.Max(0, Math.Min(totalBytes, 2L * 1024 * 1024 * 1024));
+    var physicalBytes = checked((long)table.SectorCount * SectorSize);
+    if (physicalBytes < 0 || physicalBytes > int.MaxValue)
+      throw new NotSupportedException("DMG partition is too large for the in-memory extraction API.");
 
-    var output = new byte[totalBytes];
-
+    var output = new byte[(int)physicalBytes];
     foreach (var block in table.Blocks) {
       if (block.Type == BlockTypeComment || block.Type == BlockTypeTerminator) continue;
-
-      var destOffset = (long)block.SectorOffset * SectorSize;
-      var destLength = (long)block.SectorCount  * SectorSize;
-
-      if (destLength == 0) continue;
-      if (destOffset < 0 || destOffset + destLength > output.LongLength) continue;
+      var destOffset = checked((long)block.SectorOffset * SectorSize);
+      var destLength = checked((long)block.SectorCount * SectorSize);
+      if (destLength == 0 || destOffset < 0 || destOffset + destLength > output.LongLength) continue;
 
       switch (block.Type) {
-        case BlockTypeZeroFill:
-          // Already zero — nothing to write
-          break;
-
-        case BlockTypeRaw:
-          ExtractRaw(block, destOffset, destLength, output);
-          break;
-
-        case BlockTypeZlib:
-          ExtractZlib(block, destOffset, destLength, output);
-          break;
-
-        case BlockTypeBzip2:
-          ExtractBzip2(block, destOffset, destLength, output);
-          break;
-
+        case BlockTypeZeroFill: break;
+        case BlockTypeRaw: ExtractRaw(block, destOffset, destLength, output); break;
+        case BlockTypeZlib: ExtractZlib(block, destOffset, destLength, output); break;
+        case BlockTypeBzip2: ExtractBzip2(block, destOffset, destLength, output); break;
         case BlockTypeLzfse:
         case BlockTypeLzma:
-          // Unsupported compression — leave zeros in output
-          break;
-
         default:
-          // Unknown type — leave zeros
           break;
       }
     }
 
-    return output;
+    if (pi.LogicalSize == output.LongLength) return output;
+    return output.AsSpan(0, checked((int)Math.Min(pi.LogicalSize, output.LongLength))).ToArray();
   }
 
   private void ExtractRaw(BlockEntry block, long destOffset, long destLength, byte[] output) {
-    var srcOffset = (long)block.CompressedOffset;
-    var srcLength = (long)block.CompressedLength;
+    var srcOffset = checked((long)block.CompressedOffset);
+    var srcLength = checked((long)block.CompressedLength);
     if (srcOffset < 0 || srcOffset + srcLength > _data.LongLength) return;
-    var copyLen = (int)Math.Min(srcLength, destLength);
-    _data.AsSpan((int)srcOffset, copyLen).CopyTo(output.AsSpan((int)destOffset));
+    var copyLen = checked((int)Math.Min(srcLength, destLength));
+    _data.AsSpan(checked((int)srcOffset), copyLen).CopyTo(output.AsSpan(checked((int)destOffset)));
   }
 
   private void ExtractZlib(BlockEntry block, long destOffset, long destLength, byte[] output) {
-    var srcOffset = (long)block.CompressedOffset;
-    var srcLength = (long)block.CompressedLength;
+    var srcOffset = checked((long)block.CompressedOffset);
+    var srcLength = checked((long)block.CompressedLength);
     if (srcOffset < 0 || srcLength < 2 || srcOffset + srcLength > _data.LongLength) return;
-
-    // zlib stream: skip 2-byte header (CMF + FLG), use raw DEFLATE
     try {
-      using var src = new MemoryStream(_data, (int)srcOffset + 2, (int)srcLength - 2);
+      using var src = new MemoryStream(_data, checked((int)srcOffset + 2), checked((int)srcLength - 2));
       using var deflate = new DeflateStream(src, CompressionMode.Decompress);
-      using var dst = new MemoryStream(output, (int)destOffset, (int)destLength);
+      using var dst = new MemoryStream(output, checked((int)destOffset), checked((int)destLength));
       deflate.CopyTo(dst);
     } catch {
-      // Decompression failed — leave zeros in the output region
+      // Corrupt/unsupported block: keep the destination zero-filled.
     }
   }
 
   private static void ExtractBzip2(BlockEntry block, long destOffset, long destLength, byte[] output) {
-    // bzip2 decompression is not available in the Compression.Core dependency set.
-    // Leave the region zero-filled (safe no-op for read-only listing/testing scenarios).
     _ = block; _ = destOffset; _ = destLength; _ = output;
   }
 
   public void Dispose() { }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Internal helpers
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private sealed record PartitionInfo(string Name, byte[] Mish);
+  internal sealed record PartitionInfo(string Name, byte[] Mish, long LogicalSize);
 }
