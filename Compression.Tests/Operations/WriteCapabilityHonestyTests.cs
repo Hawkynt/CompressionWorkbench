@@ -7,22 +7,18 @@ namespace Compression.Tests.Operations;
 /// Honesty guard for the WORM-vs-R/W capability claim. The write scale
 /// (Unsupported → Read-Only → WORM → R/W) is only meaningful if
 /// <see cref="FormatCapabilities.CanModify"/> is reserved for formats that genuinely
-/// support modifying an <em>existing</em> container.
+/// support modifying an <em>existing</em> container/image.
 /// <para>
 /// <b>R/W means a working add / replace / remove on an existing instance that yields a
-/// valid result.</b> The edit may be byte-preserving in place <em>or</em> may relayout /
-/// re-pack the container (moving existing data) — both are honest R/W for a conceptually
-/// read-write format. What is NOT honest is advertising <see cref="FormatCapabilities.CanModify"/>
-/// with no working modify path at all. Read-only-by-design formats (CramFS, SquashFS) and
-/// create-only formats stay WORM (<see cref="FormatCapabilities.CanCreate"/>) even though a
-/// rebuild could synthesise a modified copy — they do not advertise R/W.
+/// valid result.</b> The edit may be byte-preserving in place, append replacement state,
+/// relayout members, or rebuild the image. Those are implementation choices. What is not
+/// honest is advertising <see cref="FormatCapabilities.CanModify"/> with no working edit path.
+/// A format that can only create a fresh instance remains WORM.
 /// </para>
 /// <para>
-/// This test enforces the deterministic half of that rule for every registered format that
-/// claims <see cref="FormatCapabilities.CanModify"/>: its runtime ops object must actually
-/// implement <see cref="IArchiveModifiable"/> (otherwise the R/W claim is entirely unbacked —
-/// there is no modify path). That the modify <em>works</em> (round-trips) is verified
-/// separately by the registry-driven <c>Generic{Purge,Defrag}RoundTripTests</c>.
+/// This test enforces the deterministic half of that rule for every registered claimant:
+/// its runtime ops object must implement <see cref="IArchiveModifiable"/>. Behavioural
+/// round-trip tests verify that individual modify paths actually work.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -42,7 +38,7 @@ public class WriteCapabilityHonestyTests {
 
     Assert.That(ops, Is.InstanceOf<IArchiveModifiable>(),
       $"{formatId} advertises R/W (CanModify) but its ops does not implement IArchiveModifiable — "
-      + "the claim is unbacked. Implement IArchiveModifiable (in-place or relayout/rebuild) "
+      + "the claim is unbacked. Implement a working existing-instance edit path "
       + "or downgrade to WORM (CanCreate only).");
   }
 }
