@@ -27,6 +27,7 @@ dotnet add package Hawkynt.Algorithms.Hashing
 - One-shot and incremental APIs where the underlying construction naturally supports streaming.
 - Cryptographic families including MD, SHA-1/SHA-2/SHA-3, Keccak-derived XOFs, BLAKE, RIPEMD, SM3, and legacy/interoperability hashes.
 - Fast non-cryptographic hashing including xxHash, MurmurHash, FNV, SipHash, and other source-registry families.
+- Multi-output algorithms use one family implementation and expose valid digest sizes as enumerable `HashSizeRange` records, mirroring the JavaScript registry's ranged `SupportedOutputSizes` model.
 - Source-specific variants are preserved as distinct algorithms when their parameters or output differ from the published standard; they are not silently substituted with a similarly named digest.
 - Pure managed implementation surface; no JavaScript runtime is required by the package.
 
@@ -39,10 +40,17 @@ using Hawkynt.Algorithms.Hashing;
 ReadOnlySpan<byte> data = "CompressionWorkbench"u8;
 
 byte[] sha256 = Sha256.Compute(data);
-byte[] sha512 = Sha512Family.Compute512(data);
+byte[] sha512 = Sha512Family.Compute(data, 512);
 byte[] sha3 = Sha3.Compute256(data);
+byte[] kupyna384 = Kupyna.Compute(data, 384);
+byte[] fugue512 = Fugue.Compute(data, 512);
+byte[] hamsi224 = HamsiFamily.Compute(data, 224);
+byte[] tiger192 = Tiger.Compute(data, 192);
 uint murmur = MurmurHash3.Compute32(data);
 ulong fnv = Fnv.Compute1A64(data);
+
+foreach (int bits in Fugue.SupportedHashSizes.EnumerateSizes())
+  Console.WriteLine($"Fugue-{bits}");
 ```
 
 The historical `Compression.Core.Checksums` namespace is retained for hash types that already shipped there, so existing callers do not need a namespace migration merely because the implementation moved to its own assembly.
@@ -56,6 +64,10 @@ The final coverage table is kept in this README and must account for every sourc
 ## 📚 API / architecture
 
 `Hawkynt.Compression.Core` references this project normally, so Core consumers receive the hashing package transitively while callers that only require hashing can reference it directly.
+
+For a standardized family with several digest sizes, the preferred API is a single `Compute(ReadOnlySpan<byte>, int hashSizeBits)` method plus an enumerable `IReadOnlyList<HashSizeRange> SupportedHashSizes`. A range describes valid **digest/output sizes**, not the algorithm's compression-block width. Discontiguous families expose several ranges; for example Hamsi exposes `224..256 step 32` and `384..512 step 128`. When a specification genuinely changes state width or round schedule at a boundary, the family dispatcher selects that internal core without duplicating an implementation for every individual output size.
+
+Kupyna therefore shares one P/Q implementation across 256/384/512, Fugue shares one state machine across 224/256/384/512, and Tiger exposes the exact singleton range 192. Compatibility wrappers may remain for existing callers, but they delegate to shared family/core logic rather than becoming independent algorithm implementations.
 
 Hash functions and checksums are separate packages intentionally. This prevents a convenience namespace from turning two materially different algorithm classes into one conceptual junk drawer.
 
