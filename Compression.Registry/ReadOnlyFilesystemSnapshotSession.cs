@@ -25,47 +25,33 @@ public sealed record FilesystemSnapshotNode(
   Func<IFilesystemFileHandle>? OpenReadHandle = null
 );
 
-/// <summary>
-/// One namespace link from a directory/name pair to a filesystem object. It is
-/// deliberately separate from <see cref="FilesystemSnapshotNode"/> so ext/NTFS/
-/// XFS-style hard links can expose several names for the same stable node ID.
-/// </summary>
 public sealed record FilesystemSnapshotDirectoryEntry(
   FilesystemNodeId ParentNodeId,
   string Name,
   FilesystemNodeId NodeId
 );
 
-/// <summary>
-/// Reusable frontend-neutral session for a filesystem parser that already has
-/// native stable node ids and positional read handles. It intentionally contains
-/// no archive emulation and no write fallback. A filesystem can use this as its
-/// first native driver milestone, then replace it with a mutable session while
-/// retaining the same public contract.
-/// </summary>
 public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
   private sealed record Child(string Name, FilesystemSnapshotNode Node);
+  private sealed record SnapshotInput(
+    FilesystemSnapshotNode[] Nodes,
+    FilesystemSnapshotDirectoryEntry[] Entries);
 
   private readonly Dictionary<FilesystemNodeId, FilesystemSnapshotNode> _nodes;
   private readonly Dictionary<FilesystemNodeId, Child[]> _children;
   private bool _disposed;
 
-  /// <summary>
-  /// Convenience constructor for filesystems where every object has exactly one
-  /// namespace link. The parent/name carried by each node is converted to an
-  /// explicit directory-entry set internally.
-  /// </summary>
   public ReadOnlyFilesystemSnapshotSession(
       FilesystemDriverProfile profile,
       FilesystemNodeId rootNodeId,
       IEnumerable<FilesystemSnapshotNode> nodes)
-    : this(
-      profile,
-      rootNodeId,
-      Materialize(nodes, out var materialized),
-      materialized
-        .Where(node => node.NodeId != rootNodeId)
-        .Select(node => new FilesystemSnapshotDirectoryEntry(node.ParentNodeId, node.Name, node.NodeId))) { }
+    : this(profile, rootNodeId, Prepare(nodes, rootNodeId)) { }
+
+  private ReadOnlyFilesystemSnapshotSession(
+      FilesystemDriverProfile profile,
+      FilesystemNodeId rootNodeId,
+      SnapshotInput input)
+    : this(profile, rootNodeId, input.Nodes, input.Entries) { }
 
   /// <summary>
   /// Full constructor with independent object and directory-entry sets. Multiple
@@ -144,6 +130,8 @@ public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
     if (!_children.TryGetValue(parentDirectory, out var children)) return null;
     var exact = children.FirstOrDefault(child => string.Equals(child.Name, name, StringComparison.Ordinal));
     if (exact != null) return exact.Node.NodeId;
+    if ((Profile.Capabilities & FilesystemDriverCapabilities.CaseSensitiveNames) != 0)
+      return null;
     var folded = children.Where(child => string.Equals(child.Name, name, StringComparison.OrdinalIgnoreCase)).ToArray();
     return folded.Length == 1 ? folded[0].Node.NodeId : null;
   }
@@ -194,12 +182,16 @@ public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
       ? node
       : throw new FileNotFoundException($"Filesystem node {nodeId.Value}:{nodeId.Generation} does not exist in this session.");
 
-  private static IEnumerable<FilesystemSnapshotNode> Materialize(
+  private static SnapshotInput Prepare(
       IEnumerable<FilesystemSnapshotNode> nodes,
-      out FilesystemSnapshotNode[] materialized) {
+      FilesystemNodeId rootNodeId) {
     ArgumentNullException.ThrowIfNull(nodes);
-    materialized = nodes.ToArray();
-    return materialized;
+    var materialized = nodes.ToArray();
+    var entries = materialized
+      .Where(node => node.NodeId != rootNodeId)
+      .Select(node => new FilesystemSnapshotDirectoryEntry(node.ParentNodeId, node.Name, node.NodeId))
+      .ToArray();
+    return new SnapshotInput(materialized, entries);
   }
 
   private static NotSupportedException ReadOnly()
