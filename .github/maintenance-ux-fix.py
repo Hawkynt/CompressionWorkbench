@@ -19,5 +19,17 @@ text = text.replace(
     '    cancellationToken.ThrowIfCancellationRequested();\\n\\n'
     '    // Trivial case: 0 or 1 files cannot benefit from regrouping\\n'
     '    if (entries.Count <= 1) {')
+text = text.replace(
+    '    CollectionAssert.Contains(phases, "scanning");\\n'
+    '    CollectionAssert.Contains(phases, "reading");\\n'
+    '    CollectionAssert.Contains(phases, "writing");',
+    '    Assert.That(phases, Does.Contain("scanning"));\\n'
+    '    Assert.That(phases, Does.Contain("reading"));\\n'
+    '    Assert.That(phases, Does.Contain("writing"));')
+text = text.replace(
+    '    CollectionAssert.AreEqual(original, archive.ToArray(),\\n'
+    '      "A cancelled staged rebuild must never overwrite the source stream.");',
+    '    Assert.That(archive.ToArray(), Is.EqualTo(original),\\n'
+    '      "A cancelled staged rebuild must never overwrite the source stream.");')
 path.write_text(text, encoding='utf-8')
 Path(__file__).unlink(missing_ok=True)
