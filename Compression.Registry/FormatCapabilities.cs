@@ -8,23 +8,23 @@ namespace Compression.Registry;
 /// <list type="bullet">
 ///   <item><description><b>Unsupported</b> — no descriptor exists.</description></item>
 ///   <item><description><b>Read-Only</b> — <see cref="CanList"/> and/or <see cref="CanExtract"/> only.</description></item>
-///   <item><description><b>WORM</b> (Write-Once-Read-Many) — adds <see cref="CanCreate"/>: a fresh archive can be produced from inputs, but existing archives cannot be modified in place.</description></item>
-///   <item><description><b>R/W</b> (Modify) — adds <see cref="CanModify"/>: entries can be added, replaced, or removed in an existing archive without full rewrite.</description></item>
+///   <item><description><b>WORM</b> (Write-Once-Read-Many) — adds <see cref="CanCreate"/>: a fresh archive/image can be produced, but the library has no supported edit of an existing instance.</description></item>
+///   <item><description><b>R/W</b> (Modify) — adds <see cref="CanModify"/>: an existing instance supports add/replace/remove and remains valid after the edit.</description></item>
 /// </list>
 /// <para>
-/// Most archive formats stop at WORM; true in-place modification is rare because compressed
-/// archive containers don't generally support entry mutation without a full rebuild.
+/// <b>R/W describes the public operation, not the physical write strategy.</b>
+/// A format may update allocation metadata in place, append a new index, relayout members,
+/// or rebuild the complete image. Those are implementation choices. If callers can open an
+/// existing instance, apply add/replace/remove through <see cref="IArchiveModifiable"/>, and
+/// obtain a valid instance preserving the semantics the implementation claims to support,
+/// the format is R/W at this API surface. Conversely, merely having a writer for fresh images
+/// is WORM and must not set <see cref="CanModify"/>.
 /// </para>
 /// <para>
-/// <b>Honesty rule — rebuild-backed modification is WORM, not R/W.</b> A format may implement
-/// <see cref="IArchiveModifiable"/> purely to make the add / remove / purge verbs <em>work</em>,
-/// backing them with the verified extract → re-create rebuild (the default <see cref="IArchiveModifiable"/>
-/// members, or <c>ModifyRebuilder</c> / <see cref="RebuildVerb"/>). That is a full rewrite of the
-/// container, so such a format advertises <see cref="CanCreate"/> only and must <b>not</b> set
-/// <see cref="CanModify"/> — the verb still runs, but no in-place R/W is claimed. <see cref="CanModify"/>
-/// is reserved for formats with a genuine in-place writer that edits the existing container
-/// (e.g. ZIP/TAR central-directory edits, FAT/NTFS/ext block writes, byte-identity append).
-/// <c>Compression.Tests.Operations.WriteCapabilityHonestyTests</c> enforces this for every claimant.
+/// This distinction is especially important for read-only-on-mount filesystem formats such as
+/// SquashFS, CramFS and EROFS: the native filesystem driver may intentionally forbid mounted
+/// writes while an offline image editor can still support complete, deterministic mutation by
+/// relayout/rebuild. <see cref="CanModify"/> reports the latter capability.
 /// </para>
 /// </summary>
 [Flags]
@@ -32,7 +32,7 @@ public enum FormatCapabilities {
   None = 0,
   CanList = 1 << 0,
   CanExtract = 1 << 1,
-  /// <summary>WORM: can produce a fresh archive from inputs (no in-place modification).</summary>
+  /// <summary>WORM: can produce a fresh archive/image, but has no supported existing-instance edit.</summary>
   CanCreate = 1 << 2,
   CanTest = 1 << 3,
   SupportsPassword = 1 << 4,
@@ -40,6 +40,6 @@ public enum FormatCapabilities {
   SupportsDirectories = 1 << 6,
   SupportsOptimize = 1 << 8,
   CanCompoundWithTar = 1 << 9,
-  /// <summary>R/W: can modify an existing archive (add/replace/remove entries) without full rewrite. Implies <see cref="CanCreate"/>.</summary>
+  /// <summary>R/W: can add/replace/remove entries in an existing archive/image. The implementation may edit in place or relayout/rebuild. Implies <see cref="CanCreate"/> for normal writable formats.</summary>
   CanModify = 1 << 10,
 }
