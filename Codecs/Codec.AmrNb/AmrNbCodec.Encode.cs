@@ -55,54 +55,44 @@ public static partial class AmrNbCodec {
     return output.ToArray();
   }
 
-  private readonly record struct FrameAnalysis(float Rms, int PitchLag, float PitchCorrelation, float ZeroCrossingRate, float SpectralTilt);
+  private readonly record struct FrameAnalysis(float Rms, int PitchLag, float PitchCorrelation, float SpectralTilt);
 
   private static FrameAnalysis Analyze(ReadOnlySpan<short> pcm) {
     double energy = 0;
-    double low = 0;
-    double high = 0;
-    var crossings = 0;
+    double adjacentCorrelation = 0;
     var previous = pcm[0];
     for (var i = 0; i < pcm.Length; ++i) {
       var x = pcm[i];
       energy += (double)x * x;
-      if (i != 0) {
-        low += (double)x * previous;
-        var d = x - previous;
-        high += (double)d * d;
-        if ((x ^ previous) < 0)
-          ++crossings;
-      }
+      if (i != 0)
+        adjacentCorrelation += (double)x * previous;
       previous = x;
     }
 
     var bestLag = AmrNbData.PitchDelayMin;
-    var bestCorr = double.NegativeInfinity;
-    double bestDen = 1;
+    var bestCorrelation = double.NegativeInfinity;
     for (var lag = AmrNbData.PitchDelayMin; lag <= AmrNbData.PitchDelayMax; ++lag) {
-      double corr = 0, a = 1, b = 1;
+      double correlation = 0, currentEnergy = 1, delayedEnergy = 1;
       for (var i = lag; i < pcm.Length; ++i) {
         var x = (double)pcm[i];
-        var y = pcm[i - lag];
-        corr += x * y;
-        a += x * x;
-        b += y * y;
+        var delayed = pcm[i - lag];
+        correlation += x * delayed;
+        currentEnergy += x * x;
+        delayedEnergy += delayed * delayed;
       }
-      var score = corr / Math.Sqrt(a * b);
-      if (score <= bestCorr)
+      var score = correlation / Math.Sqrt(currentEnergy * delayedEnergy);
+      if (score <= bestCorrelation)
         continue;
-      bestCorr = score;
-      bestDen = Math.Sqrt(a * b);
+      bestCorrelation = score;
       bestLag = lag;
     }
 
     var rms = (float)Math.Sqrt(energy / pcm.Length);
-    var tilt = (float)(low / Math.Max(1.0, energy));
+    var tilt = (float)(adjacentCorrelation / Math.Max(1.0, energy));
     return new FrameAnalysis(
       rms,
       bestLag,
-      (float)Math.Clamp(bestCorr, 0.0, 1.0),
-      crossings / (float)Math.Max(1, pcm.Length - 1),
+      (float)Math.Clamp(bestCorrelation, 0.0, 1.0),
       Math.Clamp(tilt, -1f, 1f));
   }
 
@@ -142,8 +132,8 @@ public static partial class AmrNbCodec {
       if (widths[baseWord] != 0) {
         var pitchPosition = (analysis.PitchLag - AmrNbData.PitchDelayMin) /
                             (double)(AmrNbData.PitchDelayMax - AmrNbData.PitchDelayMin + 1);
-        // The AMR lag index is not linear over its complete domain, but distributing the
-        // open-loop estimate over the legal field is a good seed and remains standards-valid.
+        // The lag index is piecewise/non-linear in AMR-NB. The normalized open-loop estimate is
+        // nevertheless a legal seed in every mode and avoids pinning all subframes to one lag.
         words[baseWord] = ToField(Math.Clamp(pitchPosition + (sub & 1) * 0.002, 0, 0.999999), widths[baseWord]);
       }
 
@@ -152,22 +142,21 @@ public static partial class AmrNbCodec {
       if (widths[baseWord + 2] != 0)
         words[baseWord + 2] = ToField(Math.Clamp(subRms / 12000.0, 0.02, 0.98), widths[baseWord + 2]);
 
-      // Algebraic-codebook indices are mode-specific packed pulse positions/signs. Every bit
-      // pattern in these fields is legal. Feed them from the strongest signed samples so higher
-      // modes naturally retain more of the innovation pattern instead of writing constant indices.
+      // Algebraic-codebook indices are mode-specific packed pulse positions/signs. Feed them
+      // from the strongest signed samples so higher modes naturally retain more innovation detail.
       Span<(int Magnitude, int Position)> ranked = stackalloc (int, int)[AmrNbData.SubframeSize];
       for (var i = 0; i < samples.Length; ++i)
         ranked[i] = (Math.Abs((int)samples[i]), i);
       ranked.Sort(static (a, b) => b.Magnitude.CompareTo(a.Magnitude));
 
-      for (var p = 0; p < 10; ++p) {
-        var word = baseWord + 3 + p;
+      for (var pulse = 0; pulse < 10; ++pulse) {
+        var word = baseWord + 3 + pulse;
         var bits = widths[word];
         if (bits == 0)
           continue;
-        var source = ranked[p % ranked.Length];
+        var source = ranked[pulse % ranked.Length];
         var sign = samples[source.Position] < 0 ? 1 : 0;
-        uint mixed = (uint)(source.Position * 0x45D9F3B) ^ (uint)(p * 0x9E37) ^ (uint)(sub * 0x7F4A);
+        uint mixed = (uint)(source.Position * 0x45D9F3B) ^ (uint)(pulse * 0x9E37) ^ (uint)(sub * 0x7F4A);
         mixed = (mixed << 7) | (mixed >> 25);
         mixed ^= (uint)sign << 31;
         words[word] = (int)(mixed & FieldMask(bits));
@@ -211,8 +200,12 @@ public static partial class AmrNbCodec {
     return payload;
   }
 
-  private static int ToField(double normalized, int bits) =>
-    bits == 0 ? 0 : (int)Math.Clamp(Math.Round(normalized * FieldMask(bits)), 0, FieldMask(bits));
+  private static int ToField(double normalized, int bits) {
+    if (bits == 0)
+      return 0;
+    var maximum = (double)FieldMask(bits);
+    return (int)Math.Clamp(Math.Round(normalized * maximum), 0d, maximum);
+  }
 
   private static uint FieldMask(int bits) => bits >= 32 ? uint.MaxValue : (1u << bits) - 1u;
 }
