@@ -27,13 +27,13 @@ public sealed class DmgReader : IDisposable {
   private readonly List<DmgEntry> _entries = [];
   private readonly List<PartitionInfo> _partitions = [];
 
-  /// <summary>All partitions found in the DMG, each exposed as a named entry.</summary>
   public IReadOnlyList<DmgEntry> Entries => _entries;
-
   internal long XmlOffset { get; private set; }
   internal long XmlLength { get; private set; }
   internal byte[] KolyTrailer { get; private set; } = [];
   internal IReadOnlyList<PartitionInfo> Partitions => _partitions;
+  internal bool IsWorkbenchRawProfile =>
+    _partitions.All(p => p.HasLogicalSizeMarker && IsRawMish(p.Mish));
 
   public DmgReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -60,7 +60,7 @@ public sealed class DmgReader : IDisposable {
     if (XmlLength <= 0 || XmlOffset < 0 || XmlOffset + XmlLength > kolyOff)
       throw new InvalidDataException("DMG: invalid XML plist region in koly trailer.");
 
-    var xmlText = Encoding.UTF8.GetString(_data, (int)XmlOffset, (int)XmlLength);
+    var xmlText = Encoding.UTF8.GetString(_data, checked((int)XmlOffset), checked((int)XmlLength));
     ParseXmlPlist(xmlText);
   }
 
@@ -85,11 +85,11 @@ public sealed class DmgReader : IDisposable {
       var parsed = ParseBlkxDict(dictBody, partIndex);
       if (parsed.Mish != null) {
         var physicalSize = ComputePartitionSize(parsed.Mish);
-        var logicalSize = parsed.LogicalSize is >= 0 and <= long.MaxValue
+        var logicalSize = parsed.LogicalSize.HasValue
           ? Math.Min(parsed.LogicalSize.Value, physicalSize)
           : physicalSize;
         _entries.Add(new DmgEntry { Name = parsed.Name, Size = logicalSize });
-        _partitions.Add(new PartitionInfo(parsed.Name, parsed.Mish, logicalSize));
+        _partitions.Add(new PartitionInfo(parsed.Name, parsed.Mish, logicalSize, parsed.LogicalSize.HasValue));
         partIndex++;
       }
 
@@ -148,7 +148,6 @@ public sealed class DmgReader : IDisposable {
 
   internal sealed record BlockEntry(uint Type, ulong SectorOffset, ulong SectorCount,
                                     ulong CompressedOffset, ulong CompressedLength);
-
   internal sealed record MishTable(ulong FirstSector, ulong SectorCount, ulong DataStart,
                                    List<BlockEntry> Blocks);
 
@@ -176,12 +175,16 @@ public sealed class DmgReader : IDisposable {
     return new MishTable(firstSector, sectorCount, dataStart, blocks);
   }
 
+  internal static bool IsRawMish(byte[] mish) {
+    var table = ParseMish(mish);
+    return table != null && table.Blocks.All(b => b.Type is BlockTypeRaw or BlockTypeTerminator);
+  }
+
   private static long ComputePartitionSize(byte[] mish) {
     var table = ParseMish(mish);
     return table == null ? 0 : checked((long)table.SectorCount * SectorSize);
   }
 
-  /// <summary>Reassembles and returns the raw sector data for <paramref name="entry"/>.</summary>
   public byte[] Extract(DmgEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var pi = _partitions.FirstOrDefault(p => p.Name == entry.Name);
@@ -191,7 +194,7 @@ public sealed class DmgReader : IDisposable {
     if (table == null) return [];
 
     var physicalBytes = checked((long)table.SectorCount * SectorSize);
-    if (physicalBytes < 0 || physicalBytes > int.MaxValue)
+    if (physicalBytes > int.MaxValue)
       throw new NotSupportedException("DMG partition is too large for the in-memory extraction API.");
 
     var output = new byte[(int)physicalBytes];
@@ -235,7 +238,7 @@ public sealed class DmgReader : IDisposable {
       using var dst = new MemoryStream(output, checked((int)destOffset), checked((int)destLength));
       deflate.CopyTo(dst);
     } catch {
-      // Corrupt/unsupported block: keep the destination zero-filled.
+      // Unsupported or corrupt compressed block: retain zero-fill in this region.
     }
   }
 
@@ -245,5 +248,5 @@ public sealed class DmgReader : IDisposable {
 
   public void Dispose() { }
 
-  internal sealed record PartitionInfo(string Name, byte[] Mish, long LogicalSize);
+  internal sealed record PartitionInfo(string Name, byte[] Mish, long LogicalSize, bool HasLogicalSizeMarker);
 }
