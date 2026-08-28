@@ -35,7 +35,7 @@ namespace FileFormat.Wacz;
 /// about (title, version, software, page count, archive count).
 /// </para>
 /// </remarks>
-public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -51,7 +51,7 @@ public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc/>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 
@@ -166,6 +166,10 @@ public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
   }
+
+  /// <inheritdoc/>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => WaczCreator.Create(output, inputs);
 
   /// <summary>
   /// Throws <see cref="InvalidDataException"/> unless the ZIP root looks like a WACZ

@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileFormat.Warc\FileFormat.Warc.csproj" />
     <ProjectReference Include="..\FileFormat.Zip\FileFormat.Zip.csproj" />
   </ItemGroup>
 
