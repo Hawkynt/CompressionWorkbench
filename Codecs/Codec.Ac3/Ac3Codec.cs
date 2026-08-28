@@ -9,26 +9,12 @@ public sealed record Ac3StreamInfo(
   int SampleRate, int Channels, int Bitrate, int Acmod, bool Lfe, bool IsEnhanced, long DurationSamples);
 
 /// <summary>
-/// Clean-room AC-3 (ATSC A/52, Dolby Digital) decoder. Decodes legacy AC-3 sync frames (bsid ≤ 10)
-/// to interleaved little-endian signed 16-bit PCM at the stream's native channel count (full-
-/// bandwidth channels in acmod order, with the LFE channel last when present). The full A/52 audio
-/// pipeline is implemented: per-block exponent strategies (D15/D25/D45 + reuse), the parametric bit
-/// allocation model (slow/fast decay, gains, floor, snroffset, delta bit allocation), channel
-/// coupling (coupling-channel reconstruction via coupling coordinates), 2/0 rematrixing, grouped /
-/// linear mantissa dequantization with deterministic dither, and the 512/256-point IMDCT with the
-/// A/52 window and overlap-add.
-/// <para>
-/// E-AC-3 (Dolby Digital Plus, ATSC A/52 Annex E, bsid 11..16) is also decoded: independent
-/// substreams (frame type 0/2) decode to PCM — including the variable block count (1/2/3/6 blocks),
-/// the half-rate sample rates (fscod 3 + fscod2), the LUT-based per-frame exponent strategy, the
-/// adaptive hybrid transform (AHT with GAQ vector-quantized pre-mantissas + 6-point inverse DCT) and
-/// standard coupling. Dependent substreams (frame type 1) are skipped; enhanced coupling (ecplinu)
-/// raises <see cref="NotSupportedException"/>; spectral extension (spx) is parsed but its
-/// high-frequency reconstruction is not synthesised. <see cref="ReadStreamInfo"/> reports the
-/// enhanced flag.
-/// </para>
+/// Managed AC-3 / E-AC-3 codec. Legacy AC-3 encoding is implemented in the companion partial
+/// source file. Decoding supports legacy AC-3 sync frames (bsid ≤ 10) plus independent E-AC-3
+/// substreams (bsid 11..16) to interleaved little-endian signed 16-bit PCM at the native channel
+/// count, with LFE last when present.
 /// </summary>
-public static class Ac3Codec {
+public static partial class Ac3Codec {
 
   private const int BlocksPerFrame = 6;
   private const int SamplesPerBlock = 256;
@@ -43,8 +29,6 @@ public static class Ac3Codec {
 
     var channels = Ac3FrameHeader.AcmodChannelCount(h.Acmod) + (h.LowFrequencyEffects ? 1 : 0);
 
-    // Accumulate decoded sample frames. Each AC-3 frame is 6 blocks; an E-AC-3 frame carries a
-    // variable block count, and only its primary independent substream (id 0) contributes samples.
     long sampleFrames = 0;
     var pos = offset;
     while (pos + 6 <= data.Length && Ac3FrameHeader.TryParse(data, pos) is { } fh && fh.FrameSize > 0) {
@@ -61,8 +45,7 @@ public static class Ac3Codec {
   /// Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on
   /// <paramref name="output"/>. Channels are emitted in acmod order with LFE last. AC-3 (bsid ≤ 10)
   /// and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent
-  /// substreams (frame type 1) are skipped. Throws <see cref="NotSupportedException"/> only for
-  /// E-AC-3 enhanced coupling.
+  /// substreams (frame type 1) are skipped.
   /// </summary>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
@@ -79,10 +62,10 @@ public static class Ac3Codec {
       if (Ac3FrameHeader.TryParse(data, pos) is not { } header || header.FrameSize <= 0)
         break;
       if (pos + header.FrameSize > data.Length)
-        break;                                  // truncated trailing frame
+        break;
 
       if (header.IsDependentSubstream || (header.IsEnhanced && header.SubstreamId != 0)) {
-        pos += header.FrameSize;                // skip dependent / non-primary substreams
+        pos += header.FrameSize;
         continue;
       }
 
@@ -90,13 +73,11 @@ public static class Ac3Codec {
         ? eacDecoder.DecodeFrame(data, pos, header)
         : decoder.DecodeFrame(data, pos, header);
       if (pcm == null)
-        break;                                  // undecodable frame — stop gracefully
+        break;
       output.Write(pcm, 0, pcm.Length);
       pos += header.FrameSize;
     }
   }
-
-  // -- helpers ---------------------------------------------------------------
 
   private static byte[] ReadAll(Stream input) {
     if (input is MemoryStream ms && ms.TryGetBuffer(out var seg)) {
