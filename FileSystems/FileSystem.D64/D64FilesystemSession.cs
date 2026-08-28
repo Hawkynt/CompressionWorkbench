@@ -6,10 +6,9 @@ using Compression.Registry;
 namespace FileSystem.D64;
 
 /// <summary>
-/// Root-only CBM DOS 2.6 namespace session over a 1541 sector device. The
-/// session deliberately models file handles separately from directory names:
-/// rename keeps a node id stable, and unlink detaches the name while handles
-/// that were already open keep their shared in-memory file state alive.
+/// Root-only CBM DOS 2.6 namespace session over a 1541 sector device. File
+/// handles are path-independent: rename keeps the node id stable and unlink
+/// detaches a namespace entry without invalidating already-open handles.
 /// </summary>
 public sealed class D64FilesystemSession : IFilesystemSession {
   private const int SectorSize = 256;
@@ -65,11 +64,15 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       ThrowIfDisposed();
       if (nodeId == RootNodeId)
         return new FilesystemNodeInfo(RootNodeId, FilesystemNodeKind.Directory, 0, 0, 1);
-      var state = RequireLinkedState(nodeId);
+      if (!_states.TryGetValue(nodeId, out var state))
+        throw new FileNotFoundException($"CBM DOS node {nodeId.Value}:{nodeId.Generation} is unknown.");
+      if (!state.Linked)
+        return new FilesystemNodeInfo(nodeId, FilesystemNodeKind.RegularFile,
+          state.Data?.LongLength ?? 0, 0, 0);
       var record = FindRecord(state.Name);
-      var size = state.Data?.LongLength ?? record.Size;
-      return new FilesystemNodeInfo(nodeId, FilesystemNodeKind.RegularFile, size,
-        record.SectorCount * (long)SectorSize, 1, record.FileType);
+      return new FilesystemNodeInfo(nodeId, FilesystemNodeKind.RegularFile,
+        state.Data?.LongLength ?? record.Size, record.SectorCount * (long)SectorSize,
+        1, record.FileType);
     }
   }
 
@@ -133,9 +136,10 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       RequireRoot(parentDirectory);
       if (!_idsByName.TryGetValue(name, out var nodeId)) throw new FileNotFoundException(name);
       var state = _states[nodeId];
-      if (!D64Modifier.RemoveFile(new MemoryStream(_image, writable: true), state.Name, wipeData: true))
-        throw new FileNotFoundException(state.Name);
-      CommitChangedBlocks(_image);
+      ApplyStreamMutation(stream => {
+        if (!D64Modifier.RemoveFile(stream, state.Name, wipeData: true))
+          throw new FileNotFoundException(state.Name);
+      });
       _idsByName.Remove(state.Name);
       state.Linked = false;
       state.Dirty = false;
@@ -162,9 +166,10 @@ public sealed class D64FilesystemSession : IFilesystemSession {
       if (_idsByName.TryGetValue(newName, out var targetId) && targetId != sourceId) {
         if (!replace) throw new IOException($"CBM DOS entry '{newName}' already exists.");
         var target = _states[targetId];
-        if (!D64Modifier.RemoveFile(new MemoryStream(_image, writable: true), target.Name, wipeData: true))
-          throw new IOException($"Unable to replace existing CBM DOS entry '{newName}'.");
-        CommitChangedBlocks(_image);
+        ApplyStreamMutation(stream => {
+          if (!D64Modifier.RemoveFile(stream, target.Name, wipeData: true))
+            throw new IOException($"Unable to replace existing CBM DOS entry '{newName}'.");
+        });
         _idsByName.Remove(target.Name);
         target.Linked = false;
         target.Dirty = false;
@@ -222,8 +227,7 @@ public sealed class D64FilesystemSession : IFilesystemSession {
   }
 
   private void IndexInitialNamespace() {
-    var records = ScanDirectory(_image);
-    foreach (var record in records) {
+    foreach (var record in ScanDirectory(_image)) {
       if (_idsByName.ContainsKey(record.Name))
         throw new InvalidDataException($"CBM DOS directory contains duplicate name '{record.Name}'; mount would be ambiguous.");
       var nodeId = new FilesystemNodeId(_nextNodeId++, 1);
@@ -283,7 +287,8 @@ public sealed class D64FilesystemSession : IFilesystemSession {
     var track = DirectoryTrack;
     var sector = DirectoryStartSector;
     var visited = new HashSet<(int, int)>();
-    while (track != 0 && visited.Add((track, sector))) {
+    while (track != 0) {
+      if (!visited.Add((track, sector))) throw new InvalidDataException("CBM DOS directory chain contains a loop.");
       var offset = SectorOffset(track, sector);
       if (offset < 0 || offset + SectorSize > image.Length)
         throw new InvalidDataException("CBM DOS directory points outside the 1541 geometry.");
@@ -297,10 +302,14 @@ public sealed class D64FilesystemSession : IFilesystemSession {
         var startSector = image[entryOffset + 4];
         var name = DecodeName(image.AsSpan(entryOffset + 5, 16));
         var chain = WalkChain(image, startTrack, startSector);
-        var size = CalculateSize(image, chain);
-        result.Add(new DirectoryRecord(name, fileType, startTrack, startSector,
+        result.Add(new DirectoryRecord(
+          name,
+          fileType,
+          startTrack,
+          startSector,
           BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(entryOffset + 30, 2)),
-          size, entryOffset));
+          CalculateSize(image, chain),
+          entryOffset));
       }
       if (nextTrack == 0) break;
       track = nextTrack;
@@ -365,8 +374,7 @@ public sealed class D64FilesystemSession : IFilesystemSession {
   private static string NormalizeName(string name) => name.ToUpperInvariant();
 
   private static void WriteDirectoryName(byte[] image, int entryOffset, string name) {
-    var normalized = NormalizeName(name);
-    var encoded = Encoding.ASCII.GetBytes(normalized);
+    var encoded = Encoding.ASCII.GetBytes(NormalizeName(name));
     image.AsSpan(entryOffset + 5, 16).Fill(0xA0);
     encoded.AsSpan(0, Math.Min(16, encoded.Length)).CopyTo(image.AsSpan(entryOffset + 5, 16));
   }
