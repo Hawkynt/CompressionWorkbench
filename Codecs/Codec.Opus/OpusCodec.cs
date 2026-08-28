@@ -1,33 +1,25 @@
 #pragma warning disable CS1591
+#pragma warning disable CS0618
+
+using System.Buffers.Binary;
+using Concentus;
+using Concentus.Structs;
 
 namespace Codec.Opus;
 
 /// <summary>
-/// Clean-room Opus decoder. Input: an Ogg Opus stream (RFC 7845) whose packets
-/// carry Opus-encoded frames (RFC 6716). Output: interleaved little-endian
-/// signed 16-bit PCM at the stream's native sample rate (48 kHz for CELT).
-/// <para>
-/// <b>Ported from:</b> libopus (Xiph) — BSD 3-clause, commit-agnostic clean-room
-/// port tracking the RFC 6716 / RFC 7845 / RFC 8251 bitstream specification.
-/// </para>
-/// <para>
-/// <b>Supported surface (first pass):</b>
-/// <list type="bullet">
-///   <item>Ogg page walker + <c>OpusHead</c> / <c>OpusTags</c> metadata parsing.</item>
-///   <item>TOC byte parsing + all four frame-packing codes (0/1/2/3) per RFC 6716 §3.2.</item>
-///   <item>Range decoder (ec_dec) skeleton — reads tell, bits, and cdf symbols.</item>
-///   <item>CELT-only configs (16-31) — framing only. Full spectral inverse MDCT
-///         is <b>not</b> landed in this first pass and currently emits silence
-///         for the expected number of samples so downstream tooling can round-trip
-///         file structure and sample counts. Use <see cref="ReadStreamInfo"/> to
-///         introspect stream metadata deterministically.</item>
-///   <item>SILK-only configs (0-11) — framing only (same silence fallback).</item>
-///   <item>Hybrid configs (12-15) — throws <see cref="NotSupportedException"/>.</item>
-/// </list>
-/// </para>
+/// RFC 6716 / RFC 7845 Opus codec. Ogg framing and metadata are handled locally; SILK,
+/// hybrid and CELT signal coding are decoded by the pure-managed Concentus implementation.
+/// Mapping family 0 (mono/stereo) is supported by this stream-level surface.
 /// </summary>
 public static partial class OpusCodec {
 
+  /// <summary>
+  /// Decodes an Ogg Opus mapping-family-0 stream to interleaved little-endian PCM16 at 48 kHz.
+  /// Pre-skip and the OpusHead output gain are applied. The final packet may contain codec padding;
+  /// callers requiring sample-exact trimming should use the Ogg granule position from their
+  /// container layer.
+  /// </summary>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
@@ -35,24 +27,36 @@ public static partial class OpusCodec {
     var reader = new OggOpusReader(input);
     var head = reader.ReadHead();
     _ = reader.TryReadTags();
-    int channels = head.ChannelCount;
-    int preSkipRemaining = head.PreSkip;
+    if (head.ChannelMappingFamily != 0 || head.ChannelCount is < 1 or > 2)
+      throw new NotSupportedException("This Opus stream decoder currently supports mapping family 0 (mono/stereo). ");
+
+    using IOpusDecoder decoder = new OpusDecoder(48000, head.ChannelCount);
+    decoder.Gain = head.OutputGainQ8;
+    var preSkip = (int)head.PreSkip;
+    var pcm = new short[5760 * head.ChannelCount];
+    var bytes = new byte[pcm.Length * 2];
 
     while (reader.TryReadPacket(out var packet)) {
-      if (packet.Length < 1) continue;
-      var toc = OpusPacketReader.ParseToc(packet[0]);
-      if (toc.Mode == OpusMode.Hybrid)
-        throw new NotSupportedException(
-          $"Opus hybrid mode (config {toc.Config}) is not supported in this decoder. " +
-          "Only CELT-only (configs 16-31) and SILK-only (configs 0-11) are scaffolded.");
+      if (packet.Length == 0) continue;
+      var decodedFrames = decoder.Decode(packet, pcm, 5760, decode_fec: false);
+      if (decodedFrames < 0)
+        throw new InvalidDataException($"Opus decoder returned invalid frame count {decodedFrames}.");
 
-      var frameCount = OpusPacketReader.CountFrames(packet);
-      var samplesPerFrame = toc.FrameSamplesAt48k;
-      var totalSamples = frameCount * samplesPerFrame;
-      EmitSilence(output, totalSamples, channels, ref preSkipRemaining);
+      var skip = Math.Min(preSkip, decodedFrames);
+      preSkip -= skip;
+      var takeFrames = decodedFrames - skip;
+      if (takeFrames <= 0) continue;
+
+      var source = skip * head.ChannelCount;
+      var sampleCount = takeFrames * head.ChannelCount;
+      var byteCount = sampleCount * 2;
+      for (var i = 0; i < sampleCount; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), pcm[source + i]);
+      output.Write(bytes, 0, byteCount);
     }
   }
 
+  /// <summary>Reads OpusHead / OpusTags metadata without decoding audio.</summary>
   public static OpusStreamInfo ReadStreamInfo(Stream input) {
     ArgumentNullException.ThrowIfNull(input);
     var reader = new OggOpusReader(input);
@@ -64,25 +68,6 @@ public static partial class OpusCodec {
       PreSkip: head.PreSkip,
       InputSampleRate: (int)head.InputSampleRate,
       Vendor: tags?.Vendor);
-  }
-
-  private static void EmitSilence(Stream output, int sampleCount, int channels, ref int preSkipRemaining) {
-    var take = sampleCount;
-    if (preSkipRemaining > 0) {
-      var skip = Math.Min(preSkipRemaining, sampleCount);
-      preSkipRemaining -= skip;
-      take -= skip;
-      if (take <= 0) return;
-    }
-
-    var byteCount = take * channels * 2;
-    Span<byte> zeros = stackalloc byte[256];
-    zeros.Clear();
-    while (byteCount > 0) {
-      var chunk = Math.Min(byteCount, zeros.Length);
-      output.Write(zeros[..chunk]);
-      byteCount -= chunk;
-    }
   }
 }
 
