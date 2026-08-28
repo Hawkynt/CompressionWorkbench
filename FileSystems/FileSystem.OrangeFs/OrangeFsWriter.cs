@@ -23,9 +23,10 @@ internal static class OrangeFsWriter {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new ArgumentException("OrangeFS mutation requires a seekable read/write stream.", nameof(image));
-    if (payload.Length > uint.MaxValue)
-      throw new NotSupportedException("DBPF object payload exceeds the 32-bit object-size field.");
 
+    // ReadOnlySpan<byte>.Length is an Int32, therefore it always fits the
+    // DBPF object's unsigned 32-bit length field. The checked cast documents
+    // the wire-format boundary without an impossible int > uint.MaxValue test.
     image.Position = 0;
     Span<byte> header = stackalloc byte[HeaderSize];
     image.ReadExactly(header);
