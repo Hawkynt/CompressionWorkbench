@@ -15,11 +15,12 @@ namespace FileFormat.Dmg;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Apple_Disk_Image</c> — format overview</description></item>
 /// </list>
 /// </summary>
-public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+  IArchiveModifiable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
-      "DMG is an Apple disk image with mish blocks and a signed footer — defragmentation isn't meaningful.");
+      "DMG is an Apple disk image with mish blocks and a trailing block index; defragmentation is not exposed as a generic archive verb.");
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   public string Id => "Dmg";
@@ -27,7 +28,7 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".dmg";
   public IReadOnlyList<string> Extensions => [".dmg"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -51,12 +52,6 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  /// <summary>
-  /// Opens a single DMG partition as a bounded read-only <see cref="Stream"/>.
-  /// The reader's per-entry extractor reconstructs the partition's raw
-  /// sectors; they are wrapped in a <see cref="BoundedEntryStream"/> sized
-  /// to the entry's size.
-  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -72,7 +67,6 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       0, leaveOpen: false);
   }
 
-  /// <summary>Native in-memory single-entry extraction.</summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var ms = new MemoryStream();
@@ -81,9 +75,6 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    // WORM: each input becomes a partition with a single raw mish block (no
-    // compression). The reader rebuilds sectors from the raw block and writes
-    // each partition out at extract time.
     var w = new DmgWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
@@ -91,4 +82,20 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     w.WriteTo(output);
   }
+
+  /// <summary>
+  /// Adds or replaces partitions in the raw UDIF profile emitted by this writer.
+  /// Existing partition payload offsets are preserved; new data occupies the old
+  /// plist tail and only the blkx/plist + koly index are rewritten.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => DmgInPlaceModifier.Add(archive, inputs);
+
+  /// <summary>
+  /// Removes partitions from the raw UDIF profile by dropping their blkx records.
+  /// Payload bytes are left as unreachable data-fork slack so unrelated partitions
+  /// never need to move.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => DmgInPlaceModifier.Remove(archive, entryNames);
 }
