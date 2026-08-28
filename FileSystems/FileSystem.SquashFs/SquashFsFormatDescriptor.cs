@@ -5,9 +5,11 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.SquashFs;
 
 /// <summary>
-/// R/W descriptor for SquashFS images ("hsqs" magic) — the compressed
-/// read-only filesystem used by live media and embedded Linux; this writer
-/// emits gzip-compressed images.
+/// Offline R/W descriptor for SquashFS images ("hsqs" magic). Linux mounts
+/// SquashFS read-only by design; the workbench nevertheless supports editing an
+/// existing image by verified rebuild, plus guarded physical re-layout where
+/// compressed metadata can be repointed safely. The writer emits gzip-compressed
+/// images.
 ///
 /// References:
 /// <list type="bullet">
@@ -38,13 +40,14 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string Id => "SquashFs";
   public string DisplayName => "SquashFS";
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM (Write-Once-Read-Many), NOT R/W: SquashFS is a compressed, read-only image.
-  // Add/Remove go through the verified extract -> re-create rebuild (ModifyRebuilder),
-  // a full rewrite — the verb works but nothing is modified in place. Advertising
-  // CanModify would falsely claim genuine in-place R/W. See FormatCapabilities.cs.
+  // R/W describes the supported existing-image edit API. It does not imply that
+  // the Linux kernel can mount this filesystem writable or that every edit is
+  // byte-local: Add/Remove may perform a complete verified re-layout.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
+    FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".sqfs";
   public IReadOnlyList<string> Extensions => [".sqfs", ".squashfs", ".snap", ".appimage"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -52,10 +55,10 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     new([(byte)'h', (byte)'s', (byte)'q', (byte)'s'], Confidence: 0.95),
     new([(byte)'s', (byte)'q', (byte)'s', (byte)'h'], Confidence: 0.95)
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("squashfs", "SquashFS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("squashfs", "SquashFS", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Linux compressed read-only filesystem";
+  public string Description => "Linux compressed read-only-on-mount filesystem with offline R/W and layout optimization";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SquashFsReader(stream);
@@ -74,14 +77,6 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
-  /// <summary>
-  /// Opens a single filesystem entry as a bounded read-only stream. The
-  /// reader produces the decoded file bytes by walking the entry's extent
-  /// or block chain; the matched bytes are wrapped in a
-  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
-  /// to the entry's logical length so cluster/extent slack past the entry's
-  /// end is physically unreachable through this view.
-  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -98,7 +93,6 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
   }
 
-  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memoryStream = new MemoryStream();
@@ -119,11 +113,6 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
-  /// <summary>
-  /// Resolves the writer's data block size from the schema. "Auto"/absent keeps
-  /// the <see cref="SquashFsWriter.DefaultBlockSize"/>; a pinned power-of-two size
-  /// label is parsed back to bytes.
-  /// </summary>
   private static uint ResolveBlockSize(FormatCreateOptions? options) {
     var parsed = FilesystemSchemaPresets.ParseSize(options?.GetOption("BlockSize", "Auto"));
     return parsed > 0 ? (uint)parsed : SquashFsWriter.DefaultBlockSize;
@@ -158,31 +147,12 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  /// <summary>
-  /// Lays the image out again by writing it anew.
-  /// </summary>
-  /// <remarks>
-  /// A file's data blocks could be moved — the inode records where they start —
-  /// but that field lives inside a metadata block the writer compresses.
-  /// Patching it means compressing the block again, which changes its length,
-  /// which shifts every metadata block after it and invalidates every offset
-  /// stored into them: the inode references in the directory table, the
-  /// directory references in the inodes, and the table pointers in the
-  /// superblock. So this is a rebuild, and the extent map above is what tells
-  /// the truth about where the bytes are.
-  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
-    // Moving what is out of place beats writing the image out again, even
-    // though the field that names a file's data lives inside a deflated
-    // metadata block: the block is taken apart, changed and packed again, and
-    // it has to come back no longer than it was.
     if (archive.CanSeek && archive.Length <= PlannerImageCap) {
       var planned = false;
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
         readContents: ReadPayloadsForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
@@ -194,13 +164,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     this.DefragmentWithRebuild(archive, options);
   }
 
-  /// <summary>
-  /// Largest image the in-place pass is offered for. Its guard holds a copy of
-  /// the image to compare payloads across the pass.
-  /// </summary>
   private const long PlannerImageCap = 256L * 1024 * 1024;
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
   private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
     stream.Position = 0;
     var reader = new SquashFsReader(stream, leaveOpen: true);
@@ -211,7 +176,6 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       .ToList();
   }
 
-  /// <summary>Plans the new layout, moves the data, then writes the inode table again.</summary>
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
     var mover = new SquashFsBlockMover();
@@ -235,8 +199,6 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
       archive.Length, reinitAfterMove: null);
 
-    // The table is packed again once, because a block that has to grow can
-    // only be found out about after every field in it is final.
     mover.SettleInodeTable(archive);
 
     archive.Position = 0;
@@ -259,52 +221,15 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       });
 
   /// <summary>
-  /// SquashFS is a compressed, read-only image: superblock, compressed data
-  /// blocks, fragment table, inode/directory tables and the export/id/lookup
-  /// tables are packed back-to-back with no free regions and no cluster tips
-  /// (file data is stored at the compressed-block level, so there is no
-  /// allocation slack to wipe).
-  ///
-  /// <para>Note: <see cref="EnumerateExtents"/> reports Used runs at synthetic,
-  /// uncompressed-size offsets for the defrag preview — those offsets do
-  /// <em>not</em> map to real on-disk positions, so this method deliberately
-  /// does not drive the generic wiper from them (doing so would zero live
-  /// compressed bytes). Cluster tips are not applicable; this returns 0.</para>
+  /// A canonical SquashFS image is fully packed. The real extent map marks all
+  /// non-file bytes as metadata-reserved, so there is no proven dead space to
+  /// scrub and this format-specific implementation is intentionally a no-op.
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
-    // Fully packed, read-only image — no free regions or cluster tips exist.
     return 0;
   }
 
-  /// <summary>
-  /// Why this image is laid out again by rebuilding rather than by moving.
-  /// </summary>
-  /// <remarks>
-  /// A file's data blocks sit where its inode says, and the inode sits inside a
-  /// metadata block the writer deflates. Repointing one means decompressing
-  /// that block, changing the field and compressing it again — and the result
-  /// is a different length, which moves every table that follows it and every
-  /// offset into them: the directory entries, the fragment table, the fields in
-  /// the superblock. Storing the block uncompressed instead does not help,
-  /// since uncompressed is the larger of the two. So there is no way to change
-  /// where a file lives without writing the tables again, which is the rebuild.
-  /// </remarks>
-  /// <summary>
-  /// Reports where the image's bytes actually are: the superblock and the
-  /// metadata tables as structure, and each file's compressed data blocks under
-  /// its name, at the offset its inode records.
-  /// </summary>
-  /// <remarks>
-  /// <para>This used to walk a cursor forward by each file's uncompressed size,
-  /// which described a volume that does not exist — the bytes on disk are
-  /// compressed and sit where the inode says. Anything reading that map was
-  /// handed offsets belonging to nothing.</para>
-  ///
-  /// <para>A file small enough to live in a shared fragment has no run of its
-  /// own and none is reported: its bytes are part of a block several files
-  /// share, which no single one of them owns.</para>
-  /// </remarks>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
@@ -322,9 +247,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       }
       owned.Sort((a, b) => a.Start.CompareTo(b.Start));
 
-      // The image is packed: the superblock leads, the data blocks follow, and
-      // the inode, directory and fragment tables trail. Whatever no file claims
-      // is one of those, not free space.
+      // SquashFS is packed: everything not owned by a file data extent belongs
+      // to the superblock, fragment store, inode/directory tables or indexes.
       var cursor = 0L;
       foreach (var (start, end) in owned) {
         if (start > cursor)
@@ -336,7 +260,7 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
         result.Add(new DefragBlockInfo(cursor, image.Length - cursor,
           DefragBlockKind.MetadataReserved, "fragments and tables"));
     } catch {
-      // An image we cannot walk claims nothing; wiping it would zero live data.
+      // Fail closed: an image we cannot walk claims no free space.
       return [];
     }
     return result;
