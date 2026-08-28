@@ -34,7 +34,7 @@ sub(
 )
 sub(
     p,
-    r'public string Description => "Linux compressed ROM filesystem";',
+    r'public string Description => "Linux [Cc]ompressed ROM filesystem";',
     'public string Description => "Linux compressed ROM filesystem; offline image mutation is rebuild-backed.";',
 )
 
