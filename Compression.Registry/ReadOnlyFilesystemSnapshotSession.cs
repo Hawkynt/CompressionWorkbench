@@ -3,9 +3,10 @@
 namespace Compression.Registry;
 
 /// <summary>
-/// Native filesystem node projected into the common driver contract. Filesystem
-/// implementations keep ownership of parsing and positional I/O; this record is
-/// only the stable namespace/metadata hand-off to a frontend-neutral session.
+/// Native filesystem object projected into the common driver contract. Name and
+/// parent are a convenient primary-link description for simple filesystems; use
+/// explicit <see cref="FilesystemSnapshotDirectoryEntry"/> values when one node
+/// has multiple directory entries (hard links).
 /// </summary>
 public sealed record FilesystemSnapshotNode(
   FilesystemNodeId NodeId,
@@ -25,6 +26,17 @@ public sealed record FilesystemSnapshotNode(
 );
 
 /// <summary>
+/// One namespace link from a directory/name pair to a filesystem object. It is
+/// deliberately separate from <see cref="FilesystemSnapshotNode"/> so ext/NTFS/
+/// XFS-style hard links can expose several names for the same stable node ID.
+/// </summary>
+public sealed record FilesystemSnapshotDirectoryEntry(
+  FilesystemNodeId ParentNodeId,
+  string Name,
+  FilesystemNodeId NodeId
+);
+
+/// <summary>
 /// Reusable frontend-neutral session for a filesystem parser that already has
 /// native stable node ids and positional read handles. It intentionally contains
 /// no archive emulation and no write fallback. A filesystem can use this as its
@@ -32,16 +44,41 @@ public sealed record FilesystemSnapshotNode(
 /// retaining the same public contract.
 /// </summary>
 public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
+  private sealed record Child(string Name, FilesystemSnapshotNode Node);
+
   private readonly Dictionary<FilesystemNodeId, FilesystemSnapshotNode> _nodes;
-  private readonly Dictionary<FilesystemNodeId, FilesystemSnapshotNode[]> _children;
+  private readonly Dictionary<FilesystemNodeId, Child[]> _children;
   private bool _disposed;
 
+  /// <summary>
+  /// Convenience constructor for filesystems where every object has exactly one
+  /// namespace link. The parent/name carried by each node is converted to an
+  /// explicit directory-entry set internally.
+  /// </summary>
   public ReadOnlyFilesystemSnapshotSession(
       FilesystemDriverProfile profile,
       FilesystemNodeId rootNodeId,
-      IEnumerable<FilesystemSnapshotNode> nodes) {
+      IEnumerable<FilesystemSnapshotNode> nodes)
+    : this(
+      profile,
+      rootNodeId,
+      Materialize(nodes, out var materialized),
+      materialized
+        .Where(node => node.NodeId != rootNodeId)
+        .Select(node => new FilesystemSnapshotDirectoryEntry(node.ParentNodeId, node.Name, node.NodeId))) { }
+
+  /// <summary>
+  /// Full constructor with independent object and directory-entry sets. Multiple
+  /// entries may target the same node ID; that is how hard links are represented.
+  /// </summary>
+  public ReadOnlyFilesystemSnapshotSession(
+      FilesystemDriverProfile profile,
+      FilesystemNodeId rootNodeId,
+      IEnumerable<FilesystemSnapshotNode> nodes,
+      IEnumerable<FilesystemSnapshotDirectoryEntry> directoryEntries) {
     ArgumentNullException.ThrowIfNull(profile);
     ArgumentNullException.ThrowIfNull(nodes);
+    ArgumentNullException.ThrowIfNull(directoryEntries);
     if (!profile.CanMount)
       throw new ArgumentException("A snapshot session requires a mountable filesystem profile.", nameof(profile));
     if (profile.CanMountWritable)
@@ -49,24 +86,35 @@ public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
 
     Profile = profile;
     RootNodeId = rootNodeId;
-    _nodes = nodes.ToDictionary(node => node.NodeId);
+    _nodes = new Dictionary<FilesystemNodeId, FilesystemSnapshotNode>();
+    foreach (var node in nodes) {
+      if (!_nodes.TryAdd(node.NodeId, node))
+        throw new InvalidDataException(
+          $"Filesystem snapshot defines node {node.NodeId.Value}:{node.NodeId.Generation} more than once.");
+    }
     if (!_nodes.TryGetValue(rootNodeId, out var root) || root.Kind != FilesystemNodeKind.Directory)
       throw new InvalidDataException("Filesystem snapshot must contain its root directory node.");
 
-    var children = new Dictionary<FilesystemNodeId, List<FilesystemSnapshotNode>>();
-    foreach (var node in _nodes.Values) {
-      children.TryAdd(node.NodeId, []);
-      if (node.NodeId == rootNodeId) continue;
-      if (!_nodes.TryGetValue(node.ParentNodeId, out var parent) || parent.Kind != FilesystemNodeKind.Directory)
-        throw new InvalidDataException($"Filesystem node {node.NodeId.Value}:{node.NodeId.Generation} has no directory parent.");
-      if (!children.TryGetValue(parent.NodeId, out var list)) children[parent.NodeId] = list = [];
-      if (list.Any(existing => string.Equals(existing.Name, node.Name, StringComparison.Ordinal)))
-        throw new InvalidDataException($"Filesystem directory contains duplicate name '{node.Name}'.");
-      list.Add(node);
+    var children = _nodes.Keys.ToDictionary(id => id, _ => new List<Child>());
+    foreach (var entry in directoryEntries) {
+      ArgumentNullException.ThrowIfNull(entry.Name);
+      if (entry.Name.Length == 0 || entry.Name is "." or ".." || entry.Name.Contains('/') || entry.Name.Contains('\\'))
+        throw new InvalidDataException($"Filesystem directory entry name '{entry.Name}' is not a single valid path component.");
+      if (!_nodes.TryGetValue(entry.ParentNodeId, out var parent) || parent.Kind != FilesystemNodeKind.Directory)
+        throw new InvalidDataException(
+          $"Filesystem directory entry '{entry.Name}' has no directory parent {entry.ParentNodeId.Value}:{entry.ParentNodeId.Generation}.");
+      if (!_nodes.TryGetValue(entry.NodeId, out var target))
+        throw new InvalidDataException(
+          $"Filesystem directory entry '{entry.Name}' targets missing node {entry.NodeId.Value}:{entry.NodeId.Generation}.");
+      var list = children[entry.ParentNodeId];
+      if (list.Any(existing => string.Equals(existing.Name, entry.Name, StringComparison.Ordinal)))
+        throw new InvalidDataException($"Filesystem directory contains duplicate name '{entry.Name}'.");
+      list.Add(new Child(entry.Name, target));
     }
+
     _children = children.ToDictionary(
       item => item.Key,
-      item => item.Value.OrderBy(node => node.Name, StringComparer.Ordinal).ToArray());
+      item => item.Value.OrderBy(child => child.Name, StringComparer.Ordinal).ToArray());
   }
 
   public FilesystemDriverProfile Profile { get; }
@@ -95,9 +143,9 @@ public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
     if (parent.Kind != FilesystemNodeKind.Directory) throw new DirectoryNotFoundException(parent.Name);
     if (!_children.TryGetValue(parentDirectory, out var children)) return null;
     var exact = children.FirstOrDefault(child => string.Equals(child.Name, name, StringComparison.Ordinal));
-    if (exact != null) return exact.NodeId;
+    if (exact != null) return exact.Node.NodeId;
     var folded = children.Where(child => string.Equals(child.Name, name, StringComparison.OrdinalIgnoreCase)).ToArray();
-    return folded.Length == 1 ? folded[0].NodeId : null;
+    return folded.Length == 1 ? folded[0].Node.NodeId : null;
   }
 
   public IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory) {
@@ -105,7 +153,7 @@ public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
     var node = RequireNode(directory);
     if (node.Kind != FilesystemNodeKind.Directory) throw new DirectoryNotFoundException(node.Name);
     return (_children.TryGetValue(directory, out var children) ? children : [])
-      .Select(child => new FilesystemDirectoryEntry(child.Name, child.NodeId, child.Kind))
+      .Select(child => new FilesystemDirectoryEntry(child.Name, child.Node.NodeId, child.Node.Kind))
       .ToArray();
   }
 
@@ -145,6 +193,14 @@ public sealed class ReadOnlyFilesystemSnapshotSession : IFilesystemSession {
     => _nodes.TryGetValue(nodeId, out var node)
       ? node
       : throw new FileNotFoundException($"Filesystem node {nodeId.Value}:{nodeId.Generation} does not exist in this session.");
+
+  private static IEnumerable<FilesystemSnapshotNode> Materialize(
+      IEnumerable<FilesystemSnapshotNode> nodes,
+      out FilesystemSnapshotNode[] materialized) {
+    ArgumentNullException.ThrowIfNull(nodes);
+    materialized = nodes.ToArray();
+    return materialized;
+  }
 
   private static NotSupportedException ReadOnly()
     => new("This native filesystem snapshot session is read-only.");
