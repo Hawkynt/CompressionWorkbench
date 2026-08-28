@@ -155,12 +155,12 @@ public sealed class DtbWriter {
     output.WriteByte(0);
     Align4(output);
 
+    var propertyHeader = new byte[8];
     foreach (var property in node.Properties) {
       WriteToken(output, DtbReader.FDT_PROP);
-      Span<byte> header = stackalloc byte[8];
-      BinaryPrimitives.WriteUInt32BigEndian(header[..4], checked((uint)property.Data.Length));
-      BinaryPrimitives.WriteUInt32BigEndian(header[4..], internName(property.Name));
-      output.Write(header);
+      BinaryPrimitives.WriteUInt32BigEndian(propertyHeader.AsSpan(0, 4), checked((uint)property.Data.Length));
+      BinaryPrimitives.WriteUInt32BigEndian(propertyHeader.AsSpan(4, 4), internName(property.Name));
+      output.Write(propertyHeader);
       output.Write(property.Data);
       Align4(output);
     }
