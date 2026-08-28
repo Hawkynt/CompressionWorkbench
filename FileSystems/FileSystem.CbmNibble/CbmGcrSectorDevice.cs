@@ -4,11 +4,10 @@ using Compression.Registry;
 namespace FileSystem.CbmNibble;
 
 /// <summary>
-/// Lossless 1541 sector projection over raw GCR tracks. Unlike the legacy
-/// convenience decoder, this device fails closed: every standard sector must
-/// be present exactly once with a valid header checksum, a valid data checksum,
-/// a matching track number, and a consistent disk id before the image is
-/// exposed as a block device.
+/// Strict 1541 logical-sector projection over raw GCR tracks. Every standard
+/// sector must exist exactly once with valid header/data checksums before the
+/// medium is exposed. Writable projection additionally rejects meaningful odd
+/// half-track data that a sector rewrite could not preserve.
 /// </summary>
 public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
   public const int SectorSize = 256;
@@ -51,9 +50,6 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
   private readonly byte _diskId2;
   private bool _disposed;
 
-  /// <param name="fixedTrackLength">
-  /// Null for variable-length G64 tracks; 8192 for fixed-slot NIB tracks.
-  /// </param>
   public CbmGcrSectorDevice(
       IRawTrackDevice tracks,
       bool writable,
@@ -70,14 +66,13 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
     var infos = tracks.EnumerateTracks().ToDictionary(info => info.Index);
     byte? id1 = null;
     byte? id2 = null;
-
     for (var track = 1; track <= TotalTracks; ++track) {
       var rawIndex = (track - 1) * 2;
       if (!infos.TryGetValue(rawIndex, out var info) || !info.IsPresent || info.Length <= 0)
         throw new InvalidDataException($"GCR projection: required track {track} (half-track {rawIndex}) is missing.");
       if (info.EncodingParameter > 3)
         throw new NotSupportedException(
-          $"GCR projection: half-track {rawIndex} uses a pointer-based variable-speed map; sector writes are not safe until that map is modeled.");
+          $"GCR projection: half-track {rawIndex} uses a pointer-based variable-speed map.");
       if (info.Length > int.MaxValue)
         throw new NotSupportedException("GCR track is too large to decode in memory.");
 
@@ -90,23 +85,19 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
       id1 ??= trackId1;
       id2 ??= trackId2;
       if (id1 != trackId1 || id2 != trackId2)
-        throw new InvalidDataException($"GCR projection: track {track} uses a different disk id than previous tracks.");
-
+        throw new InvalidDataException($"GCR projection: track {track} uses an inconsistent disk id.");
       foreach (var pair in sectors)
         pair.Value.CopyTo(_data, SectorOffset(track, pair.Key));
     }
 
     if (writable) {
-      // Half-tracks carrying independent data are legitimate for copy protection,
-      // but a standard 1541 logical-sector rewrite cannot preserve their coupling
-      // or timing semantics. Refuse writable projection rather than corrupt them.
       foreach (var info in infos.Values.Where(info => (info.Index & 1) != 0 && info.IsPresent && info.Length > 0)) {
         if (info.Length > int.MaxValue) throw new NotSupportedException("GCR half-track is too large to inspect.");
         var raw = new byte[(int)info.Length];
         var read = tracks.ReadTrack(info.Index, raw);
         if (read > 0 && !IsBlank(raw.AsSpan(0, read)))
           throw new NotSupportedException(
-            $"GCR half-track {info.Index} contains non-gap data; writable sector projection would not preserve copy-protection/timing semantics.");
+            $"GCR half-track {info.Index} contains non-gap data; writable logical-sector projection would not preserve it.");
       }
     }
 
@@ -157,20 +148,19 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
 
       foreach (var track in _dirtyTracks.Order()) {
         var encoded = EncodeTrack(track);
-        var rawIndex = (track - 1) * 2;
         if (_fixedTrackLength is int fixedLength) {
           if (encoded.Length > fixedLength)
-            throw new IOException($"Canonical GCR track {track} is {encoded.Length} bytes and exceeds the {fixedLength}-byte media slot.");
+            throw new IOException($"Encoded GCR track {track} is larger than its {fixedLength}-byte slot.");
           var slot = new byte[fixedLength];
           slot.AsSpan().Fill(GapByte);
           encoded.CopyTo(slot, 0);
           encoded = slot;
         }
-        // Self-check before the raw media is touched.
+
         var verify = DecodeTrack(encoded, track, out var id1, out var id2);
         if (id1 != _diskId1 || id2 != _diskId2 || verify.Count != SectorsPerTrack[track])
           throw new InvalidOperationException($"GCR encoder self-check failed for track {track}.");
-        _tracks.WriteTrack(rawIndex, encoded);
+        _tracks.WriteTrack((track - 1) * 2, encoded);
       }
       _tracks.Flush();
       _dirtyTracks.Clear();
@@ -186,8 +176,10 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
 
   private byte[] EncodeTrack(int track) {
     using var output = new MemoryStream();
+    var header = new byte[HeaderRawBytes];
+    var dataBlock = new byte[DataRawBytes];
     for (var sector = 0; sector < SectorsPerTrack[track]; ++sector) {
-      Span<byte> header = stackalloc byte[HeaderRawBytes];
+      Array.Clear(header);
       header[0] = 0x08;
       header[2] = (byte)sector;
       header[3] = (byte)track;
@@ -197,7 +189,7 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
       header[7] = 0x0F;
       header[1] = (byte)(header[2] ^ header[3] ^ header[4] ^ header[5]);
 
-      var dataBlock = new byte[DataRawBytes];
+      Array.Clear(dataBlock);
       dataBlock[0] = 0x07;
       _data.AsSpan(SectorOffset(track, sector), SectorSize).CopyTo(dataBlock.AsSpan(1, SectorSize));
       byte checksum = 0;
@@ -226,18 +218,16 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
     var result = new Dictionary<int, byte[]>();
     byte? id1 = null;
     byte? id2 = null;
+    var header = new byte[HeaderRawBytes];
+    var data = new byte[DataRawBytes];
     for (var i = 0; i < syncStarts.Count; ++i) {
-      var headerBit = syncStarts[i];
-      Span<byte> header = stackalloc byte[HeaderRawBytes];
-      if (!TryDecodeBits(raw, headerBit, header) || header[0] != 0x08) continue;
+      if (!TryDecodeBits(raw, syncStarts[i], header) || header[0] != 0x08) continue;
       if (header[1] != (byte)(header[2] ^ header[3] ^ header[4] ^ header[5])) continue;
       if (header[3] != expectedTrack) continue;
       var sector = header[2];
       if (sector >= SectorsPerTrack[expectedTrack]) continue;
 
-      var dataBit = syncStarts[(i + 1) % syncStarts.Count];
-      Span<byte> data = stackalloc byte[DataRawBytes];
-      if (!TryDecodeBits(raw, dataBit, data) || data[0] != 0x07) continue;
+      if (!TryDecodeBits(raw, syncStarts[(i + 1) % syncStarts.Count], data) || data[0] != 0x07) continue;
       byte checksum = 0;
       for (var p = 1; p <= SectorSize; ++p) checksum ^= data[p];
       if (checksum != data[257]) continue;
@@ -248,7 +238,7 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
       id2 ??= header[4];
       if (id1 != header[5] || id2 != header[4])
         throw new InvalidDataException($"GCR projection: track {expectedTrack} contains inconsistent disk ids.");
-      result.Add(sector, data.Slice(1, SectorSize).ToArray());
+      result.Add(sector, data.AsSpan(1, SectorSize).ToArray());
     }
 
     if (result.Count != SectorsPerTrack[expectedTrack]) {
@@ -261,10 +251,6 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
     return result;
   }
 
-  /// <summary>
-  /// Returns bit positions immediately after a sync run. The scan is circular,
-  /// so a track rotated by a non-byte number of bits is still decoded.
-  /// </summary>
   private static List<int> FindSyncEnds(ReadOnlySpan<byte> raw) {
     var totalBits = raw.Length * 8;
     var result = new List<int>();
@@ -272,10 +258,11 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
 
     var trailingOnes = 0;
     for (var bit = totalBits - 1; bit >= 0 && GetBit(raw, bit) != 0; --bit) trailingOnes++;
+    if (trailingOnes == totalBits) return result;
+
     var run = trailingOnes;
     for (var bit = 0; bit < totalBits; ++bit) {
       if (GetBit(raw, bit) != 0) {
-        if (bit < trailingOnes && trailingOnes == totalBits) continue;
         run++;
         continue;
       }
@@ -304,7 +291,7 @@ public sealed class CbmGcrSectorDevice : IRandomAccessBlockDevice {
     var totalBits = raw.Length * 8;
     var value = 0;
     for (var i = 0; i < count; ++i) {
-      if (bit >= totalBits) bit = 0;
+      if (bit == totalBits) bit = 0;
       value = (value << 1) | GetBit(raw, bit++);
     }
     return value;
