@@ -38,7 +38,6 @@ public sealed class EwfFormatDescriptor :
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95),
-    new([0x4C, 0x56, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.80),
     new([0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [
@@ -141,14 +140,19 @@ public sealed class EwfFormatDescriptor :
     output.Write(writer.Build(media));
   }
 
-  /// <summary>Replaces the logical media payload of an existing EVF image.</summary>
+  /// <summary>
+  /// Replaces the one logical media payload of an existing EVF. Because EWF is
+  /// a media wrapper rather than a multi-file filesystem, any single non-directory
+  /// input is interpreted as the replacement <c>media.raw</c> payload; naming it
+  /// <c>media.raw</c> simply makes that intent explicit.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     var files = inputs.Where(i => !i.IsDirectory).ToArray();
     if (files.Length == 0) return;
-    if (files.Length != 1 || !string.Equals(files[0].ArchiveName, "media.raw", StringComparison.OrdinalIgnoreCase))
-      throw new NotSupportedException("EWF existing-image mutation accepts exactly one logical entry named 'media.raw'.");
+    if (files.Length != 1)
+      throw new NotSupportedException("EWF existing-image mutation accepts one logical media payload at a time.");
 
     var existing = ReadImage(archive);
     if (existing.IsLogical)
@@ -171,6 +175,19 @@ public sealed class EwfFormatDescriptor :
     var existing = ReadImage(archive);
     if (existing.IsLogical)
       throw new NotSupportedException("LVF logical-evidence mutation is not implemented; physical EVF/E01 is R/W.");
+    RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
+  }
+
+  /// <summary>
+  /// EWF purge means deleting the logical acquired media while preserving a
+  /// valid, listable empty EVF. Generated metadata/section diagnostic entries
+  /// necessarily remain because they describe the empty container itself.
+  /// </summary>
+  public void Purge(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    var existing = ReadImage(archive);
+    if (existing.IsLogical)
+      throw new NotSupportedException("LVF logical-evidence purge is not implemented; physical EVF/E01 is purgeable.");
     RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
   }
 
@@ -406,23 +423,34 @@ public sealed class EwfFormatDescriptor :
 
   private static Dictionary<string, string> ReadAcquisitionFields(EwfReader.EwfImage image) {
     foreach (var section in image.Sections.Where(s => s.Type is "header2" or "header")) {
-      try {
-        var payload = ZlibStream.Decompress(section.Payload);
-        var text = payload.Length >= 2 && payload[0] == 0xFF && payload[1] == 0xFE
-          ? Encoding.Unicode.GetString(payload, 2, payload.Length - 2)
-          : Encoding.UTF8.GetString(payload);
-        var lines = text.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 3) continue;
-        var keys = lines[1].Split('\t');
-        var values = lines[2].Split('\t');
-        var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        for (var i = 0; i < Math.Min(keys.Length, values.Length); ++i) {
-          var key = keys[i].Trim();
-          if (key.Length > 0) result[key] = values[i].Trim();
-        }
-        if (result.Count > 0) return result;
-      } catch { }
+      foreach (var payload in CandidateHeaderPayloads(section.Payload)) {
+        try {
+          var text = payload.Length >= 2 && payload[0] == 0xFF && payload[1] == 0xFE
+            ? Encoding.Unicode.GetString(payload, 2, payload.Length - 2)
+            : Encoding.UTF8.GetString(payload);
+          var lines = text.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+          for (var line = 0; line + 1 < lines.Length; ++line) {
+            if (!lines[line].Contains('\t')) continue;
+            var keys = lines[line].Split('\t');
+            var values = lines[line + 1].Split('\t');
+            if (keys.Length < 2 || values.Length == 0) continue;
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (var i = 0; i < Math.Min(keys.Length, values.Length); ++i) {
+              var key = keys[i].Trim();
+              if (key.Length > 0) result[key] = values[i].Trim();
+            }
+            if (result.Count > 0) return result;
+          }
+        } catch { }
+      }
     }
     return [];
+  }
+
+  private static IEnumerable<byte[]> CandidateHeaderPayloads(byte[] payload) {
+    try { yield return ZlibStream.Decompress(payload); }
+    catch { }
+    // Some old/synthetic EWF producers expose header text uncompressed.
+    yield return payload;
   }
 }
