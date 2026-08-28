@@ -11,10 +11,11 @@ namespace Compression.Registry;
 /// <para>
 /// A descriptor advertising <see cref="FormatCapabilities.CanModify"/> must expose this
 /// interface and its supported-profile edit path must actually round-trip. Merely being able
-/// to create a fresh instance is not enough.
+/// to create a fresh instance is not enough. A fully modifiable container is also purgeable:
+/// removing all live entries is a required subset of the remove contract.
 /// </para>
 /// </summary>
-public interface IArchiveModifiable {
+public interface IArchiveModifiable : IArchivePurgeable {
   /// <summary>
   /// Adds files to an existing instance, replacing entries with the same logical path/name.
   ///
