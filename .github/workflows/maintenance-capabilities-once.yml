@@ -37,6 +37,9 @@ jobs:
       - name: Build test project
         run: dotnet build Compression.Tests/Compression.Tests.csproj -c Release
 
+      - name: Build WPF maintenance UI
+        run: dotnet build Compression.UI/Compression.UI.csproj -c Release -p:EnableWindowsTargeting=true
+
       - name: Run rebuild progress tests
         run: dotnet test Compression.Tests/Compression.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~RebuildProgressCancellationTests|FullyQualifiedName~MarkerInterfaceCoverageTests|FullyQualifiedName~WriteCapabilityHonestyTests'
 
