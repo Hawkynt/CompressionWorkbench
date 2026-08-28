@@ -1,4 +1,4 @@
-name: Maintenance capability audit one-shot
+name: Maintenance UX one-shot
 
 on:
   push:
@@ -12,7 +12,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  promote:
+  apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +20,8 @@ jobs:
           fetch-depth: 0
           ref: feat/filesystem-rw-gaps
 
-      - name: Apply capability promotions and generate matrices
-        run: python .github/maintenance-capabilities.py
+      - name: Apply live rebuild progress and cancellation UX
+        run: python .github/maintenance-ux.py
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -34,14 +34,14 @@ jobs:
       - name: Build test project
         run: dotnet build Compression.Tests/Compression.Tests.csproj -c Release
 
-      - name: Run maintenance contract tests
-        run: dotnet test Compression.Tests/Compression.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~MarkerInterfaceCoverageTests|FullyQualifiedName~WriteCapabilityHonestyTests'
+      - name: Run rebuild progress tests
+        run: dotnet test Compression.Tests/Compression.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~RebuildProgressCancellationTests|FullyQualifiedName~MarkerInterfaceCoverageTests|FullyQualifiedName~WriteCapabilityHonestyTests'
 
-      - name: Commit promoted capabilities
+      - name: Commit UX changes
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "+ expose and promote maintenance capabilities"
+          git commit -m "+ animate staged archive rebuilds and cancellation"
           git push origin HEAD:feat/filesystem-rw-gaps
