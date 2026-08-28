@@ -13,7 +13,10 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Version>1.0.0</Version>
     <Authors>Hawkynt</Authors>
-    <PackageReadmeFile>ReadMe.md</PackageReadmeFile>
+    <!-- Must match the file on disk exactly. Every packable project here overrides this anyway, so
+         the old "ReadMe.md" spelling never bit; a new packable project that did not override it
+         would have failed `dotnet pack` with NU5039 on a case-sensitive host. -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/Hawkynt/CompressionWorkbench</PackageProjectUrl>
     <PackageTags>Hawkynt;CompressionWorkbench</PackageTags>
     <RepositoryUrl>https://github.com/Hawkynt/CompressionWorkbench</RepositoryUrl>
