@@ -103,7 +103,7 @@ public sealed class RarcWriter : IDisposable {
       foreach (var file in directory.Files.OrderBy(file => file.Name, StringComparer.Ordinal)) {
         if (nextFileId >= RarcConstants.DirectoryFileId)
           throw new InvalidDataException("RARC file-ID space is exhausted.");
-        entries.Add(FileEntryRecord.File(file, checked((ushort)nextFileId)));
+        entries.Add(FileEntryRecord.FromFile(file, checked((ushort)nextFileId)));
         ++nextFileId;
       }
 
@@ -353,7 +353,7 @@ public sealed class RarcWriter : IDisposable {
         DataSize = RarcConstants.NodeSize,
       };
 
-    public static FileEntryRecord File(TreeFile file, ushort id)
+    public static FileEntryRecord FromFile(TreeFile file, ushort id)
       => new() {
         Id = id,
         Name = file.Name,
