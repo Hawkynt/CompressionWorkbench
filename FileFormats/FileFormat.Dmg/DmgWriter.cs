@@ -50,25 +50,22 @@ public sealed class DmgWriter {
     }
     var dataForkLength = pos;
 
-    var mishBlobs = new byte[padded.Length][];
+    var entries = new List<(string Name, byte[] Mish, long LogicalSize)>(padded.Length);
     for (var i = 0; i < padded.Length; i++) {
       var sectorCount = (ulong)(padded[i].data.Length / SectorSize);
-      mishBlobs[i] = BuildMishBlob(
-        firstSector: 0,
-        sectorCount: sectorCount,
-        rawDataOffset: (ulong)partitionOffsets[i],
-        rawDataLength: (ulong)padded[i].data.Length);
+      entries.Add((padded[i].name,
+        BuildMishBlob(0, sectorCount, (ulong)partitionOffsets[i], (ulong)padded[i].data.Length),
+        padded[i].logicalSize));
     }
 
-    var xml = BuildXmlPlist(padded, mishBlobs);
-    var xmlBytes = Encoding.UTF8.GetBytes(xml);
+    var xmlBytes = Encoding.UTF8.GetBytes(BuildXmlPlist(entries));
     var xmlOffset = pos;
 
     foreach (var (_, data, _) in padded)
       output.Write(data);
     output.Write(xmlBytes);
 
-    var totalSectors = padded.Aggregate<(string name, byte[] data, long logicalSize), ulong>(0,
+    var totalSectors = padded.Aggregate<(string name, byte[] data, long logicalSize), ulong>(0UL,
       (current, partition) => current + (ulong)(partition.data.Length / SectorSize));
     output.Write(BuildKoly(xmlOffset, xmlBytes.LongLength, dataForkLength, totalSectors));
   }
@@ -101,6 +98,25 @@ public sealed class DmgWriter {
     off += MishBlockSize;
     BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(off), BlockTypeTerminator);
     return blob;
+  }
+
+  internal static string BuildXmlPlist(IEnumerable<(string Name, byte[] Mish, long LogicalSize)> entries) {
+    var sb = new StringBuilder();
+    sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+    sb.AppendLine("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">");
+    sb.AppendLine("<plist version=\"1.0\">");
+    sb.AppendLine("<dict>");
+    sb.AppendLine("  <key>resource-fork</key>");
+    sb.AppendLine("  <dict>");
+    sb.AppendLine("    <key>blkx</key>");
+    sb.AppendLine("    <array>");
+    foreach (var entry in entries)
+      sb.AppendLine(BuildBlkxDict(entry.Name, entry.Mish, entry.LogicalSize));
+    sb.AppendLine("    </array>");
+    sb.AppendLine("  </dict>");
+    sb.AppendLine("</dict>");
+    sb.Append("</plist>");
+    return sb.ToString();
   }
 
   internal static string BuildBlkxDict(string name, byte[] mish, long logicalSize) {
@@ -136,30 +152,9 @@ public sealed class DmgWriter {
     BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(224), (ulong)xmlLength);
     BinaryPrimitives.WriteUInt64BigEndian(koly.AsSpan(492), totalSectors);
 
-    // The plist and/or data fork changed. A checksum of type "none" is valid
-    // UDIF and avoids retaining a checksum that now describes stale bytes.
     koly.AsSpan(80, 136).Clear();
     koly.AsSpan(352, 136).Clear();
     return koly;
-  }
-
-  private static string BuildXmlPlist((string name, byte[] data, long logicalSize)[] partitions, byte[][] mishBlobs) {
-    var sb = new StringBuilder();
-    sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-    sb.AppendLine("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">");
-    sb.AppendLine("<plist version=\"1.0\">");
-    sb.AppendLine("<dict>");
-    sb.AppendLine("  <key>resource-fork</key>");
-    sb.AppendLine("  <dict>");
-    sb.AppendLine("    <key>blkx</key>");
-    sb.AppendLine("    <array>");
-    for (var i = 0; i < partitions.Length; i++)
-      sb.AppendLine(BuildBlkxDict(partitions[i].name, mishBlobs[i], partitions[i].logicalSize));
-    sb.AppendLine("    </array>");
-    sb.AppendLine("  </dict>");
-    sb.AppendLine("</dict>");
-    sb.Append("</plist>");
-    return sb.ToString();
   }
 
   internal static string EscapeXml(string s) {
