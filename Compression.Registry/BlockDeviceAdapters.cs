@@ -3,18 +3,17 @@
 namespace Compression.Registry;
 
 /// <summary>
-/// Optional media/container capability. VHD/QCOW2/VDI/G64-like formats expose
-/// their logical disk here; filesystem drivers consume the returned block device
-/// without knowing how the outer container stores those bytes.
+/// Compatibility alias for the original block-device provider name. New code
+/// uses <see cref="IRandomAccessBlockDeviceProvider"/> so containers, decoded
+/// track media and raw images expose exactly one logical-block abstraction.
 /// </summary>
-public interface IBlockDeviceProvider {
-  IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true);
-}
+[Obsolete("Use IRandomAccessBlockDeviceProvider; both names represent the same logical-block boundary.")]
+public interface IBlockDeviceProvider : IRandomAccessBlockDeviceProvider { }
 
 /// <summary>
 /// Optional filesystem-core capability for implementations whose native parser
 /// already works directly on a block device. This is the long-term driver core:
-/// the same filesystem implementation can then mount raw disks, virtual disks,
+/// the same filesystem implementation can mount raw disks, virtual disks,
 /// forensic images, or decoded track media without container-specific code.
 /// </summary>
 public interface IBlockDeviceFilesystemDriverProvider {
@@ -88,8 +87,7 @@ public sealed class StreamBlockDevice : IRandomAccessBlockDevice {
   public void Trim(long firstBlock, long blockCount) {
     ThrowIfDisposed();
     if (!CanWrite) throw new NotSupportedException("The stream block device was opened read-only.");
-    if (firstBlock < 0 || blockCount < 0 || firstBlock > Geometry.BlockCount - blockCount)
-      throw new ArgumentOutOfRangeException(nameof(firstBlock));
+    ValidateRange(firstBlock, blockCount);
     throw new NotSupportedException("An ordinary stream has no portable deallocate/TRIM primitive.");
   }
 
@@ -106,11 +104,15 @@ public sealed class StreamBlockDevice : IRandomAccessBlockDevice {
   }
 
   private void ValidateBuffer(long firstBlock, int byteCount, string parameterName) {
-    if (firstBlock < 0) throw new ArgumentOutOfRangeException(nameof(firstBlock));
     if (byteCount < 0 || byteCount % Geometry.LogicalBlockSize != 0)
       throw new ArgumentException("Block I/O buffers must contain a whole number of logical blocks.", parameterName);
-    var count = byteCount / Geometry.LogicalBlockSize;
-    if (firstBlock > Geometry.BlockCount - count)
+    ValidateRange(firstBlock, byteCount / Geometry.LogicalBlockSize);
+  }
+
+  private void ValidateRange(long firstBlock, long blockCount) {
+    if (firstBlock < 0) throw new ArgumentOutOfRangeException(nameof(firstBlock));
+    if (blockCount < 0) throw new ArgumentOutOfRangeException(nameof(blockCount));
+    if (firstBlock > Geometry.BlockCount || blockCount > Geometry.BlockCount - firstBlock)
       throw new ArgumentOutOfRangeException(nameof(firstBlock), "Block range extends beyond the device.");
   }
 
@@ -186,7 +188,7 @@ public sealed class BlockDeviceStream : Stream {
     ThrowIfDisposed();
     if (!CanWrite) throw new NotSupportedException("The block-device stream is read-only.");
     if (buffer.Length == 0) return;
-    if (_position > Length - buffer.Length)
+    if ((long)buffer.Length > Length - _position)
       throw new IOException("Block-device streams have fixed length and cannot be extended.");
     WriteAt(_position, buffer);
     _position += buffer.Length;
@@ -199,12 +201,17 @@ public sealed class BlockDeviceStream : Stream {
 
   public override long Seek(long offset, SeekOrigin origin) {
     ThrowIfDisposed();
-    var target = origin switch {
-      SeekOrigin.Begin => offset,
-      SeekOrigin.Current => checked(_position + offset),
-      SeekOrigin.End => checked(Length + offset),
-      _ => throw new ArgumentOutOfRangeException(nameof(origin)),
-    };
+    long target;
+    try {
+      target = origin switch {
+        SeekOrigin.Begin => offset,
+        SeekOrigin.Current => checked(_position + offset),
+        SeekOrigin.End => checked(Length + offset),
+        _ => throw new ArgumentOutOfRangeException(nameof(origin)),
+      };
+    } catch (OverflowException) {
+      throw new IOException("Seek target overflows the block-device address space.");
+    }
     if (target < 0 || target > Length) throw new IOException("Seek target lies outside the fixed block device.");
     return _position = target;
   }
