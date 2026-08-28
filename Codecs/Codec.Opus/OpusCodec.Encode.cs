@@ -169,8 +169,8 @@ public static partial class OpusCodec {
     encoder.UseInbandFEC = options.UseInbandFec;
     encoder.PacketLossPercent = options.PacketLossPercent;
     if (options.ForceChannels.HasValue) encoder.ForceChannels = options.ForceChannels.Value;
-    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = options.MaxBandwidth.Value;
-    if (options.Bandwidth.HasValue) encoder.Bandwidth = options.Bandwidth.Value;
+    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = (Concentus.Enums.OpusBandwidth)(int)options.MaxBandwidth.Value;
+    if (options.Bandwidth.HasValue) encoder.Bandwidth = (Concentus.Enums.OpusBandwidth)(int)options.Bandwidth.Value;
     encoder.SignalType = options.Signal;
     if (options.ForceMode.HasValue) encoder.ForceMode = options.ForceMode.Value;
     encoder.PredictionDisabled = options.PredictionDisabled;
@@ -185,8 +185,8 @@ public static partial class OpusCodec {
     encoder.UseDTX = options.UseDtx;
     encoder.UseInbandFEC = options.UseInbandFec;
     encoder.PacketLossPercent = options.PacketLossPercent;
-    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = options.MaxBandwidth.Value;
-    if (options.Bandwidth.HasValue) encoder.Bandwidth = options.Bandwidth.Value;
+    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = (Concentus.Enums.OpusBandwidth)(int)options.MaxBandwidth.Value;
+    if (options.Bandwidth.HasValue) encoder.Bandwidth = (Concentus.Enums.OpusBandwidth)(int)options.Bandwidth.Value;
     encoder.SignalType = options.Signal;
     if (options.ForceMode.HasValue) encoder.ForceMode = options.ForceMode.Value;
     encoder.PredictionDisabled = options.PredictionDisabled;

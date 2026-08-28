@@ -242,7 +242,7 @@ public static partial class Ac3Codec {
       groups[group] = (byte)minimum;
     }
 
-    groups[0] = (byte)Math.Min(groups[0], 15);
+    groups[0] = (byte)Math.Min((int)groups[0], 15);
     for (var i = 1; i < groups.Length; ++i)
       groups[i] = (byte)Math.Min(groups[i], groups[i - 1] + 2);
     for (var i = groups.Length - 2; i >= 0; --i)

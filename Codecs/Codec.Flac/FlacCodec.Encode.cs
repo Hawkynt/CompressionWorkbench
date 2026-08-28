@@ -411,7 +411,7 @@ public static partial class FlacCodec {
     public void WriteBits(ulong value, int count) {
       if (count is < 0 or > 64) throw new ArgumentOutOfRangeException(nameof(count));
       for (var bit = count - 1; bit >= 0; --bit) {
-        _current = (byte)((_current << 1) | ((value >> bit) & 1));
+        _current = (byte)(((ulong)_current << 1) | ((value >> bit) & 1UL));
         if (++_bitCount != 8) continue;
         _bytes.Add(_current);
         _current = 0;

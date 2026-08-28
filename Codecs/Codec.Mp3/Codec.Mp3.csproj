@@ -4,9 +4,4 @@
     <RootNamespace>Codec.Mp3</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- LGPL-3.0, fully managed C# LAME/Jump3r port; no native OS dependencies. -->
-    <PackageReference Include="GroovyMp3" Version="0.1.2" />
-  </ItemGroup>
-
 </Project>

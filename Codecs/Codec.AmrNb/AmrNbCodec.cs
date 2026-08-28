@@ -18,7 +18,7 @@ namespace Codec.AmrNb;
 /// reproduced structurally. SID/NO_DATA frames emit 160 samples of silence (DTX comfort-noise
 /// synthesis is not modelled); this is surfaced honestly in the container metadata.</para>
 /// </summary>
-public static class AmrNbCodec {
+public static partial class AmrNbCodec {
 
   /// <summary>Samples produced per frame (160 @ 8 kHz = 20 ms).</summary>
   public const int SamplesPerFrame = AmrNbData.SamplesPerFrame;

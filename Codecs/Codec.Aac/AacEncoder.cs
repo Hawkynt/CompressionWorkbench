@@ -478,7 +478,7 @@ public static class AacEncoder {
 
     public void Write(uint value, int bits) {
       for (var i = bits - 1; i >= 0; --i) {
-        _current = (byte)((_current << 1) | ((value >> i) & 1));
+        _current = (byte)(((uint)_current << 1) | ((value >> i) & 1u));
         if (++_used != 8) continue;
         _bytes.Add(_current);
         _current = 0;

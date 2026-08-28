@@ -107,13 +107,13 @@ public static partial class MsAdpcmCodec {
     if (available <= 2)
       return;
 
+    Span<int> candidates = stackalloc int[10];
     for (var predictor = 0; predictor < AdaptCoeff1.Length; ++predictor) {
       var predicted = (initialSample1 * AdaptCoeff1[predictor] + initialSample2 * AdaptCoeff2[predictor]) >> 8;
       var firstTarget = GetSample(interleaved, frames, channels, baseFrame + 2, channel, (short)initialSample1);
       var residual = Math.Abs((int)firstTarget - predicted);
       var initialDifference = Math.Abs(initialSample1 - initialSample2);
 
-      Span<int> candidates = stackalloc int[10];
       candidates[0] = MinimumDelta;
       candidates[1] = ClampDelta(initialDifference);
       for (var divisor = 1; divisor <= 8; ++divisor)
