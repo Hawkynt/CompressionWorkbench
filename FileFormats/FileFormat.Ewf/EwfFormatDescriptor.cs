@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
@@ -126,11 +127,6 @@ public sealed class EwfFormatDescriptor :
     return result.ToArray();
   }
 
-  /// <summary>
-  /// Creates a physical EVF image. A named <c>media.raw</c> input is preferred;
-  /// otherwise non-directory inputs are concatenated for backward compatibility
-  /// with the original media-wrapper API.
-  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -140,12 +136,6 @@ public sealed class EwfFormatDescriptor :
     output.Write(writer.Build(media));
   }
 
-  /// <summary>
-  /// Replaces the one logical media payload of an existing EVF. Because EWF is
-  /// a media wrapper rather than a multi-file filesystem, any single non-directory
-  /// input is interpreted as the replacement <c>media.raw</c> payload; naming it
-  /// <c>media.raw</c> simply makes that intent explicit.
-  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -160,10 +150,6 @@ public sealed class EwfFormatDescriptor :
     RewriteMedia(archive, files[0].ReadContent(), existing, HasCompressedChunks(existing));
   }
 
-  /// <summary>
-  /// Removing <c>media.raw</c> leaves a valid zero-sector EVF. Diagnostic
-  /// section/metadata names are generated views and cannot be removed separately.
-  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
@@ -178,11 +164,6 @@ public sealed class EwfFormatDescriptor :
     RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
   }
 
-  /// <summary>
-  /// EWF purge means deleting the logical acquired media while preserving a
-  /// valid, listable empty EVF. Generated metadata/section diagnostic entries
-  /// necessarily remain because they describe the empty container itself.
-  /// </summary>
   public void Purge(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     var existing = ReadImage(archive);
@@ -194,11 +175,6 @@ public sealed class EwfFormatDescriptor :
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions());
 
-  /// <summary>
-  /// Canonicalizes descriptor/table/chunk placement by reconstructing the media
-  /// and writing a fresh single-segment EVF while preserving decoded acquisition
-  /// metadata and the existing chunk-compression policy.
-  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     var existing = ReadImage(archive);
@@ -224,10 +200,6 @@ public sealed class EwfFormatDescriptor :
       "EWF canonicalization complete"));
   }
 
-  /// <summary>
-  /// Emits the smallest of the original, canonical stored-chunk and canonical
-  /// compressed-chunk EVF representations of the same logical media.
-  /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
@@ -280,10 +252,6 @@ public sealed class EwfFormatDescriptor :
     options.OnProgress?.Invoke(media.LongLength, media.LongLength);
   }
 
-  /// <summary>
-  /// EWF sections are tightly framed; this layout map marks every live section
-  /// byte. A canonical image consequently has no generic free gaps to wipe.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var image = ReadImage(archive);
     yield return new DefragBlockInfo(0, Math.Min(EwfReader.FileHeaderSize, image.TotalFileSize),
@@ -447,10 +415,11 @@ public sealed class EwfFormatDescriptor :
     return [];
   }
 
-  private static IEnumerable<byte[]> CandidateHeaderPayloads(byte[] payload) {
-    try { yield return ZlibStream.Decompress(payload); }
+  private static IReadOnlyList<byte[]> CandidateHeaderPayloads(byte[] payload) {
+    var result = new List<byte[]>(2);
+    try { result.Add(ZlibStream.Decompress(payload)); }
     catch { }
-    // Some old/synthetic EWF producers expose header text uncompressed.
-    yield return payload;
+    result.Add(payload);
+    return result;
   }
 }
