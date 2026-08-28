@@ -5,6 +5,12 @@ namespace Compression.Tests.Hashing;
 
 [TestFixture]
 public sealed class HamsiTests {
+  [TestCase(224, "", "B9F6EB1A9B990373F9D2CB125584333C69A3D41AE291845F05DA221F")]
+  [TestCase(224, "CC", "8BFA48CF172314D558417877CDA9BE97825128C531165407FC241040")]
+  [TestCase(224, "41FB", "5EABC4770AD6AB30335CA58DE088AA234DB09258933BA833113A5FA1")]
+  [TestCase(256, "", "750E9EC469F4DB626BEE7E0C10DDAA1BD01FE194B94EFBABEBD24764DC2B13E9")]
+  [TestCase(256, "CC", "AC2DAC2A6DDAF703B7A55745D61B1A16A3D1BF1F74CAAB265A2E5DBEBCF60832")]
+  [TestCase(256, "41FB", "2DB4F6B7A8E20B28D5D3D536EA23ADE6566D4E622E62A108CD52A7A809C469DD")]
   [TestCase(384, "", "3943CD34E3B96B197A8BF4BAC7AA982D18530DD12F41136B26D7E88759255F21153F4A4BD02E523612B8427F9DD96C8D")]
   [TestCase(384, "CC", "9B299C0B4A6838B5B0F53B0F9C0AEA98BBC9C4C9481EC0EC68F344E696F8787DE2E08A1404A038C83AC9E121136E8BB8")]
   [TestCase(384, "41FB", "E7394C52238CA2251E51714E790B0EE64A27EBD669CD88F2D564BF17FF704D710BA5F4419DD106A027B16D3DECFB3A9A")]
@@ -12,12 +18,19 @@ public sealed class HamsiTests {
   [TestCase(512, "CC", "7DA1BE62A813A8E24D200671CFFB1D0BE79D2BC176FF0B163B11EDED2414EF66261FF52C745383442BC7F1884D5166F26F41D335FC2D2FDB2F93B24B8D079265")]
   [TestCase(512, "41FB", "3253D2DB0D57862D6DEEC1033F27E373D3BECBAB7FA74C9B3EC1D041BBCA8978C19E34E3E726A7C163C7D6A996897A5DB80B21B385C47E8E3A3AEE6023388CF2")]
   public void MatchesIndependentSphlibVectors(int bits, string inputHex, string expectedHex) {
-    Assert.That(Convert.ToHexString(Hamsi.Compute(Convert.FromHexString(inputHex), bits)), Is.EqualTo(expectedHex));
+    Assert.That(Convert.ToHexString(HamsiFamily.Compute(Convert.FromHexString(inputHex), bits)), Is.EqualTo(expectedHex));
   }
 
   [Test]
-  public void ExposesOnlyImplementedBigStateSizes() {
-    Assert.That(Hamsi.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 384, 512 }));
-    Assert.Throws<ArgumentOutOfRangeException>(() => Hamsi.Compute([], 256));
+  public void ExposesAllStandardizedSizesAsEnumerableRanges() {
+    Assert.That(HamsiFamily.SupportedHashSizes, Has.Count.EqualTo(2));
+    Assert.That(HamsiFamily.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 224, 256, 384, 512 }));
+    Assert.Throws<ArgumentOutOfRangeException>(() => HamsiFamily.Compute([], 320));
+  }
+
+  [Test]
+  public void EveryAdvertisedSizeProducesTheAdvertisedNumberOfBytes() {
+    foreach (var bits in HamsiFamily.SupportedHashSizes.EnumerateSizes())
+      Assert.That(HamsiFamily.Compute("range-dispatch"u8, bits), Has.Length.EqualTo(bits / 8), $"Hamsi-{bits}");
   }
 }
