@@ -22,24 +22,12 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: preview
 
-      - name: Preserve upstream nullable context and fix integration points
+      - name: Fix AAC integration point
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
-
-          roots = [
-              Path('Codecs/Codec.Opus/Vendored/Concentus'),
-              Path('Codecs/Codec.Vorbis/Vendored/OggVorbisEncoder'),
-              Path('Codecs/Codec.Mp3/Vendored/GroovyCodecs'),
-              Path('Codecs/Codec.AmrWb/Vendored/AmrWbLib'),
-          ]
-          for root in roots:
-              for p in root.rglob('*.cs'):
-                  text = p.read_text(encoding='utf-8-sig')
-                  if not text.startswith('#nullable'):
-                      p.write_text('#nullable disable\n' + text, encoding='utf-8', newline='\n')
 
           p = Path('Codecs/Codec.Aac/AacEncoder.cs')
           text = p.read_text(encoding='utf-8-sig')
@@ -47,27 +35,51 @@ jobs:
           replacement = ('    ActiveLongOffsets.Value = AacScaleFactorBands.Long1024[sampleRateIndex];\n'
                          '    var writer = new AacBitWriter();\n'
                          '    var maxSfb = AacScaleFactorBands.NumSwbLong[sampleRateIndex];')
-          if needle not in text:
-              raise SystemExit('AAC integration point not found')
-          p.write_text(text.replace(needle, replacement, 1), encoding='utf-8', newline='\n')
+          if 'ActiveLongOffsets.Value = AacScaleFactorBands.Long1024[sampleRateIndex];' not in text:
+              if needle not in text:
+                  raise SystemExit('AAC integration point not found')
+              p.write_text(text.replace(needle, replacement, 1), encoding='utf-8', newline='\n')
           PY
 
       - name: Restore
         run: dotnet restore CompressionWorkbench.slnx
 
-      - name: Format vendored source whitespace
+      - name: Apply repository formatting and safe C# modernization
         shell: bash
         run: |
           set -euo pipefail
-          dotnet format whitespace Codecs/Codec.Opus/Codec.Opus.csproj --no-restore
-          dotnet format whitespace Codecs/Codec.Vorbis/Codec.Vorbis.csproj --no-restore
-          dotnet format whitespace Codecs/Codec.Mp3/Codec.Mp3.csproj --no-restore
-          dotnet format whitespace Codecs/Codec.AmrWb/Codec.AmrWb.csproj --no-restore
+          projects=(
+            Codecs/Codec.Opus/Codec.Opus.csproj
+            Codecs/Codec.Vorbis/Codec.Vorbis.csproj
+            Codecs/Codec.Mp3/Codec.Mp3.csproj
+            Codecs/Codec.AmrWb/Codec.AmrWb.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet format whitespace "$project" --no-restore
+            dotnet format style "$project" --no-restore --severity info \
+              --diagnostics IDE0005 IDE0028 IDE0090 IDE0300 IDE0301 IDE0305
+          done
 
-      - name: Build full solution
+      - name: Verify no vendored nullable opt-out exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.cs' '^#nullable disable' \
+            Codecs/Codec.Opus/Vendored \
+            Codecs/Codec.Vorbis/Vendored \
+            Codecs/Codec.Mp3/Vendored \
+            Codecs/Codec.AmrWb/Vendored; then
+            echo '::error::Vendored source must inherit repository nullable/code-analysis settings.'
+            exit 1
+          fi
+
+      - name: Build full solution with repository analyzers
         run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
 
-      - name: Commit integrated source
+      - name: Run audio tests
+        run: dotnet test Compression.Tests/Compression.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~Compression.Tests.Audio'
+
+      - name: Commit standardized source
         shell: bash
         run: |
           set -euo pipefail
@@ -75,5 +87,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Integrate vendored audio sources with C# 14 build'
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Standardize vendored audio sources for C# 14'
           git push origin HEAD:feature/audio-adpcm-encoders
