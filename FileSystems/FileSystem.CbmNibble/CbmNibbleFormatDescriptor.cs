@@ -4,12 +4,6 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.CbmNibble;
 
-/// <summary>
-/// Shared pseudo-archive helpers for G64/NIB. The public entries are raw
-/// half-tracks, not files from the Commodore filesystem contained inside them.
-/// Keeping that boundary explicit lets a future block/sector driver sit below a
-/// C64 filesystem driver without archive-level rebuilds silently changing layers.
-/// </summary>
 internal static class CbmNibbleEntries {
   public static CbmNibbleReader.NibbleImage ReadImage(Stream stream, string fileName) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -83,11 +77,9 @@ internal static class CbmNibbleEntries {
 }
 
 /// <summary>
-/// Commodore G64 GCR track container. R/W operates directly on opaque
-/// <c>track_NN.bin</c> half-tracks; ordinary-file Create remains available as a
-/// convenience path that first builds a Commodore filesystem and GCR-encodes it.
-/// Variable-speed-map images are readable but direct mutation fails closed until
-/// their auxiliary speed blocks are modeled.
+/// VICE G64 raw-GCR track container. Archive-level R/W operates on half-track
+/// entries, while <see cref="IRawTrackDeviceProvider"/> exposes the lower media
+/// layer for a future sector decoder / CBM-DOS filesystem driver.
 /// </summary>
 public sealed class G64FormatDescriptor :
   IFormatDescriptor,
@@ -96,7 +88,8 @@ public sealed class G64FormatDescriptor :
   IArchiveModifiable,
   IArchiveDefragmentable,
   IArchiveCreatable,
-  IArchiveLayoutMap {
+  IArchiveLayoutMap,
+  IRawTrackDeviceProvider {
 
   public string Id => "G64";
   public string DisplayName => "G64 (Commodore GCR)";
@@ -113,6 +106,9 @@ public sealed class G64FormatDescriptor :
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "VICE G64 Commodore GCR track image with direct half-track R/W and canonical re-layout";
+
+  public IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)
+    => CbmNibbleRawTrackDevices.OpenG64(image, writable, leaveOpen);
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => CbmNibbleEntries.List(stream, "image.g64");
@@ -239,11 +235,8 @@ public sealed class G64FormatDescriptor :
 
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var image = CbmNibbleEntries.ReadImage(archive, "image.g64");
-    if (image.Tracks.Any(t => t.SpeedZone > 3)) {
-      // Pointer-based speed maps may occupy otherwise unreferenced byte ranges.
-      // Until those blocks are parsed, the only safe wipe map is "all reserved".
+    if (image.Tracks.Any(t => t.SpeedZone > 3))
       return [new DefragBlockInfo(0, image.TotalFileSize, DefragBlockKind.MetadataReserved, "$G64/variable-speed-profile")];
-    }
 
     var result = new List<DefragBlockInfo>();
     var tableBytes = 12L + image.TrackCount * 8L;
@@ -260,8 +253,6 @@ public sealed class G64FormatDescriptor :
     var extents = this.EnumerateLayout(image).ToList();
     if (extents.Count == 0) return 0;
     image.Position = 0;
-    // G64 physical track extents include the u16 length prefix, so archive-entry
-    // logical sizes cannot safely drive generic cluster-tip wiping.
     return UnusedSpaceWiper.Wipe(image, extents, image.Length, false, null);
   }
 
@@ -282,18 +273,15 @@ public sealed class G64FormatDescriptor :
   private static void VerifyTrackPayloads(byte[] rebuilt, IEnumerable<CbmNibbleReader.Track> expected) {
     var parsed = CbmNibbleReader.Read(rebuilt, "image.g64");
     var actual = parsed.Tracks.ToDictionary(t => t.Index);
-    foreach (var track in expected) {
+    foreach (var track in expected)
       if (!actual.TryGetValue(track.Index, out var found) || !found.Data.AsSpan().SequenceEqual(track.Data))
         throw new InvalidOperationException($"G64 rebuild changed track_{track.Index:D2}.bin; refusing to commit it.");
-    }
   }
 }
 
 /// <summary>
-/// Commodore NIB fixed-slot raw nibble dump. Each of the 84 half-tracks occupies
-/// exactly 8192 bytes, so direct mutation is naturally random-access friendly:
-/// replace one slot, clear one slot, or rewrite the same fixed geometry. An
-/// all-zero slot is the workbench's explicit empty-track representation.
+/// Fixed-slot NIB raw nibble dump. Each of the 84 half-tracks occupies 8192
+/// bytes, making the raw-track device genuinely positional and directly writable.
 /// </summary>
 public sealed class NibFormatDescriptor :
   IFormatDescriptor,
@@ -301,7 +289,8 @@ public sealed class NibFormatDescriptor :
   IArchiveCreatable,
   IArchiveModifiable,
   IArchiveDefragmentable,
-  IArchiveLayoutMap {
+  IArchiveLayoutMap,
+  IRawTrackDeviceProvider {
 
   public string Id => "Nib";
   public string DisplayName => "NIB (Commodore nibble dump)";
@@ -317,6 +306,9 @@ public sealed class NibFormatDescriptor :
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Commodore raw nibble dump with fixed-slot half-track R/W";
+
+  public IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)
+    => CbmNibbleRawTrackDevices.OpenNib(image, writable, leaveOpen);
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => CbmNibbleEntries.List(stream, "image.nib");
@@ -414,8 +406,6 @@ public sealed class NibFormatDescriptor :
       "scanning", 0, 0, -1, archive.Length, this.EnumerateLayout(archive).ToList(),
       "NIB uses fixed half-track slots; no relocation is necessary"));
     options.CancellationToken.ThrowIfCancellationRequested();
-    // Fixed slot offsets are the canonical layout. Do not rewrite merely to make
-    // a defragment verb look busy; a real block driver would make the same call a no-op.
     options.OnProgress?.Invoke(new DefragProgressEvent(
       "complete", 1, -1, -1, image.TotalFileSize, this.EnumerateLayout(archive).ToList(),
       "NIB is already physically canonical"));
@@ -447,9 +437,8 @@ public sealed class NibFormatDescriptor :
   private static void VerifyNibTracks(byte[] rebuilt, IEnumerable<CbmNibbleReader.Track> expected) {
     var parsed = CbmNibbleReader.Read(rebuilt, "image.nib");
     var actual = parsed.Tracks.ToDictionary(t => t.Index);
-    foreach (var track in expected) {
+    foreach (var track in expected)
       if (!actual.TryGetValue(track.Index, out var found) || !found.Data.AsSpan().SequenceEqual(track.Data))
         throw new InvalidOperationException($"NIB rebuild changed track_{track.Index:D2}.bin; refusing to commit it.");
-    }
   }
 }
