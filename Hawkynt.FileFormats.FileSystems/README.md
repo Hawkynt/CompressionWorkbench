@@ -921,7 +921,7 @@ Reader for Intel HEX records (`:LLAAAATT[DD…]CC`), the long-standing flash-pro
 
 #### `SRecordReader`
 
-Reader for Motorola S-Record files (`Stnn[aaaa\|aaaaaa\|aaaaaaaa]dd…cc`). Recognised types: S0 header, S1/S2/S3 data (16/24/32-bit address), S5/S6 record counts (informational), S7/S8/S9 termination (32/24/16-bit start addr).
+Reader for Motorola S-Record files (`Stnn[aaaa|aaaaaa|aaaaaaaa]dd…cc`). Recognised types: S0 header, S1/S2/S3 data (16/24/32-bit address), S5/S6 record counts (informational), S7/S8/S9 termination (32/24/16-bit start addr).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2820,7 +2820,7 @@ Random-access in-place modifier for BBC Micro Acorn DFS `.ssd` images. The DFS c
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, char directory = $, uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file to an existing single-sided DFS image. Caller is responsible for ensuring the name does not already exist (use `RemoveFile` first for replace-by-name semantics). The file is placed in the lowest contiguous gap large enough to hold it. |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file to an existing single-sided DFS image. Caller is responsible for ensuring the name does not already exist (use `RemoveFile` first for replace-by-name semantics). The file is placed in the lowest contiguous gap large enough to hold it. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named file from the image. Returns true if found and removed. When `wipeData` is true, the data sectors are zeroed. |
 
 #### `BbcReader`
@@ -2855,7 +2855,7 @@ Builds a fresh BBC Micro Acorn DFS `.ssd` single-sided disk image from scratch (
 | `SectorSize` | `const int SectorSize` |  |
 | `SectorsPerTrack` | `const int SectorsPerTrack` |  |
 | `TotalSectors40` | `const int TotalSectors40` |  |
-| `AddFile` | `void AddFile(string name, byte[] data, char directory = $, uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` |  |
+| `AddFile` | `void AddFile(string name, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` |  |
 | `Build` | `byte[] Build(string diskTitle = "WORMDISK", int bootOption = 0)` | Builds the complete 40-track SSD image (100 000 bytes). |
 
 ### Namespace `FileSystem.BcacheFs`
@@ -3232,7 +3232,7 @@ From-scratch writer for the Commodore nibble container the `CbmNibbleReader` con
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the flat directory. Commodore names are PETSCII and at most 16 characters; longer names are truncated. The default file type is PRG. |
 | `Build` | `byte[] Build()` | Builds the G64 GCR nibble image holding all added files. |
 | `DecodeToD64` | `static byte[] DecodeToD64(NibbleImage image)` | Reconstructs a standard 174 848-byte D64 image from the GCR tracks of a nibble image previously parsed by `CbmNibbleReader`. Each track is rescanned for sync marks and its header/data blocks GCR-decoded back into the correct sector slots. |
-| `SetDisk` | `void SetDisk(string name, char id1 = 0, char id2 = 0)` | Sets the on-disk volume name (PETSCII, ≤16 chars) and the 2-byte disk id. |
+| `SetDisk` | `void SetDisk(string name, char id1 = '0', char id2 = '0')` | Sets the on-disk volume name (PETSCII, ≤16 chars) and the 2-byte disk id. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the G64 image to `output`. |
 
 #### `G64FormatDescriptor`
@@ -6152,7 +6152,7 @@ Implements `IDisposable`.
 
 #### `JfsWriter`
 
-Writes a minimal IBM Journaled File System (JFS1) aggregate image with a single allocation group, one fileset, and an inline dtree root directory. Byte layout matches the on-disk structures in `linux/fs/jfs` and the `jfsutils` reference (mkfs.jfs / fsck.jfs); validated by exit-zero from `fsck.jfs -n -f -v`. All integer fields are little-endian. `pxd_t` is packed as `len_addr = (len & 0xFFFFFF) \| ((addr >> 32) << 24)`, `addr2 = addr & 0xFFFFFFFF`. Dtree slot names are UCS-2 (UTF-16 LE). Round-trips through `JfsReader`. Aggregate inode table (block 11..14, IXSIZE=16 KB) holds the AGGR_RESERVED_I (0), AGGREGATE_I (1, → AIM), BMAP_I (2, → block-allocation map), LOG_I (3), BADBLOCK_I (4) and FILESYSTEM_I (16, → fileset AIM) metadata inodes. The fileset inode table at blocks 29..32 holds FILESET_RSVD_I (0), FILESET_EXT_I (1), ROOT_I (2, dtroot inline), ACL_I (3) and user file inodes (4+).
+Writes a minimal IBM Journaled File System (JFS1) aggregate image with a single allocation group, one fileset, and an inline dtree root directory. Byte layout matches the on-disk structures in `linux/fs/jfs` and the `jfsutils` reference (mkfs.jfs / fsck.jfs); validated by exit-zero from `fsck.jfs -n -f -v`. All integer fields are little-endian. `pxd_t` is packed as `len_addr = (len & 0xFFFFFF) | ((addr >> 32) << 24)`, `addr2 = addr & 0xFFFFFFFF`. Dtree slot names are UCS-2 (UTF-16 LE). Round-trips through `JfsReader`. Aggregate inode table (block 11..14, IXSIZE=16 KB) holds the AGGR_RESERVED_I (0), AGGREGATE_I (1, → AIM), BMAP_I (2, → block-allocation map), LOG_I (3), BADBLOCK_I (4) and FILESYSTEM_I (16, → fileset AIM) metadata inodes. The fileset inode table at blocks 29..32 holds FILESET_RSVD_I (0), FILESET_EXT_I (1), ROOT_I (2, dtroot inline), ACL_I (3) and user file inodes (4+).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7535,7 +7535,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `Ocfs2InPlaceModifier`
 
-True in-place R/W modifier for OCFS2 (Oracle Cluster Filesystem 2) images produced by `Ocfs2Writer`. Performs O(touched bytes) random-access I/O against the image: only the global bitmap data block, the root directory dinode (inline dirents), the affected file dinode block, and the file's data blocks are read or written. No whole-image read or rewrite. Layout (matches `Ocfs2Writer`'s single-node geometry): 4 KB blocks = 4 KB clusters; one dinode per block.Superblock dinode at block 2; global bitmap dinode at block 3; bitmap data at block 4 (1 bit per cluster, LSB-first, bit=1 means used).Root directory dinode at block 5 (INODE01) with inline dirents in id2 after the 8-byte ocfs2_inline_data header (id2 + 8), each entry `inode(8) \| rec_len(2) \| name_len(1) \| file_type(1) \| name[]`.User files start at block 8: each gets one dinode block, plus contiguous data clusters whose run is held in a single extent record.Scope (MVP, single-node only): root-directory mutations only. Sub-directory mutation, DLM/heartbeat lockdown, multi-node cluster semantics, and root-directory B-tree splits (extent-backed root) are out of scope and throw `NotSupportedException` if encountered.
+True in-place R/W modifier for OCFS2 (Oracle Cluster Filesystem 2) images produced by `Ocfs2Writer`. Performs O(touched bytes) random-access I/O against the image: only the global bitmap data block, the root directory dinode (inline dirents), the affected file dinode block, and the file's data blocks are read or written. No whole-image read or rewrite. Layout (matches `Ocfs2Writer`'s single-node geometry): 4 KB blocks = 4 KB clusters; one dinode per block.Superblock dinode at block 2; global bitmap dinode at block 3; bitmap data at block 4 (1 bit per cluster, LSB-first, bit=1 means used).Root directory dinode at block 5 (INODE01) with inline dirents in id2 after the 8-byte ocfs2_inline_data header (id2 + 8), each entry `inode(8) | rec_len(2) | name_len(1) | file_type(1) | name[]`.User files start at block 8: each gets one dinode block, plus contiguous data clusters whose run is held in a single extent record.Scope (MVP, single-node only): root-directory mutations only. Sub-directory mutation, DLM/heartbeat lockdown, multi-node cluster semantics, and root-directory B-tree splits (extent-backed root) are out of scope and throw `NotSupportedException` if encountered.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10429,7 +10429,7 @@ Builds a fresh ZX Spectrum `.scl` TR-DOS archive from scratch (WORM).
 | --- | --- | --- |
 | `ZxSclWriter` | `ZxSclWriter()` |  |
 | `MaxEntries` | `const int MaxEntries` | TR-DOS hard cap: headers are stored in a single 256-entry directory-like table. |
-| `AddFile` | `void AddFile(string name, byte[] data, char fileType = C, ushort param1 = 32768, ushort param2 = 0)` |  |
+| `AddFile` | `void AddFile(string name, byte[] data, char fileType = 'C', ushort param1 = 32768, ushort param2 = 0)` |  |
 | `Build` | `byte[] Build()` |  |
 
 <!-- API:END -->

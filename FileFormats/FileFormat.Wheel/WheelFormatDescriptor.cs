@@ -33,7 +33,7 @@ namespace FileFormat.Wheel;
 /// WHEEL fields. The underlying ZIP is read via <see cref="ZipReader"/>.
 /// </para>
 /// </remarks>
-public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -49,7 +49,7 @@ public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   /// <inheritdoc/>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 
@@ -163,6 +163,10 @@ public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
   }
+
+  /// <inheritdoc/>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => WheelCreator.Create(output, inputs);
 
   /// <summary>
   /// Returns the dist-info directory name (without trailing slash). Throws

@@ -1,4 +1,5 @@
 using System.Text;
+using Compression.Registry;
 using FileFormat.Wheel;
 using FileFormat.Zip;
 
@@ -44,9 +45,12 @@ public class WheelTests {
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
     var d = new WheelFormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("Wheel"));
-    Assert.That(d.Extensions, Contains.Item(".whl"));
-    Assert.That(d.MagicSignatures, Is.Empty);
+    Assert.Multiple(() => {
+      Assert.That(d.Id, Is.EqualTo("Wheel"));
+      Assert.That(d.Extensions, Contains.Item(".whl"));
+      Assert.That(d.MagicSignatures, Is.Empty);
+      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    });
   }
 
   [Test, Category("HappyPath")]
@@ -81,6 +85,79 @@ public class WheelTests {
     } finally {
       Directory.Delete(tmp, recursive: true);
     }
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Create_GeneratesRecordAndRoundTrips() {
+    var metadata = "Metadata-Version: 2.1\nName: foo\nVersion: 1.2.3\n"u8.ToArray();
+    var wheel = "Wheel-Version: 1.0\nGenerator: CompressionWorkbench\nRoot-Is-Purelib: true\nTag: py3-none-any\n"u8.ToArray();
+    var module = "# foo\n"u8.ToArray();
+    ArchiveInputInfo[] inputs = [
+      ArchiveInputInfo.InMemory("foo/__init__.py", module),
+      ArchiveInputInfo.InMemory("foo-1.2.dist-info/METADATA", metadata),
+      ArchiveInputInfo.InMemory("foo-1.2.dist-info/WHEEL", wheel),
+    ];
+
+    using var output = new MemoryStream();
+    var descriptor = new WheelFormatDescriptor();
+    descriptor.Create(output, inputs, new FormatCreateOptions());
+
+    output.Position = 0;
+    using (var zip = new ZipReader(output, leaveOpen: true)) {
+      var recordEntry = zip.Entries.Single(entry => entry.FileName == "foo-1.2.dist-info/RECORD");
+      var record = Encoding.UTF8.GetString(zip.ExtractEntry(recordEntry));
+      Assert.Multiple(() => {
+        Assert.That(record, Does.Contain("foo/__init__.py,sha256="));
+        Assert.That(record, Does.Contain("foo-1.2.dist-info/METADATA,sha256="));
+        Assert.That(record, Does.Contain("foo-1.2.dist-info/WHEEL,sha256="));
+        Assert.That(record, Does.EndWith("foo-1.2.dist-info/RECORD,,\n"));
+      });
+    }
+
+    output.Position = 0;
+    var listed = descriptor.List(output, null).Select(entry => entry.Name).ToArray();
+    Assert.Multiple(() => {
+      Assert.That(listed, Does.Contain("foo/__init__.py"));
+      Assert.That(listed, Does.Contain("foo-1.2.dist-info/METADATA"));
+      Assert.That(listed, Does.Contain("foo-1.2.dist-info/WHEEL"));
+      Assert.That(listed, Does.Contain("foo-1.2.dist-info/RECORD"));
+    });
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Create_GenericFiles_SynthesizesMinimalWheelMetadata() {
+    ArchiveInputInfo[] inputs = [ArchiveInputInfo.InMemory("docs/readme.txt", "hello\n"u8.ToArray())];
+    using var output = new MemoryStream();
+    var descriptor = new WheelFormatDescriptor();
+
+    descriptor.Create(output, inputs, new FormatCreateOptions());
+
+    output.Position = 0;
+    using var zip = new ZipReader(output, leaveOpen: true);
+    var names = zip.Entries.Select(entry => entry.FileName).ToArray();
+    var metadataEntry = zip.Entries.Single(entry => entry.FileName == "compression_workbench_archive-0.dist-info/METADATA");
+    var metadata = Encoding.UTF8.GetString(zip.ExtractEntry(metadataEntry));
+    Assert.Multiple(() => {
+      Assert.That(names, Does.Contain("docs/readme.txt"));
+      Assert.That(names, Does.Contain("compression_workbench_archive-0.dist-info/WHEEL"));
+      Assert.That(names, Does.Contain("compression_workbench_archive-0.dist-info/RECORD"));
+      Assert.That(metadata, Does.Contain("Name: compression-workbench-archive"));
+      Assert.That(metadata, Does.Contain("Version: 0"));
+    });
+
+    output.Position = 0;
+    Assert.That(descriptor.List(output, null).Select(entry => entry.Name), Does.Contain("docs/readme.txt"));
+  }
+
+  /// <summary>The same tree twice must give the same bytes.</summary>
+  [Test, Category("EdgeCase")]
+  public void Create_GenericFiles_IsDeterministic() {
+    ArchiveInputInfo[] inputs = [ArchiveInputInfo.InMemory("docs/readme.txt", "hello\n"u8.ToArray())];
+    using var first = new MemoryStream();
+    using var second = new MemoryStream();
+    new WheelFormatDescriptor().Create(first, inputs, new FormatCreateOptions());
+    new WheelFormatDescriptor().Create(second, inputs, new FormatCreateOptions());
+    Assert.That(second.ToArray(), Is.EqualTo(first.ToArray()));
   }
 
   [Test, Category("EdgeCase")]
