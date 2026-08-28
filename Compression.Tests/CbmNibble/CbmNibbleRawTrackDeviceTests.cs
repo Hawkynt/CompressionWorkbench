@@ -33,7 +33,9 @@ public sealed class CbmNibbleRawTrackDeviceTests {
       new CbmNibbleReader.Track(0, new byte[] { 1, 2, 3 }, 3),
       new CbmNibbleReader.Track(4, new byte[] { 7, 8, 9 }, 3),
     ], trackCount: 6);
-    using var image = new MemoryStream(initial, writable: true);
+    using var image = new MemoryStream();
+    image.Write(initial);
+    image.Position = 0;
 
     using (var device = CbmNibbleRawTrackDevices.OpenG64(image, writable: true)) {
       var replacement = new byte[] { 9, 9, 9, 9, 9 };
