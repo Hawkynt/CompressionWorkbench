@@ -20,6 +20,9 @@ jobs:
           fetch-depth: 0
           ref: feat/filesystem-rw-gaps
 
+      - name: Patch transformer details
+        run: python .github/maintenance-ux-fix.py
+
       - name: Apply live rebuild progress and cancellation UX
         run: python .github/maintenance-ux.py
 
