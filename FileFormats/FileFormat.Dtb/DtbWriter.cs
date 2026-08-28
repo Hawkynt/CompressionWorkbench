@@ -95,11 +95,19 @@ public sealed class DtbWriter {
   internal static PropertySpec FromArchiveEntry(string archiveName, byte[] data) {
     var normalized = archiveName.Replace('\\', '/').Trim('/');
     var slash = normalized.LastIndexOf('/');
-    var nodePath = slash < 0 ? "/" : "/" + normalized[..slash];
+    var directory = slash < 0 ? "" : normalized[..slash];
+    var nodePath = directory.Length == 0 || directory.Equals("_root", StringComparison.OrdinalIgnoreCase)
+      ? "/"
+      : "/" + directory;
     var leaf = slash < 0 ? normalized : normalized[(slash + 1)..];
-    if (leaf.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ||
-        leaf.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+    var isText = leaf.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
+    if (isText || leaf.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
       leaf = leaf[..^4];
+
+    if (isText && (data.Length == 0 || data[^1] != 0)) {
+      var text = Encoding.UTF8.GetString(data).Replace("\r\n", "\n");
+      data = Encoding.UTF8.GetBytes(text.Replace('\n', '\0') + "\0");
+    }
     return new PropertySpec(nodePath, SanitisePropertyName(leaf), data);
   }
 
