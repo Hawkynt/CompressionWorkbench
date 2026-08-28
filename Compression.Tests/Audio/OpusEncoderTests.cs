@@ -2,6 +2,7 @@
 using Codec.Opus;
 using Concentus.Enums;
 using ConcentusOpusMode = Concentus.Enums.OpusMode;
+using OpusBandwidth = Codec.Opus.OpusBandwidth;
 
 namespace Compression.Tests.Audio;
 
@@ -114,8 +115,8 @@ public class OpusEncoderTests {
       UseInbandFec: true,
       PacketLossPercent: 12,
       ForceChannels: 1,
-      MaxBandwidth: OpusBandwidth.OPUS_BANDWIDTH_WIDEBAND,
-      Bandwidth: OpusBandwidth.OPUS_BANDWIDTH_WIDEBAND,
+      MaxBandwidth: OpusBandwidth.Wideband,
+      Bandwidth: OpusBandwidth.Wideband,
       Signal: OpusSignal.OPUS_SIGNAL_VOICE,
       ForceMode: ConcentusOpusMode.MODE_SILK_ONLY,
       PredictionDisabled: false,

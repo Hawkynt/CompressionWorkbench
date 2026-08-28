@@ -158,17 +158,23 @@ public class CodecTests {
 
   // ── GSM 06.10 ──────────────────────────────────────────────────────────
 
+  /// <summary>A frame carrying the 0xD signature nibble the format requires.</summary>
+  private static byte[] Gsm610Frames(int count) {
+    var frames = new byte[Gsm610Codec.FrameBytes * count];
+    for (var i = 0; i < count; ++i)
+      frames[i * Gsm610Codec.FrameBytes] = 0xD0;
+    return frames;
+  }
+
   [Test]
   public void Gsm610_DecodesOneFrameToOneHundredSixtySamples() {
-    var frame = new byte[Gsm610Codec.FrameBytes];
-    var pcm = Gsm610Codec.Decode(frame, channels: 1);
+    var pcm = Gsm610Codec.Decode(Gsm610Frames(1), channels: 1);
     Assert.That(pcm.Length, Is.EqualTo(Gsm610Codec.FrameSamples));
   }
 
   [Test]
   public void Gsm610_DecodesMultipleFrames() {
-    var frames = new byte[Gsm610Codec.FrameBytes * 4];
-    var pcm = Gsm610Codec.Decode(frames, channels: 1);
+    var pcm = Gsm610Codec.Decode(Gsm610Frames(4), channels: 1);
     Assert.That(pcm.Length, Is.EqualTo(Gsm610Codec.FrameSamples * 4));
   }
 

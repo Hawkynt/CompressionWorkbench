@@ -7,6 +7,7 @@ using Concentus;
 using Concentus.Enums;
 using Concentus.Structs;
 using ConcentusOpusMode = Concentus.Enums.OpusMode;
+using ConcentusOpusBandwidth = Concentus.Enums.OpusBandwidth;
 
 namespace Codec.Opus;
 
@@ -169,8 +170,8 @@ public static partial class OpusCodec {
     encoder.UseInbandFEC = options.UseInbandFec;
     encoder.PacketLossPercent = options.PacketLossPercent;
     if (options.ForceChannels.HasValue) encoder.ForceChannels = options.ForceChannels.Value;
-    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = (Concentus.Enums.OpusBandwidth)(int)options.MaxBandwidth.Value;
-    if (options.Bandwidth.HasValue) encoder.Bandwidth = (Concentus.Enums.OpusBandwidth)(int)options.Bandwidth.Value;
+    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = ToConcentus(options.MaxBandwidth.Value);
+    if (options.Bandwidth.HasValue) encoder.Bandwidth = ToConcentus(options.Bandwidth.Value);
     encoder.SignalType = options.Signal;
     if (options.ForceMode.HasValue) encoder.ForceMode = options.ForceMode.Value;
     encoder.PredictionDisabled = options.PredictionDisabled;
@@ -185,8 +186,8 @@ public static partial class OpusCodec {
     encoder.UseDTX = options.UseDtx;
     encoder.UseInbandFEC = options.UseInbandFec;
     encoder.PacketLossPercent = options.PacketLossPercent;
-    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = (Concentus.Enums.OpusBandwidth)(int)options.MaxBandwidth.Value;
-    if (options.Bandwidth.HasValue) encoder.Bandwidth = (Concentus.Enums.OpusBandwidth)(int)options.Bandwidth.Value;
+    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = ToConcentus(options.MaxBandwidth.Value);
+    if (options.Bandwidth.HasValue) encoder.Bandwidth = ToConcentus(options.Bandwidth.Value);
     encoder.SignalType = options.Signal;
     if (options.ForceMode.HasValue) encoder.ForceMode = options.ForceMode.Value;
     encoder.PredictionDisabled = options.PredictionDisabled;
@@ -268,4 +269,13 @@ public static partial class OpusCodec {
     }
     return crc;
   }
+
+  /// <summary>Our ordinal bandwidth as the value the encoder expects.</summary>
+  /// <remarks>
+  /// The two enumerations do not share numbering: ours counts from zero, the
+  /// encoder's narrowband is 1101. Casting one to the other by value asks for a
+  /// bandwidth that does not exist.
+  /// </remarks>
+  private static ConcentusOpusBandwidth ToConcentus(OpusBandwidth bandwidth)
+    => ConcentusOpusBandwidth.OPUS_BANDWIDTH_NARROWBAND + (int)bandwidth;
 }

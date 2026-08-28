@@ -38,10 +38,10 @@ public class OggChannelSplitTests {
   }
 
   [Test]
-  public void OggDescriptor_UndecodableAudio_FallsBackToFullWithoutThrowing() {
+  public void OggDescriptor_HybridAudio_ListsFullAndItsChannels() {
     // A well-formed Ogg/Opus stream whose audio frame uses hybrid mode (config 12,
-    // byte 0x60) — Codec.Opus rejects it with NotSupportedException. The descriptor
-    // must swallow that and still surface FULL.ogg + the raw packet blobs, no channels.
+    // byte 0x60). Hybrid used to be refused and the descriptor had to fall back to
+    // FULL.ogg alone; the vendored decoder handles it, so the channels come out too.
     var stream = new MemoryStream();
     WriteOggPage(stream, 9, 0, 0x02, [BuildOpusHead(channels: 2, preSkip: 0, inputRate: 48000)]);
     WriteOggPage(stream, 9, 1, 0x00, [BuildOpusTags("Codec.Opus")]);
@@ -52,7 +52,7 @@ public class OggChannelSplitTests {
     List<Compression.Registry.ArchiveEntryInfo> entries = null!;
     Assert.That(() => entries = new OggFormatDescriptor().List(ms, null), Throws.Nothing);
     Assert.That(entries.Any(e => e.Name == "FULL.ogg"), Is.True);
-    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.True);
   }
 
   // ── synthetic stereo CELT-only Opus-in-Ogg (mirrors Codec.Opus end-to-end test) ──

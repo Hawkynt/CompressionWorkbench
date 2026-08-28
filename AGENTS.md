@@ -8,8 +8,9 @@ per-repo distillation.
 ## What this is
 
 A **clean-room C# implementation** of compression primitives, archive
-formats and analysis tools — every algorithm from scratch, no external
-compression source code. This repo's CI/CD pipeline was the prototype for
+formats and analysis tools — every algorithm from scratch, with the narrow
+exception of the vendored third-party sources described under *Code
+conventions*. This repo's CI/CD pipeline was the prototype for
 the house standard; pipeline changes prototype in `Hawkynt/project-template`
 now and get mirrored here.
 
@@ -56,8 +57,27 @@ one unless explicitly asked.
 
 ## Code conventions
 
-- **Clean-room is the law**: never port or paraphrase external compression
-  source; implement from specs/papers and cite them.
+- **Clean-room is the default**: implement from specs and papers and cite
+  them. Do not port or paraphrase external source into our own algorithms.
+- **Vendoring is the exception, and it is all-or-nothing.** A third-party
+  implementation may be taken in whole, unmodified, when every one of these
+  holds:
+  - its licence permits redistribution under this repository's
+    `LGPL-3.0-or-later`, and its notice files come with it, unchanged;
+  - it is **fully managed** — no P/Invoke, no native binaries, no unsafe
+    blocks, no extra package references. A codec that needs a native library
+    is not vendored, it is refused;
+  - it lands under `Vendored/` inside the one project that uses it, at a
+    **pinned upstream revision**, and is listed in the vendoring note for
+    that area (`Codecs/VENDORED_AUDIO_CODECS.md` is the pattern: source,
+    revision, licence, local path, and any local modification);
+  - it stays byte-identical to that revision. Strict analysis is scoped off
+    for `Vendored/**` in `.editorconfig` rather than by editing the copies,
+    so a later revision can be dropped straight in. Our own integration code
+    gets no such exemption.
+
+  Paraphrasing a vendored codec into our own namespace is the one thing this
+  does not permit: take it whole and credit it, or write it from the spec.
 - Latest C# features; codecs are hot paths — measure, never make a
   round-trip slower without a stated reason.
 - Per-package folders with their own `<Version>` — untouched packages keep

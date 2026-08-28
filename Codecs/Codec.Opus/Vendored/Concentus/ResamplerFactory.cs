@@ -31,7 +31,6 @@
 */
 
 using Concentus.Common;
-using Concentus.Native;
 using System;
 using System.IO;
 using System.Numerics;

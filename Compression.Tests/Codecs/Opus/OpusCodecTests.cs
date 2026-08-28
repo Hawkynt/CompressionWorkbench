@@ -140,10 +140,14 @@ public class OpusCodecTests {
     Assert.That(pcm.Length, Is.EqualTo(1920));
   }
 
-  // ──────────── A5. Hybrid mode rejected ────────────
+  // ──────────── A5. Hybrid mode decoded ────────────
 
+  /// <summary>
+  /// Hybrid SILK+CELT used to be refused; the vendored decoder handles it, so what
+  /// is asserted now is that the frame decodes rather than that it is rejected.
+  /// </summary>
   [Test]
-  public void Decompress_HybridConfig_ThrowsNotSupported() {
+  public void Decompress_HybridConfig_IsDecoded() {
     var stream = new MemoryStream();
     var head = BuildOpusHead(channels: 2, preSkip: 0, inputRate: 48000);
     var tags = BuildOpusTags(vendor: "x");
@@ -155,7 +159,7 @@ public class OpusCodecTests {
 
     stream.Position = 0;
     var pcm = new MemoryStream();
-    Assert.Throws<NotSupportedException>(() => OpusCodec.Decompress(stream, pcm));
+    Assert.DoesNotThrow(() => OpusCodec.Decompress(stream, pcm));
   }
 
   // ──────────── A6. Range decoder smoke test ────────────

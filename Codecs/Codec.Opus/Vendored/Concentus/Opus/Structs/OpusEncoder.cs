@@ -47,7 +47,6 @@ using System.Linq;
 using System.Text;
 
 using System.Runtime.CompilerServices;
-using Concentus.Native;
 using System.Runtime.InteropServices;
 
 namespace Concentus.Structs
