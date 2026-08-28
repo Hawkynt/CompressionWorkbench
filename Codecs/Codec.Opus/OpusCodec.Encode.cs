@@ -10,7 +10,7 @@ using ConcentusOpusMode = Concentus.Enums.OpusMode;
 
 namespace Codec.Opus;
 
-/// <summary>Full encoder-control surface exposed by the managed Opus implementation.</summary>
+/// <summary>Encoder controls for RFC 6716 Opus and RFC 7845 Ogg Opus output.</summary>
 public sealed record OpusEncoderOptions(
   int SampleRate,
   int Channels,
@@ -38,30 +38,27 @@ public sealed record OpusEncoderOptions(
 public static partial class OpusCodec {
 
   /// <summary>
-  /// Encodes interleaved PCM16 to an RFC 7845 Ogg Opus stream using the managed Concentus
-  /// encoder. The wrapper exposes bitrate, VBR/CVBR, application, complexity, DTX/FEC,
-  /// packet-loss expectation, bandwidth, signal, forced channel/mode, prediction and frame
-  /// duration controls supported by the underlying encoder.
+  /// Encodes interleaved PCM16 to Ogg Opus using pure-managed Concentus. Mono/stereo use
+  /// mapping family 0; 3-8 channel surround uses RFC 7845 mapping family 1 / Vorbis order.
   /// </summary>
   public static byte[] Encode(ReadOnlySpan<short> interleaved, OpusEncoderOptions options) {
     ValidateEncoderOptions(interleaved.Length, options);
+    return options.Channels <= 2
+      ? EncodeFamily0(interleaved, options)
+      : EncodeFamily1(interleaved, options);
+  }
+
+  private static byte[] EncodeFamily0(ReadOnlySpan<short> interleaved, OpusEncoderOptions options) {
     var frameSize = FrameSize(options.SampleRate, options.FrameDurationMilliseconds);
     var inputFrames = interleaved.Length / options.Channels;
-
     using IOpusEncoder encoder = new OpusEncoder(options.SampleRate, options.Channels, options.Application);
     ApplyOptions(encoder, options);
 
-    var preSkip = checked((ushort)Math.Min(ushort.MaxValue,
-      (long)encoder.Lookahead * 48000 / options.SampleRate));
-    var serial = options.SerialNumber ?? unchecked((int)0x4357424F); // CWBO
-    uint sequence = 0;
-    using var output = new MemoryStream();
-
-    WriteOggPage(output, BuildHead(options, preSkip), serial, sequence++, 0, bos: true, eos: false);
-    var hasAudio = inputFrames > 0;
-    WriteOggPage(output, BuildTags(options), serial, sequence++, 0, bos: false, eos: !hasAudio);
-    if (!hasAudio)
-      return output.ToArray();
+    var preSkip = ScaleLookahead(encoder.Lookahead, options.SampleRate);
+    var mapping = options.Channels == 1 ? new byte[] { 0 } : new byte[] { 0, 1 };
+    using var output = BeginOggStream(options, preSkip, family: 0, streams: 1,
+      coupledStreams: (byte)(options.Channels == 2 ? 1 : 0), mapping, inputFrames > 0, out var serial, out var sequence);
+    if (inputFrames == 0) return output.ToArray();
 
     var packetBuffer = new byte[1275];
     var pcmFrame = new short[frameSize * options.Channels];
@@ -71,26 +68,75 @@ public static partial class OpusCodec {
       Array.Clear(pcmFrame);
       interleaved.Slice(inputOffset * options.Channels, available * options.Channels).CopyTo(pcmFrame);
       var bytes = encoder.Encode(pcmFrame, frameSize, packetBuffer, packetBuffer.Length);
-      if (bytes <= 0)
-        throw new InvalidDataException($"Opus encoder produced invalid packet length {bytes}.");
-
+      if (bytes <= 0) throw new InvalidDataException($"Opus encoder produced invalid packet length {bytes}.");
       encodedFrames += frameSize;
       var last = inputOffset + available >= inputFrames;
-      var granule = last
-        ? preSkip + (long)inputFrames * 48000 / options.SampleRate
-        : preSkip + encodedFrames * 48000 / options.SampleRate;
-      WriteOggPage(output, packetBuffer.AsSpan(0, bytes), serial, sequence++, granule, bos: false, eos: last);
+      WriteAudioPage(output, packetBuffer.AsSpan(0, bytes), serial, ref sequence,
+        preSkip, inputFrames, encodedFrames, options.SampleRate, last);
     }
-
     return output.ToArray();
+  }
+
+  private static byte[] EncodeFamily1(ReadOnlySpan<short> interleaved, OpusEncoderOptions options) {
+    var frameSize = FrameSize(options.SampleRate, options.FrameDurationMilliseconds);
+    var inputFrames = interleaved.Length / options.Channels;
+    var mapping = new byte[options.Channels];
+    using IOpusMultiStreamEncoder encoder = OpusMSEncoder.CreateSurround(
+      options.SampleRate, options.Channels, 1, out var streams, out var coupledStreams,
+      mapping, options.Application);
+    ApplyOptions(encoder, options);
+
+    var preSkip = ScaleLookahead(encoder.Lookahead, options.SampleRate);
+    using var output = BeginOggStream(options, preSkip, family: 1, (byte)streams,
+      (byte)coupledStreams, mapping, inputFrames > 0, out var serial, out var sequence);
+    if (inputFrames == 0) return output.ToArray();
+
+    var packetBuffer = new byte[Math.Max(1275, 1275 * streams + 64)];
+    var pcmFrame = new short[frameSize * options.Channels];
+    long encodedFrames = 0;
+    for (var inputOffset = 0; inputOffset < inputFrames; inputOffset += frameSize) {
+      var available = Math.Min(frameSize, inputFrames - inputOffset);
+      Array.Clear(pcmFrame);
+      interleaved.Slice(inputOffset * options.Channels, available * options.Channels).CopyTo(pcmFrame);
+      var bytes = encoder.EncodeMultistream(pcmFrame, frameSize, packetBuffer, packetBuffer.Length);
+      if (bytes <= 0) throw new InvalidDataException($"Opus multistream encoder produced invalid packet length {bytes}.");
+      encodedFrames += frameSize;
+      var last = inputOffset + available >= inputFrames;
+      WriteAudioPage(output, packetBuffer.AsSpan(0, bytes), serial, ref sequence,
+        preSkip, inputFrames, encodedFrames, options.SampleRate, last);
+    }
+    return output.ToArray();
+  }
+
+  private static ushort ScaleLookahead(int lookahead, int sampleRate)
+    => checked((ushort)Math.Min(ushort.MaxValue, (long)lookahead * 48000 / sampleRate));
+
+  private static MemoryStream BeginOggStream(OpusEncoderOptions options, ushort preSkip,
+    byte family, byte streams, byte coupledStreams, byte[] mapping, bool hasAudio,
+    out int serial, out uint sequence) {
+    serial = options.SerialNumber ?? unchecked((int)0x4357424F);
+    sequence = 0;
+    var output = new MemoryStream();
+    WriteOggPage(output, BuildHead(options, preSkip, family, streams, coupledStreams, mapping),
+      serial, sequence++, 0, bos: true, eos: false);
+    WriteOggPage(output, BuildTags(options), serial, sequence++, 0, bos: false, eos: !hasAudio);
+    return output;
+  }
+
+  private static void WriteAudioPage(Stream output, ReadOnlySpan<byte> packet, int serial, ref uint sequence,
+    ushort preSkip, int inputFrames, long encodedFrames, int sampleRate, bool last) {
+    var granule = last
+      ? preSkip + (long)inputFrames * 48000 / sampleRate
+      : preSkip + encodedFrames * 48000 / sampleRate;
+    WriteOggPage(output, packet, serial, sequence++, granule, bos: false, eos: last);
   }
 
   private static void ValidateEncoderOptions(int sampleCount, OpusEncoderOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.SampleRate is not (8000 or 12000 or 16000 or 24000 or 48000))
       throw new ArgumentOutOfRangeException(nameof(options), "Opus input rate must be 8, 12, 16, 24, or 48 kHz.");
-    if (options.Channels is < 1 or > 2)
-      throw new ArgumentOutOfRangeException(nameof(options), "Mapping family 0 supports mono or stereo.");
+    if (options.Channels is < 1 or > 8)
+      throw new ArgumentOutOfRangeException(nameof(options), "Ogg Opus mapping families 0/1 support 1-8 channels on this surface.");
     if (sampleCount % options.Channels != 0)
       throw new ArgumentException("Interleaved sample count must be a multiple of the channel count.");
     if (options.Bitrate.HasValue && options.Bitrate.Value is < 6144 or > 522240)
@@ -101,6 +147,8 @@ public static partial class OpusCodec {
       throw new ArgumentOutOfRangeException(nameof(options), "Packet loss percentage must be 0-100.");
     if (options.ForceChannels.HasValue && options.ForceChannels.Value is < 1 or > 2)
       throw new ArgumentOutOfRangeException(nameof(options), "Forced channel count must be 1 or 2.");
+    if (options.Channels > 2 && options.ForceChannels.HasValue)
+      throw new ArgumentException("ForceChannels is a mono/stereo encoder control and is not valid for multistream surround.", nameof(options));
     if (options.LsbDepth is < 8 or > 24)
       throw new ArgumentOutOfRangeException(nameof(options), "Opus LSB depth must be 8-24.");
     _ = FrameSize(options.SampleRate, options.FrameDurationMilliseconds);
@@ -129,15 +177,37 @@ public static partial class OpusCodec {
     encoder.LSBDepth = options.LsbDepth;
   }
 
-  private static byte[] BuildHead(OpusEncoderOptions options, ushort preSkip) {
-    var result = new byte[19];
+  private static void ApplyOptions(IOpusMultiStreamEncoder encoder, OpusEncoderOptions options) {
+    if (options.Bitrate.HasValue) encoder.Bitrate = options.Bitrate.Value;
+    encoder.Complexity = options.Complexity;
+    encoder.UseVBR = options.UseVbr;
+    encoder.UseConstrainedVBR = options.ConstrainedVbr;
+    encoder.UseDTX = options.UseDtx;
+    encoder.UseInbandFEC = options.UseInbandFec;
+    encoder.PacketLossPercent = options.PacketLossPercent;
+    if (options.MaxBandwidth.HasValue) encoder.MaxBandwidth = options.MaxBandwidth.Value;
+    if (options.Bandwidth.HasValue) encoder.Bandwidth = options.Bandwidth.Value;
+    encoder.SignalType = options.Signal;
+    if (options.ForceMode.HasValue) encoder.ForceMode = options.ForceMode.Value;
+    encoder.PredictionDisabled = options.PredictionDisabled;
+    encoder.LSBDepth = options.LsbDepth;
+  }
+
+  private static byte[] BuildHead(OpusEncoderOptions options, ushort preSkip, byte family,
+    byte streams, byte coupledStreams, byte[] mapping) {
+    var result = new byte[family == 0 ? 19 : 21 + options.Channels];
     "OpusHead"u8.CopyTo(result);
     result[8] = 1;
     result[9] = (byte)options.Channels;
     BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(10, 2), preSkip);
     BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(12, 4), (uint)options.SampleRate);
     BinaryPrimitives.WriteInt16LittleEndian(result.AsSpan(16, 2), 0);
-    result[18] = 0;
+    result[18] = family;
+    if (family != 0) {
+      result[19] = streams;
+      result[20] = coupledStreams;
+      mapping.CopyTo(result, 21);
+    }
     return result;
   }
 
@@ -185,8 +255,7 @@ public static partial class OpusCodec {
     var page = new byte[header.Length + packet.Length];
     header.CopyTo(page, 0);
     packet.CopyTo(page.AsSpan(header.Length));
-    var crc = OggCrc(page);
-    BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(22, 4), crc);
+    BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(22, 4), OggCrc(page));
     output.Write(page);
   }
 
