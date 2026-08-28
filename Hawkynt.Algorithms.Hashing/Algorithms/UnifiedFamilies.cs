@@ -48,6 +48,27 @@ public static class Luffa {
   }
 }
 
+/// <summary>
+/// Hamsi SHA-3 candidate family. The standardized output sizes are exposed as two enumerable
+/// ranges, matching the JavaScript registry model. Output size selects one of Hamsi's two
+/// standardized state widths; each state width has one shared compression implementation.
+/// </summary>
+public static class HamsiFamily {
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
+    new(224, 256, 32),
+    new(384, 512, 128)
+  ];
+
+  public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256) {
+    if (!SupportedHashSizes.Supports(hashSizeBits))
+      throw new ArgumentOutOfRangeException(nameof(hashSizeBits));
+
+    return hashSizeBits <= 256
+      ? HamsiSmall.Compute(data, hashSizeBits)
+      : Hamsi.Compute(data, hashSizeBits);
+  }
+}
+
 /// <summary>LSH-256 word-size family; output size selects the standard IV/truncation.</summary>
 public static class Lsh256Family {
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [new(224, 256, 32)];
