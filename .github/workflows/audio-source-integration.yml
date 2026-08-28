@@ -1,0 +1,79 @@
+name: Integrate vendored audio sources
+
+on:
+  push:
+    branches: [feature/audio-adpcm-encoders]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/audio-adpcm-encoders
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: preview
+
+      - name: Preserve upstream nullable context and fix integration points
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          roots = [
+              Path('Codecs/Codec.Opus/Vendored/Concentus'),
+              Path('Codecs/Codec.Vorbis/Vendored/OggVorbisEncoder'),
+              Path('Codecs/Codec.Mp3/Vendored/GroovyCodecs'),
+              Path('Codecs/Codec.AmrWb/Vendored/AmrWbLib'),
+          ]
+          for root in roots:
+              for p in root.rglob('*.cs'):
+                  text = p.read_text(encoding='utf-8-sig')
+                  if not text.startswith('#nullable'):
+                      p.write_text('#nullable disable\n' + text, encoding='utf-8', newline='\n')
+
+          p = Path('Codecs/Codec.Aac/AacEncoder.cs')
+          text = p.read_text(encoding='utf-8-sig')
+          needle = '    var writer = new AacBitWriter();\n    var maxSfb = AacScaleFactorBands.NumSwbLong[sampleRateIndex];'
+          replacement = ('    ActiveLongOffsets.Value = AacScaleFactorBands.Long1024[sampleRateIndex];\n'
+                         '    var writer = new AacBitWriter();\n'
+                         '    var maxSfb = AacScaleFactorBands.NumSwbLong[sampleRateIndex];')
+          if needle not in text:
+              raise SystemExit('AAC integration point not found')
+          p.write_text(text.replace(needle, replacement, 1), encoding='utf-8', newline='\n')
+          PY
+
+      - name: Restore
+        run: dotnet restore CompressionWorkbench.slnx
+
+      - name: Format vendored source whitespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet format whitespace Codecs/Codec.Opus/Codec.Opus.csproj --no-restore
+          dotnet format whitespace Codecs/Codec.Vorbis/Codec.Vorbis.csproj --no-restore
+          dotnet format whitespace Codecs/Codec.Mp3/Codec.Mp3.csproj --no-restore
+          dotnet format whitespace Codecs/Codec.AmrWb/Codec.AmrWb.csproj --no-restore
+
+      - name: Build full solution
+        run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
+
+      - name: Commit integrated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/audio-source-integration.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Integrate vendored audio sources with C# 14 build'
+          git push origin HEAD:feature/audio-adpcm-encoders
