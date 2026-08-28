@@ -4926,6 +4926,26 @@ Exponential Golomb encoder. Used in H.264/H.265 video codecs. Order-k exp-Golomb
 | `Encode` | `void Encode(int value)` | Encodes a non-negative value using exp-Golomb coding. |
 | `Flush` | `void Flush()` | Flushes any remaining bits in the buffer. |
 
+### Namespace `Compression.Core.Entropy.Fpaq`
+
+[`Fpaq0BuildingBlock`](#fpaq0buildingblock)
+
+#### `Fpaq0BuildingBlock`
+
+Exposes FPAQ0-style adaptive order-0 arithmetic compression as a benchmarkable building block. Each byte is coded MSB-first with one binary probability model per prefix of the current byte.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Fpaq0BuildingBlock` | `Fpaq0BuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
 ### Namespace `Compression.Core.Entropy.Fse`
 
 [`FseDecoder`](#fsedecoder) · [`FseEncoder`](#fseencoder) · [`FseTable`](#fsetable) · [`HuffmanFse`](#huffmanfse)
