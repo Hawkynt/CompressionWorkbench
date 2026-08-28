@@ -6,6 +6,7 @@ using System.Text;
 using Concentus;
 using Concentus.Enums;
 using Concentus.Structs;
+using ConcentusOpusMode = Concentus.Enums.OpusMode;
 
 namespace Codec.Opus;
 
@@ -24,8 +25,8 @@ public sealed record OpusEncoderOptions(
   int? ForceChannels = null,
   OpusBandwidth? MaxBandwidth = null,
   OpusBandwidth? Bandwidth = null,
-  OpusSignal Signal = OpusSignal.OPUS_AUTO,
-  OpusMode? ForceMode = null,
+  OpusSignal Signal = OpusSignal.OPUS_SIGNAL_AUTO,
+  ConcentusOpusMode? ForceMode = null,
   bool PredictionDisabled = false,
   int LsbDepth = 16,
   double FrameDurationMilliseconds = 20.0,
@@ -92,13 +93,13 @@ public static partial class OpusCodec {
       throw new ArgumentOutOfRangeException(nameof(options), "Mapping family 0 supports mono or stereo.");
     if (sampleCount % options.Channels != 0)
       throw new ArgumentException("Interleaved sample count must be a multiple of the channel count.");
-    if (options.Bitrate is < 6144 or > 522240)
+    if (options.Bitrate.HasValue && options.Bitrate.Value is < 6144 or > 522240)
       throw new ArgumentOutOfRangeException(nameof(options), "Opus bitrate must be 6144-522240 bit/s.");
     if (options.Complexity is < 0 or > 10)
       throw new ArgumentOutOfRangeException(nameof(options), "Opus complexity must be 0-10.");
     if (options.PacketLossPercent is < 0 or > 100)
       throw new ArgumentOutOfRangeException(nameof(options), "Packet loss percentage must be 0-100.");
-    if (options.ForceChannels is < 1 or > 2)
+    if (options.ForceChannels.HasValue && options.ForceChannels.Value is < 1 or > 2)
       throw new ArgumentOutOfRangeException(nameof(options), "Forced channel count must be 1 or 2.");
     if (options.LsbDepth is < 8 or > 24)
       throw new ArgumentOutOfRangeException(nameof(options), "Opus LSB depth must be 8-24.");
@@ -136,7 +137,7 @@ public static partial class OpusCodec {
     BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(10, 2), preSkip);
     BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(12, 4), (uint)options.SampleRate);
     BinaryPrimitives.WriteInt16LittleEndian(result.AsSpan(16, 2), 0);
-    result[18] = 0; // channel mapping family 0
+    result[18] = 0;
     return result;
   }
 
