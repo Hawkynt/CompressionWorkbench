@@ -11,6 +11,22 @@ The archive API is useful for whole-image tooling, but it is deliberately **not*
 
 The dependency direction is one-way: a FAT/ext/ReFS driver consumes a block device; it does not know how QCOW2/EWF stores that block. Likewise, G64 is not a CBM-DOS filesystem. It is a track device which may later be decoded into sectors and mounted by a CBM-DOS driver.
 
+## Repository-wide coverage invariant
+
+Filesystem-driver coverage is no longer a hand-maintained shortlist.
+
+`Compression.Lib` and `Hawkynt.FileFormats.FileSystems` reference `FileSystems/FileSystem.*/*.csproj` through an exhaustive project glob. The registry source generator marks descriptors declared below a `FileSystem.*` namespace as filesystem descriptors and discovers public `IFilesystemDriverAdapter` sidecars without reflection. Registry initialization then requires every marked filesystem descriptor to have one of these paths:
+
+- the descriptor itself implements a native `IFilesystemDriverProvider`;
+- a generated native `IFilesystemDriverAdapter` sidecar exists for its format ID; or
+- the descriptor implements `IArchiveFormatOperations` and can be projected conservatively through the read-only archive-derived filesystem session.
+
+`Compression.Tests/Operations/FilesystemDriverCoverageTests.cs` enforces the same rule in CI. Adding a new `FileSystem.*` descriptor that has no derivable driver path is therefore a build/test regression rather than a documentation omission.
+
+The derived archive projection is intentionally a **compatibility floor**, not a native-readiness claim. It supplies a bounded, positional, read-only namespace for formats whose parser can list/open entries; its default `OpenEntry` path is temporary-file-backed so large files do not require one `byte[]`. It cannot by itself prove native inode identity, allocation maps, sparse/shared extent semantics, crash recovery or mounted writes.
+
+`FormatRegistry.GetFilesystemDriverCoverage()` exposes whether a format currently resolves through a native descriptor provider, a generated native sidecar, or the conservative archive projection. `IFilesystemDriverReadinessProvider` separately reports which implementation layers are genuinely present for read-only and read/write driver targets.
+
 ## Requirements for writable mounting
 
 A format may advertise archive-level `CanModify` while its `FilesystemDriverProfile.CanMountWritable` remains false. Writable mounting should only be enabled when all of the following are true for the **current image profile**:
@@ -45,7 +61,25 @@ A driver without a safe native commit model can still be mounted read-only and c
 
 `IFilesystemFileHandle` uses positional `Read(offset, ...)` and `Write(offset, ...)`, not a mutable stream cursor. This matches kernel I/O request semantics and permits independent concurrent handles.
 
-## Current first lower-layer implementation
+`SpoolingReadOnlyFileHandle` is a transitional handle for readers that can stream the correct logical file but do not yet expose a seekable native extent map. Small files stay in memory; larger files use a delete-on-close temporary file. Filesystems with a verified extent mapping should prefer a direct positional handle instead.
+
+## Native driver tier currently implemented
+
+The following formats now have native descriptor providers or generated native sidecars rather than relying only on archive projection:
+
+- **D64 / CBM nibble media** — native Commodore namespace plus sector/raw-track layers; G64/NIB retain raw-track identity and the GCR sector projector feeds the filesystem layer.
+- **ReFS** — native read session over decoded metadata/object identities; mounted mutation remains separately gated from the offline-quiescent image editor.
+- **FAT12/16/32** — native directory/cluster-chain read session and allocation knowledge; mounted mutation remains gated on a proven ordered durability protocol.
+- **ext2/ext3/ext4** — native inode identity and positional block/extent reads; mounted mutation remains gated on complete allocation, metadata and journal transaction semantics.
+- **NTFS** — native MFT-record identity and positional data reads; full file-reference sequence identity, index mutation, `$LogFile` publication/replay and complete metadata/security semantics remain write blockers.
+- **XFS** — native inode+generation identity and streaming extent reads; writable mounting remains gated on allocation-group btrees, log transactions, delayed allocation/refcount/reflink and crash-recovery semantics.
+- **APFS** — native object IDs and direct positional reads for the proven unencrypted single-extent profile; broader extent/compression/encryption profiles fail closed and CoW checkpoint/spaceman/OMAP publication remains a write blocker.
+- **Btrfs** — native inode IDs and a global logical segment map across all FS-tree leaves. Inline/regular extents are read directly, holes/prealloc ranges return zeroes, and compressed/encrypted/multi-stripe profiles fail closed. Writable mounting remains gated on CoW tree paths, delayed refs, extent/checksum/free-space trees, transaction generations and log-tree replay.
+- **ZFS** — native dataset dnode object IDs and checksum-verified streaming reads for the supported v28 single-vdev profile. Unsupported compression/checksum/hole/gang/multi-vdev profiles fail closed. Writable mounting remains gated on metaslab/spacemap allocation, TXG/uberblock publication, ZIL replay and complete DSL/ZAP/dnode semantics.
+
+A native read-only sidecar is not a promise that the existing archive-level `Add`/`Remove` path is safe to expose to a mounted kernel client. `CanMountWritable` is only enabled when the corresponding readiness report can satisfy the full read/write layer set.
+
+## Raw-track lower layer
 
 `CbmNibbleRawTrackDevices` implements the raw-track layer for G64/NIB:
 
@@ -53,4 +87,4 @@ A driver without a safe native commit model can still be mounted read-only and c
 - G64 keeps half-track index as stable device identity, stages variable-length track changes, rebuilds the offset table at flush, and verifies every surviving track before commit.
 - G64 images using pointer-based variable-speed maps are readable but writable raw-track open is refused until those auxiliary speed-map blocks are modeled.
 
-The next CBM step is a GCR sector projector implementing `IRandomAccessBlockDevice`; the existing D64/CBM filesystem logic can then be refactored to consume that block-device contract rather than owning an outer image format directly.
+The GCR sector projector implements the bridge toward `IRandomAccessBlockDevice`, allowing Commodore filesystem logic to consume sector semantics without treating a variable-length raw-track container as if it were itself the filesystem.
