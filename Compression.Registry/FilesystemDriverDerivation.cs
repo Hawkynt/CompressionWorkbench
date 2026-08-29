@@ -363,11 +363,15 @@ internal sealed class DerivedReadOnlyFilesystemSession : IFilesystemSession {
     if (node.Entry == null)
       throw new InvalidDataException($"Derived node '{node.Path}' has no backing archive entry.");
 
-    using var archive = _snapshot.OpenRead();
-    using var entry = _operations.OpenEntry(archive, node.Entry.Name, _password);
-    using var memory = new MemoryStream();
-    entry.CopyTo(memory);
-    return new DerivedReadOnlyFileHandle(node.Id, memory.ToArray());
+    var backing = node.Entry;
+    return SpoolingReadOnlyFileHandle.Create(
+      node.Id,
+      Math.Max(0, backing.OriginalSize),
+      output => {
+        using var archive = _snapshot.OpenRead();
+        using var entry = _operations.OpenEntry(archive, backing.Name, _password);
+        entry.CopyTo(output);
+      });
   }
 
   public FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)

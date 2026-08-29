@@ -33,7 +33,7 @@ public sealed class FatFilesystemDriverAdapter :
         FilesystemDriverCapabilities.RandomAccess |
         FilesystemDriverCapabilities.StableNodeIds |
         FilesystemDriverCapabilities.CasePreservingNames,
-        FilesystemMutationModel.Direct,
+        FilesystemMutationModel.None,
         CanMount: true,
         CanMountWritable: false,
         [
@@ -107,8 +107,7 @@ public sealed class FatFilesystemDriverAdapter :
 
     var available = profile.CanMount
       ? readRequired |
-        FilesystemDriverReadinessLayer.AllocationMap |
-        FilesystemDriverReadinessLayer.DurabilityModel
+        FilesystemDriverReadinessLayer.AllocationMap
       : FilesystemDriverReadinessLayer.None;
     var blockers = new List<string>(profile.Limitations);
     if (target == FilesystemDriverTarget.ReadWrite) {

@@ -26,7 +26,6 @@ public sealed class ExtFilesystemDriverAdapter :
       var entries = reader.Entries.ToArray();
       ValidateEntries(image, super, entries);
 
-      var hasJournal = (super.FeatureCompat & ExtDriverSuperblock.CompatHasJournal) != 0;
       return new FilesystemDriverProfile(
         FormatId,
         super.ProfileName,
@@ -36,7 +35,7 @@ public sealed class ExtFilesystemDriverAdapter :
         FilesystemDriverCapabilities.StableNodeIds |
         FilesystemDriverCapabilities.CaseSensitiveNames |
         FilesystemDriverCapabilities.CasePreservingNames,
-        hasJournal ? FilesystemMutationModel.Journaled : FilesystemMutationModel.Direct,
+        FilesystemMutationModel.None,
         CanMount: true,
         CanMountWritable: false,
         [
@@ -110,8 +109,7 @@ public sealed class ExtFilesystemDriverAdapter :
     var available = profile.CanMount
       ? readRequired |
         FilesystemDriverReadinessLayer.NativeStableNodeIds |
-        FilesystemDriverReadinessLayer.AllocationMap |
-        FilesystemDriverReadinessLayer.DurabilityModel
+        FilesystemDriverReadinessLayer.AllocationMap
       : FilesystemDriverReadinessLayer.None;
     var blockers = new List<string>(profile.Limitations);
     if (target == FilesystemDriverTarget.ReadWrite) {

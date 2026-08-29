@@ -628,4 +628,11 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Amr\FileFormat.Amr.csproj" />
   </ItemGroup>
 
+  <!-- Driver-coverage invariant: every FileSystem.* assembly must be visible
+       to Compression.Registry.Generator, including newly added projects. -->
+  <ItemGroup>
+    <ProjectReference Remove="..\FileSystems\FileSystem.*\FileSystem.*.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.*\FileSystem.*.csproj" />
+  </ItemGroup>
+
 </Project>

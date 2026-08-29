@@ -142,4 +142,12 @@
     </ItemGroup>
   </Target>
 
+  <!-- Keep the NuGet bundle exhaustive too. The Remove eliminates the
+       legacy explicit subset above; the glob makes new FileSystem.* projects
+       part of the package automatically. -->
+  <ItemGroup>
+    <ProjectReference Remove="..\FileSystems\FileSystem.*\FileSystem.*.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.*\FileSystem.*.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
 </Project>
