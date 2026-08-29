@@ -15,6 +15,7 @@ public static class FormatRegistry {
   private static readonly Dictionary<string, IArchiveFormatOperations> _archiveOps = new(StringComparer.OrdinalIgnoreCase);
   private static readonly Dictionary<string, IAsyncArchiveOperations> _asyncArchiveOps = new(StringComparer.OrdinalIgnoreCase);
   private static readonly Dictionary<string, IFilesystemDriverAdapter> _filesystemDrivers = new(StringComparer.OrdinalIgnoreCase);
+  private static readonly HashSet<string> _filesystemFormatIds = new(StringComparer.OrdinalIgnoreCase);
   private static bool _initialized;
 
   public static void Initialize() {
@@ -25,13 +26,35 @@ public static class FormatRegistry {
     foreach (var (id, _) in _filesystemDrivers)
       if (!_byId.ContainsKey(id))
         throw new InvalidOperationException($"Filesystem driver adapter '{id}' has no registered format descriptor.");
+
+    // A FileSystem.* project is not allowed to stop at an isolated parser API.
+    // Every registered filesystem must be reachable through the common driver
+    // contract either natively/through a sidecar or through the conservative
+    // read-only List/OpenEntry projection. This is structural; per-image Probe
+    // can still reject damaged or unsupported feature profiles.
+    foreach (var id in _filesystemFormatIds) {
+      if (!_byId.TryGetValue(id, out var descriptor))
+        throw new InvalidOperationException($"Generated filesystem id '{id}' has no registered descriptor.");
+      if (descriptor is IFilesystemDriverProvider) continue;
+      if (_filesystemDrivers.ContainsKey(id)) continue;
+      if (descriptor is IArchiveFormatOperations) continue;
+      throw new InvalidOperationException(
+        $"Filesystem '{id}' exposes no IFilesystemDriverProvider, generated sidecar, or IArchiveFormatOperations projection.");
+    }
   }
 
-  public static void Register(IFormatDescriptor descriptor) {
+  /// <summary>
+  /// Register a format descriptor. Source-generated calls set
+  /// <paramref name="isFilesystem"/> for descriptors declared under a
+  /// <c>FileSystem.*</c> namespace so filesystem coverage is explicit rather
+  /// than inferred from extensions or display names.
+  /// </summary>
+  public static void Register(IFormatDescriptor descriptor, bool isFilesystem = false) {
     ArgumentNullException.ThrowIfNull(descriptor);
     if (_initialized) throw new InvalidOperationException("FormatRegistry is already initialized.");
     _all.Add(descriptor);
     _byId[descriptor.Id] = descriptor;
+    if (isFilesystem) _filesystemFormatIds.Add(descriptor.Id);
     if (descriptor is IStreamFormatOperations streamOps)
       _streamOps[descriptor.Id] = streamOps;
     if (descriptor is IArchiveFormatOperations archiveOps)
@@ -56,6 +79,10 @@ public static class FormatRegistry {
 
   public static IReadOnlyList<IFormatDescriptor> All => _all;
 
+  /// <summary>All descriptor IDs originating from FileSystem.* projects.</summary>
+  public static IReadOnlyList<string> FilesystemFormatIds
+    => _filesystemFormatIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
+
   public static IFormatDescriptor? GetById(string id)
     => _byId.GetValueOrDefault(id);
 
@@ -79,6 +106,43 @@ public static class FormatRegistry {
   /// <summary>Returns a generated native driver sidecar for the format, when one exists.</summary>
   public static IFilesystemDriverAdapter? GetFilesystemDriver(string id)
     => _filesystemDrivers.GetValueOrDefault(id);
+
+  /// <summary>
+  /// Structural driver coverage for all FileSystem.* descriptors. This is safe
+  /// to inspect without an image and is intended for CI/readiness dashboards.
+  /// Use <see cref="AssessFilesystemDriver"/> for exact per-image semantics.
+  /// </summary>
+  public static IReadOnlyList<FilesystemDriverCoverage> GetFilesystemDriverCoverage()
+    => _filesystemFormatIds
+      .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+      .Select(GetFilesystemDriverCoverage)
+      .ToArray();
+
+  public static FilesystemDriverCoverage GetFilesystemDriverCoverage(string id) {
+    if (!_filesystemFormatIds.Contains(id))
+      throw new KeyNotFoundException($"Format '{id}' is not registered as a FileSystem.* descriptor.");
+    var descriptor = GetById(id)
+      ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
+    var sidecar = _filesystemDrivers.GetValueOrDefault(id);
+    var binding = descriptor is IFilesystemDriverProvider
+      ? FilesystemDriverBindingKind.DescriptorNative
+      : sidecar != null
+        ? FilesystemDriverBindingKind.SidecarNative
+        : descriptor is IArchiveFormatOperations
+          ? FilesystemDriverBindingKind.ArchiveProjection
+          : FilesystemDriverBindingKind.None;
+    return new FilesystemDriverCoverage(
+      descriptor.Id,
+      descriptor.DisplayName,
+      binding,
+      HasArchiveProjection: descriptor is IArchiveFormatOperations,
+      HasArchiveMutation: descriptor is IArchiveModifiable,
+      HasExtentMap: descriptor is IFilesystemExtentMap,
+      HasBlockMover: descriptor is IFilesystemBlockMover,
+      HasBlockDeviceProvider: descriptor is IRandomAccessBlockDeviceProvider,
+      HasNativeReadinessProvider:
+        descriptor is IFilesystemDriverReadinessProvider || sidecar is IFilesystemDriverReadinessProvider);
+  }
 
   public static FilesystemDriverProfile ProbeFilesystem(
       string id,
@@ -133,6 +197,7 @@ public static class FormatRegistry {
     _archiveOps.Clear();
     _asyncArchiveOps.Clear();
     _filesystemDrivers.Clear();
+    _filesystemFormatIds.Clear();
     _initialized = false;
   }
 
