@@ -11,7 +11,7 @@ internal sealed class Ac3AudioAdapter : IAudioPcmSource, IAudioPcmTarget {
 
   public AudioPcmBuffer DecodePcm(Stream input) {
     ArgumentNullException.ThrowIfNull(input);
-    using var source = Materialize(input);
+    using var source = ElementaryAudioAdapterHelpers.Materialize(input);
     var info = Ac3Codec.ReadStreamInfo(source);
     source.Position = 0;
     using var pcm = new MemoryStream();
@@ -49,7 +49,7 @@ internal sealed class Ac3AudioAdapter : IAudioPcmSource, IAudioPcmTarget {
       throw new NotSupportedException(reason);
 
     _ = TryResolveLayout(pcm.Format.Channels, options, out var acmod, out var lfe, out _);
-    var samples = ReadPcm16(pcm.InterleavedData);
+    var samples = ElementaryAudioAdapterHelpers.ReadPcm16(pcm.InterleavedData);
     var bitrate = options.GetOptionInt("bitrate", pcm.Format.Channels switch {
       1 => 96_000,
       2 => 192_000,
@@ -114,7 +114,7 @@ internal sealed class DtsAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
 
   public AudioPcmBuffer DecodePcm(Stream input) {
     ArgumentNullException.ThrowIfNull(input);
-    using var source = Materialize(input);
+    using var source = ElementaryAudioAdapterHelpers.Materialize(input);
     var info = DtsCodec.ReadStreamInfo(source);
     source.Position = 0;
     using var pcm = new MemoryStream();
@@ -149,7 +149,7 @@ internal sealed class DtsAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     ArgumentNullException.ThrowIfNull(output);
     if (!this.CanEncode(pcm.Format, codecId, options, out var reason))
       throw new NotSupportedException(reason);
-    var samples = ReadPcm16(pcm.InterleavedData);
+    var samples = ElementaryAudioAdapterHelpers.ReadPcm16(pcm.InterleavedData);
     var bitrate = options.GetOptionInt("bitrate", pcm.Format.Channels <= 2 ? 768_000 : 1_536_000);
     if (bitrate < 10_000) bitrate *= 1_000;
     var encoded = DtsCodec.Encode(samples, new DtsEncoderOptions(
@@ -179,6 +179,3 @@ file static class ElementaryAudioAdapterHelpers {
     return memory;
   }
 }
-
-file static short[] ReadPcm16(ReadOnlySpan<byte> data) => ElementaryAudioAdapterHelpers.ReadPcm16(data);
-file static MemoryStream Materialize(Stream input) => ElementaryAudioAdapterHelpers.Materialize(input);
