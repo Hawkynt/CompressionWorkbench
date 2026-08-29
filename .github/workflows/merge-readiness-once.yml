@@ -27,6 +27,7 @@ jobs:
           python .github/cli-purge-fix.py
           python .github/modify-consistency.py
           python .github/readme-capabilities.py
+          python .github/coverage-matrix.py
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
