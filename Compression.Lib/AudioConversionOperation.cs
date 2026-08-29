@@ -1,4 +1,6 @@
+using Codec.Pcm;
 using Compression.Registry;
+using FileFormat.Wav;
 
 namespace Compression.Lib;
 
@@ -56,16 +58,24 @@ public static class AudioConversionOperation {
       }
     }
 
-    if (source is IAudioPcmSource pcmSource && target is IAudioPcmTarget pcmTarget) {
-      Rewind(input);
-      var pcm = pcmSource.DecodePcm(input);
-      var codec = ResolveCodec(pcmTarget, options);
-      if (!pcmTarget.CanEncode(pcm.Format, codec, options, out var reason))
-        throw new NotSupportedException(
-          $"{target.Id} cannot encode {pcm.Format.Channels}ch/{pcm.Format.SampleRate}Hz/" +
-          $"{pcm.Format.BitsPerSample}-bit PCM as '{codec}': {reason ?? "unsupported combination"}.");
-      pcmTarget.EncodePcm(output, pcm, codec, options);
-      return;
+    if (target is IAudioPcmTarget pcmTarget) {
+      AudioPcmBuffer? pcm = null;
+      if (source is IAudioPcmSource pcmSource) {
+        Rewind(input);
+        pcm = pcmSource.DecodePcm(input);
+      } else if (TryDecodePseudoArchivePcm(input, source, out var bridgedPcm)) {
+        pcm = bridgedPcm;
+      }
+
+      if (pcm is not null) {
+        var codec = ResolveCodec(pcmTarget, options);
+        if (!pcmTarget.CanEncode(pcm.Format, codec, options, out var reason))
+          throw new NotSupportedException(
+            $"{target.Id} cannot encode {pcm.Format.Channels}ch/{pcm.Format.SampleRate}Hz/" +
+            $"{pcm.Format.BitsPerSample}-bit PCM as '{codec}': {reason ?? "unsupported combination"}.");
+        pcmTarget.EncodePcm(output, pcm, codec, options);
+        return;
+      }
     }
 
     if (TryPseudoArchiveBridge(input, source, output, target, options))
@@ -83,6 +93,73 @@ public static class AudioConversionOperation {
     if (target.SupportedEncodeCodecs.Count == 0)
       throw new NotSupportedException("The target advertises no audio encoder codecs.");
     return target.SupportedEncodeCodecs[0];
+  }
+
+  private static bool TryDecodePseudoArchivePcm(
+    Stream input,
+    IFormatDescriptor source,
+    out AudioPcmBuffer? pcm
+  ) {
+    pcm = null;
+    if (source is not IArchiveFormatOperations sourceArchive) return false;
+
+    Rewind(input);
+    var listed = sourceArchive.List(input, password: null);
+    var entries = listed
+      .Where(static entry => entry.Kind.Equals("Channel", StringComparison.OrdinalIgnoreCase) &&
+                             entry.Name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+      .OrderBy(static entry => entry.Index)
+      .ToArray();
+
+    // A mono WAV is already the canonical channel file, so its archive view does not
+    // need to manufacture MONO.wav. Treat FULL.wav as the one channel in that case.
+    if (entries.Length == 0 && source.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)) {
+      var full = listed.FirstOrDefault(static entry =>
+        entry.Name.Equals("FULL.wav", StringComparison.OrdinalIgnoreCase));
+      if (full is not null) entries = [full];
+    }
+    if (entries.Length == 0) return false;
+
+    var decoded = new List<WavReader.ParsedWav>(entries.Length);
+    foreach (var entry in entries) {
+      Rewind(input);
+      var bytes = sourceArchive.ExtractEntryToMemory(input, entry.Name, password: null);
+      decoded.Add(new WavReader().Read(bytes));
+    }
+
+    if (decoded.Count == 1 && decoded[0].NumChannels > 1) {
+      var only = decoded[0];
+      if (only.FormatCode is not (1 or 3)) return false;
+      pcm = new AudioPcmBuffer(
+        new AudioPcmFormat(
+          only.SampleRate,
+          only.NumChannels,
+          only.BitsPerSample,
+          only.FormatCode == 3 ? AudioPcmEncoding.IeeeFloat
+            : only.BitsPerSample == 8 ? AudioPcmEncoding.UnsignedInteger
+            : AudioPcmEncoding.SignedInteger),
+        only.InterleavedPcm);
+      return true;
+    }
+
+    var first = decoded[0];
+    if (first.NumChannels != 1 || first.FormatCode is not (1 or 3)) return false;
+    if (decoded.Any(channel => channel.NumChannels != 1 || channel.FormatCode != first.FormatCode ||
+                               channel.BitsPerSample != first.BitsPerSample || channel.SampleRate != first.SampleRate ||
+                               channel.InterleavedPcm.Length != first.InterleavedPcm.Length))
+      return false;
+
+    var interleaved = PcmCodec.Interleave(decoded.Select(static channel => channel.InterleavedPcm).ToList(), first.BitsPerSample);
+    pcm = new AudioPcmBuffer(
+      new AudioPcmFormat(
+        first.SampleRate,
+        decoded.Count,
+        first.BitsPerSample,
+        first.FormatCode == 3 ? AudioPcmEncoding.IeeeFloat
+          : first.BitsPerSample == 8 ? AudioPcmEncoding.UnsignedInteger
+          : AudioPcmEncoding.SignedInteger),
+      interleaved);
+    return true;
   }
 
   private static bool TryPseudoArchiveBridge(
