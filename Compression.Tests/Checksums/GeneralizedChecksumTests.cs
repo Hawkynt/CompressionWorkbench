@@ -50,7 +50,7 @@ public sealed class GeneralizedChecksumTests {
   [TestCase(4, "03")]
   [TestCase(8, "23")]
   [TestCase(24, "FFFE23")]
-  [TestCase(40, "FFFFFFFFFE23")]
+  [TestCase(40, "FFFFFFFE23")]
   public void TwosComplementSupportsGeneralizedWidths(int checksumSizeBits, string expectedHex) {
     Assert.That(
       Convert.ToHexString(ComplementChecksum.Compute("123456789"u8, checksumSizeBits, ComplementKind.TwosComplement)),
@@ -115,13 +115,15 @@ public sealed class GeneralizedChecksumTests {
   [TestCase(ComplementFamily, 12)]
   [TestCase(ParityFamily, 20)]
   public void UnsupportedWidthsAreRejected(string family, int checksumSizeBits) {
-    Assert.Throws<ArgumentOutOfRangeException>(() => family switch {
-      AdlerFamily => Adler.Compute("x"u8, checksumSizeBits),
-      FletcherFamily => Fletcher.Compute("x"u8, checksumSizeBits),
-      SumFamily => SumChecksum.Compute("x"u8, checksumSizeBits),
-      ComplementFamily => ComplementChecksum.Compute("x"u8, checksumSizeBits),
-      ParityFamily => Parity.Compute("x"u8, checksumSizeBits),
-      _ => throw new InvalidOperationException()
+    Assert.Throws<ArgumentOutOfRangeException>(() => {
+      _ = family switch {
+        AdlerFamily => Adler.Compute("x"u8, checksumSizeBits),
+        FletcherFamily => Fletcher.Compute("x"u8, checksumSizeBits),
+        SumFamily => SumChecksum.Compute("x"u8, checksumSizeBits),
+        ComplementFamily => ComplementChecksum.Compute("x"u8, checksumSizeBits),
+        ParityFamily => Parity.Compute("x"u8, checksumSizeBits),
+        _ => throw new InvalidOperationException()
+      };
     });
   }
 
