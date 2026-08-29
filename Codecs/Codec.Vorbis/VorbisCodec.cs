@@ -79,6 +79,8 @@ public static class VorbisCodec {
     var packetIdx = 0;
     var prevBlockLong = false;
     var hasPrev = false;
+    var prevLeftEnd = 0;
+    var prevRightStart = 0;
     float[][]? overlap = null; // overlap-add carry-over per channel
 
     foreach (var packet in OggPageReader.ReadPackets(data)) {
@@ -93,10 +95,11 @@ public static class VorbisCodec {
         case 2:
           setup.ParseSetup(packet.Data);
           overlap = new float[setup.Channels][];
-          for (var c = 0; c < setup.Channels; ++c) overlap[c] = new float[setup.Blocksize1 / 2];
+          for (var c = 0; c < setup.Channels; ++c) overlap[c] = [];
           break;
         default:
-          DecodeAudioPacket(packet.Data, setup, output, overlap!, ref prevBlockLong, ref hasPrev);
+          DecodeAudioPacket(packet.Data, setup, output, overlap!, ref prevBlockLong, ref hasPrev,
+            ref prevLeftEnd, ref prevRightStart);
           break;
       }
       packetIdx++;
@@ -109,7 +112,9 @@ public static class VorbisCodec {
     Stream output,
     float[][] overlap,
     ref bool prevBlockLong,
-    ref bool hasPrev
+    ref bool hasPrev,
+    ref int prevLeftEnd,
+    ref int prevRightStart
   ) {
     var br = new VorbisBitReader(packet);
     if (br.ReadBits(1) != 0) return; // packet type bit must be 0 for audio
@@ -175,43 +180,59 @@ public static class VorbisCodec {
     }
 
     // ── IMDCT, window, overlap-add, emit ──
-    var window = VorbisImdct.BuildWindow(n, prevWindowLong, nextWindowLong, setup.Blocksize0, setup.Blocksize1);
+    // The carry holds the previous block from its left slope's end to its own end, so it
+    // spans that block's flat region followed by its right slope. This block's left slope
+    // lines up with that right slope; the flat part in front of it is already finished.
+    var regions = VorbisImdct.Regions(n, blockLong, prevWindowLong, nextWindowLong, setup.Blocksize0);
+    var window = VorbisImdct.BuildWindow(n, regions);
+    var lapLength = regions.LeftEnd - regions.LeftStart;
+    var flatLength = hasPrev ? Math.Max(0, prevRightStart - prevLeftEnd) : 0;
+    var emitLength = hasPrev ? flatLength + lapLength : 0;
+
     var time = new float[n];
     var pcmOut = new float[setup.Channels][];
     for (var c = 0; c < setup.Channels; ++c) {
       VorbisImdct.Inverse(residueVecs[c], time, n);
       for (var i = 0; i < n; ++i) time[i] *= window[i];
-      var carry = overlap[c];
-      // Emit half-block: previous-tail + first half of current block.
-      pcmOut[c] = new float[half];
+
       if (hasPrev) {
-        for (var i = 0; i < half; ++i) pcmOut[c][i] = carry[i] + time[i];
+        var carry = overlap[c];
+        var emit = new float[emitLength];
+        for (var i = 0; i < flatLength; ++i)
+          emit[i] = carry[i];
+        for (var i = 0; i < lapLength; ++i)
+          emit[flatLength + i] = carry[flatLength + i] + time[regions.LeftStart + i];
+        pcmOut[c] = emit;
       }
-      // Save second half of current block to carry into next packet.
-      var newCarry = new float[half];
-      Array.Copy(time, half, newCarry, 0, half);
-      overlap[c] = newCarry;
+
+      // Everything from the end of this block's left slope onwards is still open.
+      var tail = new float[n - regions.LeftEnd];
+      Array.Copy(time, regions.LeftEnd, tail, 0, tail.Length);
+      overlap[c] = tail;
     }
 
-    if (hasPrev) {
-      // Interleave + clip to int16 LE.
-      var buf = new byte[setup.Channels * half * 2];
-      var bp = 0;
-      for (var i = 0; i < half; ++i) {
-        for (var c = 0; c < setup.Channels; ++c) {
-          var v = pcmOut[c][i] * 32768f;
-          var s = (int)Math.Round(v);
-          if (s > short.MaxValue) s = short.MaxValue;
-          if (s < short.MinValue) s = short.MinValue;
-          buf[bp++] = (byte)(s & 0xFF);
-          buf[bp++] = (byte)((s >> 8) & 0xFF);
-        }
-      }
-      output.Write(buf, 0, buf.Length);
-    }
+    if (hasPrev && emitLength > 0)
+      WriteInterleaved(output, pcmOut, setup.Channels, emitLength);
+
     hasPrev = true;
     prevBlockLong = blockLong;
-    _ = prevBlockLong;
+    prevLeftEnd = regions.LeftEnd;
+    prevRightStart = regions.RightStart;
+  }
+
+  private static void WriteInterleaved(Stream output, float[][] pcm, int channels, int count) {
+    var buf = new byte[channels * count * 2];
+    var bp = 0;
+    for (var i = 0; i < count; ++i) {
+      for (var c = 0; c < channels; ++c) {
+        var s = (int)Math.Round(pcm[c][i] * 32768f);
+        if (s > short.MaxValue) s = short.MaxValue;
+        if (s < short.MinValue) s = short.MinValue;
+        buf[bp++] = (byte)(s & 0xFF);
+        buf[bp++] = (byte)((s >> 8) & 0xFF);
+      }
+    }
+    output.Write(buf, 0, buf.Length);
   }
 
   private static byte[] ReadAllBytes(Stream s) {

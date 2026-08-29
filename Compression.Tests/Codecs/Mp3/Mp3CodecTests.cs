@@ -234,7 +234,9 @@ public class Mp3CodecTests {
     Assert.Multiple(() => {
       Assert.That(info.SampleRate, Is.EqualTo(44100));
       Assert.That(info.Channels, Is.EqualTo(2));
-      Assert.That(info.Bitrate, Is.EqualTo(128));
+      // Stream info reports bit/s, as AC-3, DTS and AAC do; the frame header's own
+      // BitrateKbps, asserted elsewhere in this fixture, stays in kbit/s.
+      Assert.That(info.Bitrate, Is.EqualTo(128_000));
       // Duration estimate: 417 bytes * 8 * 44100 / 128000 ≈ 1149.6 → integer truncation gives ~1149.
       Assert.That(info.DurationSamples, Is.GreaterThan(1100).And.LessThan(1200));
     });

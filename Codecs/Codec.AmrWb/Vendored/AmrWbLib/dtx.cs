@@ -448,7 +448,7 @@ public partial class AmrWb
      **************************************************************************/
     private void tx_dtx_handler(dtx_encState st,     /* i/o : State struct           */
          short vad_flag,                      /* i   : vad decision           */
-         short usedMode)                     /* i/o : mode changed or not    */
+         ref short usedMode)                 /* i/o : mode changed or not    */
     {
 
         /* this state machine is in synch with the GSMEFR txDtx machine      */

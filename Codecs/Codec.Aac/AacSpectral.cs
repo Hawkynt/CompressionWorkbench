@@ -97,14 +97,23 @@ internal static class AacSpectral {
           for (var k = 0; k < width; k += dim) {
             var idx = AacHuffmanTables.DecodeSpectralIndex(reader, cb);
             IndexToCoefficients(idx, cb, values);
-            for (var j = 0; j < dim; ++j) {
-              var v = values[j];
-              if (unsigned && v != 0 && reader.ReadBits(1) == 1)
-                v = -v;
-              if (cb == AacHuffmanTables.EscapeHcb && (v == 16 || v == -16))
-                v = ReadEscape(reader, v < 0);
-              coeffs[baseBin + k + j] = v;
-            }
+
+            // The sign bits for the whole tuple come first and the escape sequences after
+            // them, not one sign/escape pair per value. Only the ESC codebook has escapes,
+            // so this is the one codebook where the difference is observable - and reading
+            // them interleaved consumed a sign bit where an escape prefix was written.
+            if (unsigned)
+              for (var j = 0; j < dim; ++j)
+                if (values[j] != 0 && reader.ReadBits(1) == 1)
+                  values[j] = -values[j];
+
+            if (cb == AacHuffmanTables.EscapeHcb)
+              for (var j = 0; j < dim; ++j)
+                if (values[j] is 16 or -16)
+                  values[j] = ReadEscape(reader, values[j] < 0);
+
+            for (var j = 0; j < dim; ++j)
+              coeffs[baseBin + k + j] = values[j];
           }
         }
       }
