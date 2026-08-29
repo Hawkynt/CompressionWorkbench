@@ -8,12 +8,8 @@ using FileFormat.Wav;
 namespace FileFormat.Caf;
 
 /// <summary>
-/// Exposes an Apple Core Audio Format (<c>.caf</c>) file as an archive of
-/// <c>FULL.caf</c> plus one mono WAV per channel (for LPCM integer audio, or the
-/// G.711 <c>ulaw</c>/<c>alaw</c> companded formats decoded to 16-bit PCM) plus any
-/// ancillary chunks (<c>info</c>, <c>chan</c>, <c>free</c>, …) as
-/// <c>metadata/&lt;type&gt;.bin</c>. Float LPCM and other compressed formats
-/// (<c>ima4</c>, <c>aac </c>, …) are surfaced as <c>FULL.caf</c> only.
+/// Exposes an Apple Core Audio Format (<c>.caf</c>) file as a pseudo-archive and
+/// creates fresh LPCM CAF files from canonical per-channel WAV inputs.
 /// </summary>
 public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
@@ -22,14 +18,12 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "CAF (Core Audio Format)";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".caf";
   public IReadOnlyList<string> Extensions => [".caf"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new("caff"u8.ToArray(), Confidence: 0.90),
-  ];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new("caff"u8.ToArray(), Confidence: 0.90)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
@@ -44,90 +38,83 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
-  // ── IArchiveCreatable: assemble a CAF from per-channel mono WAVs ──────────────
-
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
 
-    // Passthrough a provided FULL.caf verbatim (archive-view semantics).
-    var full = fileList.FirstOrDefault(f =>
-      Path.GetFileName(f.Name).Equals("FULL.caf", StringComparison.OrdinalIgnoreCase));
-    if (full.Data != null) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+    var full = fileList.FirstOrDefault(static file =>
+      Path.GetFileName(file.Name).Equals("FULL.caf", StringComparison.OrdinalIgnoreCase));
+    if (full.Data is not null) {
       output.Write(full.Data);
       return;
     }
 
     var channelBlobs = fileList
-      .Where(f => {
-        var name = Path.GetFileName(f.Name);
-        return name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) &&
-               !name.Equals("FULL.caf", StringComparison.OrdinalIgnoreCase);
-      })
-      .OrderBy(f => ChannelOrder(Path.GetFileNameWithoutExtension(f.Name)))
-      .ToList();
-
-    if (channelBlobs.Count == 0)
+      .Where(static file => Path.GetFileName(file.Name).EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+      .OrderBy(static file => ChannelLayout.OrderIndex(Path.GetFileNameWithoutExtension(file.Name)))
+      .ToArray();
+    if (channelBlobs.Length == 0)
       throw new InvalidOperationException("CAF archive create needs either FULL.caf or one or more per-channel WAVs.");
 
-    var channels = new List<WavReader.ParsedWav>();
-    foreach (var (_, data) in channelBlobs) channels.Add(new WavReader().Read(data));
-
+    var channels = channelBlobs.Select(static file => new WavReader().Read(file.Data)).ToArray();
     var first = channels[0];
-    if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
-      throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");
-
-    var bytesPerSample = first.BitsPerSample / 8;
-    var frameCount = first.InterleavedPcm.Length / bytesPerSample;
-    if (channels.Any(c => c.InterleavedPcm.Length / bytesPerSample != frameCount))
+    if (channels.Any(channel => channel.SampleRate != first.SampleRate ||
+                                channel.BitsPerSample != first.BitsPerSample ||
+                                channel.FormatCode != first.FormatCode || channel.NumChannels != 1))
+      throw new InvalidOperationException("All channel WAVs must be mono and share sample rate, sample type, and bit depth.");
+    if (channels.Any(channel => channel.InterleavedPcm.Length != first.InterleavedPcm.Length))
       throw new InvalidOperationException("All channel WAVs must have the same frame count.");
 
-    var interleaved = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), first.BitsPerSample);
-
-    WriteCaf(output, channels.Count, first.SampleRate, first.BitsPerSample, interleaved);
+    var interleaved = PcmCodec.Interleave(channels.Select(static channel => channel.InterleavedPcm).ToList(), first.BitsPerSample);
+    WriteCaf(
+      output,
+      channels.Length,
+      first.SampleRate,
+      first.BitsPerSample,
+      isFloat: first.FormatCode == 3,
+      interleaved);
   }
 
   /// <summary>
-  /// Writes a valid LPCM CAF. The little-endian flag is set in <c>mFormatFlags</c> so the
-  /// interleaved little-endian PCM (the canonical buffer used throughout this codebase) can
-  /// be written verbatim without byte-swapping; <see cref="CafReader"/> honours that flag.
+  /// Writes standards-compliant little-endian LPCM CAF. Core Audio's bit 1 means
+  /// <em>big</em>-endian, so it stays clear for the repository's canonical LE data.
   /// </summary>
-  private static void WriteCaf(Stream output, int channels, int sampleRate, int bitsPerChannel, byte[] interleaved) {
-    Span<byte> hdr = stackalloc byte[8];
-    "caff"u8.CopyTo(hdr);
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[4..], 1); // mFileVersion
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[6..], 0); // mFileFlags
-    output.Write(hdr);
+  internal static void WriteCaf(Stream output, int channels, int sampleRate, int bitsPerChannel,
+    bool isFloat, ReadOnlySpan<byte> interleaved) {
+    Span<byte> header = stackalloc byte[8];
+    "caff"u8.CopyTo(header);
+    BinaryPrimitives.WriteUInt16BigEndian(header[4..], 1);
+    BinaryPrimitives.WriteUInt16BigEndian(header[6..], 0);
+    output.Write(header);
 
-    var bytesPerFrame = (uint)(channels * bitsPerChannel / 8);
-    var desc = new byte[32];
-    BinaryPrimitives.WriteDoubleBigEndian(desc.AsSpan(0), sampleRate);
-    "lpcm"u8.CopyTo(desc.AsSpan(8));
-    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(12), FlagIsLittleEndian); // integer, little-endian samples
-    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(16), bytesPerFrame);      // mBytesPerPacket
-    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(20), 1);                  // mFramesPerPacket
-    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(24), (uint)channels);     // mChannelsPerFrame
-    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(28), (uint)bitsPerChannel); // mBitsPerChannel
-    WriteChunk(output, "desc", desc);
+    var bytesPerFrame = checked((uint)(channels * ((bitsPerChannel + 7) / 8)));
+    Span<byte> desc = stackalloc byte[32];
+    BinaryPrimitives.WriteDoubleBigEndian(desc, sampleRate);
+    "lpcm"u8.CopyTo(desc[8..]);
+    BinaryPrimitives.WriteUInt32BigEndian(desc[12..], isFloat ? FlagIsFloat : 0u);
+    BinaryPrimitives.WriteUInt32BigEndian(desc[16..], bytesPerFrame);
+    BinaryPrimitives.WriteUInt32BigEndian(desc[20..], 1);
+    BinaryPrimitives.WriteUInt32BigEndian(desc[24..], checked((uint)channels));
+    BinaryPrimitives.WriteUInt32BigEndian(desc[28..], checked((uint)bitsPerChannel));
+    WriteChunk(output, "desc"u8, desc);
 
-    var dataBody = new byte[4 + interleaved.Length]; // 4-byte mEditCount (0) + audio
-    interleaved.CopyTo(dataBody.AsSpan(4));
-    WriteChunk(output, "data", dataBody);
+    var data = new byte[4 + interleaved.Length];
+    interleaved.CopyTo(data.AsSpan(4));
+    WriteChunk(output, "data"u8, data);
   }
 
-  private const uint FlagIsLittleEndian = 0x2;
+  private const uint FlagIsFloat = 0x1;
 
-  private static void WriteChunk(Stream s, string type, byte[] body) {
-    Span<byte> head = stackalloc byte[12];
-    Encoding.ASCII.GetBytes(type).CopyTo(head);
-    BinaryPrimitives.WriteInt64BigEndian(head[4..], body.Length);
-    s.Write(head);
-    s.Write(body);
+  internal static void WriteChunk(Stream output, ReadOnlySpan<byte> type, ReadOnlySpan<byte> body) {
+    if (type.Length != 4) throw new ArgumentException("CAF chunk type must be four bytes.", nameof(type));
+    Span<byte> header = stackalloc byte[12];
+    type.CopyTo(header);
+    BinaryPrimitives.WriteInt64BigEndian(header[4..], body.Length);
+    output.Write(header);
+    output.Write(body);
   }
-
-  // Canonical speaker ordering (FFmpeg/WAVE bit order, mono through 22.2).
-  private static int ChannelOrder(string name) => ChannelLayout.OrderIndex(name);
-
-  // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
   public long? MaxTotalArchiveSize => null;
   public string AcceptedInputsDescription =>
@@ -135,39 +122,42 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
-
-    if (dir == "" && (name == "full.caf" || name.EndsWith(".wav"))) { reason = null; return true; }
-    if (dir == "metadata" && name.EndsWith(".bin")) { reason = null; return true; }
-    reason = $"not a CAF-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
+    var directory = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
+    if (directory.Length == 0 && (name == "full.caf" || name.EndsWith(".wav"))) {
+      reason = null;
+      return true;
+    }
+    if (directory == "metadata" && name.EndsWith(".bin")) {
+      reason = null;
+      return true;
+    }
+    reason = $"not a CAF-archive input (got {input.ArchiveName}); {this.AcceptedInputsDescription}";
     return false;
   }
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    var blob = ms.ToArray();
+    using var memory = new MemoryStream();
+    stream.CopyTo(memory);
+    var blob = memory.ToArray();
     var parsed = new CafReader().Read(blob);
+    var entries = new List<AudioPseudoArchive.Entry> { new("FULL.caf", "Container", blob) };
 
-    var entries = new List<AudioPseudoArchive.Entry> {
-      new("FULL.caf", "Container", blob),
-    };
-
-    // Split integer LPCM per-channel; float and non-LPCM are surfaced as FULL only.
-    if (!parsed.IsFloat &&
-        parsed.FormatId == "lpcm" &&
-        parsed.BitsPerSample is 8 or 16 or 24 or 32 &&
-        parsed.NumChannels >= 1 &&
-        parsed.InterleavedPcm.Length > 0) {
-      foreach (var (name, wavBlob) in PcmCodec.SplitInterleavedPcm(
-          parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample,
-          parsed.ChannelMask))
-        entries.Add(new($"{name}.wav", "Channel", wavBlob, "pcm"));
+    if (parsed.FormatId == "lpcm" && parsed.BitsPerSample is 8 or 16 or 24 or 32 or 64 &&
+        parsed.NumChannels >= 1 && parsed.InterleavedPcm.Length > 0) {
+      if (parsed.IsFloat) {
+        if (parsed.BitsPerSample is 32 or 64)
+          foreach (var (name, wavBlob) in PcmCodec.SplitInterleavedFloat(
+              parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample, parsed.ChannelMask))
+            entries.Add(new($"{name}.wav", "Channel", wavBlob, "pcm_float"));
+      } else if (parsed.BitsPerSample is 8 or 16 or 24 or 32) {
+        foreach (var (name, wavBlob) in PcmCodec.SplitInterleavedPcm(
+            parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample, parsed.ChannelMask))
+          entries.Add(new($"{name}.wav", "Channel", wavBlob, "pcm"));
+      }
     }
 
     foreach (var (type, data) in parsed.OtherChunks)
       entries.Add(new($"metadata/{type.Trim()}.bin", "Tag", data));
-
     return entries;
   }
 }
