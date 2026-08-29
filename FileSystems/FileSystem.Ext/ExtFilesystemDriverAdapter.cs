@@ -448,7 +448,8 @@ internal readonly record struct ExtDriverSuperblock(
     var size = checked((long)(((ulong)sizeHi << 32) | sizeLo));
     var blocksLo = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(28, 4));
     var blocksHi = inode.Length >= 118 ? BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(116, 2)) : (ushort)0;
-    var allocated = checked((long)(((ulong)blocksHi << 32) | blocksLo) * 512UL);
+    var sectors = ((ulong)blocksHi << 32) | blocksLo;
+    var allocated = checked((long)checked(sectors * 512UL));
     var links = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(26, 2));
     var generation = inode.Length >= 104 ? BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(100, 4)) : 0u;
     var flags = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(32, 4));
