@@ -14,7 +14,6 @@ public sealed class BtrfsFilesystemDriverAdapter :
   IFilesystemDriverAdapter,
   IBlockDeviceFilesystemDriverProvider {
 
-  private static readonly FilesystemNodeId RootId = new(256, 0);
   public string FormatId => "Btrfs";
 
   public FilesystemDriverProfile ProbeFilesystem(Stream image) {
