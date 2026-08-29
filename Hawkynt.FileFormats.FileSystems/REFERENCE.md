@@ -643,6 +643,43 @@ In-place modifier for Apple IPSW packages. An IPSW is just a ZIP file with an Ap
 | `AddEntry` | `static void AddEntry(Stream ipsw, string zipPath, byte[] data)` | Adds (or replaces by ZIP path) a single entry inside the IPSW. The previous entry's bytes are wiped via `RemoveFile` before the new entry is appended. |
 | `RemoveEntry` | `static bool RemoveEntry(Stream ipsw, string zipPath)` | Removes a single entry by ZIP path. Returns true if removed. |
 
+### Namespace `FileFormat.Lynx`
+
+[`LynxFormatDescriptor`](#lynxformatdescriptor)
+
+#### `LynxFormatDescriptor`
+
+Commodore 64 Lynx/LNX archive. The format stores a textual PETSCII-ish directory and uncompressed file extents in 254-byte blocks mirroring a 1541 sector with its two link bytes removed.
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LynxFormatDescriptor` | `LynxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Canonical Lynx BASIC preambles contain the text "USE LYNX..." with LYNX at offset 0x3C. Keeping the offset avoids colliding with Atari Lynx cartridge ROMs, whose LYNX magic is at 0. The parser itself also accepts non-canonical BASIC preamble lengths when opened explicitly. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds new PRG files or directly replaces same-name non-REL entries. The modifier rewrites the directory metadata in place, grows it by whole 254-byte blocks only when needed, and shifts only the affected data tail. Existing unaffected payload bytes are not re-encoded. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Lynx data extents are inherently contiguous and ordered by the directory. Defragmentation therefore consists of validating that layout and dropping transport/trailing padding after the last allocated archive block; intrinsic per-block padding is part of the format. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries by closing their allocated block range and truncating the shifted tail. REL side-sector blocks are removed together with their data blocks. |
+
 ### Namespace `FileFormat.Mdf`
 
 [`MdfEntry`](#mdfentry) · [`MdfFormatDescriptor`](#mdfformatdescriptor) · [`MdfInPlaceModifier`](#mdfinplacemodifier) · [`MdfInPlaceModifier.SectorGeometry`](#mdfinplacemodifiersectorgeometry) · [`MdfReader`](#mdfreader)
