@@ -31,6 +31,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
     <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
+    <ProjectReference Include="..\Compression.Mounting\Compression.Mounting.csproj" />
   </ItemGroup>
 
   <ItemGroup>
