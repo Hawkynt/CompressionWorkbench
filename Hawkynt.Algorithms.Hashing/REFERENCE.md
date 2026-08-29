@@ -690,6 +690,7 @@ Keccak-f[1600] sponge primitives and standard Keccak/SHA-3/SHAKE variants.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | The four standard Keccak digest sizes. |
 | `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data)` |  |
 | `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` |  |
 | `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` |  |
