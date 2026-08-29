@@ -15,7 +15,7 @@ namespace Codec.Flac;
 /// decorrelated before output.
 /// </para>
 /// </summary>
-public static class FlacCodec {
+public static partial class FlacCodec {
 
   /// <summary>
   /// Decompresses a FLAC stream into raw interleaved little-endian PCM on

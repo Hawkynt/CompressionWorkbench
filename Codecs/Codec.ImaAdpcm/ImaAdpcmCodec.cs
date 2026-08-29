@@ -14,7 +14,7 @@ namespace Codec.ImaAdpcm;
 ///         nibbles are interleaved 4 bytes per channel (8 samples each).</item>
 /// </list>
 /// </summary>
-public static class ImaAdpcmCodec {
+public static partial class ImaAdpcmCodec {
 
   private static readonly int[] StepTable = [
     7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31,

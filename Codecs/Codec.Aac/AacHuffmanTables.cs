@@ -28,43 +28,26 @@ internal static partial class AacHuffmanTables {
   public const int EscapeHcb = 11;
 
   /// <summary>
-  /// Dimension (number of quantised coefficients per codeword): 4 for the quad
-  /// codebooks 1, 2, 5, 6; 2 for the pair codebooks 3, 4, 7, 8, 9, 10, 11.
-  /// Value at index <c>i</c> corresponds to codebook <c>i</c>.
+  /// Dimension (number of quantised coefficients per codeword): 4 for quad
+  /// codebooks 1..4; 2 for pair codebooks 5..11.
   /// </summary>
   public static readonly int[] Dimensions = [
-    0, // cb 0 unused
-    4, // cb 1
-    4, // cb 2
-    2, // cb 3
-    2, // cb 4
-    4, // cb 5
-    4, // cb 6
-    2, // cb 7
-    2, // cb 8
-    2, // cb 9
-    2, // cb 10
-    2, // cb 11 (escape codebook)
+    0,
+    4, 4, 4, 4,
+    2, 2, 2, 2, 2, 2, 2,
   ];
 
   /// <summary>
-  /// Codebooks 3, 4, 7, 8, 11 are unsigned: codeword values are magnitudes and a
-  /// sign bit follows the codeword for each non-zero coefficient
-  /// (ISO/IEC 14496-3, <c>IS_CODEBOOK_UNSIGNED(x) = ((x-1) &amp; 10)</c>).
+  /// Unsigned codebooks carry magnitudes in the Huffman symbol followed by one sign
+  /// bit for each non-zero coefficient. ISO/IEC 14496-3: 3/4, 7/8, 9/10 and 11
+  /// are unsigned; 1/2 and 5/6 include signs in the symbol itself.
   /// </summary>
   public static readonly bool[] Unsigned = [
-    false, // 0
-    false, // 1
-    false, // 2
-    true,  // 3
-    true,  // 4
-    false, // 5
-    false, // 6
-    true,  // 7
-    true,  // 8
-    false, // 9
-    false, // 10
-    true,  // 11
+    false,
+    false, false,
+    true, true,
+    false, false,
+    true, true, true, true, true,
   ];
 
   /// <summary>LAV (largest absolute value) per codebook per ISO/IEC 14496-3 Table 4.98.</summary>

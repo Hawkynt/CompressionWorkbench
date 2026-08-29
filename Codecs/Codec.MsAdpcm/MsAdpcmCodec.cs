@@ -14,7 +14,7 @@ namespace Codec.MsAdpcm;
 /// computed as <c>(s1 * c1 + s2 * c2) >> 8</c> plus a dequantized delta, with the delta
 /// itself adapting based on an error table.
 /// </summary>
-public static class MsAdpcmCodec {
+public static partial class MsAdpcmCodec {
 
   private static readonly int[] AdaptationTable = [
     230, 230, 230, 230, 307, 409, 512, 614,

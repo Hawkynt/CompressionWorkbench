@@ -5,26 +5,23 @@ using System.Text;
 
 namespace Codec.Opus;
 
-/// <summary>
-/// <c>OpusHead</c> identification-header packet contents per RFC 7845 §5.1.
-/// </summary>
+/// <summary><c>OpusHead</c> identification-header packet contents per RFC 7845 §5.1.</summary>
 public sealed record OpusHeadPacket(
   byte Version,
   byte ChannelCount,
   ushort PreSkip,
   uint InputSampleRate,
   short OutputGainQ8,
-  byte ChannelMappingFamily);
+  byte ChannelMappingFamily,
+  byte StreamCount,
+  byte CoupledStreamCount,
+  byte[] ChannelMapping);
 
-/// <summary>
-/// <c>OpusTags</c> comment-header packet contents per RFC 7845 §5.2.
-/// </summary>
 public sealed record OpusTagsPacket(string Vendor, IReadOnlyList<string> Comments);
 
 /// <summary>
-/// Minimal Ogg page walker specialised for Opus streams (RFC 7845 / RFC 3533).
-/// Reassembles logical packets across page boundaries using the segment-table
-/// "lacing" mechanism. Does not verify CRCs (we trust the stream here).
+/// Ogg page walker specialised for Opus streams. Reassembles packets across page boundaries
+/// and parses both mapping-family-0 and explicit multistream OpusHead fields.
 /// </summary>
 public sealed class OggOpusReader {
 
@@ -41,40 +38,53 @@ public sealed class OggOpusReader {
 
   public OggOpusReader(Stream stream) => this._stream = stream;
 
-  /// <summary>
-  /// Reads and validates the first logical packet, which must be <c>OpusHead</c>.
-  /// </summary>
   public OpusHeadPacket ReadHead() {
     if (this._readHead) return this._head!;
     this._readHead = true;
 
     if (!this.TryReadPacket(out var pkt))
       throw new InvalidDataException("Ogg Opus stream is empty (no OpusHead packet).");
-
     if (pkt.Length < 19 || !pkt.AsSpan(0, 8).SequenceEqual(HeadMagic))
       throw new InvalidDataException("Ogg Opus stream missing 'OpusHead' magic in first packet.");
 
     var version = pkt[8];
     var channels = pkt[9];
+    if (channels == 0)
+      throw new InvalidDataException("OpusHead declares zero channels.");
     var preSkip = BinaryPrimitives.ReadUInt16LittleEndian(pkt.AsSpan(10, 2));
     var inputRate = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(12, 4));
     var gain = BinaryPrimitives.ReadInt16LittleEndian(pkt.AsSpan(16, 2));
-    var mapping = pkt[18];
+    var family = pkt[18];
 
-    this._head = new OpusHeadPacket(version, channels, preSkip, inputRate, gain, mapping);
+    byte streams;
+    byte coupled;
+    byte[] channelMapping;
+    if (family == 0) {
+      if (channels > 2)
+        throw new InvalidDataException("Opus mapping family 0 is only valid for mono/stereo.");
+      streams = 1;
+      coupled = (byte)(channels == 2 ? 1 : 0);
+      channelMapping = channels == 1 ? [0] : [0, 1];
+    } else {
+      if (pkt.Length < 21 + channels)
+        throw new InvalidDataException("Truncated multistream OpusHead channel mapping.");
+      streams = pkt[19];
+      coupled = pkt[20];
+      channelMapping = pkt.AsSpan(21, channels).ToArray();
+      if (streams == 0 || coupled > streams || streams + coupled > 255)
+        throw new InvalidDataException("Invalid Opus multistream stream/coupled-stream counts.");
+    }
+
+    this._head = new OpusHeadPacket(version, channels, preSkip, inputRate, gain, family,
+      streams, coupled, channelMapping);
     return this._head;
   }
 
-  /// <summary>
-  /// Reads the second logical packet if it is <c>OpusTags</c>, otherwise buffers
-  /// it back for audio consumption and returns null.
-  /// </summary>
   public OpusTagsPacket? TryReadTags() {
     if (!this._readHead) this.ReadHead();
     if (!this.TryReadPacket(out var pkt)) return null;
 
     if (pkt.Length < 8 || !pkt.AsSpan(0, 8).SequenceEqual(TagsMagic)) {
-      // Not a tags packet — push it back to the front of the queue.
       var rebuilt = new Queue<byte[]>();
       rebuilt.Enqueue(pkt);
       foreach (var p in this._pendingPackets) rebuilt.Enqueue(p);
@@ -104,13 +114,9 @@ public sealed class OggOpusReader {
         pos += cLen;
       }
     }
-
     return new OpusTagsPacket(vendor, comments);
   }
 
-  /// <summary>
-  /// Pulls the next reassembled logical packet from the Ogg stream.
-  /// </summary>
   public bool TryReadPacket(out byte[] packet) {
     while (this._pendingPackets.Count == 0 && !this._eof)
       this.FillFromNextPage();
@@ -129,19 +135,15 @@ public sealed class OggOpusReader {
     if (!header[..4].SequenceEqual(OggS))
       throw new InvalidDataException("Not an Ogg stream: missing 'OggS' capture pattern.");
 
-    // header[4] = version, [5] = header-type flags, [6..14] = granule,
-    // [14..18] = serial, [18..22] = sequence, [22..26] = crc, [26] = segments
-    int segmentCount = header[26];
+    var segmentCount = header[26];
     Span<byte> segments = stackalloc byte[segmentCount];
     if (segmentCount > 0 && !ReadExact(this._stream, segments)) { this._eof = true; return; }
 
     var totalBody = 0;
     for (var i = 0; i < segmentCount; i++) totalBody += segments[i];
-
     var body = new byte[totalBody];
     if (totalBody > 0 && !ReadExact(this._stream, body)) { this._eof = true; return; }
 
-    // Walk segments: every segment <255 ends a packet; runs of 255s continue it.
     var cursor = 0;
     for (var i = 0; i < segmentCount; i++) {
       var segLen = segments[i];
@@ -152,8 +154,6 @@ public sealed class OggOpusReader {
         this._partial.Clear();
       }
     }
-    // A trailing run of 255s leaves _partial non-empty; it will continue on the
-    // next page (by Ogg design).
   }
 
   private static bool ReadExact(Stream stream, Span<byte> buf) {
