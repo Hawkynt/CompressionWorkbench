@@ -85,7 +85,7 @@ public sealed class GeneralizedChecksumTests {
 
   [Test]
   public void GeneralizedEntryPointsPreserveLegacyWidths() {
-    ReadOnlySpan<byte> data = "123456789"u8;
+    var data = "123456789"u8.ToArray();
 
     Assert.Multiple(() => {
       Assert.That(Convert.ToHexString(Adler.Compute(data, 16)), Is.EqualTo($"{Adler.Compute16(data):X4}"));
