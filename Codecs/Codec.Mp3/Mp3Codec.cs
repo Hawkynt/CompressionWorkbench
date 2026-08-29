@@ -8,7 +8,8 @@ namespace Codec.Mp3;
 /// Stream-level metadata extracted from an MP3 stream's first valid frame header
 /// (and Xing/Info VBR header, if present). <see cref="DurationSamples"/> is
 /// estimated from frame count when a VBR header is found, otherwise from byte size /
-/// average bitrate; pass -1 when unknown.
+/// average bitrate; pass -1 when unknown. <see cref="Bitrate"/> is in bit/s, as in
+/// every other codec's stream info, not the kbit/s the frame header table holds.
 /// </summary>
 public sealed record Mp3StreamInfo(int SampleRate, int Channels, int Bitrate, long DurationSamples);
 
@@ -78,7 +79,8 @@ public static class Mp3Codec {
     var hdr = Mp3FrameHeader.Parse(data.AsSpan(pos, HdrSize));
     var sampleRate = hdr.SampleRateHz;
     var channels = hdr.Channels;
-    var bitrate = hdr.BitrateKbps;
+    // The frame header's table is in kbit/s; every other codec's stream info reports bit/s.
+    var bitrate = hdr.BitrateKbps * 1000;
 
     // Try to parse an Xing/Info VBR header in the first frame's side-info area.
     long durationSamples = -1;
@@ -86,7 +88,7 @@ public static class Mp3Codec {
     if (xingFrames > 0)
       durationSamples = (long)xingFrames * hdr.SamplesPerFrame;
     else if (bitrate > 0 && sampleRate > 0)
-      durationSamples = (long)(data.Length - pos) * 8 * sampleRate / (bitrate * 1000);
+      durationSamples = (long)(data.Length - pos) * 8 * sampleRate / bitrate;
 
     return new Mp3StreamInfo(sampleRate, channels, bitrate, durationSamples);
   }

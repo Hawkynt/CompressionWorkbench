@@ -63,15 +63,17 @@ public static partial class OpusCodec {
 
     var packetBuffer = new byte[1275];
     var pcmFrame = new short[frameSize * options.Channels];
+    var totalFrames = inputFrames + PadFrames(preSkip, options.SampleRate);
     long encodedFrames = 0;
-    for (var inputOffset = 0; inputOffset < inputFrames; inputOffset += frameSize) {
-      var available = Math.Min(frameSize, inputFrames - inputOffset);
+    for (var inputOffset = 0; inputOffset < totalFrames; inputOffset += frameSize) {
+      var available = Math.Clamp(inputFrames - inputOffset, 0, frameSize);
       Array.Clear(pcmFrame);
-      interleaved.Slice(inputOffset * options.Channels, available * options.Channels).CopyTo(pcmFrame);
+      if (available > 0)
+        interleaved.Slice(inputOffset * options.Channels, available * options.Channels).CopyTo(pcmFrame);
       var bytes = encoder.Encode(pcmFrame, frameSize, packetBuffer, packetBuffer.Length);
       if (bytes <= 0) throw new InvalidDataException($"Opus encoder produced invalid packet length {bytes}.");
       encodedFrames += frameSize;
-      var last = inputOffset + available >= inputFrames;
+      var last = inputOffset + frameSize >= totalFrames;
       WriteAudioPage(output, packetBuffer.AsSpan(0, bytes), serial, ref sequence,
         preSkip, inputFrames, encodedFrames, options.SampleRate, last);
     }
@@ -94,15 +96,17 @@ public static partial class OpusCodec {
 
     var packetBuffer = new byte[Math.Max(1275, 1275 * streams + 64)];
     var pcmFrame = new short[frameSize * options.Channels];
+    var totalFrames = inputFrames + PadFrames(preSkip, options.SampleRate);
     long encodedFrames = 0;
-    for (var inputOffset = 0; inputOffset < inputFrames; inputOffset += frameSize) {
-      var available = Math.Min(frameSize, inputFrames - inputOffset);
+    for (var inputOffset = 0; inputOffset < totalFrames; inputOffset += frameSize) {
+      var available = Math.Clamp(inputFrames - inputOffset, 0, frameSize);
       Array.Clear(pcmFrame);
-      interleaved.Slice(inputOffset * options.Channels, available * options.Channels).CopyTo(pcmFrame);
+      if (available > 0)
+        interleaved.Slice(inputOffset * options.Channels, available * options.Channels).CopyTo(pcmFrame);
       var bytes = encoder.EncodeMultistream(pcmFrame, frameSize, packetBuffer, packetBuffer.Length);
       if (bytes <= 0) throw new InvalidDataException($"Opus multistream encoder produced invalid packet length {bytes}.");
       encodedFrames += frameSize;
-      var last = inputOffset + available >= inputFrames;
+      var last = inputOffset + frameSize >= totalFrames;
       WriteAudioPage(output, packetBuffer.AsSpan(0, bytes), serial, ref sequence,
         preSkip, inputFrames, encodedFrames, options.SampleRate, last);
     }
@@ -111,6 +115,15 @@ public static partial class OpusCodec {
 
   private static ushort ScaleLookahead(int lookahead, int sampleRate)
     => checked((ushort)Math.Min(ushort.MaxValue, (long)lookahead * 48000 / sampleRate));
+
+  /// <summary>
+  /// Silence to encode after the input, in encoder-rate frames. A decoder discards the first
+  /// <c>preSkip</c> frames it decodes (RFC 7845 §4.2), so without this tail the round trip comes
+  /// back exactly that much shorter than it went in. <c>preSkip</c> counts 48 kHz frames whatever
+  /// the encoder runs at, so it is scaled back down here.
+  /// </summary>
+  private static int PadFrames(ushort preSkip, int sampleRate)
+    => (int)((long)preSkip * sampleRate / 48000);
 
   private static MemoryStream BeginOggStream(OpusEncoderOptions options, ushort preSkip,
     byte family, byte streams, byte coupledStreams, byte[] mapping, bool hasAudio,
