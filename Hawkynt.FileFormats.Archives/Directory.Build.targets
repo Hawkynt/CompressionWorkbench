@@ -1,0 +1,34 @@
+<Project>
+  <!--
+    Archive-domain projects that already participate in Compression.Lib/registry but were
+    omitted from the Hawkynt.FileFormats.Archives meta-package. Keep these references private:
+    _AddBundledAssembliesToPackage copies their output assemblies into this package.
+  -->
+  <ItemGroup>
+    <!-- Backup / forensic / disk-image containers exposed through the archive surface. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Acronis\FileFormat.Acronis.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AcronisTibx\FileFormat.AcronisTibx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Aff4\FileFormat.Aff4.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Afio\FileFormat.Afio.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Aomei\FileFormat.Aomei.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AppleSparse\FileFormat.AppleSparse.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bkf\FileFormat.Bkf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dar\FileFormat.Dar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.EaseUs\FileFormat.EaseUs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ghost\FileFormat.Ghost.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Macrium\FileFormat.Macrium.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Paragon\FileFormat.Paragon.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Partclone\FileFormat.Partclone.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Veeam\FileFormat.Veeam.csproj" PrivateAssets="all" />
+
+    <!-- Game / runtime / vintage archive containers that were registered but not packaged. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Akb\FileFormat.Akb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Arsc\FileFormat.Arsc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Asar\FileFormat.Asar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Awb\FileFormat.Awb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pfs0\FileFormat.Pfs0.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.T64\FileFormat.T64.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vib\FileFormat.Vib.csproj" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
