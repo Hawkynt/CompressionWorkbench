@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Text;
 using Codec.ALaw;
 using Codec.ImaAdpcm;
 using Codec.MsAdpcm;
@@ -83,11 +82,15 @@ internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
       throw new NotSupportedException(reason);
 
     switch (codecId.ToLowerInvariant()) {
-      case "pcm":
+      case "pcm": {
+        var payload = (byte[])pcm.InterleavedData.Clone();
+        if (pcm.Format.BitsPerSample == 8 && pcm.Format.Encoding == AudioPcmEncoding.SignedInteger)
+          for (var i = 0; i < payload.Length; ++i) payload[i] ^= 0x80;
         WriteWave(output, 0x0001, pcm.Format.Channels, pcm.Format.SampleRate,
           pcm.Format.BitsPerSample, checked((ushort)pcm.Format.BytesPerFrame),
-          checked((uint)(pcm.Format.SampleRate * pcm.Format.BytesPerFrame)), pcm.InterleavedData, [], null);
+          checked((uint)(pcm.Format.SampleRate * pcm.Format.BytesPerFrame)), payload, [], null);
         break;
+      }
       case "float":
         WriteWave(output, 0x0003, pcm.Format.Channels, pcm.Format.SampleRate,
           pcm.Format.BitsPerSample, checked((ushort)pcm.Format.BytesPerFrame),
@@ -118,8 +121,10 @@ internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
 
   private static void WriteImaAdpcm(Stream output, AudioPcmBuffer pcm, FormatCreateOptions options) {
     var blockAlign = options.GetOptionInt("block-align", pcm.Format.Channels == 1 ? 256 : 512);
-    if (blockAlign is < 4 or > ushort.MaxValue)
-      throw new ArgumentOutOfRangeException(nameof(options), "IMA ADPCM block-align is outside the WAVE uint16 range.");
+    if (blockAlign < 4 * pcm.Format.Channels || blockAlign > ushort.MaxValue)
+      throw new ArgumentOutOfRangeException(nameof(options), "IMA ADPCM block-align is invalid.");
+    if (pcm.Format.Channels == 2 && (blockAlign - 8) % 8 != 0)
+      throw new ArgumentException("Stereo IMA ADPCM block-align must leave a data area divisible by 8 bytes.", nameof(options));
     var samples = ReadPcm16(pcm.InterleavedData);
     var encoded = ImaAdpcmCodec.Encode(samples, pcm.Format.Channels, blockAlign);
     var samplesPerBlock = (blockAlign - 4 * pcm.Format.Channels) * 2 / pcm.Format.Channels + 1;
@@ -140,7 +145,7 @@ internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     var encoded = MsAdpcmCodec.Encode(samples, pcm.Format.Channels, blockAlign);
     var samplesPerBlock = 2 + (blockAlign - headerBytes) * 2 / pcm.Format.Channels;
 
-    var extra = new byte[4 + MsAdpcmCoefficients.Length * 2];
+    var extra = new byte[6 + MsAdpcmCoefficients.Length * 2];
     BinaryPrimitives.WriteUInt16LittleEndian(extra, checked((ushort)(extra.Length - 2)));
     BinaryPrimitives.WriteUInt16LittleEndian(extra.AsSpan(2), checked((ushort)samplesPerBlock));
     BinaryPrimitives.WriteUInt16LittleEndian(extra.AsSpan(4), 7);
