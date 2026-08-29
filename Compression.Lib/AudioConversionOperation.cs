@@ -58,9 +58,9 @@ public static class AudioConversionOperation {
       }
     }
 
-    if (target is IAudioPcmTarget pcmTarget) {
+    if (AudioFormatAdapters.ResolvePcmTarget(target) is { } pcmTarget) {
       AudioPcmBuffer? pcm = null;
-      if (source is IAudioPcmSource pcmSource) {
+      if (AudioFormatAdapters.ResolvePcmSource(source) is { } pcmSource) {
         Rewind(input);
         pcm = pcmSource.DecodePcm(input);
       } else if (TryDecodePseudoArchivePcm(input, source, out var bridgedPcm)) {
