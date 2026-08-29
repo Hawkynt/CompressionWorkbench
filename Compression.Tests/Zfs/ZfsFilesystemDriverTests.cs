@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Compression.Registry;
 using FileSystem.Zfs;
 
@@ -37,6 +38,31 @@ public sealed class ZfsFilesystemDriverTests {
     var read = handle.Read(12_345, slice);
     Assert.That(read, Is.EqualTo(slice.Length));
     Assert.That(slice, Is.EqualTo(payload.AsSpan(12_345, slice.Length).ToArray()));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Probe_RejectsUnsupportedPoolVersion() {
+    var writer = new ZfsWriter();
+    writer.AddFile("a.bin", "abc"u8.ToArray());
+    using var built = new MemoryStream();
+    writer.WriteTo(built, 8L * 1024 * 1024);
+    var bytes = built.ToArray();
+
+    var changed = 0;
+    for (var slot = ZfsConstants.UberblockArrayOffset;
+         slot + ZfsConstants.UberblockSize <= ZfsConstants.LabelSize;
+         slot += ZfsConstants.UberblockSize) {
+      if (BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(slot, 8)) != ZfsConstants.UberblockMagic)
+        continue;
+      BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(slot + 8, 8), ZfsConstants.PoolVersion + 1);
+      changed++;
+    }
+    Assert.That(changed, Is.GreaterThan(0), "writer must emit at least one valid L0 uberblock");
+
+    using var image = new MemoryStream(bytes, writable: false);
+    var profile = new ZfsFilesystemDriverAdapter().ProbeFilesystem(image);
+    Assert.That(profile.CanMount, Is.False);
+    Assert.That(string.Join("; ", profile.Limitations), Does.Contain("pool version"));
   }
 
   [Test, Category("ErrorHandling")]
