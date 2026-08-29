@@ -13144,7 +13144,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Descriptor for the WACZ (Web Archive Collection Zipped) format — a ZIP container that wraps one or more WARC files together with a Frictionless-Data manifest, page index and optional resource bundles. References: `https://specs.webrecorder.net/wacz/1.1.1/` — the WACZ 1.1.1 specification (Webrecorder)`https://webrecorder.net` — Webrecorder, the format's author and reference tooling (py-wacz, ReplayWeb.page)
 
-Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13161,6 +13161,7 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
