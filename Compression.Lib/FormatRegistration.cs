@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Compression.Core.DiskImage;
 using Compression.Lib.FsConversion;
 using Compression.Registry;
@@ -12,18 +13,23 @@ namespace Compression.Lib;
 public static partial class FormatRegistration {
   private static int _initStarted;
   private static readonly ManualResetEventSlim _initDone = new(initialState: false);
+  private static ExceptionDispatchInfo? _initFailure;
 
-  /// <summary>True iff the registry is fully populated and safe to enumerate.</summary>
-  public static bool IsReady => _initDone.IsSet;
+  /// <summary>True iff the registry completed successfully and is safe to enumerate.</summary>
+  public static bool IsReady => _initDone.IsSet && _initFailure == null;
 
   public static System.Threading.Tasks.Task EnsureInitializedAsync() {
-    if (_initDone.IsSet) return System.Threading.Tasks.Task.CompletedTask;
+    if (_initDone.IsSet) {
+      _initFailure?.Throw();
+      return System.Threading.Tasks.Task.CompletedTask;
+    }
     return System.Threading.Tasks.Task.Run(EnsureInitialized);
   }
 
   public static void EnsureInitialized() {
     if (Interlocked.CompareExchange(ref _initStarted, 1, 0) != 0) {
       _initDone.Wait();
+      _initFailure?.Throw();
       return;
     }
 
@@ -44,6 +50,13 @@ public static partial class FormatRegistration {
         else FilesystemResizer.Grow(stream, fsId, newSize);
         return true;
       };
+    } catch (Exception e) {
+      // Registration is deliberately one-shot. Once constructor side effects have
+      // populated the registries, blindly retrying would create duplicate entries.
+      // Preserve and rethrow the original failure for every concurrent/later caller
+      // instead of letting waiters observe a false-success half registry.
+      _initFailure = ExceptionDispatchInfo.Capture(e);
+      throw;
     } finally {
       _initDone.Set();
     }
