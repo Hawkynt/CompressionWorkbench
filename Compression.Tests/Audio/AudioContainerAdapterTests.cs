@@ -1,6 +1,7 @@
 using Codec.Pcm;
 using Compression.Lib;
 using Compression.Registry;
+using FileFormat.Aiff;
 using FileFormat.Au;
 using FileFormat.Flac;
 using FileFormat.Wav;
@@ -70,6 +71,122 @@ public sealed class AudioContainerAdapterTests {
     AudioConversionOperation.Convert(
       au,
       new AuFormatDescriptor(),
+      flac,
+      new FlacFormatDescriptor(),
+      new FormatCreateOptions(Method: "flac"));
+
+    flac.Position = 0;
+    var decoded = new FlacFormatDescriptor().DecodePcm(flac);
+    Assert.Multiple(() => {
+      Assert.That(decoded.Format.SampleRate, Is.EqualTo(sampleRate));
+      Assert.That(decoded.Format.Channels, Is.EqualTo(1));
+      Assert.That(decoded.Format.BitsPerSample, Is.EqualTo(16));
+      Assert.That(decoded.InterleavedData.Length, Is.EqualTo(pcm.Length));
+      Assert.That(decoded.InterleavedData.Any(static value => value != 0), Is.True);
+    });
+  }
+
+  [Test]
+  public void WavToAiffPcmToFlac_IsLossless() {
+    const int sampleRate = 44_100;
+    var pcm = BuildPcm16(sampleRate, channels: 2, frames: 2_048);
+    var wav = PcmCodec.ToWavBlob(pcm, 2, sampleRate, 16);
+
+    using var input = new MemoryStream(wav, writable: false);
+    using var aiff = new MemoryStream();
+    AudioConversionOperation.Convert(
+      input,
+      new WavFormatDescriptor(),
+      aiff,
+      new AiffFormatDescriptor(),
+      new FormatCreateOptions(Method: "pcm"));
+
+    var parsed = new AiffReader().Read(aiff.ToArray());
+    Assert.Multiple(() => {
+      Assert.That(parsed.IsAifc, Is.False);
+      Assert.That(parsed.CompressionId, Is.EqualTo("NONE"));
+      Assert.That(parsed.SampleFrames, Is.EqualTo(2_048));
+    });
+
+    aiff.Position = 0;
+    using var flac = new MemoryStream();
+    AudioConversionOperation.Convert(
+      aiff,
+      new AiffFormatDescriptor(),
+      flac,
+      new FlacFormatDescriptor(),
+      new FormatCreateOptions(Method: "flac"));
+
+    flac.Position = 0;
+    var decoded = new FlacFormatDescriptor().DecodePcm(flac);
+    Assert.That(decoded.InterleavedData, Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void WavToAifcSowtToFlac_IsLossless() {
+    const int sampleRate = 48_000;
+    var pcm = BuildPcm16(sampleRate, channels: 2, frames: 1_536);
+    var wav = PcmCodec.ToWavBlob(pcm, 2, sampleRate, 16);
+
+    using var input = new MemoryStream(wav, writable: false);
+    using var aifc = new MemoryStream();
+    AudioConversionOperation.Convert(
+      input,
+      new WavFormatDescriptor(),
+      aifc,
+      new AiffFormatDescriptor(),
+      new FormatCreateOptions(Method: "sowt"));
+
+    var parsed = new AiffReader().Read(aifc.ToArray());
+    Assert.Multiple(() => {
+      Assert.That(parsed.IsAifc, Is.True);
+      Assert.That(parsed.CompressionId, Is.EqualTo("sowt"));
+      Assert.That(parsed.SampleFrames, Is.EqualTo(1_536));
+    });
+
+    aifc.Position = 0;
+    using var flac = new MemoryStream();
+    AudioConversionOperation.Convert(
+      aifc,
+      new AiffFormatDescriptor(),
+      flac,
+      new FlacFormatDescriptor(),
+      new FormatCreateOptions(Method: "flac"));
+
+    flac.Position = 0;
+    var decoded = new FlacFormatDescriptor().DecodePcm(flac);
+    Assert.That(decoded.InterleavedData, Is.EqualTo(pcm));
+  }
+
+  [TestCase("mulaw", "ulaw")]
+  [TestCase("alaw", "alaw")]
+  [TestCase("ima4", "ima4")]
+  public void WavToAifcLossyCodecToFlac_PreservesGeometryAndSignal(string codec, string expectedCompressionId) {
+    const int sampleRate = 8_000;
+    var pcm = BuildPcm16(sampleRate, channels: 1, frames: 1_600);
+    var wav = PcmCodec.ToWavBlob(pcm, 1, sampleRate, 16);
+
+    using var input = new MemoryStream(wav, writable: false);
+    using var aifc = new MemoryStream();
+    AudioConversionOperation.Convert(
+      input,
+      new WavFormatDescriptor(),
+      aifc,
+      new AiffFormatDescriptor(),
+      new FormatCreateOptions(Method: codec));
+
+    var parsed = new AiffReader().Read(aifc.ToArray());
+    Assert.Multiple(() => {
+      Assert.That(parsed.IsAifc, Is.True);
+      Assert.That(parsed.CompressionId, Is.EqualTo(expectedCompressionId));
+      Assert.That(parsed.SampleFrames, Is.EqualTo(1_600));
+    });
+
+    aifc.Position = 0;
+    using var flac = new MemoryStream();
+    AudioConversionOperation.Convert(
+      aifc,
+      new AiffFormatDescriptor(),
       flac,
       new FlacFormatDescriptor(),
       new FormatCreateOptions(Method: "flac"));
