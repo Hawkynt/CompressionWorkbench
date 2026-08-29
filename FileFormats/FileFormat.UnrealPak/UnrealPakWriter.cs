@@ -15,7 +15,6 @@ namespace FileFormat.UnrealPak;
 /// </summary>
 internal static class UnrealPakWriter {
   private const uint Version = 3;
-  private const int StoredRecordSize = 53;
   private const int BaseCompressedRecordSize = 57;
   private const int Sha1Length = 20;
   private const int DefaultCompressionBlockSize = 64 * 1024;
@@ -112,13 +111,7 @@ internal static class UnrealPakWriter {
   private static PreparedEntry PrepareStored(string path, byte[] data, long recordOffset) {
     var hash = SHA1.HashData(data);
     return new PreparedEntry(
-      path,
-      data,
-      recordOffset,
-      UnrealPakReader.CompressionNone,
-      hash,
-      [],
-      0);
+      path, data, recordOffset, UnrealPakReader.CompressionNone, hash, [], 0);
   }
 
   private static PreparedEntry PrepareZlib(
@@ -140,9 +133,9 @@ internal static class UnrealPakWriter {
 
     var compressedPayloadSize = compressed.Sum(block => (long)block.Length);
     if (!force) {
-      // A compressed Pak entry pays for a block-count + block table in BOTH the local data
-      // record and the index record. Auto mode only selects zlib when the complete archive
-      // representation is smaller, not merely when the compressed payload itself is smaller.
+      // Compression adds a 4-byte block count plus 16 bytes per block to BOTH copies of
+      // FPakEntry: one before the data and one in the index. Auto therefore compares the
+      // complete on-disk cost, not merely zlib payload length.
       var extraMetadata = checked(2L * (4L + compressed.Count * 16L));
       if (compressedPayloadSize + extraMetadata >= data.LongLength)
         return PrepareStored(path, data, recordOffset);
@@ -201,7 +194,7 @@ internal static class UnrealPakWriter {
     if (entry.CompressionMethod != UnrealPakReader.CompressionNone) {
       WriteInt32(output, entry.Blocks.Count);
       foreach (var block in entry.Blocks) {
-        // Pak v3 uses absolute file offsets. Relative chunk offsets begin with v5.
+        // v3 stores absolute block positions. PakFile_Version_RelativeChunkOffsets is v5.
         WriteInt64(output, block.Start);
         WriteInt64(output, block.End);
       }
@@ -219,13 +212,11 @@ internal static class UnrealPakWriter {
   }
 
   private static CompressionLevel SelectCompressionLevel(FormatCreateOptions options) {
-    if (options.Optimize)
+    if (options.Optimize || options.Level >= 8)
       return CompressionLevel.SmallestSize;
-    return options.Level switch {
-      <= 2 => CompressionLevel.Fastest,
-      >= 8 => CompressionLevel.SmallestSize,
-      _ => CompressionLevel.Optimal,
-    };
+    if (options.Level <= 2)
+      return CompressionLevel.Fastest;
+    return CompressionLevel.Optimal;
   }
 
   private static string NormalizeMethod(string? methodName) {
@@ -273,8 +264,7 @@ internal static class UnrealPakWriter {
     }
 
     var utf16 = Encoding.Unicode.GetBytes(value);
-    var charCountIncludingNull = checked(value.Length + 1);
-    WriteInt32(output, -charCountIncludingNull);
+    WriteInt32(output, checked(-(value.Length + 1)));
     output.Write(utf16);
     output.WriteByte(0);
     output.WriteByte(0);

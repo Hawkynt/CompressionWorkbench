@@ -12,8 +12,7 @@ namespace FileFormat.UnrealPak;
 /// Version 3 introduced compression blocks and entry flags; version 5 changed
 /// compressed-block offsets from absolute file offsets to offsets relative to
 /// the entry's record position. Version 8 and newer use a different compression
-/// method/index generation and are deliberately rejected here rather than
-/// guessed at.
+/// method/index generation and are deliberately rejected here rather than guessed at.
 /// </summary>
 public sealed class UnrealPakReader {
   public const uint Magic = 0x5A6F12E1;
@@ -51,23 +50,14 @@ public sealed class UnrealPakReader {
   private readonly List<string> _compressionMethods = ["None", "Zlib"];
   private readonly long _indexOffset;
 
-  /// <summary>The PAK version parsed from the footer. This reader accepts versions 1-7.</summary>
   public uint PakVersion { get; }
-  /// <summary>The mount-point prefix stored in the legacy index.</summary>
   public string MountPoint { get; }
-  /// <summary>Compression method names understood by this legacy reader.</summary>
   public IReadOnlyList<string> CompressionMethods => this._compressionMethods;
-  /// <summary>True when the v4+ footer marks the index AES-encrypted.</summary>
   public bool IsIndexEncrypted { get; }
-  /// <summary>Offset of the legacy index in the archive.</summary>
   public long IndexOffset => this._indexOffset;
-  /// <summary>Byte size of the legacy index.</summary>
   public long IndexSize { get; }
-  /// <summary>SHA-1 stored in the footer for the exact serialized index bytes.</summary>
   public byte[] IndexHash { get; }
-  /// <summary>True after constructor-time verification of <see cref="IndexHash"/>.</summary>
   public bool IndexHashVerified { get; }
-  /// <summary>Live and tombstone entries parsed from the legacy index.</summary>
   public IReadOnlyList<UnrealPakEntry> Entries => this._entries;
 
   public UnrealPakReader(Stream stream) {
@@ -80,28 +70,20 @@ public sealed class UnrealPakReader {
     if (length < 44)
       throw new InvalidDataException("Unreal Pak is shorter than the smallest footer.");
 
-    // New fields were historically prepended before Magic, so finding Magic near EOF lets us
-    // read the stable core footer without pretending to understand the v8+ index generations.
-    var scanSize = checked((int)Math.Min(512L, length));
-    stream.Position = length - scanSize;
-    var tail = new byte[scanSize];
-    stream.ReadExactly(tail);
-
-    var magicPos = -1;
-    for (var i = tail.Length - 4; i >= 0; --i) {
-      if (BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(i, 4)) == Magic) {
-        magicPos = i;
-        break;
-      }
+    // For v1-v7 every extension field is PREPENDED before the stable footer core, so Magic is
+    // exactly 44 bytes from EOF. Do not scan blindly: the 20-byte footer hash itself may contain
+    // the magic byte pattern and must never be mistaken for a second footer.
+    var magicOffset = length - 44;
+    stream.Position = magicOffset;
+    var magic = ReadUInt32(stream);
+    if (magic != Magic) {
+      if (TryFindModernFooter(stream, length, out var modernVersion))
+        throw new NotSupportedException(
+          $"Unreal Pak version {modernVersion} uses the modern v8+ compression-name/directory/path-hash index generation. " +
+          "It is intentionally outside the legacy Pak descriptor rather than being parsed heuristically.");
+      throw new InvalidDataException("Unreal Pak legacy footer magic was not found 44 bytes from EOF.");
     }
-    if (magicPos < 0)
-      throw new InvalidDataException("Unreal Pak magic not found in footer.");
 
-    var magicOffset = length - scanSize + magicPos;
-    if (magicOffset + 44 > length)
-      throw new InvalidDataException("Unreal Pak footer is truncated after its magic.");
-
-    stream.Position = magicOffset + 4;
     this.PakVersion = ReadUInt32(stream);
     if (this.PakVersion is < 1 or > 7)
       throw new NotSupportedException(
@@ -149,29 +131,18 @@ public sealed class UnrealPakReader {
 
       for (var i = 0; i < fileCount; ++i) {
         var name = ReadFString(index);
-        var entry = ReadEntryRecord(index, this.PakVersion, name, absoluteRecordOffset: null);
-        this._entries.Add(entry);
+        this._entries.Add(ReadEntryRecord(index, this.PakVersion, name, absoluteRecordOffset: null));
       }
     } catch (EndOfStreamException ex) {
       throw new InvalidDataException("Unreal Pak legacy index is truncated.", ex);
     }
   }
 
-  /// <summary>
-  /// Verifies that the on-disk data-record header agrees with the index entry and that the
-  /// entry SHA-1 matches the exact stored payload bytes. For zlib entries the hash is over the
-  /// concatenated compressed blocks, as required by the Pak format.
-  /// </summary>
   public void VerifyEntry(UnrealPakEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     _ = this.ReadAndValidateLocalHeader(entry, verifyHash: true);
   }
 
-  /// <summary>
-  /// Returns the decoded bytes of one live entry. Stored entries are copied directly; zlib
-  /// entries are decompressed one independent Pak compression block at a time.
-  /// Index/local-header consistency and entry SHA-1 are verified before any bytes are returned.
-  /// </summary>
   public byte[] Extract(UnrealPakEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDeleted)
@@ -184,7 +155,6 @@ public sealed class UnrealPakReader {
       throw new NotSupportedException($"Entry '{entry.Path}' exceeds the managed-array limit.");
 
     var headerEnd = this.ReadAndValidateLocalHeader(entry, verifyHash: true);
-
     if (entry.CompressionMethod == CompressionNone) {
       if (entry.Size != entry.UncompressedSize)
         throw new InvalidDataException($"Stored Pak entry '{entry.Path}' has differing stored/uncompressed sizes.");
@@ -223,8 +193,7 @@ public sealed class UnrealPakReader {
     }
 
     if (outputOffset != output.Length)
-      throw new InvalidDataException(
-        $"Pak entry '{entry.Path}' decoded {outputOffset} bytes; expected {output.Length}.");
+      throw new InvalidDataException($"Pak entry '{entry.Path}' decoded {outputOffset} bytes; expected {output.Length}.");
     return output;
   }
 
@@ -253,13 +222,11 @@ public sealed class UnrealPakReader {
       throw new InvalidDataException($"Pak entry '{indexed.Path}' local header does not match its index record.");
 
     ValidateEntryRanges(indexed, headerEnd, this._indexOffset);
-
     if (verifyHash) {
       var actual = this.ComputeStoredPayloadHash(indexed, headerEnd);
       if (!CryptographicOperations.FixedTimeEquals(actual, indexed.Hash))
         throw new InvalidDataException($"Pak entry '{indexed.Path}' SHA-1 mismatch.");
     }
-
     return headerEnd;
   }
 
@@ -293,8 +260,7 @@ public sealed class UnrealPakReader {
       previousEnd = block.CompressedEnd;
     }
     if (sum != entry.Size)
-      throw new InvalidDataException(
-        $"Pak entry '{entry.Path}' compression blocks total {sum} bytes, expected {entry.Size}.");
+      throw new InvalidDataException($"Pak entry '{entry.Path}' compression blocks total {sum} bytes, expected {entry.Size}.");
   }
 
   private UnrealPakEntry ReadEntryRecord(Stream stream, uint version, string name, long? absoluteRecordOffset) {
@@ -306,7 +272,7 @@ public sealed class UnrealPakReader {
 
     var compressionMethod = ReadUInt32(stream);
     if (version <= 1)
-      _ = ReadInt64(stream); // timestamp
+      _ = ReadInt64(stream);
 
     var hash = ReadBytesExactly(stream, Sha1Length);
     var blocks = new List<CompressionBlock>();
@@ -348,16 +314,33 @@ public sealed class UnrealPakReader {
       unsupported ??= "entry is AES-encrypted";
 
     return new UnrealPakEntry(
-      name,
-      serializedOffset,
-      size,
-      uncompressedSize,
-      compressionMethod,
-      hash,
-      blocks,
-      flags,
-      compressionBlockSize,
-      unsupported);
+      name, serializedOffset, size, uncompressedSize, compressionMethod, hash,
+      blocks, flags, compressionBlockSize, unsupported);
+  }
+
+  private static bool TryFindModernFooter(Stream stream, long length, out uint version) {
+    version = 0;
+    var scanSize = checked((int)Math.Min(512L, length));
+    var start = length - scanSize;
+    stream.Position = start;
+    var tail = new byte[scanSize];
+    stream.ReadExactly(tail);
+
+    for (var i = tail.Length - 44; i >= 0; --i) {
+      if (BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(i, 4)) != Magic)
+        continue;
+      var candidateVersion = BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(i + 4, 4));
+      if (candidateVersion is < 8 or > 12)
+        continue;
+      var indexOffset = BinaryPrimitives.ReadInt64LittleEndian(tail.AsSpan(i + 8, 8));
+      var indexSize = BinaryPrimitives.ReadInt64LittleEndian(tail.AsSpan(i + 16, 8));
+      var absoluteMagic = start + i;
+      if (indexOffset < 0 || indexSize <= 0 || indexOffset > length - indexSize || indexOffset + indexSize > absoluteMagic)
+        continue;
+      version = candidateVersion;
+      return true;
+    }
+    return false;
   }
 
   private static byte[] DecompressZlibBlock(byte[] compressed, int expectedSize, string entryName) {
@@ -399,7 +382,7 @@ public sealed class UnrealPakReader {
   }
 
   private static void ValidateRange(long offset, long length, long exclusiveEnd, string entryName) {
-    if (offset < 0 || length < 0 || offset > exclusiveEnd - length)
+    if (offset < 0 || length < 0 || length > exclusiveEnd || offset > exclusiveEnd - length)
       throw new InvalidDataException($"Pak entry '{entryName}' references bytes outside the data region.");
   }
 

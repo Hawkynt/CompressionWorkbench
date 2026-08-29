@@ -59,24 +59,25 @@ public class UnrealPakTests {
 
   [Test]
   public void Writer_CreatesMultiBlockZlib_AndReaderDecodesEachBlock() {
-    var payload = Enumerable.Range(0, 20_000)
+    var payload = Enumerable.Range(0, 50_000)
       .Select(i => (byte)('A' + (i / 701) % 5))
       .ToArray();
     var pak = CreatePak(
       [ArchiveInputInfo.InMemory("Data/repeating.bin", payload)],
       new FormatCreateOptions {
         MethodName = "zlib",
-        FormatSpecific = new Dictionary<string, string> { ["CompressionBlockSize"] = "4096" },
+        FormatSpecific = new Dictionary<string, string> { ["CompressionBlockSize"] = "16384" },
       });
 
     using var stream = new MemoryStream(pak, writable: false);
     var reader = new UnrealPakReader(stream);
     var entry = reader.Entries.Single();
     Assert.That(entry.CompressionMethod, Is.EqualTo(UnrealPakReader.CompressionZlib));
-    Assert.That(entry.CompressionBlockSize, Is.EqualTo(4096u));
+    Assert.That(entry.CompressionBlockSize, Is.EqualTo(16384u));
     Assert.That(entry.CompressionBlocks.Count, Is.GreaterThan(1));
     Assert.That(entry.CompressionBlocks.All(block => block.CompressedStart < block.CompressedEnd), Is.True);
-    Assert.That(entry.CompressionBlocks.Zip(entry.CompressionBlocks.Skip(1), (left, right) => left.CompressedEnd <= right.CompressedStart).All(x => x), Is.True);
+    Assert.That(entry.CompressionBlocks.Zip(entry.CompressionBlocks.Skip(1),
+      (left, right) => left.CompressedEnd <= right.CompressedStart).All(value => value), Is.True);
     Assert.DoesNotThrow(() => reader.VerifyEntry(entry));
     Assert.That(reader.Extract(entry), Is.EqualTo(payload));
   }
@@ -124,20 +125,20 @@ public class UnrealPakTests {
   [Test]
   public void Reader_VerifiesRelativeCompressionBlocks_ForVersion5() {
     var dummy = Enumerable.Repeat((byte)0x2A, 137).ToArray();
-    var payload = Enumerable.Repeat((byte)'R', 12_000).ToArray();
-    var v3 = CreatePak(
+    var payload = Enumerable.Repeat((byte)'R', 40_000).ToArray();
+    var pakV3 = CreatePak(
       [
         ArchiveInputInfo.InMemory("00-dummy.bin", dummy),
         ArchiveInputInfo.InMemory("10-compressed.bin", payload),
       ],
       new FormatCreateOptions {
-        MethodName = "zlib",
-        FormatSpecific = new Dictionary<string, string> { ["CompressionBlockSize"] = "4096" },
+        MethodName = "auto",
+        FormatSpecific = new Dictionary<string, string> { ["CompressionBlockSize"] = "16384" },
         IncompressiblePaths = new HashSet<string>(StringComparer.Ordinal) { "00-dummy.bin" },
       });
 
-    var v5 = ConvertV3ToV5RelativeOffsets(v3);
-    using var stream = new MemoryStream(v5, writable: false);
+    var pakV5 = ConvertV3ToV5RelativeOffsets(pakV3);
+    using var stream = new MemoryStream(pakV5, writable: false);
     var reader = new UnrealPakReader(stream);
     Assert.That(reader.PakVersion, Is.EqualTo(5u));
     var entry = reader.Entries.Single(item => item.Path == "10-compressed.bin");
@@ -169,7 +170,7 @@ public class UnrealPakTests {
       [ArchiveInputInfo.InMemory("a.txt", payload)],
       new FormatCreateOptions { MethodName = "stored" });
 
-    // Pak v3 stored local entry header is 53 bytes.
+    // Pak v3 stored local FPakEntry is 53 bytes.
     pak[53] ^= 0x01;
     using var stream = new MemoryStream(pak, writable: false);
     var reader = new UnrealPakReader(stream);
@@ -224,14 +225,16 @@ public class UnrealPakTests {
     Assert.That(CreatePak(inputs, options), Is.EqualTo(CreatePak(inputs.Reverse().ToArray(), options)));
 
     Assert.Throws<ArgumentException>(() => CreatePak(
-      [ArchiveInputInfo.InMemory("../escape.txt", [] )], new FormatCreateOptions()));
+      [ArchiveInputInfo.InMemory("../escape.txt", Array.Empty<byte>())], new FormatCreateOptions()));
     Assert.Throws<ArgumentException>(() => CreatePak(
-      [ArchiveInputInfo.InMemory("same.txt", []), ArchiveInputInfo.InMemory("same.txt", [1])],
-      new FormatCreateOptions()));
+      [
+        ArchiveInputInfo.InMemory("same.txt", Array.Empty<byte>()),
+        ArchiveInputInfo.InMemory("same.txt", new byte[] { 1 }),
+      ], new FormatCreateOptions()));
     Assert.Throws<NotSupportedException>(() => CreatePak(
-      [ArchiveInputInfo.InMemory("a.txt", [])], new FormatCreateOptions { Password = "secret" }));
+      [ArchiveInputInfo.InMemory("a.txt", Array.Empty<byte>())], new FormatCreateOptions { Password = "secret" }));
     Assert.Throws<NotSupportedException>(() => CreatePak(
-      [ArchiveInputInfo.InMemory("a.txt", [])], new FormatCreateOptions { MethodName = "oodle" }));
+      [ArchiveInputInfo.InMemory("a.txt", Array.Empty<byte>())], new FormatCreateOptions { MethodName = "oodle" }));
   }
 
   private static byte[] CreatePak(IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -247,7 +250,6 @@ public class UnrealPakTests {
     var reader = new UnrealPakReader(sourceStream);
     Assert.That(reader.PakVersion, Is.EqualTo(3u));
 
-    // Rewrite local compressed-block offsets from absolute to record-relative.
     foreach (var entry in reader.Entries.Where(entry => entry.CompressionMethod != UnrealPakReader.CompressionNone)) {
       var position = checked((int)entry.Offset + 48);
       var blockCount = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(position, 4));
@@ -261,9 +263,8 @@ public class UnrealPakTests {
       }
     }
 
-    // Rewrite the same block table copies in the legacy index.
     var indexPosition = checked((int)reader.IndexOffset);
-    SkipFString(bytes, ref indexPosition); // mount point
+    SkipFString(bytes, ref indexPosition);
     var count = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(indexPosition, 4));
     indexPosition += 4;
     for (var fileIndex = 0; fileIndex < count; ++fileIndex) {
@@ -283,7 +284,7 @@ public class UnrealPakTests {
           indexPosition += 16;
         }
       }
-      indexPosition += 5; // flags + compression block size
+      indexPosition += 5;
     }
 
     // v5 prepends bEncryptedIndex before the stable 44-byte footer core.
