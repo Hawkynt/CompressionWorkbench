@@ -462,7 +462,7 @@ public partial class AmrWb
         if (allow_dtx != 0)
         {
             /* Note that mode may change here */
-            tx_dtx_handler(st.dtx_encSt, vad_flag, mode);
+            tx_dtx_handler(st.dtx_encSt, vad_flag, ref mode);
             ser_size = nb_of_bits[mode];
         }
 

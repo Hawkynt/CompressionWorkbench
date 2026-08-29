@@ -39,8 +39,15 @@ internal static class Ac3Tables {
   /// <summary>FFmpeg <c>ff_ac3_db_per_bit_tab</c> indexed by dbpbcod.</summary>
   public static readonly ushort[] DbPerBit = [0x000, 0x700, 0x900, 0xb00];
 
-  /// <summary>FFmpeg <c>ff_ac3_floor_tab</c> indexed by floorcod.</summary>
-  public static readonly short[] Floor = [0x910, 0x950, 0x990, 0x9d0, 0xa10, 0xa90, 0xb10, 0x1400];
+  /// <summary>
+  /// FFmpeg <c>ff_ac3_floor_tab</c> indexed by floorcod. A/52 prints this table as
+  /// {0x910 .. 0x1400}; FFmpeg stores 0xC00 minus each of those, because its masking
+  /// step subtracts the floor and adds it back rather than the other way round. The
+  /// rest of this file and <see cref="Ac3BitAllocation"/> are FFmpeg's, so the floor
+  /// has to be FFmpeg's too - with the spec's values the last entry alone makes every
+  /// bap zero, whatever the signal.
+  /// </summary>
+  public static readonly short[] Floor = [0x2f0, 0x2b0, 0x270, 0x230, 0x1f0, 0x170, 0x0f0, unchecked((short)0xf800)];
 
   /// <summary>FFmpeg <c>ff_ac3_fast_gain_tab</c> indexed by fgaincod (per channel).</summary>
   public static readonly ushort[] FastGain = [0x080, 0x100, 0x180, 0x200, 0x280, 0x300, 0x380, 0x400];
