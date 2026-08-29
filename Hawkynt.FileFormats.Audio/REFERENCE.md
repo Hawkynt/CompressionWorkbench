@@ -498,13 +498,13 @@ Implements `IEquatable<Mp3FrameHeader>`.
 
 #### `Mp3StreamInfo`
 
-Stream-level metadata extracted from an MP3 stream's first valid frame header (and Xing/Info VBR header, if present). `DurationSamples` is estimated from frame count when a VBR header is found, otherwise from byte size / average bitrate; pass -1 when unknown.
+Stream-level metadata extracted from an MP3 stream's first valid frame header (and Xing/Info VBR header, if present). `DurationSamples` is estimated from frame count when a VBR header is found, otherwise from byte size / average bitrate; pass -1 when unknown. `Bitrate` is in bit/s, as in every other codec's stream info, not the kbit/s the frame header table holds.
 
 Implements `IEquatable<Mp3StreamInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Mp3StreamInfo` | `Mp3StreamInfo(int SampleRate, int Channels, int Bitrate, long DurationSamples)` | Stream-level metadata extracted from an MP3 stream's first valid frame header (and Xing/Info VBR header, if present). `DurationSamples` is estimated from frame count when a VBR header is found, otherwise from byte size / average bitrate; pass -1 when unknown. |
+| `Mp3StreamInfo` | `Mp3StreamInfo(int SampleRate, int Channels, int Bitrate, long DurationSamples)` | Stream-level metadata extracted from an MP3 stream's first valid frame header (and Xing/Info VBR header, if present). `DurationSamples` is estimated from frame count when a VBR header is found, otherwise from byte size / average bitrate; pass -1 when unknown. `Bitrate` is in bit/s, as in every other codec's stream info, not the kbit/s the frame header table holds. |
 | `Bitrate` | `int Bitrate { get; init; }` |  |
 | `Channels` | `int Channels { get; init; }` |  |
 | `DurationSamples` | `long DurationSamples { get; init; }` |  |
