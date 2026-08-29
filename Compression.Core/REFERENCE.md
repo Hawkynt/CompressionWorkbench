@@ -2100,7 +2100,7 @@ Decompresses data produced by `LzvnCompressor`.
 
 ### Namespace `Compression.Core.Dictionary.Lzw`
 
-[`LzwBuildingBlock`](#lzwbuildingblock) · [`LzwCompressionLevel`](#lzwcompressionlevel) · [`LzwDecoder`](#lzwdecoder) · [`LzwEncoder`](#lzwencoder)
+[`LzwBuildingBlock`](#lzwbuildingblock) · [`LzwCompressionLevel`](#lzwcompressionlevel) · [`LzwDecoder`](#lzwdecoder) · [`LzwEncoder`](#lzwencoder) · [`NuLzwBuildingBlock`](#nulzwbuildingblock) · [`NuLzwCodec`](#nulzwcodec) · [`NuLzwVariant`](#nulzwvariant)
 
 #### `LzwBuildingBlock`
 
@@ -2147,6 +2147,41 @@ Encodes data using the LZW (Lempel-Ziv-Welch) algorithm with variable-width code
 | `ClearCode` | `int ClearCode { get; }` | Gets the clear code value (2^(minBits-1)). |
 | `StopCode` | `int StopCode { get; }` | Gets the stop code value, or -1 if stop codes are disabled. |
 | `Encode` | `void Encode(ReadOnlySpan<byte> data)` | Encodes the input data and writes compressed LZW codes to the output stream. |
+
+#### `NuLzwBuildingBlock`
+
+Benchmarkable raw building block for GS/ShrinkIt LZW/2.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NuLzwBuildingBlock` | `NuLzwBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `NuLzwCodec`
+
+Apple II NuFX/ShrinkIt RLE + LZW codec.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, NuLzwVariant variant, byte volumeNumber = 254, byte rleDelimiter = 219)` | Compresses a native ShrinkIt LZW/1 or LZW/2 stream. |
+| `Crc16Xmodem` | `static ushort Crc16Xmodem(ReadOnlySpan<byte> data, ushort seed = 0)` | Computes CRC-16/XMODEM (poly 0x1021, refin=false, refout=false) from an arbitrary seed. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, NuLzwVariant variant, int expandedLength)` | Expands a native ShrinkIt stream to exactly `expandedLength` logical bytes. |
+
+#### `NuLzwVariant`
+
+NuFX/ShrinkIt LZW dialect.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Lzw1` | `0` | Original ProDOS ShrinkIt LZW/1: dictionary resets for every 4096-byte chunk and the stream carries CRC-16/XMODEM. |
+| `Lzw2` | `1` | GS/ShrinkIt LZW/2: dictionary may persist between 4096-byte chunks and integrity is supplied by the NuFX thread header. |
 
 ### Namespace `Compression.Core.Dictionary.Lzwl`
 

@@ -10582,6 +10582,51 @@ Writes a minimal NSIS-formatted file. No PE stub is emitted — the reader's `Sc
 | `AddFile` | `void AddFile(string name, byte[] data)` |  |
 | `WriteTo` | `void WriteTo(Stream output)` |  |
 
+### Namespace `FileFormat.NuFx`
+
+[`NuFxFormatDescriptor`](#nufxformatdescriptor)
+
+#### `NuFxFormatDescriptor`
+
+NuFX / ShrinkIt archive descriptor for Apple II and Apple IIgs archives. Supports plain SHK/SDK archives, native Stored/Squeeze/NuLZW1/NuLZW2 creation, record-preserving direct add/replace/remove, and slack-compacting rebuilds.
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NuFxFormatDescriptor` | `NuFxFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
+| `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` |  |
+| `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` |  |
+| `ValidateStructure` | `ValidationResult ValidateStructure(Stream stream)` |  |
+
 ### Namespace `FileFormat.NuPkg`
 
 [`NuPkgFormatDescriptor`](#nupkgformatdescriptor)
