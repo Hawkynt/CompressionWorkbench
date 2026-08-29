@@ -1,4 +1,5 @@
 using System.Text;
+using Compression.Core.Checksums;
 using Compression.Core.Deflate;
 
 namespace FileFormat.Egg;
@@ -8,8 +9,8 @@ namespace FileFormat.Egg;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The layout is taken from the official <c>EGG Format Specification, Version 1.0</c>
-/// (ESTsoft Corp., 2009–2011). All multi-byte fields are little-endian.
+/// The layout is taken from the published EGG Format Specification, Version 1.0.
+/// All multi-byte fields are little-endian.
 /// </para>
 /// <para>
 /// An archive is: an <b>EGG header</b> (magic <c>0x41474745</c> "EGGA", 2-byte version,
@@ -125,6 +126,8 @@ public sealed class EggReader : IDisposable {
 
       _ = _reader.ReadUInt32(); // file id
       var fileLength = _reader.ReadInt64();
+      if (fileLength < 0)
+        throw new InvalidDataException("EGG file header declares a negative uncompressed size.");
 
       var entry = new EggEntry { UncompressedSize = fileLength };
       if (this.IsGloballyEncrypted)
@@ -185,6 +188,7 @@ public sealed class EggReader : IDisposable {
   /// Extracts and decompresses an entry into a byte array. Store and Deflate blocks
   /// are decoded natively; any other algorithm, or an encrypted / split-volume entry,
   /// raises <see cref="NotSupportedException"/> rather than returning wrong bytes.
+  /// Every decoded block is checked against its declared size and CRC-32.
   /// </summary>
   public byte[] Extract(EggEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
@@ -197,9 +201,12 @@ public sealed class EggReader : IDisposable {
       throw new NotSupportedException($"EGG entry '{entry.Name}' is encrypted; extraction is not supported.");
 
     using var output = new MemoryStream();
+    var crc = new Crc32();
     foreach (var block in entry.Blocks) {
+      if (block.CompressedSize > int.MaxValue)
+        throw new InvalidDataException($"EGG entry '{entry.Name}' has a block too large for in-memory extraction.");
       _stream.Position = block.DataOffset;
-      var compressed = new byte[block.CompressedSize];
+      var compressed = new byte[(int)block.CompressedSize];
       _ReadExactly(compressed);
 
       var plain = block.Algorithm switch {
@@ -208,8 +215,22 @@ public sealed class EggReader : IDisposable {
         _ => throw new NotSupportedException(
           $"EGG entry '{entry.Name}' uses unsupported compression '{new EggEntry { PrimaryAlgorithm = block.Algorithm }.MethodName}'."),
       };
+
+      if (plain.LongLength != block.UncompressedSize)
+        throw new InvalidDataException(
+          $"EGG entry '{entry.Name}' block expands to {plain.LongLength} bytes; header declares {block.UncompressedSize}.");
+      crc.Reset();
+      crc.Update(plain);
+      if (crc.Value != block.Crc32)
+        throw new InvalidDataException(
+          $"EGG entry '{entry.Name}' failed CRC-32 validation (stored 0x{block.Crc32:X8}, computed 0x{crc.Value:X8}).");
+
       output.Write(plain, 0, plain.Length);
     }
+
+    if (output.Length != entry.UncompressedSize)
+      throw new InvalidDataException(
+        $"EGG entry '{entry.Name}' expands to {output.Length} bytes; file header declares {entry.UncompressedSize}.");
     return output.ToArray();
   }
 
@@ -217,14 +238,22 @@ public sealed class EggReader : IDisposable {
 
   private void _SkipExtraFields(Action<uint, byte, long, long>? onField) {
     while (true) {
+      if (_stream.Position + 4 > _stream.Length)
+        throw new InvalidDataException("EGG archive ends inside an extra-field list.");
       var field = _reader.ReadUInt32();
       if (field == EndMarker)
         return;
 
+      if (_stream.Position >= _stream.Length)
+        throw new InvalidDataException("EGG archive ends before an extra-field flag byte.");
       var bitFlag = _reader.ReadByte();
-      // Bit 0 of the general-purpose flag selects a 4-byte size; otherwise it is 2 bytes.
-      var size = (bitFlag & 0x01) != 0 ? _reader.ReadUInt32() : _reader.ReadUInt16();
+      var sizeWidth = (bitFlag & 0x01) != 0 ? 4 : 2;
+      if (_stream.Position + sizeWidth > _stream.Length)
+        throw new InvalidDataException("EGG archive ends inside an extra-field size.");
+      var size = sizeWidth == 4 ? _reader.ReadUInt32() : _reader.ReadUInt16();
       var dataStart = _stream.Position;
+      if (dataStart > _stream.Length - size)
+        throw new InvalidDataException($"EGG extra field 0x{field:X8} extends beyond the input stream.");
 
       onField?.Invoke(field, bitFlag, size, dataStart);
 
@@ -237,8 +266,8 @@ public sealed class EggReader : IDisposable {
   private void _ParseFilename(byte bitFlag, long size, long dataStart, EggEntry entry) {
     _stream.Position = dataStart;
 
-    // bit 3 (0x04) = name encrypted, bit 4 (0x08) = area-code (else UTF-8),
-    // bit 5 (0x10) = relative path (parent-path id present).
+    // bit 2 (0x04) = name encrypted, bit 3 (0x08) = area-code (else UTF-8),
+    // bit 4 (0x10) = relative path (parent-path id present).
     var encrypted = (bitFlag & 0x04) != 0;
     var useCodePage = (bitFlag & 0x08) != 0;
     var hasParent = (bitFlag & 0x10) != 0;
@@ -252,10 +281,12 @@ public sealed class EggReader : IDisposable {
     if (parentLen == 4)
       _ = _reader.ReadUInt32(); // parent-path id (relative-path linkage; not resolved here)
 
-    var nameLen = (int)(size - localeLen - parentLen);
-    if (nameLen < 0)
-      nameLen = 0;
-    var nameBytes = _reader.ReadBytes(nameLen);
+    var nameLen = size - localeLen - parentLen;
+    if (nameLen < 0 || nameLen > int.MaxValue)
+      throw new InvalidDataException("EGG filename field has an invalid length.");
+    var nameBytes = _reader.ReadBytes((int)nameLen);
+    if (nameBytes.Length != nameLen)
+      throw new InvalidDataException("EGG archive ends inside a filename field.");
 
     if (encrypted)
       entry.IsEncrypted = true;
@@ -267,7 +298,7 @@ public sealed class EggReader : IDisposable {
   private void _ParseWindowsInfo(EggEntry entry) {
     var fileTime = _reader.ReadInt64(); // 100-ns ticks since 1601-01-01 UTC
     var attribute = _reader.ReadByte();
-    if ((attribute & 0x80) != 0) // bit 8 = Directory
+    if ((attribute & 0x80) != 0) // bit 7 = Directory
       entry.IsDirectory = true;
     if (fileTime > 0) {
       try { entry.LastModified ??= DateTime.FromFileTimeUtc(fileTime); } catch (ArgumentOutOfRangeException) { /* out-of-range timestamp */ }
