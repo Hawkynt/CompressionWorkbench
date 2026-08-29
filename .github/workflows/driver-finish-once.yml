@@ -1,0 +1,35 @@
+name: Driver architecture cleanup once
+
+on:
+  push:
+    branches: [feat/filesystem-rw-gaps]
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/filesystem-rw-gaps
+          fetch-depth: 0
+      - name: Apply exact cleanup patches
+        run: python .github/driver-finish.py
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet --exit-code; then
+            echo 'No changes produced.'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Finish filesystem driver derivation cleanup'
+          git push origin HEAD:feat/filesystem-rw-gaps
