@@ -20,59 +20,48 @@ public interface IArchiveFormatOperations {
   /// entry's logical bytes — physically incapable of reading slack space,
   /// adjacent entries, padding/alignment fillers, or header/metadata regions.
   /// This is the canonical per-entry isolation primitive used by streaming
-  /// conversion pipelines.
+  /// conversion and derived-filesystem pipelines.
   /// </summary>
   /// <remarks>
   /// <para>
-  /// The returned stream is always a <see cref="BoundedEntryStream"/> (or a
-  /// wrapper that satisfies the same contract). Reads past the entry's
-  /// logical size return 0 (EOF); seek targets are clamped to the bound.
-  /// The caller owns disposal.
+  /// Reads past the logical size return 0 (EOF); seek targets cannot escape the
+  /// entry. The caller owns disposal.
   /// </para>
   /// <para>
-  /// Default implementation buffers the entry's bytes via
-  /// <see cref="ExtractEntryToMemory"/> and wraps a <see cref="MemoryStream"/>
-  /// over the result. Descriptors with native per-entry readers (FAT cluster
-  /// chains, ZIP DEFLATE wrapper, TAR positional slice, 7z folder slot)
-  /// should override to return a properly bounded streaming view of their
-  /// decoder output.
+  /// The default implementation intentionally does <b>not</b> materialize a
+  /// <c>byte[]</c>. It asks <see cref="Extract"/> for the selected entry in an
+  /// isolated temporary directory, opens the resulting file as a seekable
+  /// stream, and deletes that tree on dispose. This gives every descriptor a
+  /// large-file-safe streaming fallback even before it grows a native per-entry
+  /// reader. Native readers (FAT chains, ZIP decoder streams, TAR slices, etc.)
+  /// should still override this to avoid the temporary extraction pass.
   /// </para>
   /// </remarks>
   public virtual Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(entryName);
-    var bytes = this.ExtractEntryToMemory(archive, entryName, password);
-    return new BoundedEntryStream(new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+    var extracted = TemporaryExtractedEntryStream.Open(this, archive, entryName, password);
+    return new BoundedEntryStream(extracted, extracted.Length, leaveOpen: false);
   }
 
   /// <summary>
-  /// Extracts a single entry to a byte array without writing to disk. The default
-  /// implementation now routes through <see cref="OpenEntry"/> so the bounded
-  /// streaming contract is enforced even when callers ask for a buffered result.
-  /// Descriptors that have a more efficient native byte-array path (e.g. a
-  /// reader that already materialises the whole entry) can still override.
+  /// Extracts a single entry to a byte array. This is the explicitly buffered
+  /// convenience API; callers working with large entries should use
+  /// <see cref="OpenEntry"/> instead.
   /// </summary>
   /// <remarks>
-  /// The wrapper rewinds <paramref name="archive"/> to position 0 when
-  /// possible, opens the entry as a bounded stream, and copies it into a
-  /// fresh byte array. The bound on <see cref="OpenEntry"/> guarantees the
-  /// result contains only the entry's logical bytes.
+  /// The default routes through <see cref="OpenEntry"/>, so descriptor-specific
+  /// isolation/decoding semantics are preserved. A result past the runtime array
+  /// limit naturally fails here rather than imposing that limit on the streaming
+  /// API or filesystem-driver layer.
   /// </remarks>
   public virtual byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(entryName);
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    // Fall back to the tempdir path when the descriptor has not overridden
-    // either method — that's the only way to break the recursion between the
-    // two virtual defaults.
-    var tempDir = Path.Combine(Path.GetTempPath(), "cwb_x2m_" + Guid.NewGuid().ToString("N")[..8]);
-    try {
-      Directory.CreateDirectory(tempDir);
-      this.Extract(archive, tempDir, password, [entryName]);
-      var file = Path.Combine(tempDir, entryName.Replace('/', Path.DirectorySeparatorChar));
-      return File.Exists(file) ? File.ReadAllBytes(file) : [];
-    } finally {
-      try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { /* best-effort */ }
-    }
+    using var entry = this.OpenEntry(archive, entryName, password);
+    using var memory = new MemoryStream();
+    entry.CopyTo(memory);
+    return memory.ToArray();
   }
 }
