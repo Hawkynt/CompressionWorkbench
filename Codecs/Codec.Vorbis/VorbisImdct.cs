@@ -34,37 +34,55 @@ internal static class VorbisImdct {
   }
 
   /// <summary>
-  /// Build a Vorbis sine window of length <paramref name="n"/>, optionally
-  /// shrinking the left and/or right halves when the surrounding blocks are
-  /// short. Returns a freshly allocated array.
+  /// The four boundaries of a Vorbis window: zero on <c>[0, LeftStart)</c>, rising over
+  /// <c>[LeftStart, LeftEnd)</c>, unity on <c>[LeftEnd, RightStart)</c>, falling over
+  /// <c>[RightStart, RightEnd)</c> and zero again on <c>[RightEnd, n)</c>.
   /// </summary>
-  public static float[] BuildWindow(int n, bool prevLong, bool nextLong, int shortN, int longN) {
+  public readonly record struct WindowRegions(int LeftStart, int LeftEnd, int RightStart, int RightEnd);
+
+  /// <summary>
+  /// Boundaries for a block of <paramref name="n"/> samples. A long block that meets a short
+  /// one laps over only <c>shortN / 2</c> samples, and that slope sits centred on the quarter
+  /// point rather than filling the half — which is what makes the returned PCM run
+  /// <c>(previous n + this n) / 4</c> samples long instead of a flat <c>n / 2</c>.
+  /// </summary>
+  public static WindowRegions Regions(int n, bool blockLong, bool prevLong, bool nextLong, int shortN) {
+    if (!blockLong)
+      return new WindowRegions(0, n / 2, n / 2, n);
+
+    var lap = shortN / 4;
+    var leftStart = prevLong ? 0 : n / 4 - lap;
+    var leftEnd = prevLong ? n / 2 : n / 4 + lap;
+    var rightStart = nextLong ? n / 2 : 3 * n / 4 - lap;
+    var rightEnd = nextLong ? n : 3 * n / 4 + lap;
+    return new WindowRegions(leftStart, leftEnd, rightStart, rightEnd);
+  }
+
+  /// <summary>
+  /// Build the Vorbis sine window for the given <paramref name="regions"/>. Returns a freshly
+  /// allocated array of length <paramref name="n"/>.
+  /// </summary>
+  public static float[] BuildWindow(int n, WindowRegions regions) {
     var w = new float[n];
-    var half = n / 2;
-    var leftWindowN = prevLong ? longN : shortN;
-    var rightWindowN = nextLong ? longN : shortN;
-    var leftN = leftWindowN / 2;
-    var rightN = rightWindowN / 2;
+    var (leftStart, leftEnd, rightStart, rightEnd) = regions;
 
-    // Pre-window: zero from start to (half - leftN), then sin² ramp over leftN samples.
-    var leftStart = half - leftN;
-    for (var i = 0; i < leftStart; ++i) w[i] = 0f;
-    for (var i = 0; i < leftN; ++i) {
-      var arg = Math.PI / 2.0 * (i + 0.5) / leftN;
-      var s = Math.Sin(arg);
-      w[leftStart + i] = (float)Math.Sin(Math.PI / 2.0 * s * s);
-    }
+    var leftN = leftEnd - leftStart;
+    for (var i = 0; i < leftN; ++i)
+      w[leftStart + i] = Slope(i, leftN);
 
-    // Centre — full amplitude across the constant section.
-    for (var i = half; i < half + (half - rightN); ++i) w[i] = 1f;
+    for (var i = leftEnd; i < rightStart; ++i) w[i] = 1f;
 
-    // Post-window: mirror sin² ramp over rightN, then zero to end.
-    var rightStart = n - rightN;
-    for (var i = 0; i < rightN; ++i) {
-      var arg = Math.PI / 2.0 * (rightN - 0.5 - i) / rightN;
-      var s = Math.Sin(arg);
-      w[rightStart + i] = (float)Math.Sin(Math.PI / 2.0 * s * s);
-    }
+    var rightN = rightEnd - rightStart;
+    for (var i = 0; i < rightN; ++i)
+      w[rightStart + i] = Slope(rightN - 1 - i, rightN);
+
     return w;
+  }
+
+  // w(i) = sin(pi/2 * sin^2(pi/2 * (i + 0.5) / length)) - the Vorbis slope, which squares and
+  // sums to one against its mirror so the overlap-add reconstructs exactly.
+  private static float Slope(int i, int length) {
+    var s = Math.Sin(Math.PI / 2.0 * (i + 0.5) / length);
+    return (float)Math.Sin(Math.PI / 2.0 * s * s);
   }
 }
