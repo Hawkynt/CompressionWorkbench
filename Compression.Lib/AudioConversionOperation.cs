@@ -60,10 +60,10 @@ public static class AudioConversionOperation {
       }
     }
 
-    var pcmTarget = ResolvePcmTarget(target);
+    var pcmTarget = AudioAdapterResolver.ResolvePcmTarget(target);
     if (pcmTarget is not null) {
       AudioPcmBuffer? pcm = null;
-      if (ResolvePcmSource(source) is { } pcmSource) {
+      if (AudioAdapterResolver.ResolvePcmSource(source) is { } pcmSource) {
         Rewind(input);
         pcm = pcmSource.DecodePcm(input);
       } else if (TryDecodePseudoArchivePcm(input, source, out var bridgedPcm)) {
@@ -88,16 +88,6 @@ public static class AudioConversionOperation {
       $"No audio conversion route exists from '{source.Id}' to '{target.Id}'. " +
       "The source must expose encoded packets or PCM/channels and the target must expose a compatible mux/encode/create capability.");
   }
-
-  private static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
-    => descriptor.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)
-      ? new WavAudioAdapter()
-      : AudioFormatAdapters.ResolvePcmSource(descriptor);
-
-  private static IAudioPcmTarget? ResolvePcmTarget(IFormatDescriptor descriptor)
-    => descriptor.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)
-      ? new WavAudioAdapter()
-      : AudioFormatAdapters.ResolvePcmTarget(descriptor);
 
   private static string ResolveCodec(IAudioPcmTarget target, FormatCreateOptions options) {
     if (!string.IsNullOrWhiteSpace(options.MethodName)) return options.MethodName;
