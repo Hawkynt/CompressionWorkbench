@@ -20,7 +20,6 @@ public static class FormatRegistry {
 
   public static void Initialize() {
     if (_initialized) return;
-    _initialized = true;
     BuildLookups();
 
     foreach (var (id, _) in _filesystemDrivers)
@@ -41,6 +40,11 @@ public static class FormatRegistry {
       throw new InvalidOperationException(
         $"Filesystem '{id}' exposes no IFilesystemDriverProvider, generated sidecar, or IArchiveFormatOperations projection.");
     }
+
+    // Publish initialized only after every cross-registry invariant succeeds.
+    // A failed coverage check must not poison the registry into an apparently
+    // initialized state that subsequent callers can no longer repair/reset in tests.
+    _initialized = true;
   }
 
   /// <summary>
@@ -52,8 +56,10 @@ public static class FormatRegistry {
   public static void Register(IFormatDescriptor descriptor, bool isFilesystem = false) {
     ArgumentNullException.ThrowIfNull(descriptor);
     if (_initialized) throw new InvalidOperationException("FormatRegistry is already initialized.");
+    if (_byId.ContainsKey(descriptor.Id))
+      throw new InvalidOperationException($"A format descriptor with id '{descriptor.Id}' is already registered.");
     _all.Add(descriptor);
-    _byId[descriptor.Id] = descriptor;
+    _byId.Add(descriptor.Id, descriptor);
     if (isFilesystem) _filesystemFormatIds.Add(descriptor.Id);
     if (descriptor is IStreamFormatOperations streamOps)
       _streamOps[descriptor.Id] = streamOps;
