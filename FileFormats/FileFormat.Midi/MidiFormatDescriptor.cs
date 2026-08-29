@@ -11,14 +11,17 @@ namespace FileFormat.Midi;
 /// <c>track_NN_&lt;name&gt;.mid</c> per <c>MTrk</c> chunk (re-wrapped as a format-0
 /// single-track file), one <c>metadata.ini</c> carrying song title / copyright /
 /// tempo / time signature, and <c>lyrics.txt</c> if lyric meta-events are present.
+/// The descriptor can create a fresh SMF by passing through <c>FULL.mid</c> or by
+/// combining extracted single-track files with a shared timing division.
 /// </summary>
-public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints {
+public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
   public string Id => "Midi";
   public string DisplayName => "MIDI (Standard MIDI File)";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mid";
   public IReadOnlyList<string> Extensions => [".mid", ".midi"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -53,6 +56,43 @@ public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
     }
     throw new FileNotFoundException($"Entry not found: {entryName}");
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var files = FormatHelpers.FilesOnly(inputs).ToList();
+    var full = files.FirstOrDefault(f =>
+      Path.GetFileName(f.Name).Equals("FULL.mid", StringComparison.OrdinalIgnoreCase));
+    if (full.Data != null) {
+      // Validate before passthrough so Create never emits an arbitrary blob under a .mid name.
+      _ = new MidiCodec().ReadHeader(full.Data);
+      output.Write(full.Data);
+      return;
+    }
+
+    var trackFiles = files
+      .Where(f => Path.GetFileName(f.Name).StartsWith("track_", StringComparison.OrdinalIgnoreCase) &&
+                  Path.GetFileName(f.Name).EndsWith(".mid", StringComparison.OrdinalIgnoreCase))
+      .OrderBy(f => Path.GetFileName(f.Name), StringComparer.OrdinalIgnoreCase)
+      .ToList();
+    if (trackFiles.Count == 0)
+      throw new InvalidOperationException("MIDI create needs FULL.mid or one or more track_NN_*.mid files.");
+
+    var codec = new MidiCodec();
+    var bodies = new List<byte[]>(trackFiles.Count);
+    int? division = null;
+    foreach (var file in trackFiles) {
+      var header = codec.ReadHeader(file.Data);
+      var tracks = codec.FindTracks(file.Data);
+      if (tracks.Count != 1)
+        throw new InvalidOperationException($"{file.Name} must contain exactly one MTrk chunk.");
+      if (division.HasValue && header.Division != division.Value)
+        throw new InvalidOperationException("All MIDI track inputs must use the same timing division.");
+      division ??= header.Division;
+      bodies.Add(codec.ExtractTrackBytes(file.Data, tracks[0]));
+    }
+
+    var format = bodies.Count == 1 ? 0 : 1;
+    output.Write(MidiWriter.BuildFile(bodies, division!.Value, format));
   }
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
@@ -106,7 +146,6 @@ public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
     }
 
-    // Per-track format-0 files.
     foreach (var t in tracks) {
       trackNames.TryGetValue(t.Index, out var name);
       var safeName = Sanitize(name) ?? "untitled";
@@ -115,7 +154,6 @@ public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       entries.Add(($"track_{t.Index:D2}_{safeName}.mid", "Track", trackFile));
     }
 
-    // Metadata ini.
     var ini = new StringBuilder();
     ini.AppendLine("; SMF metadata");
     ini.Append("format=").AppendLine(header.Format.ToString(CultureInfo.InvariantCulture));
@@ -134,14 +172,12 @@ public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return entries;
   }
 
-  // ── IArchiveWriteConstraints ──────────────────────────────────────────────
-
   public long? MaxTotalArchiveSize => null;
   public string AcceptedInputsDescription =>
     "MIDI archive accepts: FULL.mid, track_NN_*.mid, metadata.ini, lyrics.txt";
 
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
-    var name = System.IO.Path.GetFileName(input.ArchiveName).ToLowerInvariant();
+    var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.mid" or "metadata.ini" or "lyrics.txt" ||
         (name.StartsWith("track_") && name.EndsWith(".mid"))) {
       reason = null; return true;

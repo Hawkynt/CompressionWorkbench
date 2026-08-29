@@ -150,6 +150,53 @@ Implements `IEquatable<AdtsHeader>`.
 | `SampleRateIndex` | `int SampleRateIndex { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
 
+### Namespace `Codec.Bonk`
+
+[`BonkCodec`](#bonkcodec) · [`BonkCodec.BonkStreamInfo`](#bonkcodecbonkstreaminfo)
+
+#### `BonkCodec`
+
+Bonk audio decoder, ported from ffmpeg `libavcodec/bonk.c` (and the file layout from `libavformat/bonk.c`). Bonk uses an adaptive lattice (LPC) of up to 2048 taps whose coefficients are sent per packet through an adaptive Golomb-style integer-list coder (`intlist_read`), then predicts each sample via the lattice. Optional mid/side stereo and integer downsampling are supported. Only the lossless path is exercised for verification (a crafted packet round-trips byte-exact); lossy quantisation is honoured per the source. The on-disk file is a `'\0BONK'` tag followed by a 17-byte header (version, total-samples, sample-rate, channels, lossless / mid-side flags, tap count, downsampling, samples-per-packet), then the raw bitstream of all packets. The decoder buffers the whole bitstream and decodes packets until the declared sample count is exhausted.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderBytes` | `const int HeaderBytes` |  |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> interleavedPcm, int channels, int sampleRate, int nTaps = 4, int samplesPerPacket = 256)` | Encodes raw interleaved little-endian 16-bit PCM to a complete Bonk file in lossless mode. Coefficients are sent as all-zero taps (so the lattice is a pass-through) and each packet's samples are coded through the canonical inverse of `ReadIntList`; the produced stream decodes back to the exact input. Intended for deterministic round-trip verification. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> file)` | Decodes a Bonk file to raw interleaved little-endian 16-bit PCM. |
+| `ReadStreamInfo` | `static BonkStreamInfo ReadStreamInfo(ReadOnlySpan<byte> file, out int dataOffset)` | Reads the `'\0BONK'` tag + 17-byte header from the start of a Bonk file. |
+
+#### `BonkCodec.BonkStreamInfo`
+
+Decoded stream geometry.
+
+Implements `IEquatable<BonkStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BonkStreamInfo` | `BonkStreamInfo(int Channels, int SampleRate, long SamplesPerChannel, bool Lossless, bool MidSide, int NTaps, int DownSampling, int SamplesPerPacket)` | Decoded stream geometry. |
+| `Channels` | `int Channels { get; init; }` |  |
+| `DownSampling` | `int DownSampling { get; init; }` |  |
+| `Lossless` | `bool Lossless { get; init; }` |  |
+| `MidSide` | `bool MidSide { get; init; }` |  |
+| `NTaps` | `int NTaps { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SamplesPerChannel` | `long SamplesPerChannel { get; init; }` |  |
+| `SamplesPerPacket` | `int SamplesPerPacket { get; init; }` |  |
+
+### Namespace `Codec.Dfpwm`
+
+[`DfpwmCodec`](#dfpwmcodec)
+
+#### `DfpwmCodec`
+
+DFPWM1a (Dynamic Filter Pulse Width Modulation, "1a" variant) codec — the 1-bit-per-sample scheme used by ComputerCraft speakers. The decoder is ported verbatim from ffmpeg `libavcodec/dfpwmdec.c`: a predictive charge integrator with an adaptive strength and an anti-jerk plus first-order low-pass output filter. Each input byte yields 8 unsigned-8 PCM samples, decoded LSB-first. The encoder is the matching ffmpeg `dfpwmenc.c` algorithm so a round-trip is stable. DFPWM is headerless: callers must know the sample rate (ComputerCraft uses 48000 Hz mono by convention) and channel count out of band.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultSampleRate` | `const int DefaultSampleRate` | Default sample rate for raw DFPWM (ComputerCraft convention). |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> pcmU8)` | Encodes unsigned 8-bit PCM to DFPWM1a (8 samples → one byte). Mirrors ffmpeg's `dfpwm_enc`: the same predictive integrator with the anti-jerk handling, emitting one bit per sample LSB-first. A trailing partial byte is zero-padded. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> dfpwm)` | Decodes raw DFPWM1a bytes to unsigned 8-bit PCM (one byte → 8 samples). The state machine matches ffmpeg's `au_decompress` exactly. |
+
 ### Namespace `Codec.Flac`
 
 [`FlacCodec`](#flaccodec) · [`FlacCodec.AudioProperties`](#flaccodecaudioproperties)
@@ -199,16 +246,18 @@ GSM 06.10 full-rate speech decoder (ETSI EN 300 961). Each 33-byte frame decodes
 
 #### `ImaAdpcmCodec`
 
-IMA ADPCM (Interactive Multimedia Association Adaptive Differential PCM) decoder. Each 4-bit nibble encodes the magnitude + sign of the delta between samples; the step size walks up and down a 89-entry log-spaced table based on the previous nibble. Used by WAV format code 0x0011 with a block layout: Per-channel 4-byte header: int16 predictor, int8 step-index, 1 reserved byte.For mono: remaining `blockAlign - 4` bytes are nibble pairs (LSN first).For stereo: headers are interleaved per channel (4 bytes L, 4 bytes R), then nibbles are interleaved 4 bytes per channel (8 samples each).
+IMA ADPCM (Interactive Multimedia Association Adaptive Differential PCM) codec. Supports the Microsoft/Intel WAV block layout and Apple/QuickTime `ima4` packets.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DecodeQuickTime` | `static short[][] DecodeQuickTime(ReadOnlySpan<byte> data, int channels)` | Decodes the Apple/QuickTime `ima4` packet variant (as carried by AIFC) into one PCM buffer per channel. The data is a sequence of fixed 34-byte packets that round-robin through the channels (ch0, ch1, …, ch0, …). Each packet is: a 2-byte big-endian preamble: the top 9 bits are the signed initial predictor (`(short)(preamble & 0xFF80)`) and the low 7 bits are the initial step index (clamped to ≤ 88);32 data bytes = 64 nibbles, low nibble first within each byte, decoded with the standard IMA step tables. Every packet therefore yields exactly 64 samples for its channel. Unlike the WAV block layout the packet does not emit the predictor itself as a sample. |
+| `DecodeQuickTime` | `static short[][] DecodeQuickTime(ReadOnlySpan<byte> data, int channels)` | Decodes the Apple/QuickTime `ima4` packet variant (as carried by AIFC) into one PCM buffer per channel. Packets are 34 bytes and round-robin through channels. |
 | `Decode` | `static short[][] Decode(ReadOnlySpan<byte> adpcm, int blockAlign, int channels)` | Decodes IMA ADPCM data to one PCM buffer per channel. Each output buffer holds `((blockAlign/channels - 4) * 2 + 1)` samples per block. |
+| `EncodeQuickTime` | `static byte[] EncodeQuickTime(IReadOnlyList<short[]> pcm)` | Encodes equal-length PCM16 channel buffers to Apple/QuickTime `ima4` packets. A final partial packet is padded with the last reconstructed sample. Packets are emitted in the channel-round-robin order used by AIFC/QuickTime. |
+| `Encode` | `static byte[] Encode(IReadOnlyList<short[]> pcm, int blockAlign)` | Encodes one or two equal-length PCM16 channel buffers to Microsoft/Intel IMA ADPCM WAV blocks. The final block is padded with the last reconstructed sample so the raw coded stream remains block-aligned; a container can retain the exact source sample count in its own metadata. |
 
 ### Namespace `Codec.Midi`
 
-[`MidiCodec`](#midicodec) · [`MidiCodec.FileHeader`](#midicodecfileheader) · [`MidiCodec.MetaEvent`](#midicodecmetaevent) · [`MidiCodec.TrackChunk`](#midicodectrackchunk)
+[`MidiCodec`](#midicodec) · [`MidiCodec.FileHeader`](#midicodecfileheader) · [`MidiCodec.MetaEvent`](#midicodecmetaevent) · [`MidiCodec.TrackChunk`](#midicodectrackchunk) · [`MidiWriter`](#midiwriter)
 
 #### `MidiCodec`
 
@@ -255,6 +304,14 @@ Implements `IEquatable<TrackChunk>`.
 | `ByteLength` | `int ByteLength { get; init; }` |  |
 | `FileOffset` | `int FileOffset { get; init; }` |  |
 | `Index` | `int Index { get; init; }` |  |
+
+#### `MidiWriter`
+
+Standard MIDI File emitter for already-encoded `MTrk` payloads.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BuildFile` | `static byte[] BuildFile(IReadOnlyList<byte[]> trackBodies, int division, int format = 1)` | Builds an SMF from raw `MTrk` payloads. Format 0 requires exactly one track; formats 1 and 2 may contain multiple tracks. Event bytes are preserved verbatim. |
 
 ### Namespace `Codec.Mp3`
 
@@ -322,11 +379,12 @@ Implements `IEquatable<Mp3StreamInfo>`.
 
 #### `MsAdpcmCodec`
 
-Microsoft ADPCM decoder (WAV format code 0x0002). Block layout: Per channel: 1-byte predictor selector (index into the 7-entry coefficient table), 2-byte delta (quantization step), 2-byte sample1, 2-byte sample2.Followed by `blockAlign - 7*channels` bytes of ADPCM nibbles, where each byte packs two samples (high nibble first) that alternate channels when stereo. Predictor coefficients are taken from a standard 7-entry table; the new sample is computed as `(s1 * c1 + s2 * c2) >> 8` plus a dequantized delta, with the delta itself adapting based on an error table.
+Microsoft ADPCM codec (WAV format code 0x0002). Uses the canonical seven adaptive predictor pairs and the Microsoft 4-bit delta adaptation table.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static short[][] Decode(ReadOnlySpan<byte> adpcm, int blockAlign, int channels)` | Decodes a buffer of MS-ADPCM blocks to per-channel PCM. Each block emits `2 + (blockAlign - 7*channels) * 2 / channels` samples per channel. |
+| `Encode` | `static byte[] Encode(IReadOnlyList<short[]> pcm, int blockAlign)` | Encodes one or two equal-length PCM16 channel buffers to Microsoft ADPCM WAV blocks. For each block the encoder searches all seven standard predictor pairs and a logarithmic set of legal starting deltas, retaining the combination with the lowest reconstruction error. The final block is padded with the last reconstructed sample. |
 
 ### Namespace `Codec.MuLaw`
 
@@ -531,6 +589,35 @@ PCM codec: integer/float sample packing, channel interleave/deinterleave, and ca
 | `SplitInterleavedPcm` | `static IReadOnlyList<ValueTuple<string, byte[]>> SplitInterleavedPcm(byte[] interleaved, int channels, int sampleRate, int bitsPerSample, ulong? channelMask = null)` | Splits interleaved little-endian signed-integer PCM into per-channel mono WAV blobs. Channels are returned in the order they occur in `interleaved`. When the container carries an explicit speaker bitmap (WAVE_FORMAT_EXTENSIBLE `dwChannelMask`, CAF channel bitmap), pass it via `channelMask` so each mono WAV is named for its real speaker; otherwise the FFmpeg default layout for the channel count applies. |
 | `SplitPerChannelIntSamples` | `static IReadOnlyList<ValueTuple<string, byte[]>> SplitPerChannelIntSamples(int[][] perChannel, int sampleRate, int bitsPerSample)` | Splits per-channel integer samples into per-channel mono WAV blobs. Widths wider than `bitsPerSample` are truncated via two's-complement masking. |
 | `ToWavBlob` | `static byte[] ToWavBlob(byte[] pcm, int channels, int sampleRate, int bitsPerSample, int formatCode = 1)` | Wraps raw little-endian PCM bytes in a minimal RIFF/WAVE header. `formatCode`: 1 = PCM integer, 3 = IEEE float. |
+
+### Namespace `Codec.Qoa`
+
+[`QoaCodec`](#qoacodec) · [`QoaCodec.QoaStreamInfo`](#qoacodecqoastreaminfo)
+
+#### `QoaCodec`
+
+Quite OK Audio (QOA) lossy-but-deterministic codec — decoder plus a faithful encoder. QOA is a fixed-bitrate (~3.2 bits/sample) DPCM scheme: audio is split into frames of up to 256 slices per channel; each slice codes 20 samples as a 4-bit scale-factor index followed by 20 × 3-bit residual indices. A per-channel order-4 sign-LMS predictor (the `>>13` prediction shift and `residual>>4` weight update) reconstructs each sample, and a fixed dequantisation table (`DequantTab`) maps residual indices to signed deltas. The whole pipeline is integer and deterministic, so re-encoding a decoded stream is byte-stable and the decoder reproduces the reference output exactly. The on-disk layout: an 8-byte file header (`'qoaf'` magic, then a 32-bit big-endian total-samples-per-channel count); then frames. Each frame opens with an 8-byte big-endian header packing channels (8 bits), sample-rate (24 bits), frame samples-per-channel (16 bits) and frame byte-size (16 bits), followed by per-channel 16-byte LMS state (4 × s16 history then 4 × s16 weights) and the interleaved slices. Tables, predictor and bit packing are ported verbatim from the reference `qoa.h` / ffmpeg `libavcodec/qoadec.c`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DequantTab` | `static readonly int[][] DequantTab` | qoa_dequant_tab[16][8] — ported verbatim from qoa.h. |
+| `ScaleFactorTab` | `static readonly int[] ScaleFactorTab` | qoa_scalefactor_tab — index → reciprocal-style scale used during encode. |
+| `Compress` | `static void Compress(Stream pcmInput, Stream qoaOutput, int channels, int sampleRate)` | Encodes raw interleaved little-endian 16-bit PCM to a QOA stream. The encoder mirrors the reference: it brute-forces the best of the 16 scale-factors per slice by minimising squared error against the dequantised reconstruction, so its output decodes back to exactly the samples this codec would reconstruct. |
+| `Decompress` | `static void Decompress(Stream qoaInput, Stream pcmOutput)` | Decodes a QOA stream to raw interleaved little-endian 16-bit PCM. |
+| `ReadStreamInfo` | `static QoaStreamInfo ReadStreamInfo(Stream input)` | Reads the QOA file/first-frame headers without decoding audio. |
+
+#### `QoaCodec.QoaStreamInfo`
+
+Stream geometry exposed to container descriptors.
+
+Implements `IEquatable<QoaStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QoaStreamInfo` | `QoaStreamInfo(int Channels, int SampleRate, long SamplesPerChannel)` | Stream geometry exposed to container descriptors. |
+| `Channels` | `int Channels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SamplesPerChannel` | `long SamplesPerChannel { get; init; }` |  |
 
 ### Namespace `Codec.Vorbis`
 
@@ -920,6 +1007,72 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the AFS2 container and finalizes the stream. |
 
+### Namespace `FileFormat.Bonk`
+
+[`BonkFormatDescriptor`](#bonkformatdescriptor)
+
+#### `BonkFormatDescriptor`
+
+Exposes a Bonk (`.bonk`) file as a pseudo-archive of `FULL.bonk` plus, when the bitstream decodes, one mono WAV per channel and a `metadata.ini` tag. The descriptor is creatable (WORM): it passes through `FULL.bonk` or assembles a new lossless Bonk stream from one or two mono PCM16 WAV channel files.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BonkFormatDescriptor` | `BonkFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+### Namespace `FileFormat.Dfpwm`
+
+[`DfpwmFormatDescriptor`](#dfpwmformatdescriptor)
+
+#### `DfpwmFormatDescriptor`
+
+Exposes a DFPWM1a (`.dfpwm`) file as a pseudo-archive of `FULL.dfpwm` (Kind `Container`) plus the single decoded mono channel as `MONO.wav` (Kind `Channel`, 8-bit unsigned PCM) and a `metadata.ini` (Kind `Tag`). DFPWM is headerless and carries no sample rate or channel count, so the surfaced WAV assumes mono at `DefaultSampleRate` (48000 Hz — the ComputerCraft convention); detection is by extension only. The descriptor is creatable (WORM): it passes a supplied `FULL.dfpwm` through unchanged or encodes a mono 8-bit WAV with `DfpwmCodec`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DfpwmFormatDescriptor` | `DfpwmFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Flac`
 
 [`FlacArchiveDescriptor`](#flacarchivedescriptor) · [`FlacFormatDescriptor`](#flacformatdescriptor) · [`FlacLayoutMap`](#flaclayoutmap) · [`FlacReader`](#flacreader) · [`FlacReader.AudioProperties`](#flacreaderaudioproperties) · [`FlacWriter`](#flacwriter)
@@ -1081,9 +1234,9 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `MidiFormatDescriptor`
 
-Surfaces a Standard MIDI File as an archive: one `FULL.mid`, one `track_NN_<name>.mid` per `MTrk` chunk (re-wrapped as a format-0 single-track file), one `metadata.ini` carrying song title / copyright / tempo / time signature, and `lyrics.txt` if lyric meta-events are present.
+Surfaces a Standard MIDI File as an archive: one `FULL.mid`, one `track_NN_<name>.mid` per `MTrk` chunk (re-wrapped as a format-0 single-track file), one `metadata.ini` carrying song title / copyright / tempo / time signature, and `lyrics.txt` if lyric meta-events are present. The descriptor can create a fresh SMF by passing through `FULL.mid` or by combining extracted single-track files with a shared timing division.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1103,6 +1256,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWrite
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
@@ -1428,6 +1582,39 @@ Implements `IDisposable`.
 | `VersionByte` | `byte VersionByte { get; set; }` | The platform/version byte (default 0x01 = PS1). |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes all fields to the underlying stream. Idempotent. |
+
+### Namespace `FileFormat.Qoa`
+
+[`QoaFormatDescriptor`](#qoaformatdescriptor)
+
+#### `QoaFormatDescriptor`
+
+Exposes a Quite OK Audio (`.qoa`) file as a pseudo-archive of `FULL.qoa` (Kind `Container`) plus, when the bitstream decodes, one mono WAV per channel (Kind `Channel`, named via `ChannelLayout`) and a `metadata.ini` (Kind `Tag`). Decode failures degrade gracefully to a FULL-only listing. The descriptor is also creatable (WORM): it passes a supplied `FULL.qoa` through unchanged or interleaves per-channel mono WAVs and encodes them with `QoaCodec`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QoaFormatDescriptor` | `QoaFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.S3m`
 

@@ -3,34 +3,29 @@ using System.Text;
 using Codec.Bonk;
 using Codec.Pcm;
 using Compression.Registry;
+using FileFormat.Wav;
 
 namespace FileFormat.Bonk;
 
 /// <summary>
-/// Exposes a Bonk (<c>.bonk</c>) file as a pseudo-archive of <c>FULL.bonk</c> (Kind
-/// <c>Container</c>) plus, when the bitstream decodes, one mono WAV per channel
-/// (Kind <c>Channel</c>, named via <see cref="ChannelLayout"/>) and a
-/// <c>metadata.ini</c> (Kind <c>Tag</c>). Decode failures degrade gracefully to a
-/// FULL-only listing. A Bonk file carries a length-prefixed original filename before
-/// its <c>'\0BONK'</c> tag, so the tag is rarely at offset 0; detection therefore
-/// leans on the <c>.bonk</c> extension plus a low-confidence offset-0 tag match,
-/// while listing scans for the tag wherever it sits.
+/// Exposes a Bonk (<c>.bonk</c>) file as a pseudo-archive of <c>FULL.bonk</c> plus,
+/// when the bitstream decodes, one mono WAV per channel and a <c>metadata.ini</c> tag.
+/// The descriptor is creatable (WORM): it passes through <c>FULL.bonk</c> or assembles
+/// a new lossless Bonk stream from one or two mono PCM16 WAV channel files.
 /// </summary>
 public sealed class BonkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract {
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   public string Id => "Bonk";
   public string DisplayName => "Bonk Audio";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".bonk";
   public IReadOnlyList<string> Extensions => [".bonk"];
   public IReadOnlyList<string> CompoundExtensions => [];
 
-  // The '\0BONK' tag follows a variable-length filename, so a fixed-offset magic only
-  // matches the (rare) tag-at-offset-0 case; keep it low confidence to avoid clashes.
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x00, (byte)'B', (byte)'O', (byte)'N', (byte)'K'], Offset: 0, Confidence: 0.30)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("bonk", "Bonk")];
@@ -47,7 +42,47 @@ public sealed class BonkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
     AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
-  // ── Shared archive-entry builder ─────────────────────────────────────────────
+  public long? MaxTotalArchiveSize => null;
+  public string AcceptedInputsDescription =>
+    "Bonk archive accepts: FULL.bonk or one/two mono 16-bit PCM WAV channel files";
+
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    var name = Path.GetFileName(input.ArchiveName);
+    if (name.Equals("FULL.bonk", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)) {
+      reason = null;
+      return true;
+    }
+    reason = $"not a Bonk-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
+    return false;
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+    var full = fileList.FirstOrDefault(f =>
+      Path.GetFileName(f.Name).Equals("FULL.bonk", StringComparison.OrdinalIgnoreCase));
+    if (full.Data != null) {
+      output.Write(full.Data);
+      return;
+    }
+
+    var channelBlobs = fileList
+      .Where(f => Path.GetFileName(f.Name).EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+      .OrderBy(f => ChannelLayout.OrderIndex(Path.GetFileNameWithoutExtension(f.Name)))
+      .ToList();
+    if (channelBlobs.Count is < 1 or > 2)
+      throw new InvalidOperationException("Bonk create requires one or two mono PCM16 WAV channel files.");
+
+    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var first = channels[0];
+    if (channels.Any(c => c.NumChannels != 1 || c.BitsPerSample != 16))
+      throw new InvalidOperationException("Bonk create requires mono 16-bit integer PCM WAV channel files.");
+    if (channels.Any(c => c.SampleRate != first.SampleRate || c.InterleavedPcm.Length != first.InterleavedPcm.Length))
+      throw new InvalidOperationException("All Bonk channel WAVs must share sample rate and frame count.");
+
+    var interleaved = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), 16);
+    output.Write(BonkCodec.Compress(interleaved, channels.Count, first.SampleRate));
+  }
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
