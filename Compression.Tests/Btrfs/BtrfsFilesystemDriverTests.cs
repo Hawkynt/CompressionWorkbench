@@ -48,6 +48,28 @@ public sealed class BtrfsFilesystemDriverTests {
   }
 
   [Test, Category("ErrorHandling")]
+  public void Probe_RejectsCompressedExtentInsteadOfSilentlyShorteningFile() {
+    var inline = Enumerable.Range(0, 31).Select(i => (byte)(0xA1 + i)).ToArray();
+    var writer = new BtrfsWriter();
+    writer.AddFile("compressed-marker.bin", inline);
+    using var built = new MemoryStream();
+    writer.WriteTo(built);
+    var bytes = built.ToArray();
+
+    var payloadAt = bytes.AsSpan().IndexOf(inline);
+    Assert.That(payloadAt, Is.GreaterThanOrEqualTo(21), "test payload must be present as one inline EXTENT_DATA value");
+    Assert.That(bytes.AsSpan(payloadAt + inline.Length).IndexOf(inline), Is.EqualTo(-1), "payload marker must be unique in the image");
+
+    // Inline payload starts at file_extent_item + 21; compression is byte 16.
+    bytes[payloadAt - 5] = 1; // non-zero compression id: current native profile must reject it
+    using var image = new MemoryStream(bytes, writable: false);
+    var profile = new BtrfsFilesystemDriverAdapter().ProbeFilesystem(image);
+
+    Assert.That(profile.CanMount, Is.False);
+    Assert.That(string.Join("; ", profile.Limitations), Does.Contain("compression="));
+  }
+
+  [Test, Category("ErrorHandling")]
   public void NativeSession_RefusesWritableMount() {
     var writer = new BtrfsWriter();
     writer.AddFile("a.bin", "abc"u8.ToArray());
