@@ -27,7 +27,7 @@ dotnet add package Hawkynt.Algorithms.Hashing
 - One-shot and incremental APIs where the underlying construction naturally supports streaming.
 - Cryptographic families including MD, SHA-1/SHA-2/SHA-3, Keccak-derived XOFs, BLAKE, RIPEMD, SM3, and legacy/interoperability hashes.
 - Fast non-cryptographic hashing including xxHash, MurmurHash, FNV, SipHash, and other source-registry families.
-- Multi-output algorithms use one family implementation and expose valid digest sizes as enumerable `HashSizeRange` records, mirroring the JavaScript registry's ranged `SupportedOutputSizes` model.
+- Fixed and finite multi-output hash APIs expose valid digest sizes as enumerable `HashSizeRange` records through `SupportedHashSizes`; XOF constructions are excluded because their output length is intentionally arbitrary.
 - Source-specific variants are preserved as distinct algorithms when their parameters or output differ from the published standard; they are not silently substituted with a similarly named digest.
 - Pure managed implementation surface; no JavaScript runtime is required by the package.
 
@@ -46,8 +46,9 @@ byte[] kupyna384 = Kupyna.Compute(data, 384);
 byte[] fugue512 = Fugue.Compute(data, 512);
 byte[] hamsi224 = HamsiFamily.Compute(data, 224);
 byte[] tiger192 = Tiger.Compute(data, 192);
+byte[] knot256 = KnotHash.Compute(data, KnotHashVariant.KnotHash256_384);
 uint murmur = MurmurHash3.Compute32(data);
-ulong fnv = Fnv.Compute1A64(data);
+ulong fnv = Fnv.Compute1A_64(data);
 
 foreach (int bits in Fugue.SupportedHashSizes.EnumerateSizes())
   Console.WriteLine($"Fugue-{bits}");
@@ -59,7 +60,75 @@ The historical `Compression.Core.Checksums` namespace is retained for hash types
 
 The source-of-truth inventory is the 63 `.js` implementation files in `Hawkynt/Hawkynt.github.io/Cipher/algorithms/hash`. Conversion is tracked file-for-file rather than by a vague algorithm count because one source file may register several variants and two similarly named variants may be intentionally incompatible.
 
-The final coverage table is kept in this README and must account for every source file. Standard algorithms may share a parameterized managed implementation; source-specific DarkCrypt/lightweight/educational variants receive dedicated managed implementations whenever their test vectors differ from the standard construction. JavaScript wrappers are not used as an implementation shortcut.
+All 63 source files are accounted for below. **59 currently have managed counterparts; four remain explicit JS-only gaps rather than being silently counted as ports.** The same 63-entry inventory is asserted by `JavaScriptHashCoverageTests`, so adding, removing, or accidentally duplicating an accounting entry breaks the test.
+
+| JavaScript source | Managed counterpart / disposition |
+| --- | --- |
+| `ascon-hash.js` | `AsconHash` / `AsconXof` |
+| `blake.js` | `Blake` |
+| `blake2.js` | `Blake2s` / `Blake2xs` / `Blake2b` |
+| `blake3-enhanced.js` | `Blake3Enhanced` |
+| `blake3.js` | `Blake3` |
+| `chc.js` | `ChcHash` |
+| `cityhash.js` | `CityHash` |
+| `comb4p.js` | `Comb4PMd4Md5` / `Comb4PSha1Ripemd160` |
+| `cshake.js` | `CShake` |
+| `cubehash.js` | `CubeHash256` / `CubeHash512` |
+| `darkcrypt-keccak.js` | `DarkCryptKeccak` |
+| `darkcrypt-md6.js` | `DarkCryptMd6` |
+| `darkcrypt-skein.js` | `DarkCryptSkein` |
+| `drygascon-hash.js` | **JS-only gap:** no managed DryGASCON counterpart yet |
+| `dstu7564.js` | `Kupyna` |
+| `echo.js` | `Echo` |
+| `esch256.js` | `Esch256` |
+| `esch384.js` | `Esch384` |
+| `fnv.js` | `Fnv` |
+| `fugue.js` | `Fugue` |
+| `gimli24-hash.js` | `Gimli24Hash` |
+| `gost3411.js` | `Gost3411_94` |
+| `groestl.js` | `Groestl` |
+| `hamsi.js` | `HamsiFamily` |
+| `haraka.js` | `Haraka256` / `Haraka512` |
+| `haval.js` | `Haval` |
+| `highway-hash.js` | **JS-only gap:** educational source implementation has no managed counterpart yet |
+| `isap-hash.js` | `IsapHash` |
+| `jh.js` | **JS-only gap:** educational source implementation has no managed counterpart yet |
+| `kangaroo.js` | `KangarooTwelve` |
+| `keccak.js` | `Keccak` |
+| `knot-hash.js` | `KnotHash` with `KnotHashVariant` |
+| `kupyna.js` | `Kupyna` |
+| `lsh.js` | `Lsh256Family` / `Lsh512Family` |
+| `luffa.js` | `Luffa` |
+| `md.js` | `Md2` / `Md4` / `Md5` |
+| `mdc2.js` | `Mdc2` |
+| `murmurhash3.js` | `MurmurHash3` |
+| `panama.js` | `PanamaLE` / `PanamaBE` / MAC variants |
+| `parallelhash.js` | `ParallelHash` |
+| `photon-beetle-hash.js` | `PhotonBeetleHash` |
+| `radiogatun.js` | `RadioGatun32` |
+| `ripemd.js` | `Ripemd` |
+| `sha1.js` | `Sha1` |
+| `sha256.js` | `Sha256` |
+| `sha3.js` | `Sha3` |
+| `sha512.js` | `Sha512Family` |
+| `shabal.js` | `Shabal192` / `Shabal224` / `Shabal256` / `Shabal384` / `Shabal512` |
+| `shake.js` | `Shake` |
+| `siphash.js` | `SipHash24` |
+| `skein.js` | `Skein512` |
+| `skinny-hash.js` | **JS-only gap:** educational source implementation has no managed counterpart yet |
+| `sm3.js` | `Sm3` |
+| `sparkle-hash.js` | `SparkleHash` / `Esch256` |
+| `streebog.js` | `Streebog` |
+| `subterranean-hash.js` | `SubterraneanHash` |
+| `tiger.js` | `Tiger` |
+| `tuplehash.js` | `TupleHash` |
+| `whirlpool.js` | `Whirlpool` |
+| `xoodyak-hash.js` | `XoodyakHash` |
+| `xxhash.js` | `XxHash` / `XxHash32` / `XxHash64` |
+| `xxhash3.js` | `XxHash3` |
+| `xxhash32.js` | `XxHash32` |
+
+Standard algorithms may share a parameterized managed implementation; source-specific DarkCrypt/lightweight/educational variants receive dedicated managed implementations whenever their test vectors differ from the standard construction. JavaScript wrappers are not used as an implementation shortcut.
 
 ## 📚 API reference
 
@@ -73,7 +142,7 @@ The final coverage table is kept in this README and must account for every sourc
 
 For a standardized family with several digest sizes, the preferred API is a single `Compute(ReadOnlySpan<byte>, int hashSizeBits)` method plus an enumerable `IReadOnlyList<HashSizeRange> SupportedHashSizes`. A range describes valid **digest/output sizes**, not the algorithm's compression-block width. Discontiguous families expose several ranges; for example Hamsi exposes `224..256 step 32` and `384..512 step 128`. When a specification genuinely changes state width or round schedule at a boundary, the family dispatcher selects that internal core without duplicating an implementation for every individual output size.
 
-Kupyna therefore shares one P/Q implementation across 256/384/512, Fugue shares one state machine across 224/256/384/512, and Tiger exposes the exact singleton range 192. Compatibility wrappers may remain for existing callers, but they delegate to shared family/core logic rather than becoming independent algorithm implementations.
+Kupyna therefore shares one P/Q implementation across 256/384/512, Fugue shares one state machine across 224/256/384/512, and Tiger exposes the exact singleton range 192. KNOT is exposed as one variant-aware family because two standardized KNOT parameter sets both produce 256-bit digests and therefore cannot be selected by digest size alone. Compatibility wrappers may remain for other existing callers, but they delegate to shared family/core logic rather than becoming independent algorithm implementations.
 
 Hash functions and checksums are separate packages intentionally. This prevents a convenience namespace from turning two materially different algorithm classes into one conceptual junk drawer.
 
@@ -81,13 +150,14 @@ Hash functions and checksums are separate packages intentionally. This prevents 
 
 | Dependency | Packaging behaviour |
 | --- | --- |
-| .NET | Targets the repository-wide `net10.0` framework setting |
+| .NET | Targets `net10.0`, `net9.0`, and `net8.0` |
 | Native hashing libraries | None |
 | JavaScript runtime | None |
 
 ## ⚠️ Limitations
 
 - Legacy hashes such as MD2/MD4/MD5/SHA-1 and historical competition candidates are provided for interoperability, research, and format compatibility; presence in this package is not a recommendation for new security designs.
+- Four JavaScript-registry sources (`drygascon-hash.js`, `highway-hash.js`, `jh.js`, and `skinny-hash.js`) are explicitly accounted for but do not yet have managed implementations.
 - Non-cryptographic hashes such as xxHash, FNV, CityHash, and MurmurHash must not be used as authentication primitives.
 - A bare cryptographic hash does not authenticate data against an active attacker when the expected digest can also be replaced; use a MAC or digital signature for that threat model.
 - Source-specific variants are named explicitly because substituting the closest standard algorithm would produce the wrong bytes while looking deceptively plausible.
