@@ -204,7 +204,7 @@ public static class DryGasconHash {
         MixRound(value);
         Gascon256Round(_state, 0);
       }
-      MixRound((data[15] >> 6) ^ Domain);
+      MixRound((uint)(data[15] >> 6) ^ Domain);
       Domain = 0;
     }
 
