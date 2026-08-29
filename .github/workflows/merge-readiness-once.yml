@@ -17,7 +17,9 @@ jobs:
           ref: feat/filesystem-rw-gaps
           fetch-depth: 0
       - name: Apply merge-readiness fixes
-        run: python .github/merge-readiness.py
+        run: |
+          python .github/merge-readiness.py
+          python .github/optimizer-wire.py
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
