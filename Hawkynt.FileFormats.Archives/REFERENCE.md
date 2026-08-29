@@ -11946,13 +11946,13 @@ Implements `IEquatable<StorageBlock>`.
 
 ### Namespace `FileFormat.UnrealPak`
 
-[`UnrealPakFormatDescriptor`](#unrealpakformatdescriptor) · [`UnrealPakReader`](#unrealpakreader) · [`UnrealPakReader.UnrealPakEntry`](#unrealpakreaderunrealpakentry)
+[`UnrealPakFormatDescriptor`](#unrealpakformatdescriptor) · [`UnrealPakReader`](#unrealpakreader) · [`UnrealPakReader.CompressionBlock`](#unrealpakreadercompressionblock) · [`UnrealPakReader.UnrealPakEntry`](#unrealpakreaderunrealpakentry)
 
 #### `UnrealPakFormatDescriptor`
 
-Unreal Engine 4/5 `.pak` archive. Entries are stored or zlib-compressed and are listed through an index block at the end of the file. Encrypted PAKs and Oodle-compressed entries are listed but not extracted. References: format defined by Epic's UnrealPak tool / `IPlatformFilePak` in the Unreal Engine sources (github.com/EpicGames/UnrealEngine, EULA-gated)`https://github.com/panzi/u4pak` — u4pak — open reader/packer for UE4 .pak archives
+Legacy-index Unreal Engine Pak archive. Versions 1-7 are read with strict index/entry SHA-1 verification and block-aware Stored/Zlib extraction. Fresh archives are emitted as the widely interoperable version-3 layout. Version 8+ compression-name/path-hash index generations and IoStore (`.utoc`/`.ucas`) are intentionally separate concerns. References: Epic `FPakInfo`/`FPakEntry` in Runtime/PakFile`https://github.com/panzi/u4pak` — open UE4 legacy-index reader/packer
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11963,31 +11963,56 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `DefaultExtension` | `string DefaultExtension { get; }` |  |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Only `.pak` belongs here. `.utoc`/`.ucas` are Unreal IoStore containers, which have a different TOC/chunk layout and must not be routed through the Pak parser. |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files through the repository's verified extract/re-create path. This is WORM rebuild behavior and therefore does not advertise `CanModify`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a deterministic Pak v3 archive. `MethodName` may be `auto`, `stored`, or `zlib`; v3 deliberately keeps the legacy index and absolute compression-block offsets for broad UE4-era interoperability. |
+| `Defragment` | `void Defragment(Stream archive)` | Rewrites live entries contiguously as a verified Pak v3 rebuild. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single Unreal Pak entry as a bounded read-only stream. The entry's bytes are decoded (zlib if needed) by the reader and wrapped in a `BoundedEntryStream` sized to the uncompressed length. Encrypted or unsupported-compression entries return an empty bounded stream. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one verified entry as a bounded in-memory stream. Unsupported/encrypted/deleted entries return an empty bounded stream rather than leaking raw ciphertext or tombstones. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files through verified full rebuild, wiping stale Pak bytes on commit. |
 
 #### `UnrealPakReader`
 
-Reads Unreal Engine 4/5 `.pak` archives. A PAK file has three parts: Entry payloads at the start of the file.An index block listing filenames and their offsets/sizes.A fixed-size footer (last 44..~220 bytes) containing magic + version + index location. This reader targets versions 3–11 (UE 4.15 through UE 5.x) for unencrypted archives with either stored or zlib-compressed entries. Oodle compression and AES encryption are reported (via `UnsupportedReason`) but not decoded.
+Reads the legacy-index Unreal Engine `.pak` layout (versions 1-7). Version 3 introduced compression blocks and entry flags; version 5 changed compressed-block offsets from absolute file offsets to offsets relative to the entry's record position. Version 8 and newer use a different compression method/index generation and are deliberately rejected here rather than guessed at.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UnrealPakReader` | `UnrealPakReader(Stream stream)` |  |
+| `CompressionNone` | `const uint CompressionNone` |  |
+| `CompressionZlib` | `const uint CompressionZlib` |  |
+| `FlagDeleted` | `const byte FlagDeleted` |  |
+| `FlagEncrypted` | `const byte FlagEncrypted` |  |
 | `Magic` | `const uint Magic` |  |
-| `CompressionMethods` | `IReadOnlyList<string> CompressionMethods { get; }` | Compression method names recorded in the footer (v8+). Index 0 is always None. |
-| `Entries` | `IReadOnlyList<UnrealPakEntry> Entries { get; }` | File entries parsed from the index. |
-| `IsIndexEncrypted` | `bool IsIndexEncrypted { get; }` | True if the index was marked AES-encrypted; nothing can be listed in that case. |
-| `MountPoint` | `string MountPoint { get; }` | The mount-point prefix stored in the index. |
-| `PakVersion` | `uint PakVersion { get; }` | The PAK version number parsed from the footer (3..11+). |
-| `Extract` | `byte[] Extract(UnrealPakEntry entry)` | Returns the decompressed bytes of an entry. Throws `NotSupportedException` when the entry uses AES or an unsupported compression method (e.g. Oodle). |
+| `CompressionMethods` | `IReadOnlyList<string> CompressionMethods { get; }` |  |
+| `Entries` | `IReadOnlyList<UnrealPakEntry> Entries { get; }` |  |
+| `IndexHashVerified` | `bool IndexHashVerified { get; }` |  |
+| `IndexHash` | `byte[] IndexHash { get; }` |  |
+| `IndexOffset` | `long IndexOffset { get; }` |  |
+| `IndexSize` | `long IndexSize { get; }` |  |
+| `IsIndexEncrypted` | `bool IsIndexEncrypted { get; }` |  |
+| `MountPoint` | `string MountPoint { get; }` |  |
+| `PakVersion` | `uint PakVersion { get; }` |  |
+| `Extract` | `byte[] Extract(UnrealPakEntry entry)` |  |
+| `VerifyEntry` | `void VerifyEntry(UnrealPakEntry entry)` |  |
+
+#### `UnrealPakReader.CompressionBlock`
+
+Implements `IEquatable<CompressionBlock>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressionBlock` | `CompressionBlock(long CompressedStart, long CompressedEnd)` |  |
+| `CompressedEnd` | `long CompressedEnd { get; init; }` |  |
+| `CompressedSize` | `long CompressedSize { get; }` |  |
+| `CompressedStart` | `long CompressedStart { get; init; }` |  |
 
 #### `UnrealPakReader.UnrealPakEntry`
 
@@ -11996,7 +12021,12 @@ Implements `IEquatable<UnrealPakEntry>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UnrealPakEntry` | `UnrealPakEntry(string Path, long Offset, long Size, long UncompressedSize, uint CompressionMethod, bool IsEncrypted, string UnsupportedReason)` |  |
+| `CompressionBlockSize` | `uint CompressionBlockSize { get; init; }` |  |
+| `CompressionBlocks` | `IReadOnlyList<CompressionBlock> CompressionBlocks { get; init; }` |  |
 | `CompressionMethod` | `uint CompressionMethod { get; init; }` |  |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `Hash` | `byte[] Hash { get; init; }` |  |
+| `IsDeleted` | `bool IsDeleted { get; }` |  |
 | `IsEncrypted` | `bool IsEncrypted { get; init; }` |  |
 | `Offset` | `long Offset { get; init; }` |  |
 | `Path` | `string Path { get; init; }` |  |
