@@ -1,13 +1,19 @@
 name: CI
 
 on:
-  push:
-    branches: [main, master]
   pull_request:
     branches: [main, master]
   # release.yml calls this via `uses: ./.github/workflows/ci.yml` so tag
   # releases run the exact same test matrix as per-PR CI.
   workflow_call: {}
+  workflow_dispatch: {}
+
+# Pushing three times to a branch used to queue three full matrices and run all of them. A newer
+# pull-request run supersedes the older one; a push to main is not cancelled, because main wants a
+# recorded result for every commit rather than only for the newest.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # One run per pull request at a time. Pushing again while checks are running
 # supersedes them, and without this the old run keeps a runner busy: a handful

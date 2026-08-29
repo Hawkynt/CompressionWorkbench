@@ -3,10 +3,8 @@ name: Nightly
 # Fires after CI passes on main/master. A red CI run never produces a nightly,
 # so the "latest nightly" always points at tested code.
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main, master]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,7 +21,6 @@ env:
 
 jobs:
   meta:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       date:    ${{ steps.m.outputs.date }}
@@ -33,13 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - id: m
         run: |
           DATE=$(date -u +%Y%m%d)
           VERSION=$(perl .github/workflows/scripts/version.pl)
-          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHA="${{ github.sha }}"
           echo "date=$DATE"         >> "$GITHUB_OUTPUT"
           echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
           echo "tag=nightly-$DATE"  >> "$GITHUB_OUTPUT"
