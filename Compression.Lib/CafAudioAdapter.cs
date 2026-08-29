@@ -1,17 +1,20 @@
 using System.Buffers.Binary;
 using Codec.ALaw;
+using Codec.ImaAdpcm;
 using Codec.MuLaw;
 using Compression.Registry;
 using FileFormat.Caf;
 
 namespace Compression.Lib;
 
-/// <summary>Canonical PCM/G.711 adapter for Apple Core Audio Format.</summary>
+/// <summary>Canonical PCM/G.711/QuickTime-IMA adapter for Apple Core Audio Format.</summary>
 internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
   private const uint FlagIsFloat = 0x1;
   private const uint FlagIsSignedInteger = 0x4;
   private const uint FlagIsPacked = 0x8;
-  private static readonly string[] Codecs = ["lpcm", "pcm", "float", "mulaw", "alaw"];
+  private const int Ima4PacketBytesPerChannel = 34;
+  private const int Ima4FramesPerPacket = 64;
+  private static readonly string[] Codecs = ["lpcm", "pcm", "float", "mulaw", "alaw", "ima4"];
 
   public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
 
@@ -43,6 +46,14 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
       return false;
     }
     var codec = codecId.ToLowerInvariant();
+    if (codec == "ima4") {
+      if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
+        reason = "CAF ima4 encoding requires signed PCM16 input";
+        return false;
+      }
+      reason = null;
+      return true;
+    }
     if (codec is "mulaw" or "alaw") {
       if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
         reason = "CAF G.711 encoding requires signed PCM16 input";
@@ -91,7 +102,23 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
       case "alaw":
         WriteG711(output, pcm, aLaw: true);
         break;
+      case "ima4":
+        WriteIma4(output, pcm);
+        break;
     }
+  }
+
+  private static void WriteIma4(Stream output, AudioPcmBuffer pcm) {
+    var samples = ReadPcm16(pcm.InterleavedData);
+    var payload = ImaAdpcmCodec.EncodeQuickTime(samples, pcm.Format.Channels);
+    var packetBytes = checked(Ima4PacketBytesPerChannel * pcm.Format.Channels);
+    var packetCount = payload.Length / packetBytes;
+    var validFrames = pcm.FrameCount;
+    var codedFrames = checked((long)packetCount * Ima4FramesPerPacket);
+    var remainderFrames = checked((int)(codedFrames - validFrames));
+    WriteCaf(output, pcm.Format.SampleRate, pcm.Format.Channels, "ima4", 0,
+      checked((uint)packetBytes), Ima4FramesPerPacket, 0, payload,
+      packetCount, validFrames, remainderFrames);
   }
 
   private static void WriteG711(Stream output, AudioPcmBuffer pcm, bool aLaw) {
@@ -102,7 +129,8 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
   }
 
   private static void WriteCaf(Stream output, int sampleRate, int channels, string formatId,
-    uint formatFlags, uint bytesPerPacket, uint framesPerPacket, uint bitsPerChannel, ReadOnlySpan<byte> payload) {
+    uint formatFlags, uint bytesPerPacket, uint framesPerPacket, uint bitsPerChannel, ReadOnlySpan<byte> payload,
+    long? packetCount = null, long? validFrames = null, int remainderFrames = 0) {
     Span<byte> header = stackalloc byte[8];
     "caff"u8.CopyTo(header);
     BinaryPrimitives.WriteUInt16BigEndian(header[4..], 1);
@@ -118,6 +146,15 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     BinaryPrimitives.WriteUInt32BigEndian(desc[24..], checked((uint)channels));
     BinaryPrimitives.WriteUInt32BigEndian(desc[28..], bitsPerChannel);
     WriteChunk(output, "desc"u8, desc);
+
+    if (packetCount is { } packets && validFrames is { } frames) {
+      Span<byte> pakt = stackalloc byte[24];
+      BinaryPrimitives.WriteInt64BigEndian(pakt, packets);
+      BinaryPrimitives.WriteInt64BigEndian(pakt[8..], frames);
+      BinaryPrimitives.WriteInt32BigEndian(pakt[16..], 0);
+      BinaryPrimitives.WriteInt32BigEndian(pakt[20..], remainderFrames);
+      WriteChunk(output, "pakt"u8, pakt);
+    }
 
     var data = new byte[4 + payload.Length];
     payload.CopyTo(data.AsSpan(4));
