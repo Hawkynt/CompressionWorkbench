@@ -10,6 +10,7 @@
     <ProjectReference Include="..\..\Codecs\Codec.Vorbis\Codec.Vorbis.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Opus\Codec.Opus.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Speex\Codec.Speex.csproj" />
+    <ProjectReference Include="..\FileFormat.Wav\FileFormat.Wav.csproj" />
   </ItemGroup>
 
 </Project>
