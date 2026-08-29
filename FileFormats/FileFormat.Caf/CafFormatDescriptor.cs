@@ -1,6 +1,5 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.Text;
 using Codec.Pcm;
 using Compression.Registry;
 using FileFormat.Wav;
@@ -120,19 +119,10 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       throw new InvalidOperationException("All channel WAVs must have the same frame count.");
 
     var interleaved = PcmCodec.Interleave(channels.Select(static channel => channel.InterleavedPcm).ToList(), first.BitsPerSample);
-    WriteCaf(
-      output,
-      channels.Length,
-      first.SampleRate,
-      first.BitsPerSample,
-      isFloat: first.FormatCode == 3,
-      interleaved);
+    WriteCaf(output, channels.Length, first.SampleRate, first.BitsPerSample, first.FormatCode == 3, interleaved);
   }
 
-  /// <summary>
-  /// Writes standards-compliant little-endian LPCM CAF. Core Audio's bit 1 means
-  /// <em>big</em>-endian, so it stays clear for the repository's canonical LE data.
-  /// </summary>
+  /// <summary>Writes standards-compliant little-endian packed LPCM CAF.</summary>
   internal static void WriteCaf(Stream output, int channels, int sampleRate, int bitsPerChannel,
     bool isFloat, ReadOnlySpan<byte> interleaved) {
     Span<byte> header = stackalloc byte[8];
@@ -145,7 +135,8 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     Span<byte> desc = stackalloc byte[32];
     BinaryPrimitives.WriteDoubleBigEndian(desc, sampleRate);
     "lpcm"u8.CopyTo(desc[8..]);
-    BinaryPrimitives.WriteUInt32BigEndian(desc[12..], isFloat ? FlagIsFloat : 0u);
+    var flags = isFloat ? FlagIsFloat | FlagIsPacked : FlagIsSignedInteger | FlagIsPacked;
+    BinaryPrimitives.WriteUInt32BigEndian(desc[12..], flags);
     BinaryPrimitives.WriteUInt32BigEndian(desc[16..], bytesPerFrame);
     BinaryPrimitives.WriteUInt32BigEndian(desc[20..], 1);
     BinaryPrimitives.WriteUInt32BigEndian(desc[24..], checked((uint)channels));
@@ -158,6 +149,8 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   private const uint FlagIsFloat = 0x1;
+  private const uint FlagIsSignedInteger = 0x4;
+  private const uint FlagIsPacked = 0x8;
 
   internal static void WriteChunk(Stream output, ReadOnlySpan<byte> type, ReadOnlySpan<byte> body) {
     if (type.Length != 4) throw new ArgumentException("CAF chunk type must be four bytes.", nameof(type));
