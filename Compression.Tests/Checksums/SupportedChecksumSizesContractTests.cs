@@ -56,20 +56,50 @@ public sealed class SupportedChecksumSizesContractTests {
       foreach (var type in candidates) {
         var ranges = MetadataAccessors[type]();
         Assert.That(ranges, Is.Not.Null.And.Not.Empty, type.FullName);
-        Assert.That(ranges.SelectMany(static range => range).Distinct().All(static bits => bits > 0),
-          Is.True, $"{type.FullName} advertises an invalid checksum size");
+        foreach (var range in ranges) {
+          Assert.That(range.MinimumBits, Is.GreaterThan(0), $"{type.FullName} advertises a non-positive checksum size");
+          Assert.That(range.MaximumBits, Is.GreaterThanOrEqualTo(range.MinimumBits), $"{type.FullName} advertises an inverted checksum-size range");
+          Assert.That(range.StepBits, Is.GreaterThan(0), $"{type.FullName} advertises a non-positive checksum-size step");
+          Assert.That((range.MaximumBits - range.MinimumBits) % range.StepBits, Is.Zero,
+            $"{type.FullName} advertises a range whose end is unreachable by its step");
+        }
       }
     });
   }
 
   [Test]
-  public void FamilyMetadataMatchesImplementedWidths() {
+  public void GeneralizedFamilyMetadataMatchesWidthRules() {
     Assert.Multiple(() => {
-      Assert.That(Adler.SupportedChecksumSizes.EnumerateSizes(), Is.EqualTo(new[] {16, 32, 64}));
-      Assert.That(Fletcher.SupportedChecksumSizes.EnumerateSizes(), Is.EqualTo(new[] {8, 16, 32, 64}));
-      Assert.That(SumChecksum.SupportedChecksumSizes.EnumerateSizes(), Is.EqualTo(new[] {8, 16, 32}));
-      Assert.That(ComplementChecksum.SupportedChecksumSizes.EnumerateSizes(), Is.EqualTo(new[] {8, 16}));
-      Assert.That(Parity.SupportedChecksumSizes.EnumerateSizes(), Is.EqualTo(new[] {1, 8}));
+      Assert.That(Adler.SupportedChecksumSizes.Supports(1), Is.False);
+      Assert.That(Adler.SupportedChecksumSizes.Supports(2), Is.True);
+      Assert.That(Adler.SupportedChecksumSizes.Supports(4), Is.True);
+      Assert.That(Adler.SupportedChecksumSizes.Supports(8), Is.True);
+      Assert.That(Adler.SupportedChecksumSizes.Supports(24), Is.True);
+      Assert.That(Adler.SupportedChecksumSizes.Supports(136), Is.True);
+      Assert.That(Adler.SupportedChecksumSizes.Supports(12), Is.False);
+
+      Assert.That(Fletcher.SupportedChecksumSizes.Supports(1), Is.False);
+      Assert.That(Fletcher.SupportedChecksumSizes.Supports(2), Is.True);
+      Assert.That(Fletcher.SupportedChecksumSizes.Supports(4), Is.True);
+      Assert.That(Fletcher.SupportedChecksumSizes.Supports(40), Is.True);
+      Assert.That(Fletcher.SupportedChecksumSizes.Supports(72), Is.True);
+      Assert.That(Fletcher.SupportedChecksumSizes.Supports(20), Is.False);
+
+      foreach (var metadata in new[] {
+                 SumChecksum.SupportedChecksumSizes,
+                 ComplementChecksum.SupportedChecksumSizes,
+                 Parity.SupportedChecksumSizes
+               }) {
+        Assert.That(metadata.Supports(1), Is.True);
+        Assert.That(metadata.Supports(2), Is.True);
+        Assert.That(metadata.Supports(4), Is.True);
+        Assert.That(metadata.Supports(8), Is.True);
+        Assert.That(metadata.Supports(24), Is.True);
+        Assert.That(metadata.Supports(256), Is.True);
+        Assert.That(metadata.Supports(3), Is.False);
+        Assert.That(metadata.Supports(12), Is.False);
+      }
+
       Assert.That(Crc.SupportedChecksumSizes.EnumerateSizes(), Is.EqualTo(Enumerable.Range(8, 57)));
       Assert.That(Crc128.SupportedChecksumSizes.EnumerateSizes(), Is.EqualTo(new[] {128}));
     });
