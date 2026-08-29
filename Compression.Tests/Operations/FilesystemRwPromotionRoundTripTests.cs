@@ -22,8 +22,8 @@ public sealed class FilesystemRwPromotionRoundTripTests {
     Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True, formatId);
 
     var creator = (IArchiveCreatable)ops!;
-    var modifier = (IArchiveModifiable)ops;
-    var archiveOps = (IArchiveFormatOperations)ops;
+    var modifier = (IArchiveModifiable)ops!;
+    var archiveOps = (IArchiveFormatOperations)ops!;
     var a = Enumerable.Range(0, 333).Select(i => (byte)(i * 7)).ToArray();
     var b = Enumerable.Range(0, 517).Select(i => (byte)(i * 11)).ToArray();
     var c = Enumerable.Range(0, 129).Select(i => (byte)(255 - i)).ToArray();

@@ -22,7 +22,7 @@ public sealed class XfsFilesystemDriverTests {
     var payload = Enumerable.Range(0, 80_000).Select(i => (byte)(i * 17 + 11)).ToArray();
     var writer = new XfsWriter();
     writer.AddFile("a/b.bin", payload);
-    var image = writer.Build();
+    var image = writer.BuildImageBytes();
 
     using var stream = new MemoryStream(image, writable: false);
     var profile = FormatRegistry.ProbeFilesystem("Xfs", stream);
@@ -52,7 +52,7 @@ public sealed class XfsFilesystemDriverTests {
   public void WritableMountStaysFailClosed() {
     var writer = new XfsWriter();
     writer.AddFile("x", "x"u8.ToArray());
-    using var stream = new MemoryStream(writer.Build(), writable: true);
+    using var stream = new MemoryStream(writer.BuildImageBytes(), writable: true);
 
     Assert.Throws<NotSupportedException>(() =>
       FormatRegistry.OpenFilesystem(
