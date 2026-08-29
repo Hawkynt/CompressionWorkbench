@@ -11,6 +11,10 @@ namespace Compression.Registry.Generator;
 /// IFormatDescriptor, IBuildingBlock and IFilesystemDriverAdapter across referenced assemblies and generates:
 /// 1. A partial FormatRegistration class with explicit constructor calls (zero reflection)
 /// 2. A Format enum inside FormatDetector with all discovered format IDs plus special values
+///
+/// Descriptors declared under a FileSystem.* namespace are explicitly marked as
+/// filesystems when registered. FormatRegistry can therefore enforce that every
+/// filesystem has a common-driver path without guessing from extensions/names.
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class FormatDescriptorGenerator : IIncrementalGenerator {
@@ -92,8 +96,12 @@ public sealed class FormatDescriptorGenerator : IIncrementalGenerator {
     sb.AppendLine();
     sb.AppendLine("public static partial class FormatRegistration {");
     sb.AppendLine("  static partial void RegisterFormats() {");
-    foreach (var (fullName, _) in descriptors)
-      sb.AppendLine($"    FormatRegistry.Register(new {fullName}());");
+    foreach (var (fullName, _) in descriptors) {
+      var isFilesystem = fullName.StartsWith("global::FileSystem.", StringComparison.Ordinal);
+      sb.AppendLine(isFilesystem
+        ? $"    FormatRegistry.Register(new {fullName}(), isFilesystem: true);"
+        : $"    FormatRegistry.Register(new {fullName}());");
+    }
     sb.AppendLine("  }");
     sb.AppendLine();
     sb.AppendLine("  static partial void RegisterBuildingBlocks() {");
