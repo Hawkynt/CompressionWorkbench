@@ -11870,13 +11870,13 @@ Writes a minimal UMX (Unreal Package) file with a valid header. File data is emb
 
 ### Namespace `FileFormat.UnityBundle`
 
-[`UnityBundleFormatDescriptor`](#unitybundleformatdescriptor) · [`UnityBundleReader`](#unitybundlereader) · [`UnityBundleReader.Node`](#unitybundlereadernode) · [`UnityBundleReader.StorageBlock`](#unitybundlereaderstorageblock)
+[`UnityBundleFormatDescriptor`](#unitybundleformatdescriptor) · [`UnityBundleReader`](#unitybundlereader) · [`UnityBundleReader.Node`](#unitybundlereadernode) · [`UnityBundleReader.StorageBlock`](#unitybundlereaderstorageblock) · [`UnityBundleWriter`](#unitybundlewriter)
 
 #### `UnityBundleFormatDescriptor`
 
-Unity Asset Bundle (`.unity3d` / `.assets` / `.bundle`) — the UnityFS container that ships serialized Unity assets bundled for runtime loading. Each bundled asset is listed as a Node entry (path from the internal directory). Storage blocks can be stored, LZMA, or LZ4/LZ4HC-compressed; all four are supported. References: `https://docs.unity3d.com/Manual/AssetBundlesIntro.html` — official Unity AssetBundle documentation`https://github.com/K0lb3/UnityPy` — UnityPy — open UnityFS parser`https://github.com/Perfare/AssetStudio` — AssetStudio — widely used bundle inspector
+Unity Asset Bundle (`.unity3d` / `.assets` / `.bundle`) — the UnityFS container that ships serialized Unity assets bundled for runtime loading. Each bundled asset is listed as a Node entry (path from the internal directory). Storage blocks can be stored, LZMA, or LZ4/LZ4HC-compressed; all four are supported for reading and fresh UnityFS creation. References: `https://docs.unity3d.com/Manual/AssetBundlesIntro.html` — official Unity AssetBundle documentation`https://github.com/K0lb3/UnityPy` — UnityPy — open UnityFS parser/writer interoperability reference`https://github.com/Perfare/AssetStudio` — AssetStudio — widely used bundle inspector
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11892,40 +11892,43 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces nodes through the repository's verified extract/re-create path. This is deliberately rebuild-backed WORM behavior, not a CanModify claim. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh modern UnityFS bundle. The selected method controls storage-block compression; BlocksInfo compression/layout and Unity header strings are independently configurable through `OptionsSchema`. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuilds a UnityFS archive with compact contiguous blocks. Legacy UnityWeb/UnityRaw/ UnityArchive containers are rejected because their distinct layout cannot be recreated. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named nodes through verified rebuild, which also wipes stale container bytes because the complete UnityFS image is replaced. |
 
 #### `UnityBundleReader`
 
-Reads Unity Asset Bundles (`.unity3d` / `.assets` / `.bundle`). The modern UnityFS layout stores a compressed BlocksInfo record that describes a sequence of storage blocks (concatenated into one data stream) and a directory of nodes (assets) that slice that stream by offset/size. Supported signatures: `UnityFS\0` (modern, UnityFS version 6+), `UnityWeb\0`/`UnityRaw\0` (legacy, header parsed only — no node directory is extracted since the classic format uses a different container). Only the UnityFS variant surfaces assets. Compression for BlocksInfo and individual storage blocks is indicated by the low 6 bits of a flags field: 0 = none, 1 = LZMA (raw, 5-byte properties + stream), 2 = LZ4, 3 = LZ4HC (same block format as LZ4).
+Reads Unity Asset Bundles (`.unity3d` / `.assets` / `.bundle`). The modern UnityFS layout stores a compressed BlocksInfo record that describes a sequence of storage blocks (concatenated into one data stream) and a directory of nodes (assets) that slice that stream by offset/size.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UnityBundleReader` | `UnityBundleReader(byte[] data)` |  |
-| `Blocks` | `IReadOnlyList<StorageBlock> Blocks { get; }` | Storage blocks described by BlocksInfo. Empty when the bundle isn't UnityFS. |
-| `CanExtract` | `bool CanExtract { get; }` | True if every block in the bundle uses a compression we can decode. |
-| `CompressedBlocksInfoSize` | `uint CompressedBlocksInfoSize { get; }` | Compressed BlocksInfo size (bytes). |
-| `Flags` | `uint Flags { get; }` | Raw flags field (low 6 bits = BlocksInfo compression, bit 6 = dir combined, bit 7 = at end). |
-| `FormatVersion` | `uint FormatVersion { get; }` | File-format version from the header (typically 6 or 7). |
-| `Nodes` | `IReadOnlyList<Node> Nodes { get; }` | Asset node directory. Empty when the bundle isn't UnityFS. |
-| `Signature` | `string Signature { get; }` | The signature string (e.g. "UnityFS"). |
-| `TotalSize` | `long TotalSize { get; }` | Total bundle size from the header. |
-| `UncompressedBlocksInfoSize` | `uint UncompressedBlocksInfoSize { get; }` | Uncompressed BlocksInfo size (bytes). |
-| `UnityRevision` | `string UnityRevision { get; }` | Unity engine revision (e.g. "2019.4.11f1"). |
-| `UnityVersion` | `string UnityVersion { get; }` | Unity version (e.g. "5.x.x"). |
-| `ExtractNode` | `byte[] ExtractNode(Node node)` | Returns the decompressed bytes of a single asset node. Nodes are resolved against the concatenated (decompressed) storage stream. Throws when the bundle isn't UnityFS or when any contributing storage block uses an unsupported compression type. |
-| `GetDataStream` | `byte[] GetDataStream()` | Returns (or materializes) the concatenated, decompressed storage data stream described by `Blocks`. |
+| `Blocks` | `IReadOnlyList<StorageBlock> Blocks { get; }` |  |
+| `CanExtract` | `bool CanExtract { get; }` |  |
+| `CompressedBlocksInfoSize` | `uint CompressedBlocksInfoSize { get; }` |  |
+| `Flags` | `uint Flags { get; }` |  |
+| `FormatVersion` | `uint FormatVersion { get; }` |  |
+| `Nodes` | `IReadOnlyList<Node> Nodes { get; }` |  |
+| `Signature` | `string Signature { get; }` |  |
+| `TotalSize` | `long TotalSize { get; }` |  |
+| `UncompressedBlocksInfoSize` | `uint UncompressedBlocksInfoSize { get; }` |  |
+| `UnityRevision` | `string UnityRevision { get; }` |  |
+| `UnityVersion` | `string UnityVersion { get; }` |  |
+| `ExtractNode` | `byte[] ExtractNode(Node node)` |  |
+| `GetDataStream` | `byte[] GetDataStream()` |  |
 
 #### `UnityBundleReader.Node`
-
-A single asset (node) inside the reconstructed data stream.
 
 Implements `IEquatable<Node>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Node` | `Node(long Offset, long Size, uint Flags, string Path)` | A single asset (node) inside the reconstructed data stream. |
+| `Node` | `Node(long Offset, long Size, uint Flags, string Path)` |  |
 | `Flags` | `uint Flags { get; init; }` |  |
 | `Offset` | `long Offset { get; init; }` |  |
 | `Path` | `string Path { get; init; }` |  |
@@ -11933,16 +11936,22 @@ Implements `IEquatable<Node>`.
 
 #### `UnityBundleReader.StorageBlock`
 
-A single UnityFS storage block (compression unit inside the bundle).
-
 Implements `IEquatable<StorageBlock>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `StorageBlock` | `StorageBlock(uint UncompressedSize, uint CompressedSize, ushort Flags)` | A single UnityFS storage block (compression unit inside the bundle). |
+| `StorageBlock` | `StorageBlock(uint UncompressedSize, uint CompressedSize, ushort Flags)` |  |
 | `CompressedSize` | `uint CompressedSize { get; init; }` |  |
 | `Flags` | `ushort Flags { get; init; }` |  |
 | `UncompressedSize` | `uint UncompressedSize { get; init; }` |  |
+
+#### `UnityBundleWriter`
+
+Clean-room UnityFS writer for modern Unity Asset Bundles. The writer emits version 6-8 UnityFS containers with a combined block/directory table and supports Stored, raw LZMA, LZ4 and LZ4HC storage blocks. Input files are concatenated into the logical data stream, split into independently compressed blocks, and described by node offsets in BlocksInfo.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a complete UnityFS bundle. |
 
 ### Namespace `FileFormat.UnrealPak`
 
