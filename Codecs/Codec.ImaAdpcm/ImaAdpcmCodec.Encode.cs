@@ -6,8 +6,6 @@ public static partial class ImaAdpcmCodec {
 
   private const int WaveHeaderBytesPerChannel = 4;
   private const int WaveStereoGroupBytesPerChannel = 4;
-  private const int QuickTimePacketBytes = 34;
-  private const int QuickTimeSamplesPerPacket = 64;
 
   /// <summary>
   /// Encodes interleaved 16-bit PCM into Microsoft/IMA WAV ADPCM blocks.
@@ -132,35 +130,4 @@ public static partial class ImaAdpcmCodec {
 
   private static short GetSample(ReadOnlySpan<short> interleaved, int frames, int channels, int frame, int channel, short fallback)
     => frame < frames ? interleaved[frame * channels + channel] : fallback;
-
-  private static int StartIndexFor(int delta) {
-    var index = 0;
-    while (index < StepTable.Length - 1 && StepTable[index] < delta)
-      ++index;
-    return index;
-  }
-
-  private static byte EncodeNibble(short sample, ref int predictor, ref int index) {
-    var step = StepTable[index];
-    var delta = (int)sample - predictor;
-    byte nibble = 0;
-    if (delta < 0) {
-      nibble = 8;
-      delta = -delta;
-    }
-
-    if (delta >= step) {
-      nibble |= 4;
-      delta -= step;
-    }
-    if (delta >= step >> 1) {
-      nibble |= 2;
-      delta -= step >> 1;
-    }
-    if (delta >= step >> 2)
-      nibble |= 1;
-
-    DecodeNibble(nibble, ref predictor, ref index);
-    return nibble;
-  }
 }

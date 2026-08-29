@@ -68,18 +68,18 @@ public static partial class MsAdpcmCodec {
         for (var i = 0; i < dataBytes; ++i) {
           var frame = baseFrame + 2 + i * 2;
           var highSample = GetSample(interleaved, frames, channels, frame, 0, (short)sample1[0]);
-          var high = EncodeNibble(highSample, ref predictorIndex[0], ref delta[0], ref sample1[0], ref sample2[0]);
+          var high = SearchNibble(highSample, predictorIndex[0], ref delta[0], ref sample1[0], ref sample2[0]);
           var lowSample = GetSample(interleaved, frames, channels, frame + 1, 0, (short)sample1[0]);
-          var low = EncodeNibble(lowSample, ref predictorIndex[0], ref delta[0], ref sample1[0], ref sample2[0]);
+          var low = SearchNibble(lowSample, predictorIndex[0], ref delta[0], ref sample1[0], ref sample2[0]);
           output[p + i] = (byte)(high << 4 | low);
         }
       } else {
         for (var i = 0; i < dataBytes; ++i) {
           var frame = baseFrame + 2 + i;
           var leftSample = GetSample(interleaved, frames, channels, frame, 0, (short)sample1[0]);
-          var left = EncodeNibble(leftSample, ref predictorIndex[0], ref delta[0], ref sample1[0], ref sample2[0]);
+          var left = SearchNibble(leftSample, predictorIndex[0], ref delta[0], ref sample1[0], ref sample2[0]);
           var rightSample = GetSample(interleaved, frames, channels, frame, 1, (short)sample1[1]);
-          var right = EncodeNibble(rightSample, ref predictorIndex[1], ref delta[1], ref sample1[1], ref sample2[1]);
+          var right = SearchNibble(rightSample, predictorIndex[1], ref delta[1], ref sample1[1], ref sample2[1]);
           output[p + i] = (byte)(left << 4 | right);
         }
       }
@@ -130,7 +130,7 @@ public static partial class MsAdpcmCodec {
 
         for (var sampleIndex = 2; sampleIndex < lookAhead; ++sampleIndex) {
           var target = GetSample(interleaved, frames, channels, baseFrame + sampleIndex, channel, (short)s1);
-          EncodeNibble(target, ref statePredictor, ref stateDelta, ref s1, ref s2);
+          SearchNibble(target, statePredictor, ref stateDelta, ref s1, ref s2);
           var difference = (long)target - s1;
           error += difference * difference;
           if (error >= bestError)
@@ -151,16 +151,15 @@ public static partial class MsAdpcmCodec {
   private static short GetSample(ReadOnlySpan<short> interleaved, int frames, int channels, int frame, int channel, short fallback)
     => frame < frames ? interleaved[frame * channels + channel] : fallback;
 
-  private static int EncodeNibble(short sample, ref int predictorIndex, ref int delta, ref int sample1, ref int sample2) {
+  private static int SearchNibble(short sample, int predictorIndex, ref int delta, ref int sample1, ref int sample2) {
     var bestNibble = 0;
     var bestError = int.MaxValue;
 
     for (var nibble = 0; nibble < 16; ++nibble) {
-      var testPredictorIndex = predictorIndex;
       var testDelta = delta;
       var testSample1 = sample1;
       var testSample2 = sample2;
-      var reconstructed = DecodeNibble(nibble, ref testPredictorIndex, ref testDelta, ref testSample1, ref testSample2);
+      var reconstructed = DecodeNibble((byte)nibble, predictorIndex, ref testDelta, ref testSample1, ref testSample2);
       var error = Math.Abs((int)sample - reconstructed);
       if (error >= bestError)
         continue;
@@ -170,7 +169,7 @@ public static partial class MsAdpcmCodec {
         break;
     }
 
-    DecodeNibble(bestNibble, ref predictorIndex, ref delta, ref sample1, ref sample2);
+    DecodeNibble((byte)bestNibble, predictorIndex, ref delta, ref sample1, ref sample2);
     return bestNibble;
   }
 }
