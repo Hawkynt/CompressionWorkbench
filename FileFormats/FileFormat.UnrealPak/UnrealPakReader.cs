@@ -25,18 +25,20 @@ public sealed class UnrealPakReader {
     public long CompressedSize => checked(this.CompressedEnd - this.CompressedStart);
   }
 
+  // Keep the original public constructor/deconstruction shape source-compatible. Richer wire
+  // metadata is additive through init properties instead of changing the positional record API.
   public sealed record UnrealPakEntry(
     string Path,
     long Offset,
     long Size,
     long UncompressedSize,
     uint CompressionMethod,
-    byte[] Hash,
-    IReadOnlyList<CompressionBlock> CompressionBlocks,
-    byte Flags,
-    uint CompressionBlockSize,
+    bool IsEncrypted,
     string? UnsupportedReason) {
-    public bool IsEncrypted => (this.Flags & FlagEncrypted) != 0;
+    public byte[] Hash { get; init; } = [];
+    public IReadOnlyList<CompressionBlock> CompressionBlocks { get; init; } = [];
+    public byte Flags { get; init; }
+    public uint CompressionBlockSize { get; init; }
     public bool IsDeleted => (this.Flags & FlagDeleted) != 0;
   }
 
@@ -310,12 +312,17 @@ public sealed class UnrealPakReader {
       CompressionZlib => null,
       _ => $"unsupported legacy compression method 0x{compressionMethod:X8}",
     };
-    if ((flags & FlagEncrypted) != 0)
+    var isEncrypted = (flags & FlagEncrypted) != 0;
+    if (isEncrypted)
       unsupported ??= "entry is AES-encrypted";
 
     return new UnrealPakEntry(
-      name, serializedOffset, size, uncompressedSize, compressionMethod, hash,
-      blocks, flags, compressionBlockSize, unsupported);
+      name, serializedOffset, size, uncompressedSize, compressionMethod, isEncrypted, unsupported) {
+      Hash = hash,
+      CompressionBlocks = blocks,
+      Flags = flags,
+      CompressionBlockSize = compressionBlockSize,
+    };
   }
 
   private static bool TryFindModernFooter(Stream stream, long length, out uint version) {
