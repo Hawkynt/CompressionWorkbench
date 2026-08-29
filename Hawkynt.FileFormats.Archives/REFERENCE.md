@@ -9539,6 +9539,83 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive header and flushes. |
 
+### Namespace `FileFormat.Rarc`
+
+[`RarcEntry`](#rarcentry) · [`RarcEntryAttributes`](#rarcentryattributes) · [`RarcFormatDescriptor`](#rarcformatdescriptor) · [`RarcReader`](#rarcreader) · [`RarcWriter`](#rarcwriter)
+
+#### `RarcEntry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarcEntry` | `RarcEntry()` |  |
+| `Attributes` | `RarcEntryAttributes Attributes { get; init; }` |  |
+| `Id` | `ushort Id { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `RarcEntryAttributes`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `File` | `1` |  |
+| `Directory` | `2` |  |
+| `Compressed` | `4` |  |
+| `PreloadToMram` | `16` |  |
+| `PreloadToAram` | `32` |  |
+| `LoadFromDvd` | `64` |  |
+| `Yaz0Compressed` | `128` |  |
+
+#### `RarcFormatDescriptor`
+
+Nintendo Resource Archive (RARC), used heavily by GameCube-era JSystem titles and some Wii software. The raw container is big-endian; Yaz0/Yay0 compression is an independent outer layer and is intentionally not folded into this descriptor. References: `https://wiki.cloudmodding.com/zgcn/ARC` — RARC headers, nodes, file entries and flags`https://kuribo64.net/wiki/?page=RARC` — alignment, hierarchy and filename hash documentation`https://www.lumasworkshop.com/wiki/RARC_(File_Format)` — MRAM/ARAM/DVD data-block layout
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarcFormatDescriptor` | `RarcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `RarcReader`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarcReader` | `RarcReader(Stream stream)` |  |
+| `Entries` | `IReadOnlyList<RarcEntry> Entries { get; }` |  |
+| `CalculateNameHash` | `static ushort CalculateNameHash(string name)` |  |
+| `Extract` | `byte[] Extract(RarcEntry entry)` |  |
+
+#### `RarcWriter`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarcWriter` | `RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root")` |  |
+| `AddEntry` | `void AddEntry(string path, byte[] data, RarcEntryAttributes attributes = 17)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` |  |
+| `NormalizePath` | `static string NormalizePath(string path)` |  |
+
 ### Namespace `FileFormat.RefPack`
 
 [`RefPackFormatDescriptor`](#refpackformatdescriptor) · [`RefPackStream`](#refpackstream)
