@@ -9,6 +9,8 @@ namespace Compression.Lib;
 /// <summary>Canonical PCM/G.711 adapter for Apple Core Audio Format.</summary>
 internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
   private const uint FlagIsFloat = 0x1;
+  private const uint FlagIsSignedInteger = 0x4;
+  private const uint FlagIsPacked = 0x8;
   private static readonly string[] Codecs = ["lpcm", "pcm", "float", "mulaw", "alaw"];
 
   public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
@@ -26,9 +28,7 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
         parsed.SampleRate,
         parsed.NumChannels,
         parsed.BitsPerSample,
-        parsed.IsFloat ? AudioPcmEncoding.IeeeFloat
-          : parsed.BitsPerSample == 8 ? AudioPcmEncoding.SignedInteger
-          : AudioPcmEncoding.SignedInteger,
+        parsed.IsFloat ? AudioPcmEncoding.IeeeFloat : AudioPcmEncoding.SignedInteger,
         parsed.ChannelMask),
       parsed.InterleavedPcm);
   }
@@ -75,18 +75,15 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     if (!this.CanEncode(pcm.Format, codecId, options, out var reason))
       throw new NotSupportedException(reason);
 
-    var codec = codecId.ToLowerInvariant();
-    switch (codec) {
+    switch (codecId.ToLowerInvariant()) {
       case "lpcm":
       case "pcm":
-        WriteCaf(output, pcm.Format.SampleRate, pcm.Format.Channels, "lpcm", 0,
-          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample),
-          NormalizeSignedEightBit(pcm));
+        WriteCaf(output, pcm.Format.SampleRate, pcm.Format.Channels, "lpcm", FlagIsSignedInteger | FlagIsPacked,
+          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample), NormalizeSignedEightBit(pcm));
         break;
       case "float":
-        WriteCaf(output, pcm.Format.SampleRate, pcm.Format.Channels, "lpcm", FlagIsFloat,
-          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample),
-          pcm.InterleavedData);
+        WriteCaf(output, pcm.Format.SampleRate, pcm.Format.Channels, "lpcm", FlagIsFloat | FlagIsPacked,
+          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample), pcm.InterleavedData);
         break;
       case "mulaw":
         WriteG711(output, pcm, aLaw: false);
@@ -128,6 +125,7 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
   }
 
   private static void WriteChunk(Stream output, ReadOnlySpan<byte> type, ReadOnlySpan<byte> body) {
+    if (type.Length != 4) throw new ArgumentException("CAF chunk type must be four bytes.", nameof(type));
     Span<byte> header = stackalloc byte[12];
     type.CopyTo(header);
     BinaryPrimitives.WriteInt64BigEndian(header[4..], body.Length);
