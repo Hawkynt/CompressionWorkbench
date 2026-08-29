@@ -24,13 +24,15 @@ dotnet add package Hawkynt.Algorithms.Checksums
 
 ## ✨ Features
 
-- Adler-16/32/64 and Fletcher-8/16/32/64 families.
+- Generalized Adler, Fletcher, additive sum, complement, and parity families: runtime widths may be powers of two or any multiple of 8 bits. Adler/Fletcher exclude only the degenerate 1-bit case because their result consists of two equal-width accumulators.
+- The historical Adler-16/32/64, Fletcher-8/16/32/64, sum, complement, and parity entry points remain available and are bit-for-bit compatible with the generalized family entry points.
 - Generic CRC engine from 8 through 64 bits plus the JavaScript collection's CRC-128 variants.
 - Named CRC presets for SMBus, MAXIM/Dallas, AUTOSAR, CDMA2000, CCITT/XMODEM, ARC/IBM, OpenPGP, FlexRay, Interlaken, IEEE, POSIX, BZIP2, Castagnoli/CRC-32C, XZ, ECMA-182, and WE.
-- BSD/System-V/Unix sum, additive sum, XOR, LRC, one's/two's complement, Internet checksum, parity, and NMEA-0183.
+- BSD/System-V/Unix sum, XOR, LRC, Internet checksum, and NMEA-0183.
 - Luhn, Verhoeff, Damm, modulo, and constant-weight validation helpers.
 - ISBN, GTIN/EAN/UPC, IBAN, ICCID, IMEI, ISIN, ISSN, CUSIP, SEDOL, VIN, ABA routing, NPI, POSTNET, and PLANET validation/check-digit helpers.
 - Existing CompressionWorkbench checksum APIs retain the `Compression.Core.Checksums` namespace for source compatibility.
+- `SupportedChecksumSizes` advertises each bit-oriented checksum family's finite or rule-based output-width domain, with a contract test preventing future checksum APIs from omitting the metadata.
 
 ## 🧩 JavaScript source coverage
 
@@ -88,6 +90,12 @@ using Hawkynt.Algorithms.Checksums;
 ReadOnlySpan<byte> data = "CompressionWorkbench"u8;
 
 uint adler32 = Adler.Compute32(data);
+byte[] adler40 = Adler.Compute(data, 40);
+byte[] fletcher24 = Fletcher.Compute(data, 24);
+byte[] sum128 = SumChecksum.Compute(data, 128);
+byte[] onesComplement24 = ComplementChecksum.Compute(data, 24, ComplementKind.OnesComplement);
+byte[] parity256 = Parity.Compute(data, 256);
+
 uint crc32 = Crc.Compute32(data, CrcPresets.Crc32Ieee);
 uint crc32c = Crc.Compute32(data, CrcPresets.Crc32Castagnoli);
 ushort internet = InternetChecksum.Compute(data);
@@ -95,6 +103,8 @@ ushort internet = InternetChecksum.Compute(data);
 bool validIban = Iban.Validate("DE89370400440532013000");
 bool validIsbn = Isbn.Validate("9780306406157");
 ```
+
+Generic family results are returned big-endian. Sub-byte power-of-two results use the low bits of the first byte; unused high bits are zero.
 
 Legacy CompressionWorkbench call sites may continue to use the compatibility types in `Compression.Core.Checksums`.
 
@@ -107,6 +117,8 @@ Legacy CompressionWorkbench call sites may continue to use the compatibility typ
 ## 🏗 Architecture
 
 Low-level byte-oriented checksums are separate from textual/check-digit helpers so hot CRC paths do not pull identifier parsing into their implementation. Family variants are parameterized rather than copied into near-identical classes.
+
+The generalized simple-checksum paths use `BigInteger` only where the requested width exceeds primitive storage or the arithmetic requires it; the existing fixed-width entry points remain available for hot paths. Adler derives the largest applicable prime modulus for widths where reduction can affect a `ReadOnlySpan<byte>` input and caches that modulus per half-width.
 
 `Hawkynt.Compression.Core` references this package normally. NuGet consumers therefore receive it as a transitive dependency rather than as a DLL hidden inside the Core package.
 
@@ -121,6 +133,7 @@ Low-level byte-oriented checksums are separate from textual/check-digit helpers 
 
 - Checksums and check digits detect accidental errors; they do not authenticate hostile input. Use a cryptographic MAC or authenticated signature when an attacker is in scope.
 - CRC parameter sets are not interchangeable merely because their bit widths match; polynomial, initialization, reflection, and final-XOR parameters are part of the algorithm identity.
+- Extremely large requested generalized checksum widths necessarily allocate an output buffer proportional to that width.
 - Reed-Solomon compatibility helpers are retained because existing formats use them, but Reed-Solomon is an error-correcting code rather than a checksum proper.
 
 ## ❤️ Support
