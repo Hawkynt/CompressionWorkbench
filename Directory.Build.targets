@@ -1,0 +1,15 @@
+<Project>
+  <!-- AMR storage descriptors are separate format assemblies. Keep them visible to the
+       conversion registry/tests and bundle them with the audio meta-package. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Compression.Lib' Or '$(MSBuildProjectName)' == 'Compression.Tests'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrNb\FileFormat.AmrNb.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrWb\FileFormat.AmrWb.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Hawkynt.FileFormats.Audio'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)Codecs\Codec.AmrNb\Codec.AmrNb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)Codecs\Codec.AmrWb\Codec.AmrWb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrNb\FileFormat.AmrNb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrWb\FileFormat.AmrWb.csproj" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

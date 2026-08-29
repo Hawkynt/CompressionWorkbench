@@ -1,14 +1,14 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.ImaAdpcm;
 
 namespace FileFormat.Caf;
 
 /// <summary>
 /// Apple Core Audio Format (<c>.caf</c>) parser. All container integers are big-endian;
 /// LPCM sample endianness is controlled by Core Audio's standard ASBD flags.
-/// G.711 is decoded to canonical PCM16; other compressed payloads remain available
-/// through <see cref="ParsedCaf.InterleavedPcm"/> with their original format ID.
+/// G.711 and QuickTime IMA4 are decoded to canonical PCM16.
 /// </summary>
 public sealed class CafReader {
   /// <summary>
@@ -23,10 +23,13 @@ public sealed class CafReader {
     string FormatId,
     byte[] InterleavedPcm,
     IReadOnlyList<(string Type, byte[] Data)> OtherChunks,
-    uint? ChannelMask = null);
+    uint? ChannelMask = null,
+    long? ValidFrames = null);
 
   private const uint FlagIsFloat = 0x1;
   private const uint FlagIsBigEndian = 0x2;
+  private const int Ima4PacketBytesPerChannel = 34;
+  private const int Ima4FramesPerPacket = 64;
 
   /// <summary>
   /// Reads the value from the supplied input.
@@ -39,6 +42,7 @@ public sealed class CafReader {
 
     var pos = 8;
     uint? channelMask = null;
+    long? validFrames = null;
     var descParsed = false;
     int channels = 0, sampleRate = 0, bitsPerChannel = 0;
     uint formatFlags = 0;
@@ -77,6 +81,15 @@ public sealed class CafReader {
         case "data":
           rawData = body.Length >= 4 ? body[4..].ToArray() : [];
           break;
+        case "pakt":
+          if (body.Length < 24)
+            throw new InvalidDataException("CAF 'pakt' chunk shorter than 24 bytes.");
+          var packetCount = BinaryPrimitives.ReadInt64BigEndian(body);
+          validFrames = BinaryPrimitives.ReadInt64BigEndian(body[8..]);
+          if (packetCount < 0 || validFrames < 0)
+            throw new InvalidDataException("CAF 'pakt' contains a negative packet or valid-frame count.");
+          other.Add((type, body.ToArray()));
+          break;
         case "chan":
           if (body.Length >= 8 && BinaryPrimitives.ReadUInt32BigEndian(body) == 0x10000)
             channelMask = BinaryPrimitives.ReadUInt32BigEndian(body[4..]);
@@ -101,17 +114,53 @@ public sealed class CafReader {
     switch (formatId) {
       case "ulaw":
         return new ParsedCaf(channels, sampleRate, 16, formatFlags, false, "lpcm",
-          ShortsToLePcm(Codec.MuLaw.MuLawCodec.Decode(payload)), other, channelMask);
+          ShortsToLePcm(Codec.MuLaw.MuLawCodec.Decode(payload)), other, channelMask, validFrames);
       case "alaw":
         return new ParsedCaf(channels, sampleRate, 16, formatFlags, false, "lpcm",
-          ShortsToLePcm(Codec.ALaw.ALawCodec.Decode(payload)), other, channelMask);
+          ShortsToLePcm(Codec.ALaw.ALawCodec.Decode(payload)), other, channelMask, validFrames);
+      case "ima4":
+        return DecodeIma4(channels, sampleRate, formatFlags, payload, other, channelMask, validFrames);
     }
 
     var canonical = payload;
     if (formatId == "lpcm" && bigEndian && bitsPerChannel > 8)
       canonical = ConvertBeToLe(payload, bitsPerChannel / 8);
 
-    return new ParsedCaf(channels, sampleRate, bitsPerChannel, formatFlags, isFloat, formatId, canonical, other, channelMask);
+    return new ParsedCaf(channels, sampleRate, bitsPerChannel, formatFlags, isFloat, formatId,
+      canonical, other, channelMask, validFrames);
+  }
+
+  private static ParsedCaf DecodeIma4(
+    int channels,
+    int sampleRate,
+    uint formatFlags,
+    ReadOnlySpan<byte> payload,
+    IReadOnlyList<(string Type, byte[] Data)> other,
+    uint? channelMask,
+    long? validFrames) {
+    var packetBytes = checked(Ima4PacketBytesPerChannel * channels);
+    if (payload.Length % packetBytes != 0)
+      throw new InvalidDataException("CAF ima4 payload does not contain whole interleaved channel packets.");
+
+    var decoded = ImaAdpcmCodec.DecodeQuickTime(payload, channels);
+    var availableFrames = decoded.Length == 0 ? 0 : decoded.Min(static channel => channel.Length);
+    var frameCount = availableFrames;
+    if (validFrames is { } count) {
+      if (count > availableFrames)
+        throw new InvalidDataException($"CAF pakt declares {count} valid frames but ima4 payload contains only {availableFrames}.");
+      frameCount = checked((int)count);
+    }
+
+    var pcm = new byte[checked(frameCount * channels * 2)];
+    var offset = 0;
+    for (var frame = 0; frame < frameCount; ++frame)
+      for (var channel = 0; channel < channels; ++channel) {
+        BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(offset, 2), decoded[channel][frame]);
+        offset += 2;
+      }
+
+    return new ParsedCaf(channels, sampleRate, 16, formatFlags, false, "lpcm",
+      pcm, other, channelMask, validFrames ?? (long)(payload.Length / packetBytes) * Ima4FramesPerPacket);
   }
 
   private static byte[] ShortsToLePcm(ReadOnlySpan<short> samples) {
