@@ -24,7 +24,7 @@ G.711 A-law codec: 8-bit logarithmic samples decoded to 16-bit linear PCM. Europ
 
 ### Namespace `Codec.Aac`
 
-[`AacAdtsReader`](#aacadtsreader) · [`AacBitReader`](#aacbitreader) · [`AacCodec`](#aaccodec) · [`AacDecoder`](#aacdecoder) · [`AacElementType`](#aacelementtype) · [`AacObjectType`](#aacobjecttype) · [`AacStreamInfo`](#aacstreaminfo) · [`AdtsHeader`](#adtsheader)
+[`AacAdtsReader`](#aacadtsreader) · [`AacBitReader`](#aacbitreader) · [`AacCodec`](#aaccodec) · [`AacDecoder`](#aacdecoder) · [`AacElementType`](#aacelementtype) · [`AacEncoder`](#aacencoder) · [`AacEncoderOptions`](#aacencoderoptions) · [`AacEncoderWindowShape`](#aacencoderwindowshape) · [`AacObjectType`](#aacobjecttype) · [`AacStereoCodingMode`](#aacstereocodingmode) · [`AacStreamInfo`](#aacstreaminfo) · [`AdtsHeader`](#adtsheader)
 
 #### `AacAdtsReader`
 
@@ -93,6 +93,42 @@ AAC element type identifiers (3-bit syntactic element id, ISO/IEC 14496-3 §4.5.
 | `Fil` | `6` | Fill element. |
 | `End` | `7` | End of raw_data_block. |
 
+#### `AacEncoder`
+
+Pure-managed AAC-LC/ADTS encoder. It implements the normative long-window transform, scalefactor-band quantisation, spectral Huffman codebooks 5..11 including escape values, channel-pair elements and optional M/S stereo. The rate controller is intentionally simple: a monotonic global-gain search targets the requested average bits per 1024-sample frame.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncoderDelaySamples` | `const int EncoderDelaySamples` |  |
+| `FrameSamples` | `const int FrameSamples` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, AacEncoderOptions options)` | Encodes interleaved PCM16 to a CRC-absent ADTS AAC-LC stream. |
+
+#### `AacEncoderOptions`
+
+Controls for the reference AAC-LC encoder. The implementation deliberately uses the standards tables already shared with the decoder rather than an unmanaged FAAC/FDK wrapper.
+
+Implements `IEquatable<AacEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AacEncoderOptions` | `AacEncoderOptions(int SampleRate, int Channels, int Bitrate = 128000, int CutoffHz = 0, AacEncoderWindowShape WindowShape = 0, AacStereoCodingMode StereoMode = 2, bool PadFinalFrame = true)` | Controls for the reference AAC-LC encoder. The implementation deliberately uses the standards tables already shared with the decoder rather than an unmanaged FAAC/FDK wrapper. |
+| `Bitrate` | `int Bitrate { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `CutoffHz` | `int CutoffHz { get; init; }` |  |
+| `PadFinalFrame` | `bool PadFinalFrame { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `StereoMode` | `AacStereoCodingMode StereoMode { get; init; }` |  |
+| `WindowShape` | `AacEncoderWindowShape WindowShape { get; init; }` |  |
+
+#### `AacEncoderWindowShape`
+
+AAC long-window shape.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Sine` | `0` |  |
+| `Kbd` | `1` |  |
+
 #### `AacObjectType`
 
 AAC MPEG Audio Object Types (subset). Values match ISO/IEC 14496-3 Table 1.16. ADTS stores this minus 1 in its 2-bit `profile` field.
@@ -113,6 +149,16 @@ AAC MPEG Audio Object Types (subset). Values match ISO/IEC 14496-3 Table 1.16. A
 | `Er_AacLtp` | `19` |  |
 | `Er_AacScalable` | `20` |  |
 | `Ps` | `29` |  |
+
+#### `AacStereoCodingMode`
+
+Stereo spectral coding mode for AAC channel-pair elements.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Independent` | `0` |  |
+| `MidSide` | `1` |  |
+| `Auto` | `2` |  |
 
 #### `AacStreamInfo`
 
@@ -199,7 +245,7 @@ DFPWM1a (Dynamic Filter Pulse Width Modulation, "1a" variant) codec — the 1-bi
 
 ### Namespace `Codec.Flac`
 
-[`FlacCodec`](#flaccodec) · [`FlacCodec.AudioProperties`](#flaccodecaudioproperties)
+[`FlacCodec`](#flaccodec) · [`FlacCodec.AudioProperties`](#flaccodecaudioproperties) · [`FlacEncoderOptions`](#flacencoderoptions) · [`FlacStereoMode`](#flacstereomode) · [`FlacSubframeMode`](#flacsubframemode)
 
 #### `FlacCodec`
 
@@ -208,6 +254,8 @@ FLAC codec: decodes a FLAC stream to interleaved little-endian PCM, and reads ST
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a FLAC stream into raw interleaved little-endian PCM on `output`. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<int> interleaved, FlacEncoderOptions options)` | Encodes interleaved signed integer PCM to native FLAC. Samples are interpreted in the declared bit depth without implicit scaling. The writer supports one through eight channels, constant/verbatim/fixed predictors 0-4 with Rice residual coding, and all FLAC stereo decorrelation assignments. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels, int blockSize = 4096, FlacSubframeMode compression = 0, FlacStereoMode stereoMode = 0)` |  |
 | `ReadAudioProperties` | `static AudioProperties ReadAudioProperties(ReadOnlySpan<byte> flacBytes)` | Reads STREAMINFO without a full decode; used by archive descriptors to build per-channel WAV headers. |
 
 #### `FlacCodec.AudioProperties`
@@ -224,13 +272,49 @@ Implements `IEquatable<AudioProperties>`.
 | `SampleRate` | `int SampleRate { get; init; }` |  |
 | `TotalSamples` | `long TotalSamples { get; init; }` |  |
 
+#### `FlacEncoderOptions`
+
+Implements `IEquatable<FlacEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlacEncoderOptions` | `FlacEncoderOptions(int SampleRate, int Channels, int BitsPerSample = 16, int BlockSize = 4096, FlacSubframeMode Compression = 0, FlacStereoMode StereoMode = 0)` |  |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Compression` | `FlacSubframeMode Compression { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `StereoMode` | `FlacStereoMode StereoMode { get; init; }` |  |
+
+#### `FlacStereoMode`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Auto` | `0` |  |
+| `Independent` | `1` |  |
+| `LeftSide` | `2` |  |
+| `RightSide` | `3` |  |
+| `MidSide` | `4` |  |
+
+#### `FlacSubframeMode`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Auto` | `0` |  |
+| `Verbatim` | `1` |  |
+| `Fixed0` | `2` |  |
+| `Fixed1` | `3` |  |
+| `Fixed2` | `4` |  |
+| `Fixed3` | `5` |  |
+| `Fixed4` | `6` |  |
+
 ### Namespace `Codec.Gsm610`
 
-[`Gsm610Codec`](#gsm610codec)
+[`Gsm610Codec`](#gsm610codec) · [`Gsm610EncoderOptions`](#gsm610encoderoptions)
 
 #### `Gsm610Codec`
 
-GSM 06.10 full-rate speech decoder (ETSI EN 300 961). Each 33-byte frame decodes to 160 × 16-bit PCM samples at 8 kHz. This implementation provides a structurally correct decoder that unpacks the bitstream into LAR/LTP/RPE parameters, applies RPE grid positioning and the LTP + short-term synthesis filters. The spectral accuracy is approximate — producing audibly recognisable output for most frames but not a bit-exact match to the ETSI reference. This is acceptable because the decoder is primarily used to surface per-channel PCM in container-parity contexts (WAV format code 0x0031, AIFC `GSM` compression ID); bit-exact GSM decoding would require an additional ~1000 LOC of fixed-point arithmetic and a full port of the ETSI Annex-A tables.
+GSM 06.10 full-rate speech codec (ETSI EN 300 961). Each 33-byte frame decodes to 160 × 16-bit PCM samples at 8 kHz. The decoder unpacks the bitstream into LAR/LTP/RPE parameters, applies RPE grid positioning and the LTP + short-term synthesis filters. The fixed-point synthesis remains a compact approximation of the ETSI reference; the encoder lives in the companion partial declaration and emits the standard 0xD signature + 260 parameter bits.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -238,7 +322,21 @@ GSM 06.10 full-rate speech decoder (ETSI EN 300 961). Each 33-byte frame decodes
 | `FrameSamples` | `const int FrameSamples` | Number of PCM samples produced per decoded frame. |
 | `DecodeRaw` | `static short[] DecodeRaw(ReadOnlySpan<byte> gsm)` | Decodes a buffer of raw 33-byte GSM 06.10 frames (single mono stream) to 16-bit PCM. This is the "toast"/`.gsm` on-disk layout — a bare concatenation of frames with no container. Each frame's first byte carries the signature nibble `0xD` in its high four bits (the magic byte ranges `0xD0..0xDF`). |
 | `Decode` | `static short[] Decode(ReadOnlySpan<byte> gsm, int channels)` | Decodes a buffer of GSM 06.10 frames to interleaved 16-bit PCM. |
+| `EncodeRaw` | `static byte[] EncodeRaw(ReadOnlySpan<short> pcm, bool padFinalFrame = true)` | Encodes one mono PCM stream to the raw `.gsm` frame layout. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm, Gsm610EncoderOptions options = null)` | Encodes interleaved PCM16 at 8 kHz to GSM 06.10 full-rate frames. GSM itself is a mono speech codec; multiple channels are encoded as independent 33-byte frames in channel order. |
 | `LooksLikeRawFrames` | `static bool LooksLikeRawFrames(ReadOnlySpan<byte> gsm)` | Reports whether `gsm` is a whole number of 33-byte frames whose per-frame signature nibbles are all `0xD` — the cheap structural check a headerless `.gsm` reader uses before committing to a decode. |
+
+#### `Gsm610EncoderOptions`
+
+Configuration for GSM 06.10 full-rate encoding.
+
+Implements `IEquatable<Gsm610EncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Gsm610EncoderOptions` | `Gsm610EncoderOptions(int Channels = 1, bool PadFinalFrame = true)` | Configuration for GSM 06.10 full-rate encoding. |
+| `Channels` | `int Channels { get; init; }` | Number of independently encoded interleaved PCM channels. |
+| `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete final 20 ms frame with the last available sample. |
 
 ### Namespace `Codec.ImaAdpcm`
 
@@ -253,7 +351,9 @@ IMA ADPCM (Interactive Multimedia Association Adaptive Differential PCM) codec. 
 | `DecodeQuickTime` | `static short[][] DecodeQuickTime(ReadOnlySpan<byte> data, int channels)` | Decodes the Apple/QuickTime `ima4` packet variant (as carried by AIFC) into one PCM buffer per channel. Packets are 34 bytes and round-robin through channels. |
 | `Decode` | `static short[][] Decode(ReadOnlySpan<byte> adpcm, int blockAlign, int channels)` | Decodes IMA ADPCM data to one PCM buffer per channel. Each output buffer holds `((blockAlign/channels - 4) * 2 + 1)` samples per block. |
 | `EncodeQuickTime` | `static byte[] EncodeQuickTime(IReadOnlyList<short[]> pcm)` | Encodes equal-length PCM16 channel buffers to Apple/QuickTime `ima4` packets. A final partial packet is padded with the last reconstructed sample. Packets are emitted in the channel-round-robin order used by AIFC/QuickTime. |
+| `EncodeQuickTime` | `static byte[] EncodeQuickTime(ReadOnlySpan<short> interleaved, int channels)` | Encodes interleaved 16-bit PCM into Apple/QuickTime `ima4` packets. Packets contain 64 samples for one channel and are emitted round-robin by channel. A short final packet is padded with the last reconstructed sample. |
 | `Encode` | `static byte[] Encode(IReadOnlyList<short[]> pcm, int blockAlign)` | Encodes one or two equal-length PCM16 channel buffers to Microsoft/Intel IMA ADPCM WAV blocks. The final block is padded with the last reconstructed sample so the raw coded stream remains block-aligned; a container can retain the exact source sample count in its own metadata. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int blockAlign)` | Encodes interleaved 16-bit PCM into Microsoft/IMA WAV ADPCM blocks. The output always consists of whole `blockAlign` byte blocks; a short final block is padded with the last reconstructed sample. |
 
 ### Namespace `Codec.Midi`
 
@@ -315,7 +415,7 @@ Standard MIDI File emitter for already-encoded `MTrk` payloads.
 
 ### Namespace `Codec.Mp3`
 
-[`Mp3Codec`](#mp3codec) · [`Mp3FrameHeader`](#mp3frameheader) · [`Mp3StreamInfo`](#mp3streaminfo)
+[`Mp3Codec`](#mp3codec) · [`Mp3Encoder`](#mp3encoder) · [`Mp3EncoderChannelMode`](#mp3encoderchannelmode) · [`Mp3EncoderOptions`](#mp3encoderoptions) · [`Mp3FrameHeader`](#mp3frameheader) · [`Mp3StreamInfo`](#mp3streaminfo)
 
 #### `Mp3Codec`
 
@@ -325,6 +425,43 @@ Clean-room MP3 decoder. Ported from `minimp3` (https://github.com/lieff/minimp3,
 | --- | --- | --- |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes an MP3 stream into raw interleaved little-endian PCM (signed 16-bit per channel) on `output`. The output sample rate / channel count are set by the first decoded frame; readers are expected to track those separately (e.g. via `ReadStreamInfo`). |
 | `ReadStreamInfo` | `static Mp3StreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info (sample rate, channels, average bitrate, duration in samples). |
+
+#### `Mp3Encoder`
+
+Pure-managed MPEG Layer III encoder facade.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, Mp3EncoderOptions options)` | Encodes interleaved little-endian PCM16 samples to MP3. |
+
+#### `Mp3EncoderChannelMode`
+
+Layer III channel mode.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Auto` | `-1` |  |
+| `Stereo` | `0` |  |
+| `JointStereo` | `1` |  |
+| `DualChannel` | `2` |  |
+| `Mono` | `3` |  |
+
+#### `Mp3EncoderOptions`
+
+Managed MP3 encoder controls. The backend is the LGPL-3.0 GroovyMp3 C# port of LAME/Jump3r; it is fully managed and performs no P/Invoke/native codec calls.
+
+Implements `IEquatable<Mp3EncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp3EncoderOptions` | `Mp3EncoderOptions(int SampleRate, int Channels, int BitrateKbps = 128, Mp3EncoderChannelMode ChannelMode = -1, int Quality = 5, bool VariableBitrate = false, int? OutputSampleRate = null)` | Managed MP3 encoder controls. The backend is the LGPL-3.0 GroovyMp3 C# port of LAME/Jump3r; it is fully managed and performs no P/Invoke/native codec calls. |
+| `BitrateKbps` | `int BitrateKbps { get; init; }` | CBR bitrate in kbit/s; -1 lets LAME select a default. Ignored by VBR. |
+| `ChannelMode` | `Mp3EncoderChannelMode ChannelMode { get; init; }` | Stereo coding mode. Mono input is always encoded mono. |
+| `Channels` | `int Channels { get; init; }` | PCM input channel count (1 or 2). |
+| `OutputSampleRate` | `int? OutputSampleRate { get; init; }` | Optional resampled output rate; null preserves the input rate. |
+| `Quality` | `int Quality { get; init; }` | LAME algorithm/VBR quality, 1 (highest) through 9 (lowest). |
+| `SampleRate` | `int SampleRate { get; init; }` | PCM input sample rate. |
+| `VariableBitrate` | `bool VariableBitrate { get; init; }` | Use LAME VBR instead of constant bitrate. |
 
 #### `Mp3FrameHeader`
 
@@ -385,6 +522,7 @@ Microsoft ADPCM codec (WAV format code 0x0002). Uses the canonical seven adaptiv
 | --- | --- | --- |
 | `Decode` | `static short[][] Decode(ReadOnlySpan<byte> adpcm, int blockAlign, int channels)` | Decodes a buffer of MS-ADPCM blocks to per-channel PCM. Each block emits `2 + (blockAlign - 7*channels) * 2 / channels` samples per channel. |
 | `Encode` | `static byte[] Encode(IReadOnlyList<short[]> pcm, int blockAlign)` | Encodes one or two equal-length PCM16 channel buffers to Microsoft ADPCM WAV blocks. For each block the encoder searches all seven standard predictor pairs and a logarithmic set of legal starting deltas, retaining the combination with the lowest reconstruction error. The final block is padded with the last reconstructed sample. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int blockAlign)` | Encodes interleaved 16-bit PCM into Microsoft ADPCM WAV blocks. Predictor coefficients and the initial quantizer delta are selected per channel and per block by a bounded look-ahead search. A short final block is padded with the last reconstructed sample so the output always consists of whole blocks. |
 
 ### Namespace `Codec.MuLaw`
 
@@ -403,18 +541,18 @@ G.711 μ-law codec: 8-bit logarithmic samples decoded to 16-bit linear PCM. The 
 
 ### Namespace `Codec.Opus`
 
-[`OggOpusReader`](#oggopusreader) · [`OpusBandwidth`](#opusbandwidth) · [`OpusCelt`](#opuscelt) · [`OpusCodec`](#opuscodec) · [`OpusHeadPacket`](#opusheadpacket) · [`OpusMode`](#opusmode) · [`OpusPacketReader`](#opuspacketreader) · [`OpusRangeDecoder`](#opusrangedecoder) · [`OpusResampler`](#opusresampler) · [`OpusSilk`](#opussilk) · [`OpusStreamInfo`](#opusstreaminfo) · [`OpusTagsPacket`](#opustagspacket) · [`OpusTocInfo`](#opustocinfo)
+[`OggOpusReader`](#oggopusreader) · [`OpusBandwidth`](#opusbandwidth) · [`OpusCelt`](#opuscelt) · [`OpusCodec`](#opuscodec) · [`OpusEncoderOptions`](#opusencoderoptions) · [`OpusHeadPacket`](#opusheadpacket) · [`OpusMode`](#opusmode) · [`OpusPacketReader`](#opuspacketreader) · [`OpusRangeDecoder`](#opusrangedecoder) · [`OpusResampler`](#opusresampler) · [`OpusSilk`](#opussilk) · [`OpusStreamInfo`](#opusstreaminfo) · [`OpusTagsPacket`](#opustagspacket) · [`OpusTocInfo`](#opustocinfo)
 
 #### `OggOpusReader`
 
-Minimal Ogg page walker specialised for Opus streams (RFC 7845 / RFC 3533). Reassembles logical packets across page boundaries using the segment-table "lacing" mechanism. Does not verify CRCs (we trust the stream here).
+Ogg page walker specialised for Opus streams. Reassembles packets across page boundaries and parses both mapping-family-0 and explicit multistream OpusHead fields.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OggOpusReader` | `OggOpusReader(Stream stream)` |  |
-| `ReadHead` | `OpusHeadPacket ReadHead()` | Reads and validates the first logical packet, which must be `OpusHead`. |
-| `TryReadPacket` | `bool TryReadPacket(out byte[] packet)` | Pulls the next reassembled logical packet from the Ogg stream. |
-| `TryReadTags` | `OpusTagsPacket TryReadTags()` | Reads the second logical packet if it is `OpusTags`, otherwise buffers it back for audio consumption and returns null. |
+| `ReadHead` | `OpusHeadPacket ReadHead()` |  |
+| `TryReadPacket` | `bool TryReadPacket(out byte[] packet)` |  |
+| `TryReadTags` | `OpusTagsPacket TryReadTags()` |  |
 
 #### `OpusBandwidth`
 
@@ -441,12 +579,44 @@ CELT decoder entry point — transforms quantised MDCT coefficients + pitch pred
 
 #### `OpusCodec`
 
-Clean-room Opus decoder. Input: an Ogg Opus stream (RFC 7845) whose packets carry Opus-encoded frames (RFC 6716). Output: interleaved little-endian signed 16-bit PCM at the stream's native sample rate (48 kHz for CELT). Ported from: libopus (Xiph) — BSD 3-clause, commit-agnostic clean-room port tracking the RFC 6716 / RFC 7845 / RFC 8251 bitstream specification. Supported surface (first pass):Ogg page walker + `OpusHead` / `OpusTags` metadata parsing.TOC byte parsing + all four frame-packing codes (0/1/2/3) per RFC 6716 §3.2.Range decoder (ec_dec) skeleton — reads tell, bits, and cdf symbols.CELT-only configs (16-31) — framing only. Full spectral inverse MDCT is not landed in this first pass and currently emits silence for the expected number of samples so downstream tooling can round-trip file structure and sample counts. Use `ReadStreamInfo` to introspect stream metadata deterministically.SILK-only configs (0-11) — framing only (same silence fallback).Hybrid configs (12-15) — throws `NotSupportedException`. This is pragmatic scaffolding: `OpusStreamInfo`, TOC parsing, and Ogg framing are production-complete and covered by tests. The CELT/SILK subband decoders are stubbed to silence — the intent is that subsequent waves will flesh out `OpusCelt` and `OpusSilk` without changing the public surface here.
+RFC 6716 / RFC 7845 Opus codec. Ogg framing and metadata are handled locally; SILK, hybrid, CELT and multistream signal coding are handled by pure-managed Concentus.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Ogg Opus stream from `input` into interleaved little-endian signed 16-bit PCM on `output`. |
-| `ReadStreamInfo` | `static OpusStreamInfo ReadStreamInfo(Stream input)` | Reads the Ogg Opus identification header and any comment header without decoding audio. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes Ogg Opus mapping family 0 (mono/stereo) and family 1 (Vorbis-order surround) to interleaved little-endian PCM16 at 48 kHz. Pre-skip and output gain are applied. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, OpusEncoderOptions options)` | Encodes interleaved PCM16 to Ogg Opus using pure-managed Concentus. Mono/stereo use mapping family 0; 3-8 channel surround uses RFC 7845 mapping family 1 / Vorbis order. |
+| `ReadStreamInfo` | `static OpusStreamInfo ReadStreamInfo(Stream input)` | Reads OpusHead / OpusTags metadata without decoding audio. |
+
+#### `OpusEncoderOptions`
+
+Encoder controls for RFC 6716 Opus and RFC 7845 Ogg Opus output.
+
+Implements `IEquatable<OpusEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpusEncoderOptions` | `OpusEncoderOptions(int SampleRate, int Channels, OpusApplication Application = 2049, int? Bitrate = null, int Complexity = 10, bool UseVbr = true, bool ConstrainedVbr = false, bool UseDtx = false, bool UseInbandFec = false, int PacketLossPercent = 0, int? ForceChannels = null, OpusBandwidth? MaxBandwidth = null, OpusBandwidth? Bandwidth = null, OpusSignal Signal = -1000, OpusMode? ForceMode = null, bool PredictionDisabled = false, int LsbDepth = 16, double FrameDurationMilliseconds = 20, int? SerialNumber = null, string Vendor = "CompressionWorkbench", IReadOnlyList<string> Comments = null)` | Encoder controls for RFC 6716 Opus and RFC 7845 Ogg Opus output. |
+| `Application` | `OpusApplication Application { get; init; }` |  |
+| `Bandwidth` | `OpusBandwidth? Bandwidth { get; init; }` |  |
+| `Bitrate` | `int? Bitrate { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Comments` | `IReadOnlyList<string> Comments { get; init; }` |  |
+| `Complexity` | `int Complexity { get; init; }` |  |
+| `ConstrainedVbr` | `bool ConstrainedVbr { get; init; }` |  |
+| `ForceChannels` | `int? ForceChannels { get; init; }` |  |
+| `ForceMode` | `OpusMode? ForceMode { get; init; }` |  |
+| `FrameDurationMilliseconds` | `double FrameDurationMilliseconds { get; init; }` |  |
+| `LsbDepth` | `int LsbDepth { get; init; }` |  |
+| `MaxBandwidth` | `OpusBandwidth? MaxBandwidth { get; init; }` |  |
+| `PacketLossPercent` | `int PacketLossPercent { get; init; }` |  |
+| `PredictionDisabled` | `bool PredictionDisabled { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SerialNumber` | `int? SerialNumber { get; init; }` |  |
+| `Signal` | `OpusSignal Signal { get; init; }` |  |
+| `UseDtx` | `bool UseDtx { get; init; }` |  |
+| `UseInbandFec` | `bool UseInbandFec { get; init; }` |  |
+| `UseVbr` | `bool UseVbr { get; init; }` |  |
+| `Vendor` | `string Vendor { get; init; }` |  |
 
 #### `OpusHeadPacket`
 
@@ -456,12 +626,15 @@ Implements `IEquatable<OpusHeadPacket>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OpusHeadPacket` | `OpusHeadPacket(byte Version, byte ChannelCount, ushort PreSkip, uint InputSampleRate, short OutputGainQ8, byte ChannelMappingFamily)` | `OpusHead` identification-header packet contents per RFC 7845 §5.1. |
+| `OpusHeadPacket` | `OpusHeadPacket(byte Version, byte ChannelCount, ushort PreSkip, uint InputSampleRate, short OutputGainQ8, byte ChannelMappingFamily, byte StreamCount, byte CoupledStreamCount, byte[] ChannelMapping)` | `OpusHead` identification-header packet contents per RFC 7845 §5.1. |
 | `ChannelCount` | `byte ChannelCount { get; init; }` |  |
 | `ChannelMappingFamily` | `byte ChannelMappingFamily { get; init; }` |  |
+| `ChannelMapping` | `byte[] ChannelMapping { get; init; }` |  |
+| `CoupledStreamCount` | `byte CoupledStreamCount { get; init; }` |  |
 | `InputSampleRate` | `uint InputSampleRate { get; init; }` |  |
 | `OutputGainQ8` | `short OutputGainQ8 { get; init; }` |  |
 | `PreSkip` | `ushort PreSkip { get; init; }` |  |
+| `StreamCount` | `byte StreamCount { get; init; }` |  |
 | `Version` | `byte Version { get; init; }` |  |
 
 #### `OpusMode`
@@ -521,28 +694,28 @@ SILK decoder entry point — linear-predictive speech codec path used for narrow
 
 #### `OpusStreamInfo`
 
-Opus stream identification info extracted from the `OpusHead` + optional `OpusTags` packets of an Ogg Opus stream.
-
 Implements `IEquatable<OpusStreamInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OpusStreamInfo` | `OpusStreamInfo(int SampleRate, int Channels, int PreSkip, int InputSampleRate, string Vendor)` | Opus stream identification info extracted from the `OpusHead` + optional `OpusTags` packets of an Ogg Opus stream. |
+| `OpusStreamInfo` | `OpusStreamInfo(int SampleRate, int Channels, int PreSkip, int InputSampleRate, string Vendor, int ChannelMappingFamily, int StreamCount, int CoupledStreamCount, IReadOnlyList<byte> ChannelMapping)` |  |
+| `ChannelMappingFamily` | `int ChannelMappingFamily { get; init; }` |  |
+| `ChannelMapping` | `IReadOnlyList<byte> ChannelMapping { get; init; }` |  |
 | `Channels` | `int Channels { get; init; }` |  |
+| `CoupledStreamCount` | `int CoupledStreamCount { get; init; }` |  |
 | `InputSampleRate` | `int InputSampleRate { get; init; }` |  |
 | `PreSkip` | `int PreSkip { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
+| `StreamCount` | `int StreamCount { get; init; }` |  |
 | `Vendor` | `string Vendor { get; init; }` |  |
 
 #### `OpusTagsPacket`
-
-`OpusTags` comment-header packet contents per RFC 7845 §5.2.
 
 Implements `IEquatable<OpusTagsPacket>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OpusTagsPacket` | `OpusTagsPacket(string Vendor, IReadOnlyList<string> Comments)` | `OpusTags` comment-header packet contents per RFC 7845 §5.2. |
+| `OpusTagsPacket` | `OpusTagsPacket(string Vendor, IReadOnlyList<string> Comments)` |  |
 | `Comments` | `IReadOnlyList<string> Comments { get; init; }` |  |
 | `Vendor` | `string Vendor { get; init; }` |  |
 
@@ -621,7 +794,7 @@ Implements `IEquatable<QoaStreamInfo>`.
 
 ### Namespace `Codec.Vorbis`
 
-[`VorbisCodec`](#vorbiscodec) · [`VorbisStreamInfo`](#vorbisstreaminfo)
+[`VorbisCodec`](#vorbiscodec) · [`VorbisEncoder`](#vorbisencoder) · [`VorbisEncoderOptions`](#vorbisencoderoptions) · [`VorbisStreamInfo`](#vorbisstreaminfo)
 
 #### `VorbisCodec`
 
@@ -631,6 +804,27 @@ Ogg Vorbis I decoder. Reads an Ogg-wrapped Vorbis bitstream and produces interle
 | --- | --- | --- |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Ogg-Vorbis stream to interleaved little-endian 16-bit PCM on `output`. |
 | `ReadStreamInfo` | `static VorbisStreamInfo ReadStreamInfo(Stream input)` | Reads the identification + comment packets and returns metadata without decoding any audio frames. |
+
+#### `VorbisEncoder`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, VorbisEncoderOptions options)` | Encodes interleaved PCM16 to a complete Ogg Vorbis I stream. Quality is the libvorbis-style VBR quality scalar accepted by the managed encoder (-0.1 through 1.0). Mono, stereo and multichannel configurations supported by the underlying setup templates are passed through. |
+
+#### `VorbisEncoderOptions`
+
+Parameters for managed Ogg Vorbis I encoding.
+
+Implements `IEquatable<VorbisEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VorbisEncoderOptions` | `VorbisEncoderOptions(int SampleRate, int Channels, float Quality = 0.5, int? SerialNumber = null, IReadOnlyDictionary<string, string> Comments = null)` | Parameters for managed Ogg Vorbis I encoding. |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Comments` | `IReadOnlyDictionary<string, string> Comments { get; init; }` |  |
+| `Quality` | `float Quality { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SerialNumber` | `int? SerialNumber { get; init; }` |  |
 
 #### `VorbisStreamInfo`
 
@@ -646,6 +840,431 @@ Implements `IEquatable<VorbisStreamInfo>`.
 | `NominalBitrate` | `int NominalBitrate { get; init; }` | Nominal bitrate in bits/second (0 if absent). |
 | `SampleRate` | `int SampleRate { get; init; }` | Sample rate in Hz, from the identification packet. |
 | `Vendor` | `string Vendor { get; init; }` | Encoder vendor string (from the comment packet). |
+
+### Namespace `Concentus`
+
+[`IOpusDecoder`](#iopusdecoder) · [`IOpusEncoder`](#iopusencoder) · [`IOpusMultiStreamDecoder`](#iopusmultistreamdecoder) · [`IOpusMultiStreamEncoder`](#iopusmultistreamencoder) · [`IResampler`](#iresampler) · [`OpusException`](#opusexception) · [`ResamplerFactory`](#resamplerfactory)
+
+#### `IOpusDecoder`
+
+The Opus decoder structure. Opus is a stateful codec with overlapping blocks and as a result Opus packets are not coded independently of each other. Packets must be passed into the decoder serially and in the correct order for a correct decode. Lost packets can be replaced with loss concealment by calling the decoder with a null reference and zero length for the missing packet. A single codec state may only be accessed from a single thread at a time and any required locking must be performed by the caller. Separate streams must be decoded with separate decoder states and can be decoded in parallel.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the encoded bandwidth of the last packet decoded. This may be lower than the actual decoding sample rate, and is only an indicator of the encoded audio's quality |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder. If you need this then I also assume you know what it's for. |
+| `Gain` | `int Gain { get; set; }` | Gets or sets the gain (Q8) to use in decoding |
+| `LastPacketDuration` | `int LastPacketDuration { get; }` | Gets the duration of the last packet, in PCM samples per channel |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this decoder decodes to. Always constant for the lifetime of the decoder. |
+| `Pitch` | `int Pitch { get; }` | Gets the last estimated pitch value of the decoded audio |
+| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate that this decoder decodes to. Always constant for the lifetime of the decoder |
+| `Decode` | `int Decode(ReadOnlySpan<byte> in_data, Span<float> out_pcm, int frame_size, bool decode_fec = false)` | Decodes an Opus packet, putting the decoded audio into a floating-point buffer. |
+| `Decode` | `int Decode(ReadOnlySpan<byte> in_data, Span<short> out_pcm, int frame_size, bool decode_fec = false)` | Decodes an Opus packet, putting the decoded audio into an int16 buffer. |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
+| `ResetState` | `void ResetState()` | Resets all buffers and prepares this decoder to process a fresh (unrelated) stream |
+
+#### `IOpusEncoder`
+
+Represents an Opus encoder for a 1- or 2-channel audio stream. May be backed either by managed code or a native adapter layer, depending on your platform and performance requirements.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Application` | `OpusApplication Application { get; set; }` | Gets or sets the application (or signal type) of the input signal. This hints to the encoder what type of details we want to preserve in the encoding. This cannot be changed after the encoder has started |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` | Gets or sets the "preferred" encoded bandwidth. This does not affect the sample rate of the input audio, only the encoding cutoffs |
+| `Bitrate` | `int Bitrate { get; set; }` | Gets or sets the bitrate for encoder, in bits per second. Valid bitrates are between 6K (6144) and 510K (522240) |
+| `Complexity` | `int Complexity { get; set; }` | Gets or sets the encoder complexity, between 0 and 10 |
+| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` | Gets or sets a fixed length for each encoded frame. Typically, the encoder just chooses a frame duration based on the input length and the current internal mode. This can be used to enforce an exact length if it is required by your application (e.g. monotonous transmission) |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder. If you need this then I also assume you know what it's for. |
+| `ForceChannels` | `int ForceChannels { get; set; }` | Gets or sets the maximum number of channels to be encoded. This can be used to force a downmix from stereo to mono if stereo separation is not important |
+| `ForceMode` | `OpusMode ForceMode { set; }` | Sets a user-forced mode for the encoder. There are three modes, SILK, HYBRID, and CELT. Silk can only encode below 40Kbit/s and is best suited for speech. Silk also has modes such as FEC which may be desirable. Celt sounds better at higher bandwidth and is comparable to AAC. It also performs somewhat faster. Hybrid is used to create a smooth transition between the two modes. Note that this value may not always be honored due to other factors such as frame size and bitrate. |
+| `LSBDepth` | `int LSBDepth { get; set; }` | Gets or sets the bit resolution of the input audio signal. Though the encoder always uses 16-bit internally, this can help it make better decisions about bandwidth and cutoff values |
+| `Lookahead` | `int Lookahead { get; }` | Gets the number of samples of audio that are being stored in a buffer and are therefore contributing to latency. |
+| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` | Gets or sets the maximum bandwidth to be used by the encoder. This can be used if high-frequency audio is not important to your application (e.g. telephony) |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this encoder expects in its input. Always constant for the lifetime of the decoder. |
+| `PacketLossPercent` | `int PacketLossPercent { get; set; }` | Gets or sets the expected amount of packet loss in the transmission medium, from 0 to 100. Only applies if UseInbandFEC is also enabled, and the encoder is in SILK mode. |
+| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` | Gets or sets a flag to disable prediction, which does... something with the SILK codec |
+| `SampleRate` | `int SampleRate { get; }` | Gets the encoder's input sample rate. This is fixed for the lifetime of the encoder. |
+| `SignalType` | `OpusSignal SignalType { get; set; }` | Gets or sets a hint to the encoder for what type of audio is being processed, voice or music. This is not set by the encoder itself i.e. it's not the result of any actual signal analysis. |
+| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` | Gets or sets a flag to enable constrained VBR. This only applies when the encoder is in CELT mode (i.e. high bitrates) |
+| `UseDTX` | `bool UseDTX { get; set; }` | Gets or sets a flag to enable Discontinuous Transmission mode. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, the encoder detects silence and background noise and reduces the number of output packets, with up to 600ms in between separate packet transmissions. |
+| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` | Gets or sets a flag to enable Forward Error Correction. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, lost packets can be partially recovered by decoding data stored in the following packet. |
+| `UseVBR` | `bool UseVBR { get; set; }` | Gets or sets a flag to enable Variable Bitrate encoding. This is recommended as it generally improves audio quality with little impact on average bitrate |
+| `Encode` | `int Encode(ReadOnlySpan<float> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame using floating point input. |
+| `Encode` | `int Encode(ReadOnlySpan<short> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame. |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
+| `ResetState` | `void ResetState()` | Resets the state of this encoder, usually to prepare it for processing a new audio stream without reallocating. |
+
+#### `IOpusMultiStreamDecoder`
+
+The Opus multistream decoder structure. Multistream decoding is an aggregate of several internal decoders and extra logic to parse multiple frames from single packets and map them to the correct channels. The behavior of a multistream decoder is functionally the same as a single decoder in most other respects.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the encoded bandwidth of the last packet decoded. This may be lower than the actual decoding sample rate, and is only an indicator of the encoded audio's quality |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder. If you need this then I also assume you know what it's for. |
+| `Gain` | `int Gain { get; set; }` | Gets or sets the gain (Q8) to use in decoding |
+| `LastPacketDuration` | `int LastPacketDuration { get; }` | Gets the duration of the last packet, in PCM samples per channel |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels of the input data. Always constant for the lifetime of the decoder |
+| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate that this decoder decodes to. Always constant for the lifetime of the decoder |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<float> out_pcm, int frame_size, bool decode_fec)` | Decodes a multichannel Opus packet, putting the decoded audio into a floating-point buffer. |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<short> out_pcm, int frame_size, bool decode_fec)` | Decodes a multichannel Opus packet, putting the decoded audio into an int16 buffer. |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
+| `ResetState` | `void ResetState()` | Resets all buffers and prepares this decoder to process a fresh (unrelated) stream |
+
+#### `IOpusMultiStreamEncoder`
+
+The Opus multistream encoder structure. Multistream encoding is an aggregate of several internal encoders and extra logic to pack multiple frames into single packets and map them to the correct channels. The behavior of a multistream encoder is functionally the same as a single encoder in most other respects.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Application` | `OpusApplication Application { get; set; }` | Gets or sets the application (or signal type) of the input signal. This hints to the encoder what type of details we want to preserve in the encoding. This cannot be changed after the encoder has started |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` | Gets or sets the "preferred" encoded bandwidth. This does not affect the sample rate of the input audio, only the encoding cutoffs |
+| `Bitrate` | `int Bitrate { get; set; }` | Gets or sets the bitrate for encoder, in bits per second. Valid bitrates are between 6K (6144) and 510K (522240) |
+| `Complexity` | `int Complexity { get; set; }` | Gets or sets the encoder complexity, between 0 and 10 |
+| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` | Gets or sets a fixed length for each encoded frame. Typically, the encoder just chooses a frame duration based on the input length and the current internal mode. This can be used to enforce an exact length if it is required by your application (e.g. monotonous transmission) |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder. If you need this then I also assume you know what it's for. |
+| `ForceMode` | `OpusMode ForceMode { set; }` | Gets or sets a user-forced mode for the encoder. There are three modes, SILK, HYBRID, and CELT. Silk can only encode below 40Kbit/s and is best suited for speech. Silk also has modes such as FEC which may be desirable. Celt sounds better at higher bandwidth and is comparable to AAC. It also performs somewhat faster. Hybrid is used to create a smooth transition between the two modes. Note that this value may not always be honored due to other factors such as frame size and bitrate. |
+| `LSBDepth` | `int LSBDepth { get; set; }` | Gets or sets the bit resolution of the input audio signal. Though the encoder always uses 16-bit internally, this can help it make better decisions about bandwidth and cutoff values |
+| `Lookahead` | `int Lookahead { get; }` | Gets the number of samples of audio that are being stored in a buffer and are therefore contributing to latency. |
+| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` | Gets or sets the maximum bandwidth to be used by the encoder. This can be used if high-frequency audio is not important to your application (e.g. telephony) |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this encoder expects in its input. Always constant for the lifetime of the decoder. |
+| `PacketLossPercent` | `int PacketLossPercent { get; set; }` | Gets or sets the expected amount of packet loss in the transmission medium, from 0 to 100. Only applies if UseInbandFEC is also enabled, and the encoder is in SILK mode. |
+| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` | Gets or sets a flag to disable prediction, which does... something with the SILK codec |
+| `SampleRate` | `int SampleRate { get; }` | Gets the encoder's input sample rate. This is fixed for the lifetime of the encoder. |
+| `SignalType` | `OpusSignal SignalType { get; set; }` | Gets or sets a hint to the encoder for what type of audio is being processed, voice or music. This is not set by the encoder itself i.e. it's not the result of any actual signal analysis. |
+| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` | Gets or sets a flag to enable constrained VBR. This only applies when the encoder is in CELT mode (i.e. high bitrates) |
+| `UseDTX` | `bool UseDTX { get; set; }` | Gets or sets a flag to enable Discontinuous Transmission mode. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, the encoder detects silence and background noise and reduces the number of output packets, with up to 600ms in between separate packet transmissions. |
+| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` | Gets or sets a flag to enable Forward Error Correction. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, lost packets can be partially recovered by decoding data stored in the following packet. |
+| `UseVBR` | `bool UseVBR { get; set; }` | Gets or sets a flag to enable Variable Bitrate encoding. This is recommended as it generally improves audio quality with little impact on average bitrate |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<float> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes a multistream Opus frame. |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<short> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes a multistream Opus frame. |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
+| `ResetState` | `void ResetState()` | Resets the state of this encoder, usually to prepare it for processing a new audio stream without reallocating. |
+
+#### `IResampler`
+
+Represents an audio resampler which can process single-channel or interleaved-channel inputs in either int16 or float32 formats.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InputLatency` | `int InputLatency { get; }` | Get the latency introduced by the resampler measured in input samples. |
+| `InputStride` | `int InputStride { get; set; }` | Gets or sets the input stride. |
+| `OutputLatencySamples` | `int OutputLatencySamples { get; }` | Gets the latency introduced by the resampler measured in output samples. |
+| `OutputLatency` | `TimeSpan OutputLatency { get; }` | Gets the latency introduced by the resampler. |
+| `OutputStride` | `int OutputStride { get; set; }` | Gets or sets the output stride. |
+| `Quality` | `int Quality { get; set; }` | Gets or sets the resampling quality between 0 and 10, where 0 has poor quality and 10 has very high quality. |
+| `GetRateFraction` | `void GetRateFraction(out int ratio_num, out int ratio_den)` | Gets the current resampling ratio. This will be reduced to the least common denominator |
+| `GetRates` | `void GetRates(out int in_rate, out int out_rate)` | Get the current input/output sampling rates (integer value). |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)` | Resamples an interleaved float32 array. The stride is automatically determined by the number of channels of the resampler. |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)` | Resamples an interleaved int16 array. The stride is automatically determined by the number of channels of the resampler. |
+| `Process` | `void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)` | Resample a float32 sample array. The input and output buffers must *not* overlap |
+| `Process` | `void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)` | Resample an int16 sample array. The input and output buffers must *not* overlap |
+| `ResetMem` | `void ResetMem()` | Clears the resampler buffers so a new (unrelated) stream can be processed. |
+| `SetRateFraction` | `void SetRateFraction(int ratio_num, int ratio_den, int in_rate, int out_rate)` | Sets the input/output sampling rates and resampling ration (fractional values in Hz supported) |
+| `SetRates` | `void SetRates(int in_rate, int out_rate)` | Sets the input and output rates |
+| `SkipZeroes` | `void SkipZeroes()` | Make sure that the first samples to go out of the resamplers don't have leading zeros. This is only useful before starting to use a newly created resampler. It is recommended to use that when resampling an audio file, as it will generate a file with the same length.For real-time processing, it is probably easier not to use this call (so that the output duration is the same for the first frame). |
+
+#### `OpusException`
+
+An exception type which wraps a raw Opus error code.
+
+Inherits `Exception`. Implements `ISerializable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpusErrorCode` | `int OpusErrorCode { get; }` | Gets the raw Opus error code as defined in the C spec. These codes can be found in the `OpusError` enumeration. |
+
+#### `ResamplerFactory`
+
+Central factory class for creating resamplers. Using these methods allows the runtime to decide the most appropriate implementation for your platform based on what is available. Native interop for resamplers is not yet implemented, but may be in the future.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateResampler` | `static IResampler CreateResampler(int numChannels, int inRate, int outRate, int quality, TextWriter logger = null)` | Create a new resampler with integer input and output rates (in hertz). |
+| `CreateResampler` | `static IResampler CreateResampler(int numChannels, int ratioNum, int ratioDen, int inRate, int outRate, int quality, TextWriter logger = null)` | Create a new resampler with fractional input/output rates. The sampling rate ratio is an arbitrary rational number with both the numerator and denominator being 32-bit integers. |
+
+### Namespace `Concentus.Common`
+
+[`SpeexResampler`](#speexresampler)
+
+#### `SpeexResampler`
+
+Arbitrary-rate audio resampler originally implemented for the Speex codec.
+
+Implements `IDisposable`, `IResampler`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpeexResampler` | `SpeexResampler(int nb_channels, int in_rate, int out_rate, int quality)` | Create a new resampler with integer input and output rates (in hertz). |
+| `SpeexResampler` | `SpeexResampler(int nb_channels, int ratio_num, int ratio_den, int in_rate, int out_rate, int quality)` | Create a new resampler with fractional input/output rates. The sampling rate ratio is an arbitrary rational number with both the numerator and denominator being 32-bit integers. |
+| `InputLatency` | `int InputLatency { get; }` | Get the latency introduced by the resampler measured in input samples. |
+| `InputStride` | `int InputStride { get; set; }` | Gets or sets the input stride |
+| `OutputLatencySamples` | `int OutputLatencySamples { get; }` | Gets the latency introduced by the resampler measured in output samples. |
+| `OutputLatency` | `TimeSpan OutputLatency { get; }` | Gets the latency introduced by the resampler. |
+| `OutputStride` | `int OutputStride { get; set; }` | Gets or sets the output stride |
+| `Quality` | `int Quality { get; set; }` | Gets or sets the resampling quality between 0 and 10, where 0 has poor quality and 10 has very high quality. |
+| `Dispose` | `void Dispose()` |  |
+| `GetRateFraction` | `void GetRateFraction(out int ratio_num, out int ratio_den)` | Gets the current resampling ratio. This will be reduced to the least common denominator |
+| `GetRates` | `void GetRates(out int in_rate, out int out_rate)` | Get the current input/output sampling rates (integer value). |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)` |  |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)` |  |
+| `Process` | `void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)` |  |
+| `Process` | `void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)` |  |
+| `ResetMem` | `void ResetMem()` | Clears the resampler buffers so a new (unrelated) stream can be processed. |
+| `SetRateFraction` | `void SetRateFraction(int ratio_num, int ratio_den, int in_rate, int out_rate)` | Sets the input/output sampling rates and resampling ration (fractional values in Hz supported) |
+| `SetRates` | `void SetRates(int in_rate, int out_rate)` | Sets the input and output rates |
+| `SkipZeroes` | `void SkipZeroes()` | Make sure that the first samples to go out of the resamplers don't have leading zeros. This is only useful before starting to use a newly created resampler. It is recommended to use that when resampling an audio file, as it will generate a file with the same length.For real-time processing, it is probably easier not to use this call (so that the output duration is the same for the first frame). |
+
+### Namespace `Concentus.Enums`
+
+[`OpusApplication`](#opusapplication) · [`OpusBandwidth`](#opusbandwidth) · [`OpusError`](#opuserror) · [`OpusFramesize`](#opusframesize) · [`OpusMode`](#opusmode) · [`OpusSignal`](#opussignal)
+
+#### `OpusApplication`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `OPUS_APPLICATION_UNIMPLEMENTED` | `0` |  |
+| `OPUS_APPLICATION_VOIP` | `2048` | Best for most VoIP/videoconference applications where listening quality and intelligibility matter most |
+| `OPUS_APPLICATION_AUDIO` | `2049` | Best for broadcast/high-fidelity application where the decoded audio should be as close as possible to the input |
+| `OPUS_APPLICATION_RESTRICTED_LOWDELAY` | `2051` | Only use when lowest-achievable latency is what matters most. Voice-optimized modes cannot be used. |
+
+#### `OpusBandwidth`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `OPUS_BANDWIDTH_AUTO` | `-1000` |  |
+| `OPUS_BANDWIDTH_NARROWBAND` | `1101` |  |
+| `OPUS_BANDWIDTH_MEDIUMBAND` | `1102` |  |
+| `OPUS_BANDWIDTH_WIDEBAND` | `1103` |  |
+| `OPUS_BANDWIDTH_SUPERWIDEBAND` | `1104` |  |
+| `OPUS_BANDWIDTH_FULLBAND` | `1105` |  |
+
+#### `OpusError`
+
+Note that since most API-level errors are detected and thrown as OpusExceptions, direct use of this class is not usually needed unless you need to interop with existing C-style error handlers.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CONCENTUS_UNKNOWN_ERROR` | `const int CONCENTUS_UNKNOWN_ERROR` | -8: Used in rare cases where Concentus throws an error that is not covered by the original Opus spec. |
+| `OPUS_ALLOC_FAIL` | `const int OPUS_ALLOC_FAIL` | -7: Memory allocation has failed (This is typically not possible in the C# implementation). |
+| `OPUS_BAD_ARG` | `const int OPUS_BAD_ARG` | -1: One or more invalid/out of range arguments |
+| `OPUS_BUFFER_TOO_SMALL` | `const int OPUS_BUFFER_TOO_SMALL` | -2: Not enough bytes allocated in the buffer |
+| `OPUS_INTERNAL_ERROR` | `const int OPUS_INTERNAL_ERROR` | -3: An public error was detected |
+| `OPUS_INVALID_PACKET` | `const int OPUS_INVALID_PACKET` | -4: The compressed data passed is corrupted |
+| `OPUS_INVALID_STATE` | `const int OPUS_INVALID_STATE` | -6: An encoder or decoder structure is invalid or already freed |
+| `OPUS_OK` | `const int OPUS_OK` | No error |
+| `OPUS_UNIMPLEMENTED` | `const int OPUS_UNIMPLEMENTED` | -5: Invalid/unsupported request number |
+
+#### `OpusFramesize`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `OPUS_FRAMESIZE_ARG` | `5000` | Select frame size from the argument (default) |
+| `OPUS_FRAMESIZE_2_5_MS` | `5001` | Use 2.5 ms frames |
+| `OPUS_FRAMESIZE_5_MS` | `5002` | Use 5 ms frames |
+| `OPUS_FRAMESIZE_10_MS` | `5003` | Use 10 ms frames |
+| `OPUS_FRAMESIZE_20_MS` | `5004` | Use 20 ms frames |
+| `OPUS_FRAMESIZE_40_MS` | `5005` | Use 40 ms frames |
+| `OPUS_FRAMESIZE_60_MS` | `5006` | Use 60 ms frames |
+| `OPUS_FRAMESIZE_VARIABLE` | `5010` | Do not use - not fully implemented. Optimize the frame size dynamically. |
+
+#### `OpusMode`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `MODE_AUTO` | `-1000` |  |
+| `MODE_SILK_ONLY` | `1000` |  |
+| `MODE_HYBRID` | `1001` |  |
+| `MODE_CELT_ONLY` | `1002` |  |
+
+#### `OpusSignal`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `OPUS_SIGNAL_AUTO` | `-1000` |  |
+| `OPUS_SIGNAL_VOICE` | `3001` | Signal being encoded is voice |
+| `OPUS_SIGNAL_MUSIC` | `3002` | Signal being encoded is music |
+
+### Namespace `Concentus.Structs`
+
+[`OpusDecoder`](#opusdecoder) · [`OpusEncoder`](#opusencoder) · [`OpusMSDecoder`](#opusmsdecoder) · [`OpusMSEncoder`](#opusmsencoder) · [`OpusPacketInfo`](#opuspacketinfo) · [`OpusRepacketizer`](#opusrepacketizer)
+
+#### `OpusDecoder`
+
+The Opus decoder structure. Opus is a stateful codec with overlapping blocks and as a result Opus packets are not coded independently of each other. Packets must be passed into the decoder serially and in the correct order for a correct decode. Lost packets can be replaced with loss concealment by calling the decoder with a null reference and zero length for the missing packet. A single codec state may only be accessed from a single thread at a time and any required locking must be performed by the caller. Separate streams must be decoded with separate decoder states and can be decoded in parallel.
+
+Implements `IDisposable`, `IOpusDecoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpusDecoder` | `OpusDecoder(int Fs, int channels)` | Allocates and initializes a decoder state. Internally Opus stores data at 48000 Hz, so that should be the default value for Fs. However, the decoder can efficiently decode to buffers at 8, 12, 16, and 24 kHz so if for some reason the caller cannot use data at the full sample rate, or knows the compressed data doesn't use the full frequency range, it can request decoding at a reduced rate. Likewise, the decoder is capable of filling in either mono or interleaved stereo pcm buffers, at the caller's request. |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the encoded bandwidth of the last packet decoded. This may be lower than the actual decoding sample rate, and is only an indicator of the encoded audio's quality |
+| `FinalRange` | `uint FinalRange { get; }` |  |
+| `Gain` | `int Gain { get; set; }` | Gets or sets the gain (Q8) to use in decoding |
+| `LastPacketDuration` | `int LastPacketDuration { get; }` | Gets the duration of the last packet, in PCM samples per channel |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this decoder decodes to. Always constant for the lifetime of the decoder. |
+| `Pitch` | `int Pitch { get; }` | Gets the last estimated pitch value of the decoded audio |
+| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate that this decoder decodes to. Always constant for the lifetime of the decoder |
+| `Decode` | `int Decode(ReadOnlySpan<byte> in_data, Span<float> out_pcm, int frame_size, bool decode_fec = false)` | Decodes an Opus packet. |
+| `Decode` | `int Decode(ReadOnlySpan<byte> in_data, Span<short> out_pcm, int frame_size, bool decode_fec = false)` | Decodes an Opus packet. |
+| `Decode` | `int Decode(byte[] in_data, int in_data_offset, int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec = false)` | Decodes an Opus packet, putting the output data into a floating-point buffer. |
+| `Decode` | `int Decode(byte[] in_data, int in_data_offset, int len, short[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec = false)` | Decodes an Opus packet. |
+| `Dispose` | `void Dispose()` |  |
+| `GetVersionString` | `string GetVersionString()` |  |
+| `ResetState` | `void ResetState()` | Resets all buffers and prepares this decoder to process a fresh (unrelated) stream |
+
+#### `OpusEncoder`
+
+The Opus encoder structure
+
+Implements `IDisposable`, `IOpusEncoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpusEncoder` | `OpusEncoder(int Fs, int channels, OpusApplication application)` | Allocates and initializes an encoder state. Note that regardless of the sampling rate and number channels selected, the Opus encoder can switch to a lower audio bandwidth or number of channels if the bitrate selected is too low. This also means that it is safe to always use 48 kHz stereo input and let the encoder optimize the encoding. The decoder will not be constrained later on by the mode that you select here for the encoder. |
+| `Application` | `OpusApplication Application { get; set; }` | Gets or sets the application (or signal type) of the input signal. This hints to the encoder what type of details we want to preserve in the encoding. This cannot be changed after the encoder has started |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` | Gets or sets the "preferred" encoded bandwidth. This does not affect the sample rate of the input audio, only the encoding cutoffs |
+| `Bitrate` | `int Bitrate { get; set; }` | Gets or sets the bitrate for encoder, in bits per second. Valid bitrates are between 6K (6144) and 510K (522240) |
+| `Complexity` | `int Complexity { get; set; }` | Gets or sets the encoder complexity, between 0 and 10 |
+| `ConstantQuality` | `int? ConstantQuality { get; set; }` | EXPERIMENTAL!!! Gets or sets the constant quality encoding parameter. This is a new feature intended to approximate "Constant Quality VBR" that other codecs such as MP3Lame provide, to let you encode mixed speech and music (such as a podcast) in the same Opus stream without changing encoder params. The quality is range from 0 (lowest) to 10 (highest). A setting of "null" means to use the regular Opus bitrate modes. |
+| `EnableAnalysis` | `bool EnableAnalysis { get; set; }` | Gets or sets a value indicating whether neural net analysis functions should be enabled, increasing encode quality at the expense of speed. |
+| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` | Gets or sets a fixed length for each encoded frame. Typically, the encoder just chooses a frame duration based on the input length and the current public mode. This can be used to enforce an exact length if it is required by your application (e.g. monotonous transmission) |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder |
+| `ForceChannels` | `int ForceChannels { get; set; }` | Gets or sets the maximum number of channels to be encoded. This can be used to force a downmix from stereo to mono if stereo separation is not important |
+| `ForceMode` | `OpusMode ForceMode { get; set; }` | Gets or sets a user-forced mode for the encoder. There are three modes, SILK, HYBRID, and CELT. Silk can only encode below 40Kbit/s and is best suited for speech. Silk also has modes such as FEC which may be desirable. Celt sounds better at higher bandwidth and is comparable to AAC. It also performs somewhat faster. Hybrid is used to create a smooth transition between the two modes. Note that this value may not always be honored due to other factors such as frame size and bitrate. |
+| `IsLFE` | `bool IsLFE { get; set; }` | Gets or sets a value indicating that this stream is a low-frequency channel. This is used when encoding 5.1 surround audio. |
+| `LSBDepth` | `int LSBDepth { get; set; }` | Gets or sets the bit resolution of the input audio signal. Though the encoder always uses 16-bit internally, this can help it make better decisions about bandwidth and cutoff values |
+| `Lookahead` | `int Lookahead { get; }` | Gets the number of samples of audio that are being stored in a buffer and are therefore contributing to latency. |
+| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` | Gets or sets the maximum bandwidth to be used by the encoder. This can be used if high-frequency audio is not important to your application (e.g. telephony) |
+| `MusicProbability` | `float MusicProbability { get; }` | EXPERIMENTAL. Returns the probability that the current signal is music, according to the built-in analysis. Only meaningful if EnableAnalysis is true and quality is above 7 or so |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this encoder expects in its input. Always constant for the lifetime of the decoder. |
+| `PacketLossPercent` | `int PacketLossPercent { get; set; }` | Gets or sets the expected amount of packet loss in the transmission medium, from 0 to 100. Only applies if UseInbandFEC is also enabled, and the encoder is in SILK mode. |
+| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` | Gets or sets a flag to disable prediction, which does... something with the SILK codec |
+| `SampleRate` | `int SampleRate { get; }` | Gets the encoder's input sample rate. This is fixed for the lifetime of the encoder. |
+| `SignalType` | `OpusSignal SignalType { get; set; }` | Gets or sets a hint to the encoder for what type of audio is being processed, voice or music |
+| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` | Gets or sets a flag to enable constrained VBR. This only applies when the encoder is in CELT mode (i.e. high bitrates) |
+| `UseDTX` | `bool UseDTX { get; set; }` | Gets or sets a flag to enable Discontinuous Transmission mode. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, the encoder detects silence and background noise and reduces the number of output packets, with up to 600ms in between separate packet transmissions. |
+| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` | Gets or sets a flag to enable Forward Error Correction. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, lost packets can be partially recovered by decoding data stored in the following packet. |
+| `UseVBR` | `bool UseVBR { get; set; }` | Gets or sets a flag to enable Variable Bitrate encoding. This is recommended as it generally improves audio quality with little impact on average bitrate |
+| `Dispose` | `void Dispose()` |  |
+| `Encode` | `int Encode(ReadOnlySpan<float> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame using floating point input. |
+| `Encode` | `int Encode(ReadOnlySpan<short> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame. |
+| `Encode` | `int Encode(float[] in_pcm, int in_pcm_offset, int frame_size, byte[] out_data, int out_data_offset, int max_data_bytes)` | Encodes an Opus frame using floating point input. |
+| `Encode` | `int Encode(short[] in_pcm, int pcm_offset, int frame_size, byte[] out_data, int out_data_offset, int max_data_bytes)` | Encodes an Opus frame. |
+| `GetVersionString` | `string GetVersionString()` |  |
+| `ResetState` | `void ResetState()` |  |
+
+#### `OpusMSDecoder`
+
+A managed implementation of the Opus multistream decoder.
+
+Implements `IDisposable`, `IOpusMultiStreamDecoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpusMSDecoder` | `OpusMSDecoder(int Fs, int channels, int streams, int coupled_streams, byte[] mapping)` | Creates a new multichannel decoder |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` |  |
+| `FinalRange` | `uint FinalRange { get; }` |  |
+| `Gain` | `int Gain { get; set; }` |  |
+| `LastPacketDuration` | `int LastPacketDuration { get; }` |  |
+| `NumChannels` | `int NumChannels { get; }` |  |
+| `SampleRate` | `int SampleRate { get; }` |  |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<float> out_pcm, int frame_size, bool decode_fec)` |  |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<short> out_pcm, int frame_size, bool decode_fec)` |  |
+| `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` |  |
+| `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, short[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `GetMultistreamDecoderState` | `OpusDecoder GetMultistreamDecoderState(int streamId)` | Gets the internal decoder state of one of the multichannel stream's decoders, indicated by stream ID. |
+| `GetVersionString` | `string GetVersionString()` |  |
+| `ResetState` | `void ResetState()` |  |
+
+#### `OpusMSEncoder`
+
+A managed implementation of the Opus multistream encoder.
+
+Implements `IDisposable`, `IOpusMultiStreamEncoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Application` | `OpusApplication Application { get; set; }` |  |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` |  |
+| `Bitrate` | `int Bitrate { get; set; }` |  |
+| `Complexity` | `int Complexity { get; set; }` |  |
+| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` |  |
+| `FinalRange` | `uint FinalRange { get; }` |  |
+| `ForceChannels` | `int ForceChannels { get; set; }` |  |
+| `ForceMode` | `OpusMode ForceMode { get; set; }` |  |
+| `LSBDepth` | `int LSBDepth { get; set; }` |  |
+| `Lookahead` | `int Lookahead { get; }` |  |
+| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` |  |
+| `NumChannels` | `int NumChannels { get; }` |  |
+| `PacketLossPercent` | `int PacketLossPercent { get; set; }` |  |
+| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` |  |
+| `SampleRate` | `int SampleRate { get; }` |  |
+| `SignalType` | `OpusSignal SignalType { get; set; }` |  |
+| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` |  |
+| `UseDTX` | `bool UseDTX { get; set; }` |  |
+| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` |  |
+| `UseVBR` | `bool UseVBR { get; set; }` |  |
+| `CreateSurround` | `static OpusMSEncoder CreateSurround(int Fs, int channels, int mapping_family, out int streams, out int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a multichannel Opus encoder using the "new API". This constructor allows you to use predefined Vorbis channel mappings, or specify your own. |
+| `Create` | `static OpusMSEncoder Create(int Fs, int channels, int streams, int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a new multichannel Opus encoder using the "old API". |
+| `Dispose` | `void Dispose()` |  |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<float> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<short> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
+| `EncodeMultistream` | `int EncodeMultistream(float[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` |  |
+| `EncodeMultistream` | `int EncodeMultistream(short[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` |  |
+| `GetMultistreamEncoderState` | `OpusEncoder GetMultistreamEncoderState(int streamId)` | Gets the internal encoder state of one of the multichannel stream's enoders, indicated by stream ID. |
+| `GetVersionString` | `string GetVersionString()` |  |
+| `ResetState` | `void ResetState()` |  |
+
+#### `OpusPacketInfo`
+
+Contains the parsed information from a single Opus packet, such as the bandwidth, number of samples, encoder mode, channel count, etc.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the encoded bandwidth of an Opus packet. Note that you are not forced to decode at this bandwidth |
+| `EncoderMode` | `OpusMode EncoderMode { get; }` | Gets the mode that was used to encode this packet. Normally there is nothing you can really do with this, other than debugging. |
+| `Frames` | `IList<byte[]> Frames { get; }` | The list of subframes in this packet |
+| `NumEncodedChannels` | `int NumEncodedChannels { get; }` | Gets the number of encoded channels of an Opus packet. Note that you are not forced to decode with this channel count. |
+| `PayloadOffset` | `int PayloadOffset { get; }` | The index of the start of the payload within the packet |
+| `TOCByte` | `byte TOCByte { get; }` | The Table of Contents byte for this packet. Contains info about modes, frame length, etc. |
+| `GetBandwidth` | `static OpusBandwidth GetBandwidth(ReadOnlySpan<byte> packet)` | Gets the encoded bandwidth of an Opus packet. Note that you are not forced to decode at this bandwidth |
+| `GetEncoderMode` | `static OpusMode GetEncoderMode(ReadOnlySpan<byte> packet)` | Gets the mode that was used to encode this packet. Normally there is nothing you can really do with this, other than debugging. |
+| `GetNumEncodedChannels` | `static int GetNumEncodedChannels(ReadOnlySpan<byte> packet)` | Gets the number of encoded channels of an Opus packet. Note that you are not forced to decode with this channel count. |
+| `GetNumFrames` | `static int GetNumFrames(ReadOnlySpan<byte> packet)` | Gets the number of frames in an Opus packet. |
+| `GetNumSamplesPerFrame` | `static int GetNumSamplesPerFrame(ReadOnlySpan<byte> packet, int Fs)` | Gets the number of samples per frame from an Opus packet. |
+| `GetNumSamples` | `static int GetNumSamples(OpusDecoder dec, ReadOnlySpan<byte> packet)` | Gets the number of samples of an Opus packet. |
+| `GetNumSamples` | `static int GetNumSamples(OpusDecoder dec, byte[] packet, int packet_offset, int len)` | Gets the number of samples of an Opus packet. |
+| `GetNumSamples` | `static int GetNumSamples(ReadOnlySpan<byte> packet, int Fs)` | Gets the number of samples of an Opus packet. |
+| `NumSamplesPerFrame` | `int NumSamplesPerFrame(int Fs)` | Gets the number of samples per frame from an Opus packet. |
+| `ParseOpusPacket` | `static OpusPacketInfo ParseOpusPacket(ReadOnlySpan<byte> packet)` | Parse an opus packet into a packetinfo object containing one or more frames. Opus_decode will perform this operation internally so most applications do not need to use this function. |
+| `ParseOpusPacket` | `static OpusPacketInfo ParseOpusPacket(byte[] packet, int packet_offset, int len)` | Parse an opus packet into a packetinfo object containing one or more frames. Opus decode will perform this operation internally so most applications do not need to use this function. |
+
+#### `OpusRepacketizer`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpusRepacketizer` | `OpusRepacketizer()` | Creates a new repacketizer |
+| `AddPacket` | `int AddPacket(Span<byte> data, int data_offset, int len)` |  |
+| `CreatePacket` | `int CreatePacket(byte[] data, int data_offset, int maxlen)` |  |
+| `CreatePacket` | `int CreatePacket(int begin, int end, byte[] data, int data_offset, int maxlen)` |  |
+| `GetNumFrames` | `int GetNumFrames()` |  |
+| `PadMultistreamPacket` | `static int PadMultistreamPacket(byte[] data, int data_offset, int len, int new_len, int nb_streams)` |  |
+| `PadPacket` | `static int PadPacket(Span<byte> data, int data_offset, int len, int new_len)` |  |
+| `Reset` | `void Reset()` |  |
+| `UnpadMultistreamPacket` | `static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)` |  |
+| `UnpadPacket` | `static int UnpadPacket(byte[] data, int data_offset, int len)` |  |
 
 ### Namespace `FileFormat.Aiff`
 
@@ -1860,3 +2479,11327 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+### Namespace `GroovyCodecs.Mp3`
+
+[`IMp3Decoder`](#imp3decoder) · [`IMp3Encoder`](#imp3encoder) · [`Mp3Decoder`](#mp3decoder) · [`Mp3Encoder`](#mp3encoder)
+
+#### `IMp3Decoder`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `close` | `void close()` |  |
+| `decode` | `void decode(MemoryStream sampleBuffer, bool playOriginal)` |  |
+
+#### `IMp3Encoder`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EffectiveBitRate` | `int EffectiveBitRate { get; }` |  |
+| `EffectiveChannelMode` | `int EffectiveChannelMode { get; }` |  |
+| `EffectiveFormat` | `AudioFormat EffectiveFormat { get; }` |  |
+| `EffectiveQuality` | `int EffectiveQuality { get; }` |  |
+| `EffectiveSampleRate` | `int EffectiveSampleRate { get; }` |  |
+| `EffectiveVBR` | `bool EffectiveVBR { get; }` |  |
+| `EncoderVersion` | `string EncoderVersion { get; }` |  |
+| `InputBufferSize` | `int InputBufferSize { get; }` |  |
+| `MP3BufferSize` | `int MP3BufferSize { get; }` |  |
+| `OutputBufferSize` | `int OutputBufferSize { get; }` |  |
+| `PCMBufferSize` | `int PCMBufferSize { get; }` |  |
+| `SourceFormat` | `AudioFormat SourceFormat { get; set; }` |  |
+| `TargetFormat` | `AudioFormat TargetFormat { get; set; }` |  |
+| `Close` | `void Close()` |  |
+| `ConvertByteArrayToFloat` | `float ConvertByteArrayToFloat(byte[] bytes, int offset, ByteOrder byteOrder)` |  |
+| `EncodeBuffer` | `int EncodeBuffer(byte[] pcm, int offset, int length, byte[] encoded)` |  |
+| `EncodeFinish` | `int EncodeFinish(byte[] encoded)` |  |
+| `SetFormat` | `void SetFormat(AudioFormat sourceFormat, AudioFormat targetFormat)` |  |
+
+#### `Mp3Decoder`
+
+Implements `IMp3Decoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp3Decoder` | `Mp3Decoder(string mp3File)` |  |
+| `close` | `virtual void close()` |  |
+| `decode` | `virtual void decode(MemoryStream sampleBuffer, bool playOriginal)` |  |
+
+#### `Mp3Encoder`
+
+Wrapper for the jump3r encoder. @author Ken Handel
+
+Implements `IMp3Encoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp3Encoder` | `Mp3Encoder()` |  |
+| `Mp3Encoder` | `Mp3Encoder(AudioFormat sourceFormat)` | Initializes the encoder with the given source/PCM format. The default mp3 encoding parameters are used, see DEFAULT_BITRATE, DEFAULT_CHANNEL_MODE, DEFAULT_QUALITY, and DEFAULT_VBR. |
+| `Mp3Encoder` | `Mp3Encoder(AudioFormat sourceFormat, AudioFormat targetFormat)` | Initializes the encoder with the given source/PCM format. The mp3 parameters are read from the targetFormat's properties. For any parameter that is not set, global system properties are queried for backwards tritonus compatibility. Last, parameters will use the default values DEFAULT_BITRATE, DEFAULT_CHANNEL_MODE, DEFAULT_QUALITY, and DEFAULT_VBR. |
+| `Mp3Encoder` | `Mp3Encoder(AudioFormat sourceFormat, int bitRate, int channelMode, int quality, bool VBR)` | Initializes the encoder, overriding any parameters set in the audio format's properties or in the system properties. |
+| `BITRATE_AUTO` | `const int BITRATE_AUTO` |  |
+| `CHANNEL_MODE_AUTO` | `const int CHANNEL_MODE_AUTO` |  |
+| `CHANNEL_MODE_DUAL_CHANNEL` | `const int CHANNEL_MODE_DUAL_CHANNEL` |  |
+| `CHANNEL_MODE_JOINT_STEREO` | `const int CHANNEL_MODE_JOINT_STEREO` |  |
+| `CHANNEL_MODE_MONO` | `const int CHANNEL_MODE_MONO` |  |
+| `CHANNEL_MODE_STEREO` | `const int CHANNEL_MODE_STEREO` |  |
+| `MPEG_VERSION_1` | `const int MPEG_VERSION_1` |  |
+| `MPEG_VERSION_2DOT5` | `const int MPEG_VERSION_2DOT5` |  |
+| `MPEG_VERSION_2` | `const int MPEG_VERSION_2` |  |
+| `NOT_SPECIFIED` | `const int NOT_SPECIFIED` |  |
+| `P_BITRATE` | `const string P_BITRATE` | property key to read/set the bitrate: an Integer value. Set to -1 for default bitrate. |
+| `P_CHMODE` | `const string P_CHMODE` | property key to read/set the channel mode: a String, one of "jointstereo", "dual", "mono", "auto" (default). |
+| `P_QUALITY` | `const string P_QUALITY` | property key to read/set the quality: an Integer from 1 (highest) to 9 (lowest). |
+| `P_VBR` | `const string P_VBR` | property key to read/set the VBR mode: an instance of Boolean (default: false) |
+| `QUALITY_HIGHEST` | `const int QUALITY_HIGHEST` |  |
+| `QUALITY_HIGH` | `const int QUALITY_HIGH` |  |
+| `QUALITY_LOWEST` | `const int QUALITY_LOWEST` |  |
+| `QUALITY_LOW` | `const int QUALITY_LOW` |  |
+| `QUALITY_MIDDLE` | `const int QUALITY_MIDDLE` |  |
+| `EffectiveBitRate` | `virtual int EffectiveBitRate { get; }` |  |
+| `EffectiveChannelMode` | `virtual int EffectiveChannelMode { get; }` |  |
+| `EffectiveFormat` | `virtual AudioFormat EffectiveFormat { get; }` |  |
+| `EffectiveQuality` | `virtual int EffectiveQuality { get; }` |  |
+| `EffectiveSampleRate` | `virtual int EffectiveSampleRate { get; }` |  |
+| `EffectiveVBR` | `virtual bool EffectiveVBR { get; }` |  |
+| `EncoderVersion` | `virtual string EncoderVersion { get; }` | returns -1 if string is too short or returns one of the exception constants if everything OK, returns the length of the string |
+| `InputBufferSize` | `virtual int InputBufferSize { get; }` |  |
+| `MP3BufferSize` | `virtual int MP3BufferSize { get; }` |  |
+| `OutputBufferSize` | `virtual int OutputBufferSize { get; }` |  |
+| `PCMBufferSize` | `virtual int PCMBufferSize { get; }` |  |
+| `SourceFormat` | `virtual AudioFormat SourceFormat { get; set; }` |  |
+| `TargetFormat` | `virtual AudioFormat TargetFormat { get; set; }` |  |
+| `Close` | `virtual void Close()` |  |
+| `ConvertByteArrayToFloat` | `float ConvertByteArrayToFloat(byte[] bytes, int offset, ByteOrder byteOrder)` |  |
+| `EncodeBuffer` | `virtual int EncodeBuffer(byte[] pcm, int offset, int length, byte[] encoded)` | Encode a block of data. Throws IllegalArgumentException when parameters are wrong. When the array is too small, an ArrayIndexOutOfBoundsException is thrown. should be the value returned by getPCMBufferSize. |
+| `EncodeFinish` | `virtual int EncodeFinish(byte[] encoded)` |  |
+| `SetFormat` | `virtual void SetFormat(AudioFormat sourceFormat, AudioFormat targetFormat)` |  |
+
+### Namespace `GroovyCodecs.Mp3.Common`
+
+[`Arrays`](#arrays)
+
+#### `Arrays`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Fill` | `static void Fill<T>(T[] array, T value)` |  |
+| `Fill` | `static void Fill<T>(T[] array, int start, int end, T value)` |  |
+| `Sort` | `static void Sort<T>(T[] array, int start, int end)` |  |
+
+### Namespace `GroovyCodecs.Types`
+
+[`AudioFormat`](#audioformat) · [`ByteOrder`](#byteorder) · [`MimeType`](#mimetype) · [`Mp3Version`](#mp3version)
+
+#### `AudioFormat`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioFormat` | `AudioFormat()` |  |
+| `AverageBytesPerSecond` | `int AverageBytesPerSecond { get; set; }` | for buffer estimation |
+| `BigEndian` | `bool BigEndian { get; set; }` |  |
+| `BitsPerSample` | `short BitsPerSample { get; set; }` | number of bits per sample of mono data |
+| `BlockAlign` | `short BlockAlign { get; set; }` | block size of data |
+| `Channels` | `short Channels { get; set; }` | number of channels |
+| `IsFloatingPoint` | `bool IsFloatingPoint { get; set; }` |  |
+| `Properties` | `Dictionary<string, object> Properties { get; set; }` |  |
+| `SampleRate` | `int SampleRate { get; set; }` | sample rate |
+
+#### `ByteOrder`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `BIG_ENDIAN` | `0` |  |
+| `LITTLE_ENDIAN` | `1` |  |
+
+#### `MimeType`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `MIMETYPE_NONE` | `0` |  |
+| `MIMETYPE_JPEG` | `1` |  |
+| `MIMETYPE_PNG` | `2` |  |
+| `MIMETYPE_GIF` | `3` |  |
+
+#### `Mp3Version`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp3Version` | `Mp3Version()` |  |
+| `LameOsBitness` | `string LameOsBitness { get; }` | Quite useless for a java version, however we are compatible ;-) |
+| `LameShortVersion` | `string LameShortVersion { get; }` | The short version of the LAME version string. |
+| `LameUrl` | `string LameUrl { get; }` | String which is a URL for the LAME website. |
+| `LameVersion` | `string LameVersion { get; }` | A string which describes the version of LAME. |
+| `LameVeryShortVersion` | `string LameVeryShortVersion { get; }` | The shortest version of the LAME version string. |
+| `PsyVersion` | `string PsyVersion { get; }` | String which describes the version of GPSYCHO |
+
+### Namespace `OggVorbisEncoder`
+
+[`Block`](#block) · [`CodecSetup`](#codecsetup) · [`Comments`](#comments) · [`EncodeBuffer`](#encodebuffer) · [`EncodeSetup`](#encodesetup) · [`Encoding`](#encoding) · [`FloatExtensions`](#floatextensions) · [`HeaderPacketBuilder`](#headerpacketbuilder) · [`LookupCollection`](#lookupcollection) · [`MathExtensions`](#mathextensions) · [`OffsetMemory<T>`](#offsetmemoryt) · [`OggPacket`](#oggpacket) · [`OggPage`](#oggpage) · [`OggStream`](#oggstream) · [`ProcessingState`](#processingstate) · [`StaticCodeBookExtensions`](#staticcodebookextensions) · [`VorbisInfo`](#vorbisinfo)
+
+#### `Block`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Windows` | `static readonly float[][] Windows` |  |
+
+#### `CodecSetup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CodecSetup` | `CodecSetup(EncodeSetup encodeSetup)` |  |
+| `BlockSizes` | `int[] BlockSizes { get; }` |  |
+| `BookParams` | `IList<IStaticCodeBook> BookParams { get; }` |  |
+| `EncodeSetup` | `EncodeSetup EncodeSetup { get; }` |  |
+| `FloorParams` | `IList<Floor> FloorParams { get; }` |  |
+| `FullBooks` | `CodeBook[] FullBooks { get; set; }` |  |
+| `MapParams` | `IList<Mapping> MapParams { get; }` |  |
+| `ModeParams` | `IList<Mode> ModeParams { get; }` |  |
+| `PsyGlobalParam` | `PsyGlobal PsyGlobalParam { get; set; }` |  |
+| `PsyParams` | `IList<PsyInfo> PsyParams { get; }` |  |
+| `ResidueParams` | `IList<ResidueEntry> ResidueParams { get; }` |  |
+
+#### `Comments`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Comments` | `Comments()` |  |
+| `UserComments` | `List<string> UserComments { get; }` |  |
+| `AddTag` | `void AddTag(string tag, string contents)` |  |
+
+#### `EncodeBuffer`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncodeBuffer` | `EncodeBuffer()` |  |
+| `EncodeBuffer` | `EncodeBuffer(int initialBufferSize)` |  |
+| `GetBytes` | `byte[] GetBytes()` |  |
+| `WriteBook` | `void WriteBook(CodeBook book, int a)` |  |
+| `WriteString` | `void WriteString(string str)` |  |
+| `Write` | `void Write(uint value, int bits)` |  |
+
+#### `EncodeSetup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncodeSetup` | `EncodeSetup(ISetupTemplate template, double baseSetting)` |  |
+| `AmplitudeTrackDbPerSec` | `double AmplitudeTrackDbPerSec { get; }` |  |
+| `AthAbsoluteDecibel` | `double AthAbsoluteDecibel { get; }` |  |
+| `AthFloatingDecibel` | `double AthFloatingDecibel { get; }` |  |
+| `BaseSetting` | `double BaseSetting { get; }` |  |
+| `LowPassKilohertz` | `double LowPassKilohertz { get; }` |  |
+| `Template` | `ISetupTemplate Template { get; }` |  |
+| `GetBestMatch` | `static EncodeSetup GetBestMatch(int channels, int sampleRate, float quality)` |  |
+
+#### `Encoding`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Log` | `static int Log(int value)` |  |
+| `MakeWords` | `static uint[] MakeWords(byte[] l, int sparsecount)` |  |
+| `UnpackFloat` | `static float UnpackFloat(int value)` |  |
+
+#### `FloatExtensions`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ToDecibel` | `static float ToDecibel(this float x)` |  |
+
+#### `HeaderPacketBuilder`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BuildBooksPacket` | `static OggPacket BuildBooksPacket(VorbisInfo info)` |  |
+| `BuildCommentsPacket` | `static OggPacket BuildCommentsPacket(Comments comments)` |  |
+| `BuildInfoPacket` | `static OggPacket BuildInfoPacket(VorbisInfo info)` |  |
+
+#### `LookupCollection`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnvelopeLookup` | `EnvelopeLookup EnvelopeLookup { get; }` |  |
+| `FftLookup` | `DrftLookup[] FftLookup { get; }` |  |
+| `FloorLookup` | `FloorLookup[] FloorLookup { get; }` |  |
+| `PsyGlobalLookup` | `PsyGlobalLookup PsyGlobalLookup { get; }` |  |
+| `PsyLookup` | `PsyLookup[] PsyLookup { get; }` |  |
+| `ResidueLookup` | `ResidueLookup[] ResidueLookup { get; }` |  |
+| `TransformLookup` | `MdctLookup[] TransformLookup { get; }` |  |
+| `Create` | `static LookupCollection Create(VorbisInfo info)` |  |
+
+#### `MathExtensions`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SafeAbs` | `static int SafeAbs(int value)` |  |
+
+#### `OffsetMemory<T>`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OffsetMemory` | `OffsetMemory(in Memory<T> memory, int offset)` |  |
+| `Item` | `T this[int index] { get; }` |  |
+| `Offset` | `int Offset { get; }` |  |
+
+#### `OggPacket`
+
+Encapsulates the data for a single raw packet of data
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OggPacket` | `OggPacket(byte[] packetData, bool endOfStream, int granulePosition, int packetNumber)` |  |
+| `EndOfStream` | `bool EndOfStream { get; }` | Flag indicating whether this packet ends a bitstream. |
+| `GranulePosition` | `int GranulePosition { get; }` | A number indicating the position of this packet in the decoded data. This is the last sample, frame or other unit of information ('granule') that can be completely decoded from this packet. |
+| `PacketData` | `byte[] PacketData { get; }` | This is treated as an opaque type by the ogg layer. |
+| `PacketNumber` | `int PacketNumber { get; }` | Sequential number of this packet in the ogg bitstream. |
+
+#### `OggPage`
+
+Encapsulates the data for an Ogg page.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OggPage` | `OggPage(byte[] header, byte[] body)` |  |
+| `Body` | `byte[] Body { get; }` | The data for this page. |
+| `Header` | `byte[] Header { get; }` | The page header for this page. The exact contents of this header are defined in the framing spec document. |
+
+#### `OggStream`
+
+Tracks the encode/decode state of the current logical bitstream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OggStream` | `OggStream(int serialNumber)` |  |
+| `Finished` | `bool Finished { get; }` |  |
+| `PacketIn` | `void PacketIn(OggPacket packet)` |  |
+| `PageOut` | `bool PageOut(out OggPage page, bool force)` |  |
+
+#### `ProcessingState`
+
+Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs to a specific logical bitstream
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Create` | `static ProcessingState Create(VorbisInfo info)` |  |
+| `EnsureBufferSize` | `void EnsureBufferSize(int needed)` |  |
+| `PacketOut` | `bool PacketOut(out OggPacket packet)` |  |
+| `WriteData` | `void WriteData(float[][] data, int length, int read_offset = 0)` | Writes the provided data to the pcm buffer |
+| `WriteEndOfStream` | `void WriteEndOfStream()` |  |
+
+#### `StaticCodeBookExtensions`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetQuantVals` | `static int GetQuantVals(this IStaticCodeBook book)` |  |
+
+#### `VorbisInfo`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitRateNominal` | `int BitRateNominal { get; }` |  |
+| `Channels` | `int Channels { get; }` |  |
+| `CodecSetup` | `CodecSetup CodecSetup { get; }` |  |
+| `SampleRate` | `int SampleRate { get; }` |  |
+| `InitVariableBitRate` | `static VorbisInfo InitVariableBitRate(int channels, int sampleRate, float baseQuality)` |  |
+
+### Namespace `OggVorbisEncoder.Lookups`
+
+[`Delta`](#delta) · [`DrftLookup`](#drftlookup) · [`EnvelopeBand`](#envelopeband) · [`EnvelopeFilterState`](#envelopefilterstate) · [`EnvelopeLookup`](#envelopelookup) · [`FloorLookup`](#floorlookup) · [`MdctLookup`](#mdctlookup) · [`PsyGlobalLookup`](#psygloballookup) · [`PsyLookup`](#psylookup) · [`ResidueLookup`](#residuelookup)
+
+#### `Delta`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Delta` | `Delta(float min, float max)` |  |
+| `Max` | `float Max` |  |
+| `Min` | `float Min` |  |
+
+#### `DrftLookup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DrftLookup` | `DrftLookup(int n)` |  |
+| `N` | `int N { get; }` |  |
+| `Forward` | `void Forward(float[] data)` |  |
+
+#### `EnvelopeBand`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnvelopeBand` | `EnvelopeBand(int begin, int windowLength)` |  |
+| `Begin` | `int Begin { get; }` |  |
+| `Total` | `float Total { get; }` |  |
+| `Window` | `float[] Window { get; }` |  |
+
+#### `EnvelopeFilterState`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnvelopeFilterState` | `EnvelopeFilterState()` |  |
+| `ConvertAmplitudeToDelta` | `Delta ConvertAmplitudeToDelta(float amplitude, int stretch)` |  |
+| `SpreadNearDc` | `float SpreadNearDc(float input)` |  |
+
+#### `EnvelopeLookup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnvelopeLookup` | `EnvelopeLookup(PsyGlobal psyGlobal, VorbisInfo info)` |  |
+| `EnvelopePost` | `const int EnvelopePost` |  |
+| `Mark` | `bool Mark(int beginWindow, int endWindow)` |  |
+| `Search` | `int Search(float[][] pcm, int pcmCurrent, int centerWindow, int testWindow)` |  |
+| `Shift` | `void Shift(int shift)` |  |
+
+#### `FloorLookup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FloorLookup` | `FloorLookup(Floor floor)` |  |
+| `Encode` | `bool Encode(EncodeBuffer buffer, IList<IStaticCodeBook> staticBooks, CodeBook[] books, int[] post, int[] ilogmask, int pcmEnd, int n)` |  |
+| `Fit` | `int[] Fit(in Span<float> logmdct, float[] logmask)` |  |
+
+#### `MdctLookup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MdctLookup` | `MdctLookup(int n)` |  |
+| `Forward` | `void Forward(in Span<float> input, in Span<float> output)` |  |
+
+#### `PsyGlobalLookup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsyGlobalLookup` | `PsyGlobalLookup(PsyGlobal global)` |  |
+| `AmpMax` | `float AmpMax { get; }` |  |
+| `DecayAmpMax` | `void DecayAmpMax(int n, int sampleRate)` |  |
+
+#### `PsyLookup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsyLookup` | `PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)` |  |
+| `CoupleQuantizeNormalize` | `void CoupleQuantizeNormalize(int blobno, PsyGlobal psyGlobal, Mapping mapping, float[][] mdct, int[][] iwork, bool[] nonzero, int slidingLowpass, int channels)` |  |
+| `NoiseMask` | `void NoiseMask(in Span<float> logmdct, float[] logmask)` |  |
+| `OffsetAndMix` | `void OffsetAndMix(float[] noise, float[] tone, int offsetIndex, float[] logmask, float[] mdct, in Span<float> logmdct)` |  |
+| `ToneMask` | `void ToneMask(float[] pcm, float[] logmask, float globalSpecMax, float localSpecMax)` |  |
+
+#### `ResidueLookup`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ResidueLookup` | `ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)` |  |
+| `Class` | `int[][] Class(int[][] couples, bool[] nonzero, int channels)` |  |
+| `Forward` | `int Forward(EncodeBuffer buffer, int pcmend, int[][] couples, bool[] nonzero, int channels, int[][] partword)` |  |
+
+### Namespace `OggVorbisEncoder.Setup`
+
+[`AdjBlock`](#adjblock) · [`AdjStereo`](#adjstereo) · [`Att3`](#att3) · [`CodeBook`](#codebook) · [`CodeBookMapType`](#codebookmaptype) · [`CompandBlock`](#compandblock) · [`Floor`](#floor) · [`IMappingTemplate`](#imappingtemplate) · [`IResidueTemplate`](#iresiduetemplate) · [`ISetupTemplate`](#isetuptemplate) · [`IStaticBookBlock`](#istaticbookblock) · [`IStaticCodeBook`](#istaticcodebook) · [`Mapping`](#mapping) · [`MappingTemplate`](#mappingtemplate) · [`Mode`](#mode) · [`Noise3`](#noise3) · [`NoiseGuard`](#noiseguard) · [`PsyGlobal`](#psyglobal) · [`PsyInfo`](#psyinfo) · [`ResidueEntry`](#residueentry) · [`ResidueLimitType`](#residuelimittype) · [`ResidueTemplate`](#residuetemplate) · [`ResidueType`](#residuetype)
+
+#### `AdjBlock`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdjBlock` | `AdjBlock(int[] block)` |  |
+| `Block` | `int[] Block { get; }` |  |
+
+#### `AdjStereo`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdjStereo` | `AdjStereo(int[] pre, int[] post, float[] kilohertz, float[] lowPassKilohertz)` |  |
+| `Kilohertz` | `float[] Kilohertz { get; }` |  |
+| `LowPassKilohertz` | `float[] LowPassKilohertz { get; }` |  |
+| `Post` | `int[] Post { get; }` |  |
+| `Pre` | `int[] Pre { get; }` |  |
+
+#### `Att3`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Att3` | `Att3(int[] att, float boost, float decay)` |  |
+| `Att` | `int[] Att { get; }` |  |
+| `Boost` | `float Boost { get; }` |  |
+| `Decay` | `float Decay { get; }` |  |
+
+#### `CodeBook`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CodeBook` | `CodeBook(int dimensions, int entries, int usedEntries, IStaticCodeBook staticBook, float[] valueList, uint[] codeList, int[] decIndex, byte[] decCodeLengths, uint[] decFirstTable, int decFirstTableN, int decMaxLength, int quantValues, int minVal, int delta)` |  |
+| `CodeList` | `uint[] CodeList { get; }` | list of bitstream codewords for each entry |
+| `DecCodeLengths` | `byte[] DecCodeLengths { get; }` |  |
+| `DecFirstTableN` | `int DecFirstTableN { get; }` |  |
+| `DecFirstTable` | `uint[] DecFirstTable { get; }` |  |
+| `DecIndex` | `int[] DecIndex { get; }` | only used if sparseness collapsed |
+| `DecMaxLength` | `int DecMaxLength { get; }` |  |
+| `Delta` | `int Delta { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | codebook dimensions (elements per vector) |
+| `Entries` | `int Entries { get; }` | codebook entries |
+| `MinVal` | `int MinVal { get; }` |  |
+| `QuantValues` | `int QuantValues { get; }` |  |
+| `StaticBook` | `IStaticCodeBook StaticBook { get; }` |  |
+| `UsedEntries` | `int UsedEntries { get; }` | populated codebook entries |
+| `ValueList` | `float[] ValueList { get; }` | list of dim*entries actual entry values |
+| `InitEncode` | `static CodeBook InitEncode(IStaticCodeBook source)` |  |
+
+#### `CodeBookMapType`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `Implicit` | `1` |  |
+| `Listed` | `2` |  |
+
+#### `CompandBlock`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompandBlock` | `CompandBlock(int[] data)` |  |
+| `Data` | `int[] Data { get; }` |  |
+
+#### `Floor`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Floor` | `Floor(int[] partitionClass, int[] classDimensions, int[] classSubs, int[] classBook, int[][] classSubBook, int mult, int[] postList, float maxOver, float maxUnder, float maxError, float twoFitWeight, float twoFitAtten, int n)` |  |
+| `ClassBook` | `int[] ClassBook { get; }` | subs ^ dim entries |
+| `ClassDimensions` | `int[] ClassDimensions { get; }` | 1 to 8 |
+| `ClassSubBook` | `int[][] ClassSubBook { get; }` | [VIF_CLASS][subs] [VIF_CLASS][8] |
+| `ClassSubs` | `int[] ClassSubs { get; }` | 0,1,2,3 (bits: 1<<n poss) |
+| `MaxError` | `float MaxError { get; }` |  |
+| `MaxOver` | `float MaxOver { get; }` |  |
+| `MaxUnder` | `float MaxUnder { get; }` |  |
+| `Mult` | `int Mult { get; }` | 1 2 3 or 4 |
+| `N` | `int N { get; set; }` |  |
+| `PartitionClass` | `int[] PartitionClass { get; }` | 0 to 15 |
+| `PostList` | `int[] PostList { get; }` | first two implicit |
+| `TwoFitAtten` | `float TwoFitAtten { get; }` |  |
+| `TwoFitWeight` | `float TwoFitWeight { get; }` |  |
+| `Clone` | `Floor Clone()` |  |
+
+#### `IMappingTemplate`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mapping` | `Mapping[] Mapping { get; }` |  |
+| `ResidueTemplate` | `IResidueTemplate[] ResidueTemplate { get; }` |  |
+
+#### `IResidueTemplate`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BookAuxManaged` | `IStaticCodeBook BookAuxManaged { get; }` |  |
+| `BookAux` | `IStaticCodeBook BookAux { get; }` |  |
+| `BooksBaseManaged` | `IStaticBookBlock BooksBaseManaged { get; }` |  |
+| `BooksBase` | `IStaticBookBlock BooksBase { get; }` |  |
+| `Grouping` | `int Grouping { get; }` |  |
+| `LimitType` | `ResidueLimitType LimitType { get; }` |  |
+| `ResidueType` | `ResidueType ResidueType { get; }` |  |
+| `Residue` | `ResidueEntry Residue { get; }` |  |
+
+#### `ISetupTemplate`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `IStaticBookBlock`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `IStaticCodeBook`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Dimensions` | `int Dimensions { get; }` | codebook dimensions (elements per vector) |
+| `LengthList` | `byte[] LengthList { get; }` | codeword lengths in bits |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` | packed 32 bit float; val 1 - val 0 == delta |
+| `QuantList` | `int[] QuantList { get; }` | map == 1: (int)(entries^(1/dim)) element column map map == 2: list of dim* entries quantized entry vals |
+| `QuantMin` | `int QuantMin { get; }` | packed 32 bit float; quant value 0 maps to minval |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | bitflag |
+| `Quant` | `int Quant { get; }` | bits: 0 < quant <= 16 |
+
+#### `Mapping`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mapping` | `Mapping(int submaps, int[] channelMuxList, int[] floorSubMap, int[] residueSubMap, int couplingSteps, int[] couplingMag, int[] couplingAng)` |  |
+| `ChannelMuxList` | `int[] ChannelMuxList { get; }` |  |
+| `CouplingAng` | `int[] CouplingAng { get; }` |  |
+| `CouplingMag` | `int[] CouplingMag { get; }` |  |
+| `CouplingSteps` | `int CouplingSteps { get; }` |  |
+| `FloorSubMap` | `int[] FloorSubMap { get; }` |  |
+| `ResidueSubMap` | `int[] ResidueSubMap { get; }` |  |
+| `SubMaps` | `int SubMaps { get; }` |  |
+| `Clone` | `Mapping Clone()` |  |
+
+#### `MappingTemplate`
+
+Implements `IMappingTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MappingTemplate` | `MappingTemplate(Mapping[] mapping, IResidueTemplate[] residueTemplate)` |  |
+| `Mapping` | `Mapping[] Mapping { get; }` |  |
+| `ResidueTemplate` | `IResidueTemplate[] ResidueTemplate { get; }` |  |
+
+#### `Mode`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mode` | `Mode(int blockFlag, int windowType, int transformType, int mapping)` |  |
+| `BlockFlag` | `int BlockFlag` |  |
+| `Mapping` | `int Mapping` |  |
+| `TransformType` | `int TransformType` |  |
+| `WindowType` | `int WindowType` |  |
+
+#### `Noise3`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Noise3` | `Noise3(int[][] data)` |  |
+| `Data` | `int[][] Data { get; }` |  |
+
+#### `NoiseGuard`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NoiseGuard` | `NoiseGuard(int low, int high, int fix)` |  |
+| `Fixed` | `int Fixed { get; }` |  |
+| `High` | `int High { get; }` |  |
+| `Low` | `int Low { get; }` |  |
+
+#### `PsyGlobal`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsyGlobal` | `PsyGlobal(int eighthOctaveLines, float[] preEchoThreshold, float[] postEchoThreshold, float stretchPenalty, float preEchoMinEnergy, float ampMaxAttPerSecond, int[] couplingPerKilohertz, int[][] couplingPointLimit, int[] couplingPrePointAmp, int[] couplingPostPointAmp, int[][] slidingLowPass)` |  |
+| `EnvelopeBands` | `const int EnvelopeBands` |  |
+| `PacketBlobs` | `const int PacketBlobs` |  |
+| `AmpMaxAttPerSec` | `float AmpMaxAttPerSec { get; set; }` |  |
+| `CouplingPerKilohertz` | `int[] CouplingPerKilohertz { get; }` |  |
+| `CouplingPointLimit` | `int[][] CouplingPointLimit { get; }` |  |
+| `CouplingPostPointAmp` | `int[] CouplingPostPointAmp { get; set; }` |  |
+| `CouplingPrePointAmp` | `int[] CouplingPrePointAmp { get; set; }` |  |
+| `EighthOctaveLines` | `int EighthOctaveLines { get; }` |  |
+| `PostEchoThreshold` | `float[] PostEchoThreshold { get; }` |  |
+| `PreEchoMinEnergy` | `float PreEchoMinEnergy { get; }` |  |
+| `PreEchoThreshold` | `float[] PreEchoThreshold { get; }` |  |
+| `SlidingLowPass` | `int[][] SlidingLowPass { get; }` |  |
+| `StretchPenalty` | `float StretchPenalty { get; }` |  |
+| `Clone` | `PsyGlobal Clone()` |  |
+
+#### `PsyInfo`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsyInfo` | `PsyInfo(int blockFlag, float athAdjAtt, float athMaxAtt, float[] toneMasterAtt, float toneCenterBoost, float toneDecay, float toneAbsLimit, float[] toneAtt, int noiseMaskP, float noiseMaxSuppress, float noiseWindowLow, float noiseWindowHigh, int noiseWindowLowMin, int noiseWindowHighMin, int noiseWindowFixed, float[][] noiseOffset, float[] noiseCompand, float maxCurveDecibel, bool normalize, int normalStart, int normalPartition, double normalThreshold)` |  |
+| `Bands` | `const int Bands` |  |
+| `AthAdjAtt` | `float AthAdjAtt { get; set; }` |  |
+| `AthMaxAtt` | `float AthMaxAtt { get; set; }` |  |
+| `BlockFlag` | `int BlockFlag { get; set; }` |  |
+| `MaxCurveDecibel` | `float MaxCurveDecibel { get; set; }` |  |
+| `NoiseCompand` | `float[] NoiseCompand { get; }` |  |
+| `NoiseMaskP` | `int NoiseMaskP { get; }` |  |
+| `NoiseMaxSuppress` | `float NoiseMaxSuppress { get; set; }` |  |
+| `NoiseOffset` | `float[][] NoiseOffset { get; }` |  |
+| `NoiseWindowFixed` | `int NoiseWindowFixed { get; set; }` |  |
+| `NoiseWindowHighMin` | `int NoiseWindowHighMin { get; set; }` |  |
+| `NoiseWindowHigh` | `float NoiseWindowHigh { get; }` |  |
+| `NoiseWindowLowMin` | `int NoiseWindowLowMin { get; set; }` |  |
+| `NoiseWindowLow` | `float NoiseWindowLow { get; }` |  |
+| `NormalPartition` | `int NormalPartition { get; set; }` |  |
+| `NormalStart` | `int NormalStart { get; set; }` |  |
+| `NormalThreshold` | `double NormalThreshold { get; set; }` |  |
+| `Normalize` | `bool Normalize { get; set; }` |  |
+| `ToneAbsLimit` | `float ToneAbsLimit { get; set; }` |  |
+| `ToneAtt` | `float[] ToneAtt { get; }` |  |
+| `ToneCenterBoost` | `float ToneCenterBoost { get; set; }` |  |
+| `ToneDecay` | `float ToneDecay { get; set; }` |  |
+| `ToneMasterAtt` | `float[] ToneMasterAtt { get; }` |  |
+| `Clone` | `PsyInfo Clone()` |  |
+
+#### `ResidueEntry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ResidueEntry` | `ResidueEntry(int begin, int end, int grouping, int partitions, int partitionValues, int groupBook, int[] secondStages, int[] bookList, int[] classMetric1, int[] classMetric2, ResidueType residueType)` |  |
+| `Begin` | `int Begin { get; }` |  |
+| `BookList` | `int[] BookList { get; }` |  |
+| `ClassMetric1` | `int[] ClassMetric1 { get; }` |  |
+| `ClassMetric2` | `int[] ClassMetric2 { get; }` |  |
+| `End` | `int End { get; set; }` |  |
+| `GroupBook` | `int GroupBook { get; set; }` |  |
+| `Grouping` | `int Grouping { get; }` |  |
+| `PartitionValues` | `int PartitionValues { get; }` |  |
+| `Partitions` | `int Partitions { get; }` |  |
+| `ResidueType` | `ResidueType ResidueType { get; }` |  |
+| `SecondStages` | `int[] SecondStages { get; }` |  |
+| `Clone` | `ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)` |  |
+
+#### `ResidueLimitType`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `LowPass` | `0` |  |
+| `PointStereo` | `1` |  |
+| `LowFrequencyEffects` | `2` |  |
+
+#### `ResidueTemplate`
+
+Implements `IResidueTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ResidueTemplate` | `ResidueTemplate(ResidueType residueType, ResidueLimitType limitType, int grouping, ResidueEntry residue, IStaticCodeBook bookAux, IStaticCodeBook booxAuxManaged, IStaticBookBlock booksBase, IStaticBookBlock booksBaseManaged)` |  |
+| `BookAuxManaged` | `IStaticCodeBook BookAuxManaged { get; }` |  |
+| `BookAux` | `IStaticCodeBook BookAux { get; }` |  |
+| `BooksBaseManaged` | `IStaticBookBlock BooksBaseManaged { get; }` |  |
+| `BooksBase` | `IStaticBookBlock BooksBase { get; }` |  |
+| `Grouping` | `int Grouping { get; }` |  |
+| `LimitType` | `ResidueLimitType LimitType { get; }` |  |
+| `ResidueType` | `ResidueType ResidueType { get; }` |  |
+| `Residue` | `ResidueEntry Residue { get; }` |  |
+
+#### `ResidueType`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Zero` | `0` |  |
+| `One` | `1` |  |
+| `Two` | `2` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates`
+
+[`Psy`](#psy) · [`SharedFloors`](#sharedfloors) · [`Stereo11SetupDataTemplate`](#stereo11setupdatatemplate) · [`Stereo16SetupDataTemplate`](#stereo16setupdatatemplate) · [`Stereo22SetupDataTemplate`](#stereo22setupdatatemplate) · [`Stereo32SetupDataTemplate`](#stereo32setupdatatemplate) · [`Stereo44SetupDataTemplate`](#stereo44setupdatatemplate) · [`Stereo8SetupDataTemplate`](#stereo8setupdatatemplate) · [`StereoXSetupDataTemplate`](#stereoxsetupdatatemplate) · [`StereoXXSetupDataTemplate`](#stereoxxsetupdatatemplate) · [`Uncoupled11SetupDataTemplate`](#uncoupled11setupdatatemplate) · [`Uncoupled16SetupDataTemplate`](#uncoupled16setupdatatemplate) · [`Uncoupled32SetupDataTemplate`](#uncoupled32setupdatatemplate) · [`Uncoupled8SetupDataTemplate`](#uncoupled8setupdatatemplate) · [`UncoupledXSetupDataTemplate`](#uncoupledxsetupdatatemplate) · [`UncoupledXXSetupDataTemplate`](#uncoupledxxsetupdatatemplate)
+
+#### `Psy`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AthFloater` | `static readonly int[] AthFloater` |  |
+| `CompandLongMapping` | `static readonly double[] CompandLongMapping` |  |
+| `CompandShortMapping` | `static readonly double[] CompandShortMapping` |  |
+| `NoiseBiasImpulse` | `static readonly Noise3[] NoiseBiasImpulse` |  |
+| `NoiseBiasLongBlock` | `static readonly Noise3[] NoiseBiasLongBlock` |  |
+| `NoiseBiasPadding` | `static readonly Noise3[] NoiseBiasPadding` |  |
+| `NoiseBiasTransition` | `static readonly Noise3[] NoiseBiasTransition` |  |
+| `NoiseSuppress` | `static readonly int[] NoiseSuppress` |  |
+| `PsyInfoTemplate` | `static readonly PsyInfo PsyInfoTemplate` |  |
+| `ToneSuppress` | `static readonly int[] ToneSuppress` |  |
+| `ToneZeroDecibel` | `static readonly int[] ToneZeroDecibel` |  |
+
+#### `SharedFloors`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FloorBooks` | `static readonly IStaticCodeBook[][] FloorBooks` |  |
+| `Floor` | `static readonly Floor[] Floor` |  |
+
+#### `Stereo11SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Stereo11SetupDataTemplate` | `Stereo11SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Stereo16SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Stereo16SetupDataTemplate` | `Stereo16SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Stereo22SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Stereo22SetupDataTemplate` | `Stereo22SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Stereo32SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Stereo32SetupDataTemplate` | `Stereo32SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Stereo44SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Stereo44SetupDataTemplate` | `Stereo44SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Stereo8SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Stereo8SetupDataTemplate` | `Stereo8SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `StereoXSetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StereoXSetupDataTemplate` | `StereoXSetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `StereoXXSetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StereoXXSetupDataTemplate` | `StereoXXSetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Uncoupled11SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Uncoupled11SetupDataTemplate` | `Uncoupled11SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Uncoupled16SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Uncoupled16SetupDataTemplate` | `Uncoupled16SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Uncoupled32SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Uncoupled32SetupDataTemplate` | `Uncoupled32SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `Uncoupled8SetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Uncoupled8SetupDataTemplate` | `Uncoupled8SetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `UncoupledXSetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UncoupledXSetupDataTemplate` | `UncoupledXSetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+#### `UncoupledXXSetupDataTemplate`
+
+Implements `ISetupTemplate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UncoupledXXSetupDataTemplate` | `UncoupledXXSetupDataTemplate()` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
+| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
+| `FloorParams` | `Floor[] FloorParams { get; }` |  |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
+| `Mappings` | `int Mappings { get; }` |  |
+| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
+| `QualityMapping` | `double[] QualityMapping { get; }` |  |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Coupled.Chapter0`
+
+[`Chapter0Single`](#chapter0single) · [`Page1_0`](#page1_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter0Single`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Single` | `Chapter0Single()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Coupled.Chapter1`
+
+[`Chapter1Long`](#chapter1long) · [`Chapter1Short`](#chapter1short) · [`Page1_0`](#page1_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Long` | `Chapter1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Short` | `Chapter1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Coupled.Chapter2`
+
+[`Chapter2Long`](#chapter2long) · [`Chapter2Short`](#chapter2short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter2Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Long` | `Chapter2Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter2Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Short` | `Chapter2Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Uncoupled.Chapter0`
+
+[`Chapter0Single`](#chapter0single) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `Chapter0Single`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Single` | `Chapter0Single()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Uncoupled.Chapter1`
+
+[`Chapter1Long`](#chapter1long) · [`Chapter1Short`](#chapter1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Long` | `Chapter1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Short` | `Chapter1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Uncoupled.Chapter2`
+
+[`Chapter2Long`](#chapter2long) · [`Chapter2Short`](#chapter2short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter2Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Long` | `Chapter2Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter2Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Short` | `Chapter2Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled`
+
+[`Blocks`](#blocks) · [`Blocks.Block0`](#blocksblock0) · [`Blocks.Block1`](#blocksblock1) · [`Blocks.Block2`](#blocksblock2) · [`Blocks.Block3`](#blocksblock3) · [`Blocks.Block4`](#blocksblock4) · [`Blocks.Block5`](#blocksblock5) · [`Blocks.Block6`](#blocksblock6) · [`Blocks.Block7`](#blocksblock7) · [`Blocks.Block8`](#blocksblock8) · [`Blocks.Block9`](#blocksblock9) · [`Blocks.BlockNeg1`](#blocksblockneg1) · [`Blocks.ManagedBlock0`](#blocksmanagedblock0) · [`Blocks.ManagedBlock1`](#blocksmanagedblock1) · [`Blocks.ManagedBlockNeg1`](#blocksmanagedblockneg1)
+
+#### `Blocks`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Blocks` | `Blocks()` |  |
+
+#### `Blocks.Block0`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block0` | `Block0()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block1`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block1` | `Block1()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block2`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block2` | `Block2()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block3`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block3` | `Block3()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block4`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block4` | `Block4()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block5`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block5` | `Block5()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block6`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block6` | `Block6()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block7`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block7` | `Block7()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block8`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block8` | `Block8()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block9`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block9` | `Block9()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.BlockNeg1`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockNeg1` | `BlockNeg1()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.ManagedBlock0`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedBlock0` | `ManagedBlock0()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.ManagedBlock1`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedBlock1` | `ManagedBlock1()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.ManagedBlockNeg1`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedBlockNeg1` | `ManagedBlockNeg1()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter0`
+
+[`Chapter0Long`](#chapter0long) · [`Chapter0Short`](#chapter0short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page8_2`](#page8_2)
+
+#### `Chapter0Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Long` | `Chapter0Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter0Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Short` | `Chapter0Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_2` | `Page8_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter1`
+
+[`Chapter1Long`](#chapter1long) · [`Chapter1Short`](#chapter1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page8_2`](#page8_2)
+
+#### `Chapter1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Long` | `Chapter1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Short` | `Chapter1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_2` | `Page8_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter2`
+
+[`Chapter2Long`](#chapter2long) · [`Chapter2Short`](#chapter2short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter2Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Long` | `Chapter2Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter2Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Short` | `Chapter2Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter3`
+
+[`Chapter3Long`](#chapter3long) · [`Chapter3Short`](#chapter3short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter3Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter3Long` | `Chapter3Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter3Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter3Short` | `Chapter3Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter4`
+
+[`Chapter4Long`](#chapter4long) · [`Chapter4Short`](#chapter4short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter4Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter4Long` | `Chapter4Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter4Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter4Short` | `Chapter4Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter5`
+
+[`Chapter5Long`](#chapter5long) · [`Chapter5Short`](#chapter5short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter5Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter5Long` | `Chapter5Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter5Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter5Short` | `Chapter5Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter6`
+
+[`Chapter6Long`](#chapter6long) · [`Chapter6Short`](#chapter6short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter6Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter6Long` | `Chapter6Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter6Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter6Short` | `Chapter6Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter7`
+
+[`Chapter7Long`](#chapter7long) · [`Chapter7Short`](#chapter7short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter7Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter7Long` | `Chapter7Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter7Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter7Short` | `Chapter7Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter8`
+
+[`Chapter8Long`](#chapter8long) · [`Chapter8Short`](#chapter8short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter8Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter8Long` | `Chapter8Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter8Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter8Short` | `Chapter8Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter9`
+
+[`Chapter9Long`](#chapter9long) · [`Chapter9Short`](#chapter9short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter9Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter9Long` | `Chapter9Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter9Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter9Short` | `Chapter9Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ChapterNeg1`
+
+[`ChapterNeg1Long`](#chapterneg1long) · [`ChapterNeg1Short`](#chapterneg1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page8_2`](#page8_2)
+
+#### `ChapterNeg1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChapterNeg1Long` | `ChapterNeg1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `ChapterNeg1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChapterNeg1Short` | `ChapterNeg1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_2` | `Page8_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ManagedChapter0`
+
+[`ManagedChapter0Long`](#managedchapter0long) · [`ManagedChapter0Short`](#managedchapter0short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page8_2`](#page8_2)
+
+#### `ManagedChapter0Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedChapter0Long` | `ManagedChapter0Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `ManagedChapter0Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedChapter0Short` | `ManagedChapter0Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_2` | `Page8_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ManagedChapter1`
+
+[`ManagedChapter1Long`](#managedchapter1long) · [`ManagedChapter1Short`](#managedchapter1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page8_2`](#page8_2)
+
+#### `ManagedChapter1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedChapter1Long` | `ManagedChapter1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `ManagedChapter1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedChapter1Short` | `ManagedChapter1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_2` | `Page8_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ManagedChapterNeg1`
+
+[`ManagedChapterNeg1Long`](#managedchapterneg1long) · [`ManagedChapterNeg1Short`](#managedchapterneg1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page8_2`](#page8_2)
+
+#### `ManagedChapterNeg1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedChapterNeg1Long` | `ManagedChapterNeg1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `ManagedChapterNeg1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManagedChapterNeg1Short` | `ManagedChapterNeg1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_2` | `Page8_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled`
+
+[`Blocks`](#blocks) · [`Blocks.Block0`](#blocksblock0) · [`Blocks.Block1`](#blocksblock1) · [`Blocks.Block2`](#blocksblock2) · [`Blocks.Block3`](#blocksblock3) · [`Blocks.Block4`](#blocksblock4) · [`Blocks.Block5`](#blocksblock5) · [`Blocks.Block6`](#blocksblock6) · [`Blocks.Block7`](#blocksblock7) · [`Blocks.Block8`](#blocksblock8) · [`Blocks.Block9`](#blocksblock9) · [`Blocks.BlockNeg1`](#blocksblockneg1)
+
+#### `Blocks`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Blocks` | `Blocks()` |  |
+
+#### `Blocks.Block0`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block0` | `Block0()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block1`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block1` | `Block1()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block2`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block2` | `Block2()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block3`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block3` | `Block3()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block4`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block4` | `Block4()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block5`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block5` | `Block5()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block6`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block6` | `Block6()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block7`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block7` | `Block7()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block8`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block8` | `Block8()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.Block9`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block9` | `Block9()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+#### `Blocks.BlockNeg1`
+
+Implements `IStaticBookBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockNeg1` | `BlockNeg1()` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter0`
+
+[`Chapter0Long`](#chapter0long) · [`Chapter0Short`](#chapter0short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `Chapter0Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Long` | `Chapter0Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter0Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Short` | `Chapter0Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter1`
+
+[`Chapter1Long`](#chapter1long) · [`Chapter1Short`](#chapter1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `Chapter1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Long` | `Chapter1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Short` | `Chapter1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter2`
+
+[`Chapter2Long`](#chapter2long) · [`Chapter2Short`](#chapter2short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `Chapter2Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Long` | `Chapter2Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter2Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter2Short` | `Chapter2Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter3`
+
+[`Chapter3Long`](#chapter3long) · [`Chapter3Short`](#chapter3short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `Chapter3Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter3Long` | `Chapter3Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter3Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter3Short` | `Chapter3Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter4`
+
+[`Chapter4Long`](#chapter4long) · [`Chapter4Short`](#chapter4short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `Chapter4Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter4Long` | `Chapter4Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter4Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter4Short` | `Chapter4Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter5`
+
+[`Chapter5Long`](#chapter5long) · [`Chapter5Short`](#chapter5short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter5Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter5Long` | `Chapter5Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter5Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter5Short` | `Chapter5Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter6`
+
+[`Chapter6Long`](#chapter6long) · [`Chapter6Short`](#chapter6short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter6Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter6Long` | `Chapter6Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter6Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter6Short` | `Chapter6Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter7`
+
+[`Chapter7Long`](#chapter7long) · [`Chapter7Short`](#chapter7short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter7Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter7Long` | `Chapter7Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter7Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter7Short` | `Chapter7Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter8`
+
+[`Chapter8Long`](#chapter8long) · [`Chapter8Short`](#chapter8short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter8Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter8Long` | `Chapter8Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter8Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter8Short` | `Chapter8Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter9`
+
+[`Chapter9Long`](#chapter9long) · [`Chapter9Short`](#chapter9short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page5_1`](#page5_1) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter9Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter9Long` | `Chapter9Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Chapter9Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter9Short` | `Chapter9Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_1` | `Page5_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.ChapterNeg1`
+
+[`ChapterNeg1Long`](#chapterneg1long) · [`ChapterNeg1Short`](#chapterneg1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `ChapterNeg1Long`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChapterNeg1Long` | `ChapterNeg1Long()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `ChapterNeg1Short`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChapterNeg1Short` | `ChapterNeg1Short()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Coupled.Chapter0`
+
+[`Chapter0Single`](#chapter0single) · [`Page1_0`](#page1_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter0Single`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Single` | `Chapter0Single()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Coupled.Chapter1`
+
+[`Chapter1Single`](#chapter1single) · [`Page1_0`](#page1_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter1Single`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Single` | `Chapter1Single()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Uncoupled.Chapter0`
+
+[`Chapter0Single`](#chapter0single) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
+
+#### `Chapter0Single`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter0Single` | `Chapter0Single()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_1` | `Page6_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_2` | `Page7_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Uncoupled.Chapter1`
+
+[`Chapter1Single`](#chapter1single) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
+
+#### `Chapter1Single`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chapter1Single` | `Chapter1Single()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page1_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page1_0` | `Page1_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page2_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page2_0` | `Page2_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page3_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page3_0` | `Page3_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page4_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page4_0` | `Page4_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page5_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page6_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page6_0` | `Page6_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_0` | `Page7_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page7_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page7_1` | `Page7_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_0` | `Page8_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page8_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page8_1` | `Page8_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_0` | `Page9_0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_1` | `Page9_1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Page9_2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Page9_2` | `Page9_2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+### Namespace `OggVorbisEncoder.Setup.Templates.FloorBooks`
+
+[`Line1024X27Class1`](#line1024x27class1) · [`Line1024X27Class2`](#line1024x27class2) · [`Line1024X27Class3`](#line1024x27class3) · [`Line1024X27Class4`](#line1024x27class4) · [`Line1024X27_0Sub0`](#line1024x27_0sub0) · [`Line1024X27_1Sub0`](#line1024x27_1sub0) · [`Line1024X27_1Sub1`](#line1024x27_1sub1) · [`Line1024X27_2Sub0`](#line1024x27_2sub0) · [`Line1024X27_2Sub1`](#line1024x27_2sub1) · [`Line1024X27_3Sub1`](#line1024x27_3sub1) · [`Line1024X27_3Sub2`](#line1024x27_3sub2) · [`Line1024X27_3Sub3`](#line1024x27_3sub3) · [`Line1024X27_4Sub1`](#line1024x27_4sub1) · [`Line1024X27_4Sub2`](#line1024x27_4sub2) · [`Line1024X27_4Sub3`](#line1024x27_4sub3) · [`Line128X11Class1`](#line128x11class1) · [`Line128X11Class2`](#line128x11class2) · [`Line128X11Class3`](#line128x11class3) · [`Line128X11_0Sub0`](#line128x11_0sub0) · [`Line128X11_1Sub0`](#line128x11_1sub0) · [`Line128X11_1Sub1`](#line128x11_1sub1) · [`Line128X11_2Sub1`](#line128x11_2sub1) · [`Line128X11_2Sub2`](#line128x11_2sub2) · [`Line128X11_2Sub3`](#line128x11_2sub3) · [`Line128X11_3Sub1`](#line128x11_3sub1) · [`Line128X11_3Sub2`](#line128x11_3sub2) · [`Line128X11_3Sub3`](#line128x11_3sub3) · [`Line128X17Class1`](#line128x17class1) · [`Line128X17Class2`](#line128x17class2) · [`Line128X17Class3`](#line128x17class3) · [`Line128X17_0Sub0`](#line128x17_0sub0) · [`Line128X17_1Sub0`](#line128x17_1sub0) · [`Line128X17_1Sub1`](#line128x17_1sub1) · [`Line128X17_2Sub1`](#line128x17_2sub1) · [`Line128X17_2Sub2`](#line128x17_2sub2) · [`Line128X17_2Sub3`](#line128x17_2sub3) · [`Line128X17_3Sub1`](#line128x17_3sub1) · [`Line128X17_3Sub2`](#line128x17_3sub2) · [`Line128X17_3Sub3`](#line128x17_3sub3) · [`Line128X4Class0`](#line128x4class0) · [`Line128X4Sub0`](#line128x4sub0) · [`Line128X4Sub1`](#line128x4sub1) · [`Line128X4Sub2`](#line128x4sub2) · [`Line128X4Sub3`](#line128x4sub3) · [`Line128X7Class0`](#line128x7class0) · [`Line128X7Class1`](#line128x7class1) · [`Line128X7_0Sub1`](#line128x7_0sub1) · [`Line128X7_0Sub2`](#line128x7_0sub2) · [`Line128X7_0Sub3`](#line128x7_0sub3) · [`Line128X7_1Sub1`](#line128x7_1sub1) · [`Line128X7_1Sub2`](#line128x7_1sub2) · [`Line128X7_1Sub3`](#line128x7_1sub3) · [`Line2048X27Class1`](#line2048x27class1) · [`Line2048X27Class2`](#line2048x27class2) · [`Line2048X27Class3`](#line2048x27class3) · [`Line2048X27Class4`](#line2048x27class4) · [`Line2048X27_0Sub0`](#line2048x27_0sub0) · [`Line2048X27_1Sub0`](#line2048x27_1sub0) · [`Line2048X27_1Sub1`](#line2048x27_1sub1) · [`Line2048X27_2Sub0`](#line2048x27_2sub0) · [`Line2048X27_2Sub1`](#line2048x27_2sub1) · [`Line2048X27_3Sub1`](#line2048x27_3sub1) · [`Line2048X27_3Sub2`](#line2048x27_3sub2) · [`Line2048X27_3Sub3`](#line2048x27_3sub3) · [`Line2048X27_4Sub1`](#line2048x27_4sub1) · [`Line2048X27_4Sub2`](#line2048x27_4sub2) · [`Line2048X27_4Sub3`](#line2048x27_4sub3) · [`Line256X4Class0`](#line256x4class0) · [`Line256X4LowClass0`](#line256x4lowclass0) · [`Line256X4LowSub0`](#line256x4lowsub0) · [`Line256X4LowSub1`](#line256x4lowsub1) · [`Line256X4LowSub2`](#line256x4lowsub2) · [`Line256X4LowSub3`](#line256x4lowsub3) · [`Line256X4Sub0`](#line256x4sub0) · [`Line256X4Sub1`](#line256x4sub1) · [`Line256X4Sub2`](#line256x4sub2) · [`Line256X4Sub3`](#line256x4sub3) · [`Line256X7Class0`](#line256x7class0) · [`Line256X7Class1`](#line256x7class1) · [`Line256X7_0Sub1`](#line256x7_0sub1) · [`Line256X7_0Sub2`](#line256x7_0sub2) · [`Line256X7_0Sub3`](#line256x7_0sub3) · [`Line256X7_1Sub1`](#line256x7_1sub1) · [`Line256X7_1Sub2`](#line256x7_1sub2) · [`Line256X7_1Sub3`](#line256x7_1sub3) · [`Line512X17Class1`](#line512x17class1) · [`Line512X17Class2`](#line512x17class2) · [`Line512X17Class3`](#line512x17class3) · [`Line512X17_0Sub0`](#line512x17_0sub0) · [`Line512X17_1Sub0`](#line512x17_1sub0) · [`Line512X17_1Sub1`](#line512x17_1sub1) · [`Line512X17_2Sub1`](#line512x17_2sub1) · [`Line512X17_2Sub2`](#line512x17_2sub2) · [`Line512X17_2Sub3`](#line512x17_2sub3) · [`Line512X17_3Sub1`](#line512x17_3sub1) · [`Line512X17_3Sub2`](#line512x17_3sub2) · [`Line512X17_3Sub3`](#line512x17_3sub3)
+
+#### `Line1024X27Class1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27Class1` | `Line1024X27Class1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27Class2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27Class2` | `Line1024X27Class2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27Class3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27Class3` | `Line1024X27Class3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27Class4`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27Class4` | `Line1024X27Class4()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_0Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_0Sub0` | `Line1024X27_0Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_1Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_1Sub0` | `Line1024X27_1Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_1Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_1Sub1` | `Line1024X27_1Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_2Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_2Sub0` | `Line1024X27_2Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_2Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_2Sub1` | `Line1024X27_2Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_3Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_3Sub1` | `Line1024X27_3Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_3Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_3Sub2` | `Line1024X27_3Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_3Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_3Sub3` | `Line1024X27_3Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_4Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_4Sub1` | `Line1024X27_4Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_4Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_4Sub2` | `Line1024X27_4Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line1024X27_4Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line1024X27_4Sub3` | `Line1024X27_4Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11Class1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11Class1` | `Line128X11Class1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11Class2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11Class2` | `Line128X11Class2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11Class3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11Class3` | `Line128X11Class3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_0Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_0Sub0` | `Line128X11_0Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_1Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_1Sub0` | `Line128X11_1Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_1Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_1Sub1` | `Line128X11_1Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_2Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_2Sub1` | `Line128X11_2Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_2Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_2Sub2` | `Line128X11_2Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_2Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_2Sub3` | `Line128X11_2Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_3Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_3Sub1` | `Line128X11_3Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_3Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_3Sub2` | `Line128X11_3Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X11_3Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X11_3Sub3` | `Line128X11_3Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17Class1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17Class1` | `Line128X17Class1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17Class2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17Class2` | `Line128X17Class2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17Class3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17Class3` | `Line128X17Class3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_0Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_0Sub0` | `Line128X17_0Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_1Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_1Sub0` | `Line128X17_1Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_1Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_1Sub1` | `Line128X17_1Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_2Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_2Sub1` | `Line128X17_2Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_2Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_2Sub2` | `Line128X17_2Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_2Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_2Sub3` | `Line128X17_2Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_3Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_3Sub1` | `Line128X17_3Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_3Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_3Sub2` | `Line128X17_3Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X17_3Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X17_3Sub3` | `Line128X17_3Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X4Class0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X4Class0` | `Line128X4Class0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X4Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X4Sub0` | `Line128X4Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X4Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X4Sub1` | `Line128X4Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X4Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X4Sub2` | `Line128X4Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X4Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X4Sub3` | `Line128X4Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7Class0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7Class0` | `Line128X7Class0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7Class1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7Class1` | `Line128X7Class1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7_0Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7_0Sub1` | `Line128X7_0Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7_0Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7_0Sub2` | `Line128X7_0Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7_0Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7_0Sub3` | `Line128X7_0Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7_1Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7_1Sub1` | `Line128X7_1Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7_1Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7_1Sub2` | `Line128X7_1Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line128X7_1Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line128X7_1Sub3` | `Line128X7_1Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27Class1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27Class1` | `Line2048X27Class1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27Class2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27Class2` | `Line2048X27Class2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27Class3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27Class3` | `Line2048X27Class3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27Class4`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27Class4` | `Line2048X27Class4()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_0Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_0Sub0` | `Line2048X27_0Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_1Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_1Sub0` | `Line2048X27_1Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_1Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_1Sub1` | `Line2048X27_1Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_2Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_2Sub0` | `Line2048X27_2Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_2Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_2Sub1` | `Line2048X27_2Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_3Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_3Sub1` | `Line2048X27_3Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_3Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_3Sub2` | `Line2048X27_3Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_3Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_3Sub3` | `Line2048X27_3Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_4Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_4Sub1` | `Line2048X27_4Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_4Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_4Sub2` | `Line2048X27_4Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line2048X27_4Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line2048X27_4Sub3` | `Line2048X27_4Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4Class0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4Class0` | `Line256X4Class0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4LowClass0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4LowClass0` | `Line256X4LowClass0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4LowSub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4LowSub0` | `Line256X4LowSub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4LowSub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4LowSub1` | `Line256X4LowSub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4LowSub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4LowSub2` | `Line256X4LowSub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4LowSub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4LowSub3` | `Line256X4LowSub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4Sub0` | `Line256X4Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4Sub1` | `Line256X4Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4Sub2` | `Line256X4Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X4Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X4Sub3` | `Line256X4Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7Class0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7Class0` | `Line256X7Class0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7Class1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7Class1` | `Line256X7Class1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7_0Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7_0Sub1` | `Line256X7_0Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7_0Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7_0Sub2` | `Line256X7_0Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7_0Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7_0Sub3` | `Line256X7_0Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7_1Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7_1Sub1` | `Line256X7_1Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7_1Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7_1Sub2` | `Line256X7_1Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line256X7_1Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line256X7_1Sub3` | `Line256X7_1Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17Class1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17Class1` | `Line512X17Class1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17Class2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17Class2` | `Line512X17Class2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17Class3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17Class3` | `Line512X17Class3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_0Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_0Sub0` | `Line512X17_0Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_1Sub0`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_1Sub0` | `Line512X17_1Sub0()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_1Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_1Sub1` | `Line512X17_1Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_2Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_2Sub1` | `Line512X17_2Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_2Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_2Sub2` | `Line512X17_2Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_2Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_2Sub3` | `Line512X17_2Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_3Sub1`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_3Sub1` | `Line512X17_3Sub1()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_3Sub2`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_3Sub2` | `Line512X17_3Sub2()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
+
+#### `Line512X17_3Sub3`
+
+Implements `IStaticCodeBook`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Line512X17_3Sub3` | `Line512X17_3Sub3()` |  |
+| `Dimensions` | `int Dimensions { get; }` |  |
+| `LengthList` | `byte[] LengthList { get; }` |  |
+| `MapType` | `CodeBookMapType MapType { get; }` |  |
+| `QuantDelta` | `int QuantDelta { get; }` |  |
+| `QuantList` | `int[] QuantList { get; }` |  |
+| `QuantMin` | `int QuantMin { get; }` |  |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
+| `Quant` | `int Quant { get; }` |  |
