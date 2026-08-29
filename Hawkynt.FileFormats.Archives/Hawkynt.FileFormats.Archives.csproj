@@ -68,6 +68,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Rnc\FileFormat.Rnc.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Rzip\FileFormat.Rzip.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Snappy\FileFormat.Snappy.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.BinaryII\FileFormat.BinaryII.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Squeeze\FileFormat.Squeeze.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Szdd\FileFormat.Szdd.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.UuEncoding\FileFormat.UuEncoding.csproj" PrivateAssets="all" />
