@@ -4,9 +4,11 @@ using Compression.Lib;
 using Compression.Registry;
 using FileFormat.Aac;
 using FileFormat.Flac;
+using FileFormat.Mp3;
 using FileFormat.Mp4;
 using FileFormat.Ogg;
 using FileFormat.Wav;
+using FileFormat.WavPack;
 using NUnit.Framework;
 
 namespace Compression.Tests.Audio;
@@ -69,6 +71,81 @@ public sealed class AudioConversionPipelineTests {
       Assert.That(flac.Format.Channels, Is.EqualTo(2));
       Assert.That(flac.Format.BitsPerSample, Is.EqualTo(16));
       Assert.That(flac.InterleavedData, Is.EqualTo(pcm));
+    });
+  }
+
+  [Test]
+  public void WavToWavPackToFlac_IsLosslessThroughAdapters() {
+    const int sampleRate = 44_100;
+    var pcm = BuildPcm16(sampleRate, channels: 2, frames: 3_072);
+    var wav = PcmCodec.ToWavBlob(pcm, 2, sampleRate, 16);
+
+    using var wavInput = new MemoryStream(wav, writable: false);
+    using var wavPack = new MemoryStream();
+    AudioConversionOperation.Convert(
+      wavInput,
+      new WavFormatDescriptor(),
+      wavPack,
+      new WavPackFormatDescriptor(),
+      new FormatCreateOptions(Method: "wavpack"));
+
+    Assert.That(wavPack.ToArray().AsSpan(0, 4).ToArray(), Is.EqualTo("wvpk"u8.ToArray()));
+
+    wavPack.Position = 0;
+    using var flacOutput = new MemoryStream();
+    AudioConversionOperation.Convert(
+      wavPack,
+      new WavPackFormatDescriptor(),
+      flacOutput,
+      new FlacFormatDescriptor(),
+      new FormatCreateOptions(Method: "flac"));
+
+    flacOutput.Position = 0;
+    var decoded = new FlacFormatDescriptor().DecodePcm(flacOutput);
+    Assert.Multiple(() => {
+      Assert.That(decoded.Format.SampleRate, Is.EqualTo(sampleRate));
+      Assert.That(decoded.Format.Channels, Is.EqualTo(2));
+      Assert.That(decoded.Format.BitsPerSample, Is.EqualTo(16));
+      Assert.That(decoded.InterleavedData, Is.EqualTo(pcm));
+    });
+  }
+
+  [Test]
+  public void WavToMp3ToFlac_PreservesGeometryAndSignal() {
+    const int sampleRate = 44_100;
+    var pcm = BuildPcm16(sampleRate, channels: 2, frames: 8_192);
+    var wav = PcmCodec.ToWavBlob(pcm, 2, sampleRate, 16);
+
+    using var wavInput = new MemoryStream(wav, writable: false);
+    using var mp3 = new MemoryStream();
+    AudioConversionOperation.Convert(
+      wavInput,
+      new WavFormatDescriptor(),
+      mp3,
+      new Mp3FormatDescriptor(),
+      new FormatCreateOptions(Method: "mp3") {
+        FormatSpecific = { ["bitrate"] = "160", ["quality"] = "4", ["channel-mode"] = "joint-stereo" },
+      });
+
+    Assert.That(mp3.Length, Is.GreaterThan(0));
+
+    mp3.Position = 0;
+    using var flacOutput = new MemoryStream();
+    AudioConversionOperation.Convert(
+      mp3,
+      new Mp3FormatDescriptor(),
+      flacOutput,
+      new FlacFormatDescriptor(),
+      new FormatCreateOptions(Method: "flac"));
+
+    flacOutput.Position = 0;
+    var decoded = new FlacFormatDescriptor().DecodePcm(flacOutput);
+    Assert.Multiple(() => {
+      Assert.That(decoded.Format.SampleRate, Is.EqualTo(sampleRate));
+      Assert.That(decoded.Format.Channels, Is.EqualTo(2));
+      Assert.That(decoded.Format.BitsPerSample, Is.EqualTo(16));
+      Assert.That(decoded.InterleavedData.Length, Is.GreaterThan(0));
+      Assert.That(decoded.InterleavedData.Any(static value => value != 0), Is.True);
     });
   }
 
