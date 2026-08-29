@@ -13540,7 +13540,7 @@ WORM writer for Web Bundle (`.wbn`) files. Emits the canonical 10-byte CBOR-arra
 
 Descriptor for a Python wheel distribution (`.whl`) — a ZIP archive that obeys the on-disk layout mandated by PEP 427. References: `https://peps.python.org/pep-0427/` — PEP 427, the original wheel binary-package specification`https://packaging.python.org/en/latest/specifications/binary-distribution-format/` — the living binary-distribution (wheel) format spec that superseded the PEP text
 
-Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13557,6 +13557,7 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
