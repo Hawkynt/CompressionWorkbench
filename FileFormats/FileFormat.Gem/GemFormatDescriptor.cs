@@ -30,7 +30,7 @@ namespace FileFormat.Gem;
 /// file under a <c>data/</c> prefix.
 /// </para>
 /// </remarks>
-public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <inheritdoc/>
   public string Id => "Gem";
 
@@ -42,7 +42,7 @@ public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc/>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 
@@ -95,6 +95,10 @@ public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       WriteFile(outputDir, e.Name, e.Data);
     }
   }
+
+  /// <inheritdoc/>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => GemCreator.Create(output, inputs);
 
   /// <summary>
   /// Reads the outer TAR, picks out <c>metadata.gz</c>, <c>data.tar.gz</c> and

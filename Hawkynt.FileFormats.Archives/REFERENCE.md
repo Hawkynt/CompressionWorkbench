@@ -4957,7 +4957,7 @@ Implements `IDisposable`.
 
 Descriptor for a Ruby gem package (`.gem`) — a TAR archive whose first three entries are `metadata.gz` (gzipped YAML metadata), `data.tar.gz` (gzipped TAR of the gem contents) and `checksums.yaml.gz`. References: `https://docs.ruby-lang.org/en/3.0/Gem/Format.html` — Gem::Format, the canonical package-layout documentation`https://github.com/rubygems/rubygems` — RubyGems, the reference implementation that reads and writes .gem files`https://guides.rubygems.org/` — RubyGems guides (specification reference, publishing workflow)
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4974,6 +4974,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
