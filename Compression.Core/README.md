@@ -4266,7 +4266,7 @@ On-disk RAID metadata format a member superblock was recognised as.
 
 ### Namespace `Compression.Core.Entropy`
 
-[`ArithmeticBuildingBlock`](#arithmeticbuildingblock) · [`BpeBuildingBlock`](#bpebuildingblock) · [`DmcBuildingBlock`](#dmcbuildingblock) · [`EliasDeltaBuildingBlock`](#eliasdeltabuildingblock) · [`EliasGammaBuildingBlock`](#eliasgammabuildingblock) · [`FibonacciBuildingBlock`](#fibonaccibuildingblock) · [`FseBuildingBlock`](#fsebuildingblock) · [`GolombBuildingBlock`](#golombbuildingblock) · [`GolombFixedMBuildingBlock`](#golombfixedmbuildingblock) · [`GolombProfile`](#golombprofile) · [`LevenshteinBuildingBlock`](#levenshteinbuildingblock) · [`OmegaBuildingBlock`](#omegabuildingblock) · [`RangeCodingBuildingBlock`](#rangecodingbuildingblock) · [`ShannonFanoBuildingBlock`](#shannonfanobuildingblock) · [`TunstallBuildingBlock`](#tunstallbuildingblock) · [`UnaryBuildingBlock`](#unarybuildingblock)
+[`ArithmeticBuildingBlock`](#arithmeticbuildingblock) · [`BpeBuildingBlock`](#bpebuildingblock) · [`BpeConstructionStrategy`](#bpeconstructionstrategy) · [`DmcBuildingBlock`](#dmcbuildingblock) · [`EliasDeltaBuildingBlock`](#eliasdeltabuildingblock) · [`EliasGammaBuildingBlock`](#eliasgammabuildingblock) · [`FibonacciBuildingBlock`](#fibonaccibuildingblock) · [`FseBuildingBlock`](#fsebuildingblock) · [`GolombBuildingBlock`](#golombbuildingblock) · [`GolombFixedMBuildingBlock`](#golombfixedmbuildingblock) · [`GolombProfile`](#golombprofile) · [`LevenshteinBuildingBlock`](#levenshteinbuildingblock) · [`OmegaBuildingBlock`](#omegabuildingblock) · [`RangeCodingBuildingBlock`](#rangecodingbuildingblock) · [`ShannonFanoBuildingBlock`](#shannonfanobuildingblock) · [`TunstallBuildingBlock`](#tunstallbuildingblock) · [`UnaryBuildingBlock`](#unarybuildingblock)
 
 #### `ArithmeticBuildingBlock`
 
@@ -4286,19 +4286,30 @@ Implements `IBuildingBlock`.
 
 #### `BpeBuildingBlock`
 
-Exposes Byte Pair Encoding (BPE) as a benchmarkable building block. Iteratively replaces the most frequent consecutive byte pair with a new symbol. Header: 2-byte LE dictionary size, 6 bytes per entry (code, val1, val2), 4-byte LE data length (in values), 2 bytes per encoded value.
+Exposes Philip Gage's byte-pair compression as a benchmarkable building block. Repeated adjacent byte pairs are replaced by byte values that do not occur in the current block; the replacement table is stored with the encoded bytes.
 
 Implements `IBuildingBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BpeBuildingBlock` | `BpeBuildingBlock()` |  |
+| `BpeBuildingBlock` | `BpeBuildingBlock()` | Creates a BPE building block using greedy grammar construction. |
+| `BpeBuildingBlock` | `BpeBuildingBlock(BpeConstructionStrategy constructionStrategy)` | Creates a BPE building block using the requested grammar-construction strategy. |
+| `ConstructionStrategy` | `BpeConstructionStrategy ConstructionStrategy { get; }` | The grammar-construction strategy used by `Compress`. |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `BpeConstructionStrategy`
+
+Controls how a byte-pair grammar is constructed.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Greedy` | `0` | Repeatedly replace the currently most frequent profitable pair. |
+| `Exhaustive` | `1` | Explore every profitable merge sequence within each search block and keep the smallest result. |
 
 #### `DmcBuildingBlock`
 
