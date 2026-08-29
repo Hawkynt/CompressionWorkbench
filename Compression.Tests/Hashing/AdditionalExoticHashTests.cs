@@ -42,13 +42,17 @@ public sealed class AdditionalExoticHashTests {
 
   [Test]
   public void Knot256_256MatchesSourceVector() =>
-    Assert.That(Convert.ToHexString(KnotHash256_256.Compute([])), Is.EqualTo("CF1AC5B7AA08D36D544E2D2049D0D0A5F1F6FF7B553D18035E69323D8E4118B1"));
+    Assert.That(Convert.ToHexString(KnotHash.Compute([], KnotHashVariant.KnotHash256_256)), Is.EqualTo("CF1AC5B7AA08D36D544E2D2049D0D0A5F1F6FF7B553D18035E69323D8E4118B1"));
 
   [Test]
   public void Knot256_384MatchesSourceVector() =>
-    Assert.That(Convert.ToHexString(KnotHash256_384.Compute([])), Is.EqualTo("5025252949BF0EBF9D750D2E11AB5C75E4F7B8DCA426B58EA2AE52A857653E04"));
+    Assert.That(Convert.ToHexString(KnotHash.Compute([], KnotHashVariant.KnotHash256_384)), Is.EqualTo("5025252949BF0EBF9D750D2E11AB5C75E4F7B8DCA426B58EA2AE52A857653E04"));
 
   [Test]
   public void Knot384_384MatchesSourceVector() =>
-    Assert.That(Convert.ToHexString(KnotHash384_384.Compute([])), Is.EqualTo("4F3D463251831D3689692AA1B4E02DDAD79ABFCBE075A2CD2805E95C099DB75BF11C3C5EC917B6C5B3B76F8BB8D6DB2C"));
+    Assert.That(Convert.ToHexString(KnotHash.Compute([], KnotHashVariant.KnotHash384_384)), Is.EqualTo("4F3D463251831D3689692AA1B4E02DDAD79ABFCBE075A2CD2805E95C099DB75BF11C3C5EC917B6C5B3B76F8BB8D6DB2C"));
+
+  [Test]
+  public void KnotFamilyAdvertisesDistinctDigestSizes() =>
+    Assert.That(KnotHash.SupportedHashSizes.EnumerateSizes(), Is.EqualTo(new[] { 256, 384, 512 }));
 }

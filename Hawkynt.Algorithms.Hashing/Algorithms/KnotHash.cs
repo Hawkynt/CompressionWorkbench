@@ -1,23 +1,37 @@
 namespace Hawkynt.Algorithms.Hashing;
 
-/// <summary>KNOT-HASH-256-256.</summary>
-public static class KnotHash256_256 {
-  public static byte[] Compute(ReadOnlySpan<byte> data) => KnotHashCore.Compute(data, 32, 4, 68, 256, false);
+/// <summary>The four standardized KNOT-HASH parameter sets.</summary>
+public enum KnotHashVariant {
+  /// <summary>KNOT-HASH-256-256: 256-bit digest over the 256-bit permutation.</summary>
+  KnotHash256_256,
+  /// <summary>KNOT-HASH-256-384: 256-bit digest over the 384-bit permutation.</summary>
+  KnotHash256_384,
+  /// <summary>KNOT-HASH-384-384: 384-bit digest over the 384-bit permutation.</summary>
+  KnotHash384_384,
+  /// <summary>KNOT-HASH-512-512: 512-bit digest over the 512-bit permutation.</summary>
+  KnotHash512_512
 }
 
-/// <summary>KNOT-HASH-256-384.</summary>
-public static class KnotHash256_384 {
-  public static byte[] Compute(ReadOnlySpan<byte> data) => KnotHashCore.Compute(data, 32, 16, 80, 384, true);
-}
+/// <summary>KNOT-HASH family with explicit parameter-set selection.</summary>
+/// <remarks>
+/// Digest size alone cannot identify a KNOT variant because both KNOT-HASH-256-256 and
+/// KNOT-HASH-256-384 produce 256-bit digests. The variant therefore remains an explicit part of
+/// the API while <see cref="SupportedHashSizes"/> advertises the distinct digest sizes produced by
+/// the family.
+/// </remarks>
+public static class KnotHash {
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
+    HashSizeRange.Exact(256),
+    new(384, 512, 128)
+  ];
 
-/// <summary>KNOT-HASH-384-384.</summary>
-public static class KnotHash384_384 {
-  public static byte[] Compute(ReadOnlySpan<byte> data) => KnotHashCore.Compute(data, 48, 6, 104, 384, false);
-}
-
-/// <summary>KNOT-HASH-512-512.</summary>
-public static class KnotHash512_512 {
-  public static byte[] Compute(ReadOnlySpan<byte> data) => KnotHashCore.Compute(data, 64, 8, 140, 512, false);
+  public static byte[] Compute(ReadOnlySpan<byte> data, KnotHashVariant variant = KnotHashVariant.KnotHash256_256) => variant switch {
+    KnotHashVariant.KnotHash256_256 => KnotHashCore.Compute(data, 32, 4, 68, 256, false),
+    KnotHashVariant.KnotHash256_384 => KnotHashCore.Compute(data, 32, 16, 80, 384, true),
+    KnotHashVariant.KnotHash384_384 => KnotHashCore.Compute(data, 48, 6, 104, 384, false),
+    KnotHashVariant.KnotHash512_512 => KnotHashCore.Compute(data, 64, 8, 140, 512, false),
+    _ => throw new ArgumentOutOfRangeException(nameof(variant))
+  };
 }
 
 internal static class KnotHashCore {
