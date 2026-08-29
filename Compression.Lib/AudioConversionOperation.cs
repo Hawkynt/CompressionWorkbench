@@ -58,9 +58,10 @@ public static class AudioConversionOperation {
       }
     }
 
-    if (AudioFormatAdapters.ResolvePcmTarget(target) is { } pcmTarget) {
+    var pcmTarget = ResolvePcmTarget(target);
+    if (pcmTarget is not null) {
       AudioPcmBuffer? pcm = null;
-      if (AudioFormatAdapters.ResolvePcmSource(source) is { } pcmSource) {
+      if (ResolvePcmSource(source) is { } pcmSource) {
         Rewind(input);
         pcm = pcmSource.DecodePcm(input);
       } else if (TryDecodePseudoArchivePcm(input, source, out var bridgedPcm)) {
@@ -85,6 +86,16 @@ public static class AudioConversionOperation {
       $"No audio conversion route exists from '{source.Id}' to '{target.Id}'. " +
       "The source must expose encoded packets or PCM/channels and the target must expose a compatible mux/encode/create capability.");
   }
+
+  private static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
+    => descriptor.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)
+      ? new WavAudioAdapter()
+      : AudioFormatAdapters.ResolvePcmSource(descriptor);
+
+  private static IAudioPcmTarget? ResolvePcmTarget(IFormatDescriptor descriptor)
+    => descriptor.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)
+      ? new WavAudioAdapter()
+      : AudioFormatAdapters.ResolvePcmTarget(descriptor);
 
   private static string ResolveCodec(IAudioPcmTarget target, FormatCreateOptions options) {
     if (!string.IsNullOrWhiteSpace(options.MethodName)) return options.MethodName;
@@ -111,8 +122,6 @@ public static class AudioConversionOperation {
       .OrderBy(static entry => entry.Index)
       .ToArray();
 
-    // A mono WAV is already the canonical channel file, so its archive view does not
-    // need to manufacture MONO.wav. Treat FULL.wav as the one channel in that case.
     if (entries.Length == 0 && source.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)) {
       var full = listed.FirstOrDefault(static entry =>
         entry.Name.Equals("FULL.wav", StringComparison.OrdinalIgnoreCase));
