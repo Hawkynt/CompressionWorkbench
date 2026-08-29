@@ -4,11 +4,28 @@ namespace Compression.Registry;
 /// Options for archive/stream creation, passed from the orchestration layer to format descriptors.
 /// </summary>
 public sealed class FormatCreateOptions {
+  private string? _methodName;
+
+  /// <summary>Creates options with an optional compression/codec method.</summary>
+  public FormatCreateOptions(string? Method = null) => this._methodName = Method;
+
   /// <summary>Encryption password.</summary>
   public string? Password { get; init; }
 
-  /// <summary>Compression method name (e.g. "deflate", "lzma").</summary>
-  public string? MethodName { get; init; }
+  /// <summary>Compression method name (e.g. "deflate", "lzma", "aac", "opus").</summary>
+  public string? MethodName {
+    get => this._methodName;
+    init => this._methodName = value;
+  }
+
+  /// <summary>
+  /// Alias for <see cref="MethodName"/> used by codec/container creation paths.
+  /// Both properties share the same backing value.
+  /// </summary>
+  public string? Method {
+    get => this._methodName;
+    init => this._methodName = value;
+  }
 
   /// <summary>Whether "+" optimization was requested.</summary>
   public bool Optimize { get; init; }
@@ -41,46 +58,39 @@ public sealed class FormatCreateOptions {
   public HashSet<string>? IncompressiblePaths { get; init; }
 
   /// <summary>
-  /// Format-specific tunable knobs collected from a
-  /// <see cref="IFormatOptionsSchema"/>. Keys come from
-  /// <see cref="FormatOptionDescriptor.Key"/>; values are in canonical string
-  /// form (the format's writer parses them per its schema). Writers should
-  /// call <see cref="GetOption(string, string)"/> or
-  /// <see cref="GetOptionInt(string, int)"/> rather than reading the dict
-  /// directly, so a missing entry falls back to the schema default.
+  /// Format-specific tunable knobs collected from an <see cref="IFormatOptionsSchema"/>.
+  /// The collection is initialized so callers can use collection/index initializers
+  /// without allocating a dictionary explicitly.
   /// </summary>
-  public IReadOnlyDictionary<string, string>? FormatSpecific { get; init; }
+  public IDictionary<string, string> FormatSpecific { get; init; }
+    = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-  /// <summary>
-  /// True when the caller explicitly supplied <paramref name="key"/> (with a
-  /// non-empty value). Writers use this to distinguish "caller pinned a size"
-  /// from "use the format default / auto-optimise" — an unset size must leave the
-  /// auto-selection path free, while a pinned size must be honoured byte-for-byte.
-  /// </summary>
+  /// <summary>True when the caller explicitly supplied a non-empty value for <paramref name="key"/>.</summary>
   public bool HasOption(string key)
-    => this.FormatSpecific != null
-       && this.FormatSpecific.TryGetValue(key, out var v)
-       && !string.IsNullOrEmpty(v);
+    => this.FormatSpecific.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value);
 
   /// <summary>Reads a format-specific string option, returning <paramref name="fallback"/> if absent.</summary>
-  public string GetOption(string key, string fallback) {
-    if (this.FormatSpecific == null) return fallback;
-    return this.FormatSpecific.TryGetValue(key, out var v) ? v : fallback;
-  }
+  public string GetOption(string key, string fallback)
+    => this.FormatSpecific.TryGetValue(key, out var value) ? value : fallback;
+
+  /// <summary>Reads a string option, returning <see langword="null"/> if absent.</summary>
+  public string? GetString(string key)
+    => this.FormatSpecific.TryGetValue(key, out var value) ? value : null;
 
   /// <summary>Reads a format-specific integer option. Returns <paramref name="fallback"/> if absent or unparsable.</summary>
-  public int GetOptionInt(string key, int fallback) {
-    if (this.FormatSpecific == null) return fallback;
-    if (!this.FormatSpecific.TryGetValue(key, out var v)) return fallback;
-    return int.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : fallback;
-  }
+  public int GetOptionInt(string key, int fallback)
+    => this.TryGetInt(key, out var value) ? value : fallback;
 
-  /// <summary>Reads a format-specific boolean option. Accepts "true"/"false"/"1"/"0" (case-insensitive).</summary>
+  /// <summary>Attempts to read a format-specific invariant-culture integer.</summary>
+  public bool TryGetInt(string key, out int value)
+    => this.FormatSpecific.TryGetValue(key, out var text)
+       && int.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out value);
+
+  /// <summary>Reads a format-specific boolean option. Accepts true/false/1/0 (case-insensitive).</summary>
   public bool GetOptionBool(string key, bool fallback) {
-    if (this.FormatSpecific == null) return fallback;
-    if (!this.FormatSpecific.TryGetValue(key, out var v)) return fallback;
-    return v.Equals("true", StringComparison.OrdinalIgnoreCase) || v == "1" ? true
-      : v.Equals("false", StringComparison.OrdinalIgnoreCase) || v == "0" ? false
+    if (!this.FormatSpecific.TryGetValue(key, out var value)) return fallback;
+    return value.Equals("true", StringComparison.OrdinalIgnoreCase) || value == "1" ? true
+      : value.Equals("false", StringComparison.OrdinalIgnoreCase) || value == "0" ? false
       : fallback;
   }
 }
