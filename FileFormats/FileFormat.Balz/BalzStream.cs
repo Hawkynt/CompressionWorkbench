@@ -189,6 +189,11 @@ public static class BalzStream {
     public void EncodeBit(int bit, ref int prob) {
       var range = _high - _low + 1;
       var mid = _low + (ulong)range * (uint)prob / (uint)ProbMax - 1;
+      // The split has to stay inside [low, high). Normalization only guarantees
+      // the top bytes differ, so the range can be small enough that the scaled
+      // probability truncates to zero — and then the "- 1" puts mid below low,
+      // where encoding a zero bit sets high under low and inverts the interval.
+      if (mid < _low) mid = _low;
       if (mid >= _high) mid = _high - 1;
       var umid = (uint)mid;
 
@@ -235,6 +240,11 @@ public static class BalzStream {
     public int DecodeBit(ref int prob) {
       var range = _high - _low + 1;
       var mid = _low + (ulong)range * (uint)prob / (uint)ProbMax - 1;
+      // The split has to stay inside [low, high). Normalization only guarantees
+      // the top bytes differ, so the range can be small enough that the scaled
+      // probability truncates to zero — and then the "- 1" puts mid below low,
+      // where encoding a zero bit sets high under low and inverts the interval.
+      if (mid < _low) mid = _low;
       if (mid >= _high) mid = _high - 1;
       var umid = (uint)mid;
 
