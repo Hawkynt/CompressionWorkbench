@@ -304,6 +304,745 @@ Creates ACE archives.
 | `ToArray` | `byte[] ToArray()` | Creates an ACE archive as a byte array. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to a stream. |
 
+### Namespace `FileFormat.Acronis`
+
+[`AcronisAttributeId`](#acronisattributeid) · [`AcronisAttributeRaw`](#acronisattributeraw) · [`AcronisConfigAttribute`](#acronisconfigattribute) · [`AcronisEntry`](#acronisentry) · [`AcronisExtractionResult`](#acronisextractionresult) · [`AcronisFileEntry`](#acronisfileentry) · [`AcronisFileMetaBody`](#acronisfilemetabody) · [`AcronisFileMetaBodyDecoder`](#acronisfilemetabodydecoder) · [`AcronisFormatDescriptor`](#acronisformatdescriptor) · [`AcronisInPlaceModifier`](#acronisinplacemodifier) · [`AcronisItemCommonAttribute`](#acronisitemcommonattribute) · [`AcronisItemCommonExtraAttribute`](#acronisitemcommonextraattribute) · [`AcronisRawAttribute`](#acronisrawattribute) · [`AcronisReader`](#acronisreader) · [`AcronisRecord`](#acronisrecord) · [`AcronisRecordHandle`](#acronisrecordhandle) · [`AcronisRecordIndexInfo`](#acronisrecordindexinfo) · [`AcronisRecordReader`](#acronisrecordreader) · [`AcronisRecordType`](#acronisrecordtype) · [`AcronisReplicaAttribute`](#acronisreplicaattribute) · [`AcronisSliceForm`](#acronissliceform) · [`AcronisSliceItemAttribute`](#acronissliceitemattribute) · [`AcronisSliceItemBlobAttribute`](#acronissliceitemblobattribute) · [`AcronisSliceTrailer`](#acronisslicetrailer) · [`AcronisSourceItemAttribute`](#acronissourceitemattribute) · [`AcronisVolumeHeader`](#acronisvolumeheader) · [`AcronisVolumeVersion`](#acronisvolumeversion) · [`AcronisWriter`](#acroniswriter) · [`AcronisWriter.FileSpec`](#acroniswriterfilespec)
+
+#### `AcronisAttributeId`
+
+Identifiers for resident attribute types found inside Acronis classic .tib FileMeta record bodies (record types 102, 1, 2, 5). Values are reverse-engineered from the attribute dispatch in `ti_tools.dll` 32-bit (Acronis True Image 2018), specifically the per-id `TakeAttribute*` / `PreloadAttribute*` handlers in `archive\ver2\file\item_supp.cpp`. The InputItem model wraps each backed-up entity as a stream of (id+flags, size, body) tuples and dispatches by id at load time.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `ItemCommon` | `16` | File/directory common attributes — carries the entry's primary UTF-16LE name and optional alternate (8.3) name, plus a 44-byte fixed header that includes the two name lengths and other still-undecoded fields. Source: `CommonAttributesImpl::TakeAttributeItemCommon`. |
+| `HardLinkId` | `20` | Hard-link group id (8-byte body, treated as a uint64 cookie). Two entries with the same HardLinkId belong to the same hard-link group. Source: `FileItemImpl::TakeAttributeHardLinkId`. |
+| `Replica` | `23` | Replica handle (24-byte body, structure not fully decoded). Source: `ReplicaItemImpl::TakeAttributeReplica`. |
+| `ItemCommonExtra` | `24` | ItemCommon secondary — an 8-byte uint64 cookie tied to the ItemCommon record. Source: tail branch of `CommonAttributesImpl::TakeAttributeItemCommon`. |
+| `SourceItem` | `64` | Source-item path attribute — 8-byte fixed header (uint16 pathLength, uint16 kind, uint32 id) followed by `pathLength * 2` UTF-16LE bytes of source path. Source: `SourceItemImpl::PreloadAttributeSourceItem`. |
+| `BackupTime` | `80` | Backup time (8 bytes, FILETIME-ish — same wall-clock semantics as Listing's `Time` 48-bit timestamp). Source: `BackupTimeItemImpl::PreloadAttributeBackupTime`. |
+| `TimeZone` | `96` | Time-zone offset (4 bytes, int32 minutes-from-UTC). Source: `TimeZoneItemImpl::PreloadAttributeTimeZone`. |
+| `SliceItem` | `128` | Slice-item attribute — 0x19-byte fixed header plus a UTF-16LE name. Source: `SliceItemImpl::PreloadAttributes` id-0x80 branch. |
+| `SliceItemBlob` | `144` | Slice-item comment/blob (variable length). Source: `SliceItemImpl::PreloadAttributes` id-0x90 branch. |
+
+#### `AcronisAttributeRaw`
+
+Raw 6-byte attribute header as it appears on-disk in an Acronis classic .tib FileMeta record body. Each attribute is `[6-byte header][size bytes of body]`.
+
+Implements `IEquatable<AcronisAttributeRaw>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisAttributeRaw` | `AcronisAttributeRaw(uint RawIdAndFlags, ushort Size)` | Raw 6-byte attribute header as it appears on-disk in an Acronis classic .tib FileMeta record body. Each attribute is `[6-byte header][size bytes of body]`. |
+| `IsDeduplicated` | `bool IsDeduplicated { get; }` | `true` iff bit 23 is set (deduplicated / stored-by-hash body). |
+| `RawIdAndFlags` | `uint RawIdAndFlags { get; init; }` | Combined id-plus-flags uint32. Bit 23 is the "deduplicated" / stored-by-hash flag. |
+| `Size` | `ushort Size { get; init; }` | Body length in bytes (uint16). Includes the body only, NOT the header. |
+| `UnmaskedId` | `uint UnmaskedId { get; }` | Logical attribute id with bit 23 masked off — matches the binary-RE'd `InputResidentAttributeEnumerator::GetId` implementation. |
+
+#### `AcronisConfigAttribute`
+
+Implements `IEquatable<AcronisConfigAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisConfigAttribute` | `AcronisConfigAttribute(string Key, string Value)` |  |
+| `Key` | `string Key { get; init; }` |  |
+| `Value` | `string Value { get; init; }` |  |
+
+#### `AcronisEntry`
+
+Synthetic Stage-0 entry surfaced from an Acronis True Image (.tib / .tibx) container. We never decode the proprietary chunk stream, so each entry is either the synthetic `metadata.ini` or the raw passthrough image bytes keyed by `Data`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisEntry` | `AcronisEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `AcronisExtractionResult`
+
+Outcome of an `ExtractFile` call.
+
+Implements `IEquatable<AcronisExtractionResult>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisExtractionResult` | `AcronisExtractionResult(byte[] Data, bool IntegrityValid)` | Outcome of an `ExtractFile` call. |
+| `Data` | `byte[] Data { get; init; }` | The reconstructed file content (length = entry's `FileSize`). |
+| `IntegrityValid` | `bool IntegrityValid { get; init; }` | `true` iff every blob's MD5 matched the corresponding RecordIndex handle hash. When `false`, the data was still concatenated but the integrity check failed, so the caller should treat the result as suspect (potentially indicating a wrong sequential pairing). |
+
+#### `AcronisFileEntry`
+
+Entry parsed out of a `Listing` record.
+
+Implements `IEquatable<AcronisFileEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisFileEntry` | `AcronisFileEntry(string Path, string Name, string ShortName, DateTime? Time, long FileSize, long FileSize2, long MetaOffset)` | Entry parsed out of a `Listing` record. |
+| `FileSize2` | `long FileSize2 { get; init; }` | Second file-size field from the Listing record (semantics not fully decoded). |
+| `FileSize` | `long FileSize { get; init; }` | Listing-record file size (uint48). |
+| `MetaOffset` | `long MetaOffset { get; init; }` | Offset (relative to `HeaderLength`) at which the entry's FirstFileMetaRecord(102) begins. Used by the chain walk in `AcronisReader`. |
+| `Name` | `string Name { get; init; }` | Primary file/directory name from the Listing record. |
+| `Path` | `string Path { get; init; }` | Directory path (UTF-16LE decoded) from the Listing record. |
+| `ShortName` | `string ShortName { get; init; }` | 8.3 short name from the Listing record (often empty). |
+| `Time` | `DateTime? Time { get; init; }` | Listing-record timestamp (FILETIME-ish; nullable when zero). |
+
+#### `AcronisFileMetaBody`
+
+Decoded body of a FileMeta record (102, 1, 2, or 5). Carries every parsed attribute (`Attributes`), the unmasked-id index (`AttributesById`), and the high-level decoded fields whose layouts are documented in the type comments below.
+
+Implements `IEquatable<AcronisFileMetaBody>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisFileMetaBody` | `AcronisFileMetaBody(uint AttributeCount, IReadOnlyList<AcronisRawAttribute> Attributes, AcronisItemCommonAttribute ItemCommon, AcronisSourceItemAttribute SourceItem, ulong? HardLinkId, ulong? BackupTime, int? TimeZoneMinutes, AcronisReplicaAttribute Replica, AcronisItemCommonExtraAttribute ItemCommonExtra, AcronisSliceItemAttribute SliceItem, AcronisSliceItemBlobAttribute SliceItemBlob)` | Decoded body of a FileMeta record (102, 1, 2, or 5). Carries every parsed attribute (`Attributes`), the unmasked-id index (`AttributesById`), and the high-level decoded fields whose layouts are documented in the type comments below. |
+| `AttributeCount` | `uint AttributeCount { get; init; }` | Declared attribute count read from the body's leading uint32. |
+| `Attributes` | `IReadOnlyList<AcronisRawAttribute> Attributes { get; init; }` | Every attribute encountered, in on-disk order. |
+| `BackupTime` | `ulong? BackupTime { get; init; }` | Decoded 8-byte BackupTime, or `null` when absent. |
+| `HardLinkId` | `ulong? HardLinkId { get; init; }` | Decoded 8-byte HardLinkId, or `null` when absent. |
+| `ItemCommonExtra` | `AcronisItemCommonExtraAttribute ItemCommonExtra { get; init; }` | Decoded ItemCommonExtra cookie, or `null` when absent. |
+| `ItemCommon` | `AcronisItemCommonAttribute ItemCommon { get; init; }` | Decoded ItemCommon attribute body, or `null` when absent. |
+| `Replica` | `AcronisReplicaAttribute Replica { get; init; }` | Decoded Replica attribute body, or `null` when absent. |
+| `SliceItemBlob` | `AcronisSliceItemBlobAttribute SliceItemBlob { get; init; }` | Decoded SliceItemBlob attribute body, or `null` when absent. |
+| `SliceItem` | `AcronisSliceItemAttribute SliceItem { get; init; }` | Decoded SliceItem attribute body, or `null` when absent. |
+| `SourceItem` | `AcronisSourceItemAttribute SourceItem { get; init; }` | Decoded SourceItem attribute body, or `null` when absent. |
+| `TimeZoneMinutes` | `int? TimeZoneMinutes { get; init; }` | Decoded TimeZone (4-byte int32 minutes), or `null` when absent. |
+| `AttributesById` | `IReadOnlyList<AcronisRawAttribute> AttributesById(uint id)` | Look up attributes by their unmasked id. |
+
+#### `AcronisFileMetaBodyDecoder`
+
+Decoder for inflated FileMeta record bodies (record types 102, 1, 2, 5).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeItemCommon` | `static AcronisItemCommonAttribute DecodeItemCommon(ReadOnlySpan<byte> body)` | Decodes an ItemCommon (id 0x10) attribute body. Layout reverse-engineered from `ArchiveApi::ItemBackuperImpl::BackupCommonAttributes` (the symmetric writer in `ti_tools.dll` at `k:\9202\archive\ver2\file\backup_operation.cpp`): The fixed header is exactly 44 bytes (4 + 4 + 8*4 + 4). The four FILETIMEs are reported in their raw uint64 form for round-tripping; `AcronisItemCommonAttribute` also exposes them as nullable `DateTime` properties for ergonomics. Returns `null` when the body is too short to hold the 44-byte fixed header or when the declared name length overflows the body. |
+| `DecodeReplica` | `static AcronisReplicaAttribute DecodeReplica(ReadOnlySpan<byte> body)` | Decodes a Replica (id 0x17) attribute body. Layout reverse-engineered from `ArchiveApi::ReplicaItemImpl::TakeAttributeReplica` in `ti_tools.dll` (`k:\9202\archive\ver2\file\item_supp.cpp`): Returns `null` when the body is shorter than 24 bytes — the binary's reader throws in that case; we surface a soft `null` so the outer attribute walk keeps going. |
+| `DecodeSliceItem` | `static AcronisSliceItemAttribute DecodeSliceItem(ReadOnlySpan<byte> body)` | Decodes a SliceItem (id 0x80) attribute body. Layout reverse-engineered from `ArchiveApi::SliceItemImpl::PreloadAttributes` id-0x80 branch in `ti_tools.dll` (`k:\9202\archive\ver2\file\item_supp.cpp`): Returns `null` when the body is shorter than 25 bytes. |
+| `DecodeSourceItem` | `static AcronisSourceItemAttribute DecodeSourceItem(ReadOnlySpan<byte> body)` | Decodes a SourceItem (id 0x40) attribute body. Layout from `SourceItemImpl::PreloadAttributeSourceItem`: Returns `null` when the body is too short to hold the 8-byte fixed header. |
+| `Decode` | `static AcronisFileMetaBody Decode(ReadOnlySpan<byte> payload)` |  |
+| `Decode` | `static AcronisFileMetaBody Decode(byte[] payload)` | Parses an inflated FileMeta record body into a structured `AcronisFileMetaBody`. Returns `null` when the body is too short to even read the leading attribute count. Truncated or malformed attribute streams produce a partial result rather than throwing — the caller is expected to treat the partial result as best-effort diagnostic data. |
+
+#### `AcronisFormatDescriptor`
+
+Format descriptor for Acronis True Image classic .tib backups. References: `https://github.com/dennisss/acronis-tib` — community reverse-engineering of the .tib record stream (the upstream spec this reader is built on)Acronis True Image / Cyber Protect Home Office vendor documentation — the format itself is proprietary and unpublished
+
+Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisFormatDescriptor` | `AcronisFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends one or more new files to the slice via true in-place record-stream append. Delegates to `Add`. Existing bytes are byte-identical; the reader's per-name latest-Listing-wins gate surfaces the new entries. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Appends a tombstone Listing record per name via `Remove`. The reader's per-name latest-wins gate sees the tombstone `MetaOffset` sentinel and drops the entry from the live view. |
+
+#### `AcronisInPlaceModifier`
+
+True in-place R/W modifier for Acronis classic .tib slices — the on-disk surface that turns the format from WORM / R-only into R/W via record-stream append.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Add` | `static void Add(Stream image, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends one or more new files into `image` at end-of-stream. Existing bytes are byte-identical; the freshly appended batch carries a Listing record per file followed by the file's 102 → 1 → 2 → 5 chain, RecordIndex(108) and a single Blob(109) per file. A fresh EndTrailer + 12-byte fs trailer + 48-byte mirror footer is written at the new EOF. |
+| `Remove` | `static void Remove(Stream image, string entryName)` | Appends a tombstone Listing record removing `entryName` from the live entry view. The on-disk semantic is: a Listing record carrying the entry's name with `TombstoneMetaOffset` as the `MetaOffset` sentinel. The reader's per-name latest-wins gate treats this as "entry removed" and drops it. The OLD Listing + OLD chain remain byte-identical at their original offsets — Remove is byte- preserving on the payload, not a forensic wipe. |
+| `Replace` | `static void Replace(Stream image, string entryName, byte[] newData)` | Replaces the content of an existing entry by appending a fresh chain. The Replace semantic is: the OLD Listing record + OLD chain remain byte-identical at their original offsets; a NEW Listing record carrying the same name (with a fresh `MetaOffset` pointing at the freshly-appended 102 anchor) is emitted, plus the freshly-appended 102 → 1 → 2 → 5 → 108 → 109 chain for `newData`. The reader's per-name latest-wins gate (in `AcronisReader`) picks up the new content; the old chain is no longer reachable through the live entry view. |
+
+#### `AcronisItemCommonAttribute`
+
+Decoded ItemCommon (id 0x10) attribute body — carries the file/directory `Name` and optional `AltName`, plus the typed fields decoded from the 44-byte fixed header.
+
+Implements `IEquatable<AcronisItemCommonAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisItemCommonAttribute` | `AcronisItemCommonAttribute(string Name, string AltName, ushort NameLength, ushort AltNameLength, uint DosAttributes, ulong CreationTime, ulong LastWriteTime, ulong LastAccessTime, ulong ChangeTime, uint TrailerDword, byte[] FixedHeader)` | Decoded ItemCommon (id 0x10) attribute body — carries the file/directory `Name` and optional `AltName`, plus the typed fields decoded from the 44-byte fixed header. |
+| `AltNameLength` | `ushort AltNameLength { get; init; }` | Alt-name length in UTF-16 code units (zero when absent). |
+| `AltName` | `string AltName { get; init; }` | Alternate 8.3 name (UTF-16LE), or `null` when absent. |
+| `ChangeTimeUtc` | `DateTime? ChangeTimeUtc { get; }` | `ChangeTime` as a `DateTime` in UTC, or `null` when the FILETIME is zero (unset) or outside the representable range. |
+| `ChangeTime` | `ulong ChangeTime { get; init; }` | FILETIME at offset 32 — wall-clock NTFS change time (mft-change) of the source file at backup capture. |
+| `CreationTimeUtc` | `DateTime? CreationTimeUtc { get; }` | `CreationTime` as a `DateTime` in UTC, or `null` when the FILETIME is zero (unset) or outside the representable range. |
+| `CreationTime` | `ulong CreationTime { get; init; }` | FILETIME at offset 8 — wall-clock creation time of the source file at backup capture. |
+| `DosAttributes` | `uint DosAttributes { get; init; }` | Windows file attribute bits at offset 4 (FILE_ATTRIBUTE_NORMAL, _DIRECTORY, _READONLY, etc.). |
+| `FixedHeader` | `byte[] FixedHeader { get; init; }` | Verbatim copy of the entire 44-byte fixed header preceding the names — kept for diagnostic / round-trip purposes alongside the typed fields above. |
+| `LastAccessTimeUtc` | `DateTime? LastAccessTimeUtc { get; }` | `LastAccessTime` as a `DateTime` in UTC, or `null` when the FILETIME is zero (unset) or outside the representable range. |
+| `LastAccessTime` | `ulong LastAccessTime { get; init; }` | FILETIME at offset 24 — wall-clock last-access time of the source file at backup capture. |
+| `LastWriteTimeUtc` | `DateTime? LastWriteTimeUtc { get; }` | `LastWriteTime` as a `DateTime` in UTC, or `null` when the FILETIME is zero (unset) or outside the representable range. |
+| `LastWriteTime` | `ulong LastWriteTime { get; init; }` | FILETIME at offset 16 — wall-clock last-write time of the source file at backup capture. |
+| `NameLength` | `ushort NameLength { get; init; }` | Name length in UTF-16 code units (i.e., chars). |
+| `Name` | `string Name { get; init; }` | Primary name (UTF-16LE, length `NameLength` chars). |
+| `TrailerDword` | `uint TrailerDword { get; init; }` | Trailer uint32 at offset 40 — semantics not fully decoded; preserved verbatim. |
+
+#### `AcronisItemCommonExtraAttribute`
+
+Decoded ItemCommonExtra (id 0x18) attribute body — an 8-byte cookie tied to the ItemCommon record, written by `BackupCommonAttributes` via FileItem vtable[0x2c].
+
+Implements `IEquatable<AcronisItemCommonExtraAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisItemCommonExtraAttribute` | `AcronisItemCommonExtraAttribute(ulong Value)` | Decoded ItemCommonExtra (id 0x18) attribute body — an 8-byte cookie tied to the ItemCommon record, written by `BackupCommonAttributes` via FileItem vtable[0x2c]. |
+| `Value` | `ulong Value { get; init; }` | 8-byte cookie value, interpreted as uint64 little-endian. |
+
+#### `AcronisRawAttribute`
+
+One parsed attribute from a FileMeta record body.
+
+Implements `IEquatable<AcronisRawAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisRawAttribute` | `AcronisRawAttribute(AcronisAttributeRaw Header, byte[] Body)` | One parsed attribute from a FileMeta record body. |
+| `Body` | `byte[] Body { get; init; }` | Body bytes. When `IsDeduplicated` is true and `Size == 16`, this is the 16-byte MD5 referring to a deduplicated body kept in the archive's attribute-hash table (not currently dereferenced — the table itself lives elsewhere in the .tib). |
+| `Header` | `AcronisAttributeRaw Header { get; init; }` | The 6-byte on-disk header. |
+| `Id` | `uint Id { get; }` | Convenience accessor — same as `Header.UnmaskedId`. |
+
+#### `AcronisReader`
+
+High-level read-only facade for Acronis classic .tib backups.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisReader` | `AcronisReader(Stream stream)` |  |
+| `TombstoneMetaOffset` | `const long TombstoneMetaOffset` | Sentinel `MetaOffset` value (max uint48) signalling that the Listing entry is a TOMBSTONE: a true in-place removal marker carrying the entry's full name and zero size. The reader treats the latest tombstone-for-name as authoritative and drops the entry from `Entries`; any later non-tombstone Listing for the same name resurrects the entry. This sentinel is appended by `AcronisInPlaceModifier` from the modifier surface. |
+| `ChainWalkComplete` | `bool ChainWalkComplete { get; }` | `true` iff `RecordIndicesByChainWalk` resolved every Listing entry to a RecordIndex via the on-disk FileMeta chain walk (no nulls). |
+| `ChainWalkMatchesSequentialPairing` | `bool ChainWalkMatchesSequentialPairing { get; }` | `true` iff `RecordIndicesByChainWalk` agrees with the legacy sequential pairing at every resolved entry. When this is `true` AND `ChainWalkComplete` is `true`, the two paths cross-validate each other for this slice. |
+| `ConfigAttributes` | `IReadOnlyList<AcronisConfigAttribute> ConfigAttributes { get; }` |  |
+| `DecodedNamesByEntry` | `IReadOnlyList<string> DecodedNamesByEntry { get; }` | Per-entry filename decoded from the anchored FirstFileMetaRecord(102)'s ItemCommon attribute (id 0x10). `null` at index `i` when the body couldn't be decoded or didn't contain an ItemCommon attribute. When set, this is the authoritative filename per the reverse-engineered InputItem model; the Listing record's `Name` may agree or disagree depending on whether the Listing was rewritten after the FileMeta was emitted. |
+| `Entries` | `IReadOnlyList<AcronisFileEntry> Entries { get; }` |  |
+| `FileMetaBodiesByEntry` | `IReadOnlyList<AcronisFileMetaBody> FileMetaBodiesByEntry { get; }` | Per-entry decoded FileMeta record (102 = FirstFileMetaRecord) body, resolved by walking the chain anchored on the Listing entry's `MetaOffset`. `null` at index `i` when chain walk did not resolve the entry, when the anchored 102 body failed to decode as an attribute stream, or when the body has no attributes the decoder recognizes. |
+| `FileMetaRecords` | `IReadOnlyList<AcronisRecord> FileMetaRecords { get; }` | Per-file metadata records (102/1/2/5) surfaced as opaque diagnostic blobs. Body layouts are undocumented across every public source surveyed. |
+| `Header` | `AcronisVolumeHeader Header { get; }` |  |
+| `RecordIndicesByChainWalk` | `IReadOnlyList<AcronisRecord> RecordIndicesByChainWalk { get; }` | Per-entry RecordIndex resolution computed by walking the FileMeta chain anchored on the Listing entry's `MetaOffset` field. `null` at index `i` means the chain walk could not resolve the entry (no FirstFileMetaRecord found at the claimed offset, or no RecordIndex follows the chain). |
+| `RecordIndices` | `IReadOnlyList<AcronisRecord> RecordIndices { get; }` | RecordIndex records (type 108) in archive order. The Nth element corresponds to the Nth entry in `Entries` per the sequential-pairing assumption (see class remarks). |
+| `Records` | `IReadOnlyList<AcronisRecord> Records { get; }` | All records walked from the metadata stream (in archive order). |
+| `Trailer` | `AcronisSliceTrailer Trailer { get; }` |  |
+| `CanExtractByPairing` | `bool CanExtractByPairing(out string reason)` | Returns `true` when the slice contains at least as many RecordIndex(108) records as Listing entries and every entry size matches its corresponding RecordIndex `TotalSize`. Failure of either condition indicates the sequential-pairing assumption (see class remarks) does NOT hold for this slice and extraction should be treated as unverifiable. |
+| `ExtractFile` | `AcronisExtractionResult ExtractFile(int entryIndex)` | Extracts the file content for the entry at `entryIndex` by walking the paired RecordIndex's handles and decompressing each referenced Blob. |
+
+#### `AcronisRecord`
+
+Record extents in the archive (absolute byte positions).
+
+Implements `IEquatable<AcronisRecord>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisRecord` | `AcronisRecord(AcronisRecordType Type, long Start, long End, byte[] Payload, IReadOnlyList<AcronisFileEntry> Files = null, IReadOnlyList<AcronisConfigAttribute> ConfigAttrs = null, AcronisRecordIndexInfo Index = null, AcronisFileMetaBody MetaBody = null)` | Record extents in the archive (absolute byte positions). |
+| `ConfigAttrs` | `IReadOnlyList<AcronisConfigAttribute> ConfigAttrs { get; init; }` | Parsed config key/value pairs (Config records, type 101). |
+| `End` | `long End { get; init; }` | Absolute archive byte position immediately after the record's trailing data. |
+| `Files` | `IReadOnlyList<AcronisFileEntry> Files { get; init; }` | Parsed listing entries (Listing records, type 103). |
+| `Index` | `AcronisRecordIndexInfo Index { get; init; }` | Parsed RecordIndex payload (RecordIndex records, type 108). |
+| `MetaBody` | `AcronisFileMetaBody MetaBody { get; init; }` | Parsed FileMeta body — populated for FirstFileMetaRecord(102), FileMetaA(1), FileMetaB(2), FileMetaC(5). Carries the attribute stream (id+flags+size+body tuples) and the high-level decoded fields (ItemCommon → filename, SourceItem → path, BackupTime, etc.). |
+| `Payload` | `byte[] Payload { get; init; }` | Inflated record body (deflate-decompressed). `null` for EndTrailer. |
+| `Start` | `long Start { get; init; }` | Absolute archive byte position of the record's leading type tag. |
+| `Type` | `AcronisRecordType Type { get; init; }` | Record type tag (the 1-byte prefix). |
+
+#### `AcronisRecordHandle`
+
+One handle inside a `RecordIndex` payload — points at a `Blob` record that holds (part of) a file's decompressed data.
+
+Implements `IEquatable<AcronisRecordHandle>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisRecordHandle` | `AcronisRecordHandle(long StartOffset, long RecordOffset, byte[] Md5)` | One handle inside a `RecordIndex` payload — points at a `Blob` record that holds (part of) a file's decompressed data. |
+| `Md5` | `byte[] Md5 { get; init; }` | 16-byte MD5 of the decompressed Blob payload — used for integrity checks. |
+| `RecordOffset` | `long RecordOffset { get; init; }` | Offset of the referenced Blob record relative to the END of the volume header (absolute archive position = `HeaderLength + RecordOffset`). Layout per upstream RE. |
+| `StartOffset` | `long StartOffset { get; init; }` | Offset (uncompressed bytes) within the destination file at which this blob's decompressed data is positioned. Used to order/concatenate fragments when a file spans multiple blobs. |
+
+#### `AcronisRecordIndexInfo`
+
+Parsed `RecordIndex` payload (record type 108).
+
+Implements `IEquatable<AcronisRecordIndexInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisRecordIndexInfo` | `AcronisRecordIndexInfo(long TotalSize, IReadOnlyList<AcronisRecordHandle> Handles)` | Parsed `RecordIndex` payload (record type 108). |
+| `Handles` | `IReadOnlyList<AcronisRecordHandle> Handles { get; init; }` | Per-blob handles in the order they appear in the payload. |
+| `TotalSize` | `long TotalSize { get; init; }` | Total uncompressed size covered by all handles — equals the file's logical size per upstream RE. |
+
+#### `AcronisRecordReader`
+
+Walks the Acronis record stream starting at an absolute byte offset and yields parsed records.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParseListing` | `static List<AcronisFileEntry> ParseListing(byte[] payload)` | Parses a Listing payload (record type 103) into file entries. Per upstream RE (src/win/record.ts): |
+| `ParseRecordIndex` | `static AcronisRecordIndexInfo ParseRecordIndex(byte[] payload)` | Parses a `RecordIndex` payload (type 108). Per upstream RE (https://github.com/dennisss/acronis-tib, src/win/record.ts): Returns `null` when the payload is too short or malformed (partial archives shouldn't crash). |
+| `ReadAll` | `static List<AcronisRecord> ReadAll(Stream stream, long endExclusive)` | Reads records starting at `stream`'s current position and ending at `endExclusive`. Stops at end-of-stream, or when an unparseable record is encountered (partial result is returned in that case rather than thrown). |
+| `ReadOne` | `static AcronisRecord ReadOne(Stream stream, long endExclusive)` |  |
+
+#### `AcronisRecordType`
+
+Record type identifiers in the Acronis classic .tib record stream, per upstream RE (https://github.com/dennisss/acronis-tib, src/win/record.ts).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Config` | `101` | XML configuration (key/value pairs). |
+| `FirstFileMetaRecord` | `102` | Anchor record for a single FileEntry — followed by FileMetaA/B/C blocks. Payload layout not understood upstream. |
+| `FileMetaA` | `1` | Follows FirstFileMetaRecord. Payload layout not understood upstream. |
+| `FileMetaB` | `2` | Follows FileMetaA. Payload layout not understood upstream. |
+| `FileMetaC` | `5` | Follows FileMetaB. Payload layout not understood upstream. |
+| `Listing` | `103` | Directory + file listing for the slice. |
+| `EndTrailer` | `104` | End-of-stream marker. |
+| `RecordIndex` | `108` | Per-file record index — points at the Blob records holding the file's data. |
+| `Blob` | `109` | File data block. |
+| `BlobSuffix` | `110` | Inserted after every blob for a file. Payload (if any) is opaque. |
+
+#### `AcronisReplicaAttribute`
+
+Decoded Replica (id 0x17) attribute body — carries a 16-byte GUID and two trailing uint32s.
+
+Implements `IEquatable<AcronisReplicaAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisReplicaAttribute` | `AcronisReplicaAttribute(Guid Guid, byte[] RawGuidBytes, uint Value1, uint Value2)` | Decoded Replica (id 0x17) attribute body — carries a 16-byte GUID and two trailing uint32s. |
+| `Guid` | `Guid Guid { get; init; }` | Replica's source GUID, canonicalized for display. |
+| `RawGuidBytes` | `byte[] RawGuidBytes { get; init; }` | Verbatim 16-byte GUID block as it appears on disk (pre-swap). |
+| `Value1` | `uint Value1 { get; init; }` | First trailing uint32 — semantics not fully decoded. |
+| `Value2` | `uint Value2 { get; init; }` | Second trailing uint32 — semantics not fully decoded. |
+
+#### `AcronisSliceForm`
+
+Form of an Acronis slice — determines how the trailer is laid out.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` |  |
+| `FileSystem` | `1` | File/directory-based backup (per-file index records). Trailer magic `2C 8A E1 94`. |
+| `SectorBySector` | `2` | Sector-by-sector backup. Trailer magic `2B 8A E1 94`. Metadata offset is variable-length encoded. |
+
+#### `AcronisSliceItemAttribute`
+
+Decoded SliceItem (id 0x80) attribute body — carries a 16-byte slice GUID, two uint32 cookies, a 1-byte flag, and (optionally) a trailing UTF-16LE name.
+
+Implements `IEquatable<AcronisSliceItemAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisSliceItemAttribute` | `AcronisSliceItemAttribute(Guid Guid, byte[] RawGuidBytes, uint Value1, uint Value2, byte Flag, string Name, ushort NameLength)` | Decoded SliceItem (id 0x80) attribute body — carries a 16-byte slice GUID, two uint32 cookies, a 1-byte flag, and (optionally) a trailing UTF-16LE name. |
+| `Flag` | `byte Flag { get; init; }` | Single-byte flag at offset 24, written as a bool by the reader. |
+| `Guid` | `Guid Guid { get; init; }` | Slice GUID, canonicalized for display. |
+| `NameLength` | `ushort NameLength { get; init; }` | UTF-16 code units of `Name`, or zero when absent. |
+| `Name` | `string Name { get; init; }` | Optional UTF-16LE trailing name when the body carries the extended tail. |
+| `RawGuidBytes` | `byte[] RawGuidBytes { get; init; }` | Verbatim 16-byte GUID block as it appears on disk (pre-swap). |
+| `Value1` | `uint Value1 { get; init; }` | First trailing uint32 — semantics not fully decoded. |
+| `Value2` | `uint Value2 { get; init; }` | Second trailing uint32 — semantics not fully decoded. |
+
+#### `AcronisSliceItemBlobAttribute`
+
+Decoded SliceItemBlob (id 0x90) attribute body — a variable-length opaque payload, surfaced verbatim. The blob is read via `SliceItemImpl::PreloadAttributes`' id-0x90 branch with no internal framing decoded; consumers typically interpret it as a sequence of UTF-16 code units for slice-comment text but the binary's reader makes no such assumption.
+
+Implements `IEquatable<AcronisSliceItemBlobAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisSliceItemBlobAttribute` | `AcronisSliceItemBlobAttribute(byte[] Bytes)` | Decoded SliceItemBlob (id 0x90) attribute body — a variable-length opaque payload, surfaced verbatim. The blob is read via `SliceItemImpl::PreloadAttributes`' id-0x90 branch with no internal framing decoded; consumers typically interpret it as a sequence of UTF-16 code units for slice-comment text but the binary's reader makes no such assumption. |
+| `Bytes` | `byte[] Bytes { get; init; }` | Verbatim blob bytes as they appear on the wire. |
+
+#### `AcronisSliceTrailer`
+
+Trailer-parser for a single Acronis classic .tib slice (final volume of a slice).
+
+Implements `IEquatable<AcronisSliceTrailer>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisSliceTrailer` | `AcronisSliceTrailer(bool MirrorValid, AcronisSliceForm Form, long MetadataOffset, long SliceSize)` | Trailer-parser for a single Acronis classic .tib slice (final volume of a slice). |
+| `Form` | `AcronisSliceForm Form { get; init; }` |  |
+| `MetadataOffset` | `long MetadataOffset { get; init; }` |  |
+| `MirrorValid` | `bool MirrorValid { get; init; }` |  |
+| `SliceSize` | `long SliceSize { get; init; }` |  |
+| `TryRead` | `static AcronisSliceTrailer TryRead(Stream stream, AcronisVolumeHeader header)` | Reads the trailer from the end of the slice. The header is needed to validate the mirror image. Returns `null` when the file is too small for a valid trailer (e.g. multi-volume slice where only an intermediate volume was opened). |
+
+#### `AcronisSourceItemAttribute`
+
+Decoded SourceItem (id 0x40) attribute body — carries the source `Path` string plus the 8-byte fixed header.
+
+Implements `IEquatable<AcronisSourceItemAttribute>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisSourceItemAttribute` | `AcronisSourceItemAttribute(string Path, ushort PathLength, ushort Kind, uint Id)` | Decoded SourceItem (id 0x40) attribute body — carries the source `Path` string plus the 8-byte fixed header. |
+| `Id` | `uint Id { get; init; }` | uint32 immediately after the (length, kind) pair — source-item handle. |
+| `Kind` | `ushort Kind { get; init; }` | Second uint16 in the fixed header — semantics not fully decoded. |
+| `PathLength` | `ushort PathLength { get; init; }` | Path length in UTF-16 code units. |
+| `Path` | `string Path { get; init; }` | Source path (UTF-16LE). |
+
+#### `AcronisVolumeHeader`
+
+Implements `IEquatable<AcronisVolumeHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisVolumeHeader` | `AcronisVolumeHeader(ushort HeaderLength, AcronisVolumeVersion Version, uint ArchiveKey, uint SliceKey, uint VolumeKey, uint Sequence, uint Adler32, uint BlockSize)` |  |
+| `Magic` | `const uint Magic` |  |
+| `Adler32` | `uint Adler32 { get; init; }` |  |
+| `ArchiveKey` | `uint ArchiveKey { get; init; }` |  |
+| `BlockSize` | `uint BlockSize { get; init; }` |  |
+| `HeaderLength` | `ushort HeaderLength { get; init; }` |  |
+| `Sequence` | `uint Sequence { get; init; }` |  |
+| `SliceKey` | `uint SliceKey { get; init; }` |  |
+| `Version` | `AcronisVolumeVersion Version { get; init; }` |  |
+| `VolumeKey` | `uint VolumeKey { get; init; }` |  |
+| `Read` | `static AcronisVolumeHeader Read(Stream stream)` | Reads the volume header from the start of `stream`. |
+
+#### `AcronisVolumeVersion`
+
+Volume-header parser for Acronis True Image classic .tib backups.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Windows` | `0` |  |
+| `Mac` | `1` |  |
+
+#### `AcronisWriter`
+
+Whole-archive writer for Acronis True Image classic `.tib` Windows-format slices.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderLength` | `const int HeaderLength` | Windows-format volume header length in bytes. |
+| `Build` | `static byte[] Build(IReadOnlyList<FileSpec> files, uint archiveKey = 286331153, uint sliceKey = 572662306, uint volumeKey = 858993459, uint sequence = 1)` | Builds a complete classic `.tib` Windows file-system slice carrying `files` and returns the full archive bytes. |
+
+#### `AcronisWriter.FileSpec`
+
+One file to place into a fresh slice.
+
+Implements `IEquatable<FileSpec>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FileSpec` | `FileSpec(string Path, string Name, byte[] Content)` | One file to place into a fresh slice. |
+| `Content` | `byte[] Content { get; init; }` | Raw file bytes (stored zlib-compressed in a single Blob). |
+| `Name` | `string Name { get; init; }` | Leaf file name. |
+| `Path` | `string Path { get; init; }` | Directory path component (e.g. `"sub/"` or empty for root). |
+
+### Namespace `FileFormat.AcronisTibx`
+
+[`AcronisTibxEntry`](#acronistibxentry) · [`AcronisTibxFormatDescriptor`](#acronistibxformatdescriptor) · [`AcronisTibxLsmEntry`](#acronistibxlsmentry) · [`AcronisTibxLsmPageSubHeader`](#acronistibxlsmpagesubheader) · [`AcronisTibxLsmRecord`](#acronistibxlsmrecord) · [`AcronisTibxLsmRecord.DecodedLeafBody`](#acronistibxlsmrecorddecodedleafbody) · [`AcronisTibxPage`](#acronistibxpage) · [`AcronisTibxPageType`](#acronistibxpagetype) · [`AcronisTibxReader`](#acronistibxreader) · [`AcronisTibxReader.DecodedLeafSummary`](#acronistibxreaderdecodedleafsummary) · [`AcronisTibxWriter`](#acronistibxwriter) · [`AcronisTibxWriter.FileSpec`](#acronistibxwriterfilespec) · [`Golomb`](#golomb) · [`Golomb.BitReader`](#golombbitreader) · [`Golomb.BitWriter`](#golombbitwriter)
+
+#### `AcronisTibxEntry`
+
+One synthetic entry surfaced by `AcronisTibxReader`: either the parsed `metadata.ini` describing the header fields recovered from the archive3 page-zero structure, or the verbatim container bytes for downstream tooling.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisTibxEntry` | `AcronisTibxEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `AcronisTibxFormatDescriptor`
+
+Stage-1 R/O metadata descriptor for Acronis True Image `.tibx` backups (the 2020+ modern container, distinct from the classic `.tib` stream-of-records format handled by `AcronisFormatDescriptor`). References: `https://www.acronis.com` — vendor — the .tibx container is proprietary and unpublished`https://en.wikipedia.org/wiki/Acronis_True_Image` — product background (classic .tib vs 2020+ .tibx)On-disk layout (ARCH page-zero magic, LSM page store) recovered by community reverse engineering; no public specification exists
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisTibxFormatDescriptor` | `AcronisTibxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Single signature: ASCII `"ARCH"` at offset 0. High confidence — the vendor's `archive_hdr.c` writer always emits this tag as the first four bytes of every `.tibx` container, and the vendor's `ar_page_verify` rejects any page that doesn't start with `0x41`. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `AcronisTibxLsmEntry`
+
+One logical entry surfaced from a Stage-2 LSM tree walk over a `.tibx` container. This pass classifies pages by type (HDR / LSM_LEAF / LSM_DIR / GOLOMB / DATA / CI) and surfaces a per-page summary; it does NOT yet decode the LSM record stream inside LEAF pages (the Golomb-coded key/value layout in `lsm_lookup.c` + `golomb.c` is the next stage and would expose the actual filenames).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisTibxLsmEntry` | `AcronisTibxLsmEntry()` |  |
+| `ContentMagic` | `byte[] ContentMagic { get; init; }` | 4-byte ASCII content magic — see `ContentMagic`. |
+| `FileOffset` | `long FileOffset { get; init; }` | Byte offset of the page within the container. |
+| `LsmSubHeader` | `AcronisTibxLsmPageSubHeader LsmSubHeader { get; init; }` | LSM sub-header (only set for LSM_LEAF / LSM_DIR pages — `null` for HDR / GOLOMB / DATA / CI). |
+| `PageIndex` | `long PageIndex { get; init; }` | 1-based page index counted from the start of the container. |
+| `PageType` | `AcronisTibxPageType PageType { get; init; }` | Page-type tag at `+0x1` of the page frame. |
+| `StoredCrc` | `uint StoredCrc { get; init; }` | Stored BE32 CRC at `+0x4`. Zero for the page-zero HDR page. |
+
+#### `AcronisTibxLsmPageSubHeader`
+
+Decoded LSM-specific sub-header carried by every LEAF / LDIR page. Layout recovered from binary RE of `lsm_dump_ctrees` at `libarchive3.so` offset `0x590f7..0x5912d`: each field is the same load the dumper emits into the `"version" / "encoding" / "count" / "len" / "zlen" / "seq" / "id"` JSON keys.
+
+Implements `IEquatable<AcronisTibxLsmPageSubHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisTibxLsmPageSubHeader` | `AcronisTibxLsmPageSubHeader(byte Version, byte Encoding, ushort Count, uint Len, uint Zlen, uint Seq, byte Id)` | Decoded LSM-specific sub-header carried by every LEAF / LDIR page. Layout recovered from binary RE of `lsm_dump_ctrees` at `libarchive3.so` offset `0x590f7..0x5912d`: each field is the same load the dumper emits into the `"version" / "encoding" / "count" / "len" / "zlen" / "seq" / "id"` JSON keys. |
+| `Count` | `ushort Count { get; init; }` | BE16 at `+0xE` — number of LSM records on this page. |
+| `Encoding` | `byte Encoding { get; init; }` | Byte at `+0xD` (`3` = standard, `4` = alternative). |
+| `Id` | `byte Id { get; init; }` | Byte at `+0x1C` — ctree index this page belongs to (0..nr_ctree-1). |
+| `Len` | `uint Len { get; init; }` | BE32 at `+0x10` — uncompressed body length. |
+| `Seq` | `uint Seq { get; init; }` | BE32 at `+0x18` — LSM sequence ordinal. |
+| `Version` | `byte Version { get; init; }` | Byte at `+0xC`. |
+| `Zlen` | `uint Zlen { get; init; }` | BE32 at `+0x14` — on-disk compressed body length. |
+| `Parse` | `static AcronisTibxLsmPageSubHeader Parse(ReadOnlySpan<byte> page)` | Decode a sub-header from a full page buffer starting at the page frame. |
+
+#### `AcronisTibxLsmRecord`
+
+Stage-3 LSM record-stream decoder for the body of a `LSM_LEAF` page. Each leaf body is an LZ4-stream-compressed buffer (encoding byte = `3`) carrying a sorted sequence of `(key, value)` records — the keys carry item ids + names, the values point at per-item attribute streams.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncodingAlternative` | `const byte EncodingAlternative` | Encoding byte value reserved for the alternative path (not yet decoded). Per `cmp $0x4, %bl` at `0x55404` the binary accepts `3` and `4` as the only valid encodings — anything else is rejected with the `"encoding (%d) at %llu%s is unknown"` log message at `lsm_golomb.c:32`. |
+| `EncodingLz4ChainedStream` | `const byte EncodingLz4ChainedStream` | Encoding byte value that means "LZ4 chained-stream compression" (the path at `libarchive3.so` 0x54fb0). Encoding `3` is the common production form per `cmp $0x3, %bl` at `0x55404`. |
+| `LeafBodyOffset` | `const int LeafBodyOffset` | Byte offset of the LEAF/LDIR body inside the 4 KiB page frame. The sub-header occupies `+0x8..+0x1D` (4-byte magic + 0x14 fields), leaving the body to start at `+0x20` (page-aligned to a u32 boundary). |
+| `BuildLz4ChainedStreamFor` | `static byte[] BuildLz4ChainedStreamFor(byte[] itemCommonBody)` | Encodes a single test fixture mimicking the LEAF body shape — used by the test suite to round-trip `DecodeLeafBody` against a known-good ItemCommon attribute. |
+| `DecodeLeafBody` | `static DecodedLeafBody DecodeLeafBody(ReadOnlySpan<byte> pageBytes, AcronisTibxLsmPageSubHeader subHeader)` | Decodes the LEAF body of a `LSM_LEAF` page. Reads the chained LZ4 stream starting at `LeafBodyOffset`, decompresses each `(BE32 zchunk, BE32 chunk, LZ4-data)` triple, and forensically scans the decompressed buffer for ItemCommon attribute bodies that match the classic `.tib` InputItem layout (filename, timestamps, DOS attrs). |
+| `ScanForItemCommonAttributes` | `static IReadOnlyList<AcronisItemCommonAttribute> ScanForItemCommonAttributes(ReadOnlySpan<byte> decompressed)` | Scans `decompressed` bytes for the signature of an Acronis `InputItem` ItemCommon attribute body (the 44-byte fixed header + UTF-16LE name layout pinned by `DecodeItemCommon`). |
+
+#### `AcronisTibxLsmRecord.DecodedLeafBody`
+
+Decoded LEAF body — the LZ4-decompressed bytes plus diagnostic metadata about what the decompression path did and which scan results were surfaced.
+
+Implements `IEquatable<DecodedLeafBody>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodedLeafBody` | `DecodedLeafBody(byte[] DecompressedBody, string Status, int ChunkCount, IReadOnlyList<AcronisItemCommonAttribute> CandidateItemNames)` | Decoded LEAF body — the LZ4-decompressed bytes plus diagnostic metadata about what the decompression path did and which scan results were surfaced. |
+| `CandidateItemNames` | `IReadOnlyList<AcronisItemCommonAttribute> CandidateItemNames { get; init; }` | Best-effort forensic scan: any plausible ItemCommon (attribute id `0x10`) attribute bodies whose 44-byte fixed header + UTF-16LE name + FILETIME cluster validates against the layout that `AcronisFileMetaBodyDecoder` understands. |
+| `ChunkCount` | `int ChunkCount { get; init; }` | Number of LZ4 chunks consumed from the body. |
+| `DecompressedBody` | `byte[] DecompressedBody { get; init; }` | The LZ4-decompressed leaf body bytes (length matches the sub-header's `len` field on success). `null` when decompression failed. |
+| `Status` | `string Status { get; init; }` | Diagnostic status string — one of `"ok"`, `"unsupported_encoding"`, `"len_mismatch"`, `"empty_body"`, `"lz4_chunk_error"`, `"buffer_underrun"`. |
+
+#### `AcronisTibxPage`
+
+One parsed 4 KiB `.tibx` page. Carries the page-frame fields (type tag, stored CRC, content magic) recovered from binary RE of `ar_page_verify` (Linux `libarchive3.so` at `0x6bef0`), plus the LSM-specific sub-header fields (version, encoding, count, len, zlen, seq, id) that the diagnostic `"%s": {"offset": %llu, "magic": "%.*s", "version": %u, "encoding": "%02x", "count": %u, "len": %u, "zlen": %u, "seq": %u, "id": %u}` format string emits for every LEAF/LDIR page.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisTibxPage` | `AcronisTibxPage()` |  |
+| `ContentMagicOffset` | `const int ContentMagicOffset` | Byte offset of the 4-byte content magic within the page frame (LSM pages). |
+| `CrcOffset` | `const int CrcOffset` | Byte offset of the BE32 CRC32 within the page frame. |
+| `PageSize` | `const int PageSize` | Page-frame size in bytes (always 4096 in observed binaries). |
+| `PageTypeOffset` | `const int PageTypeOffset` | Byte offset of the page-type tag within the page frame. |
+| `ContentMagicDisplay` | `string ContentMagicDisplay { get; }` | Returns the content magic as ASCII when all four bytes are printable, else the hex form. |
+| `ContentMagic` | `byte[] ContentMagic { get; init; }` | 4-byte ASCII content magic. For HDR pages this is the page-zero `"ARCH"` tag (read at `+0x0`). For LSM_LEAF this is `"LEAF"`, for LSM_DIR `"LDIR"`, for CI `"ARCI"` (all read at `+0x8`). For GOLOMB / DATA / Unknown the four bytes from the `+0x8` window are returned verbatim (those page types don't carry a fixed ASCII magic). |
+| `FileOffset` | `long FileOffset { get; init; }` | Byte offset of this page within the container. |
+| `IsCommitInfo` | `bool IsCommitInfo { get; }` | `true` when this page is a commit-info / checkpoint page. |
+| `IsData` | `bool IsData { get; }` | `true` when this page is a DATA payload page. |
+| `IsLsmIndexPage` | `bool IsLsmIndexPage { get; }` | `true` when this page is a recognised LSM index/leaf page. |
+| `LsmSubHeader` | `AcronisTibxLsmPageSubHeader LsmSubHeader { get; init; }` | Decoded sub-header for LSM_LEAF and LSM_DIR pages. `null` for HDR/GOLOMB/DATA/CI pages — those page types carry different sub-headers we don't decode in this pass. |
+| `PageIndex` | `long PageIndex { get; init; }` | 1-based page index counted from the start of the container. |
+| `PageType` | `AcronisTibxPageType PageType { get; init; }` | Page-type tag at `+0x1`. |
+| `StoredCrc` | `uint StoredCrc { get; init; }` | Stored BE32 CRC at `+0x4`. Zero for the page-zero HDR page (it uses a different layout — see `AcronisTibxReader`). |
+| `Parse` | `static AcronisTibxPage Parse(ReadOnlySpan<byte> page, long pageIndex, long fileOffset)` | Tries to parse a single 4 KiB page frame. Returns `null` when the buffer is shorter than one page or the leading 'A' sentinel is missing. Does NOT verify the CRC — callers can do that themselves with `StoredCrc`. |
+
+#### `AcronisTibxPageType`
+
+Page-type discriminator for a 4 KiB `.tibx` page. Values are the one-byte tag at page-frame offset `+0x1` recovered from binary RE of the page-type dispatch table in `libarchive3.so` at `archive_validate_pages` (offsets `0x154dc..0x155cb`) cross-referenced against the page-type string table at `libarchive3.so` offset `0x963fa` (`"UNKNOWN" / "HDR" / "LSM_LEAF" / "LSM_DIR" / "GOLOMB" / "DATA" / "CI"`).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` | Tag `0` — slot is unwritten / unallocated. String table position 0. |
+| `Hdr` | `1` | Tag `1` — page-zero archive header. The 4-byte content magic at the page-frame data window (offset `+0x0`) is the ASCII string `"ARCH"`. String table position 1. |
+| `LsmLeaf` | `2` | Tag `2` — LSM leaf page carrying a sorted sequence of key/value records (the per-item attribute bodies). Content magic at `+0x8` is ASCII `"LEAF"`. String table position 2. |
+| `LsmDir` | `3` | Tag `3` — LSM directory (internal-node) page indexing leaf children. Content magic at `+0x8` is ASCII `"LDIR"`. String table position 3. |
+| `Golomb` | `4` | Tag `4` — Golomb-coded auxiliary index page. Used by the `golomb_index_*` family in `golomb.c` for the per-page item-id directory. String table position 4. |
+| `Data` | `5` | Tag `5` — DATA page carrying extent payload for file content. The body is the raw (or AES-wrapped) byte run referenced from leaf page records. String table position 5. |
+| `Ci` | `6` | Tag `6` — Commit-info / checkpoint page. Content magic at `+0x8` is ASCII `"ARCI"`. Linked into a chain rooted at the `chain_start_pg` field of the page-zero header. String table position 6. |
+
+#### `AcronisTibxReader`
+
+Stage-1 R/O metadata reader for Acronis True Image `.tibx` (Acronis True Image 2020+ / Acronis Cyber Protect Home Office) archive containers.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcronisTibxReader` | `AcronisTibxReader(Stream stream)` |  |
+| `ArchTag` | `static readonly byte[] ArchTag` | ASCII `"ARCH"` tag (4 bytes) — the page-zero archive-header magic emitted by `archive_hdr.c` in both the Windows `archive3.dll` and the Linux `libarchive3.so` binary inspected for this reader. |
+| `ArciTag` | `static readonly byte[] ArciTag` | ASCII `"ARCI"` tag — Acronis commit-info page magic (referenced for downstream parsers; not consumed by this Stage-1 reader). |
+| `DumpFieldsStart` | `const int DumpFieldsStart` | Start of the page-zero `fsize` / `offset` / `aligned_size` / `size` field cluster surfaced in the vendor's `archive_dump_headers` JSON dump. Parser side: `bswap`-32 loads at `0x1e0..0x1f4` against `(%esi)`. |
+| `HeaderPageSize` | `const int HeaderPageSize` | Fixed page-zero header size enforced by the vendor's `ar_page_verify` at `libarchive3.so` offset 0x6bef0 (`cmpl $0xfff, 0xc(%ebp)` rejects any buffer smaller than 4096 bytes). |
+| `ModeOffset` | `const int ModeOffset` | Header offset where the 32-bit mode discriminator lives. Writer side reads `0x174(%edi)` and passes the result through `ar_mode_to_string`; downstream produces `"FULL"` / `"DIFF"` / `"INCR"` / etc. |
+| `UuidLength` | `const int UuidLength` | Length in bytes of the archive UUID. |
+| `UuidOffset` | `const int UuidOffset` | Start of the 16-byte archive UUID. Parser side reads 5 unaligned BE32 words at `0x233/0x237/0x23b/0x23f/0x243` — the four-word UUID plus a one-word overlap, which collapses to the canonical 16-byte UUID at `0x233..0x242`. |
+| `VersionOffset` | `const int VersionOffset` | Header offset where the 16-bit BE version code lives. Writer side emits `mov %ax, 0x8(%esi)` after a `ror $8, %ax` (network-order swap of a 16-bit in-register value). |
+| `ArchiveUuid` | `byte[] ArchiveUuid { get; }` | 16-byte archive UUID at offset `UuidOffset`. |
+| `DecodedLeaves` | `IReadOnlyList<DecodedLeafSummary> DecodedLeaves { get; }` | Per-LSM_LEAF page diagnostic summary surfaced by the Stage-3 LZ4 chained-stream decoder + ItemCommon scanner. Each entry corresponds to one LEAF page that the walker attempted to decode. |
+| `DumpFields` | `uint[] DumpFields { get; }` | Parsed dump-field cluster (8 BE32 words) starting at offset `DumpFieldsStart`. |
+| `Entries` | `IReadOnlyList<AcronisTibxEntry> Entries { get; }` |  |
+| `ImageSize` | `long ImageSize { get; }` | Length of the underlying container in bytes (best-effort from the stream). |
+| `LsmEntries` | `IReadOnlyList<AcronisTibxLsmEntry> LsmEntries { get; }` | Per-page summaries surfaced by the Stage-2 page-frame walk: one `AcronisTibxLsmEntry` per 4 KiB page in the container, classified by `AcronisTibxPageType` and (for LSM_LEAF / LSM_DIR pages) carrying the decoded `AcronisTibxLsmPageSubHeader`. |
+| `ModeWord` | `uint ModeWord { get; }` | Parsed BE32 mode discriminator at offset `ModeOffset`. Maps to the strings returned by the vendor's `ar_mode_to_string`: `FULL`, `DIFF`, `INCR`, `COMPACT`, etc. We do NOT enumerate the integer->string mapping here because the binary-RE pass did not resolve every entry in that table; consumers should treat the raw uint32 as forensic surface. |
+| `PageCount` | `int PageCount { get; }` | Total number of full 4 KiB page frames seen during the walk. |
+| `PageTypeCounts` | `IReadOnlyDictionary<AcronisTibxPageType, int> PageTypeCounts { get; }` | Counts of recognised page-type tags discovered during the page walk. |
+| `ScannedItemNames` | `IReadOnlyList<AcronisItemCommonAttribute> ScannedItemNames { get; }` | Forensic-grade list of file/directory names recovered by scanning the LZ4-decompressed LEAF page bodies for InputItem `ItemCommon` (id `0x10`) attribute bodies. When the underlying container has not been AES-wrapped and the encoding byte is 3, this list approximates the actual `List()` output of a real-archive descent. |
+| `ValidHeader` | `bool ValidHeader { get; }` | `true` iff offset 0 carries the `"ARCH"` magic. |
+| `Version` | `ushort Version { get; }` | Parsed BE16 version code at offset `VersionOffset`. The vendor writer emits 0x0007 or 0x0008 in observed code paths. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(AcronisTibxEntry entry)` |  |
+
+#### `AcronisTibxReader.DecodedLeafSummary`
+
+Diagnostic record per LSM_LEAF page surfacing what the Stage-3 record decoder produced — page index, sub-header summary, LZ4 status, chunk count, decompressed length, and the number of ItemCommon attribute candidates the scanner pulled.
+
+Implements `IEquatable<DecodedLeafSummary>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodedLeafSummary` | `DecodedLeafSummary(long PageIndex, long FileOffset, byte CtreeId, byte Encoding, uint DeclaredLen, uint DeclaredZlen, ushort DeclaredCount, int DecompressedLength, int ChunkCount, string Status, int ScannedItemNameCount)` | Diagnostic record per LSM_LEAF page surfacing what the Stage-3 record decoder produced — page index, sub-header summary, LZ4 status, chunk count, decompressed length, and the number of ItemCommon attribute candidates the scanner pulled. |
+| `ChunkCount` | `int ChunkCount { get; init; }` | Number of LZ4 chunks consumed. |
+| `CtreeId` | `byte CtreeId { get; init; }` | Ctree this LEAF belongs to (sub-header `id`). |
+| `DeclaredCount` | `ushort DeclaredCount { get; init; }` | Sub-header `count` — declared record count. |
+| `DeclaredLen` | `uint DeclaredLen { get; init; }` | Sub-header `len` — declared uncompressed body length. |
+| `DeclaredZlen` | `uint DeclaredZlen { get; init; }` | Sub-header `zlen` — declared on-disk compressed length. |
+| `DecompressedLength` | `int DecompressedLength { get; init; }` | Bytes actually produced by the LZ4 chained-stream decoder (or 0 on failure). |
+| `Encoding` | `byte Encoding { get; init; }` | Sub-header `encoding` byte (3 or 4). |
+| `FileOffset` | `long FileOffset { get; init; }` | Byte offset of the page in the container. |
+| `PageIndex` | `long PageIndex { get; init; }` | 1-based page index in the container. |
+| `ScannedItemNameCount` | `int ScannedItemNameCount { get; init; }` | Number of plausible ItemCommon candidates surfaced. |
+| `Status` | `string Status { get; init; }` | Diagnostic status — see `Status`. |
+
+#### `AcronisTibxWriter`
+
+Whole-archive writer for Acronis True Image `.tibx` (2020+ libarchive3 LSM page store) containers.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultVersion` | `const ushort DefaultVersion` | Default version code emitted at header offset 0x008 (BE16). |
+| `PageSize` | `const int PageSize` | 4 KiB page size for all pages. |
+| `Build` | `static byte[] Build(IReadOnlyList<FileSpec> files, byte[] archiveUuid = null)` | Builds a complete `.tibx` container carrying `files` and returns the full archive bytes (a whole number of 4 KiB pages). |
+
+#### `AcronisTibxWriter.FileSpec`
+
+One file to place into a fresh container.
+
+Implements `IEquatable<FileSpec>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FileSpec` | `FileSpec(string Name, byte[] Content)` | One file to place into a fresh container. |
+| `Content` | `byte[] Content { get; init; }` | Raw file bytes (stored verbatim in a DATA page). |
+| `Name` | `string Name { get; init; }` | Full entry name (path included, e.g. `"subdir/nested.txt"`). |
+
+#### `Golomb`
+
+Rice/Golomb codec with Rice parameter `k = 8` (divisor `m = 256`) — the `golomb_decode_mod256` / `golomb_encode_mod256` primitive used by `libarchive3` to encode the GOLOMB-page probabilistic membership filter.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Divisor` | `const int Divisor` | Divisor `m = 1 << RiceK = 256`. |
+| `QuotientEscape` | `const int QuotientEscape` | Unary-quotient cap before the 64-bit escape path kicks in (recovered from `cmp $0x8, %edx` at `0x53f53`). |
+| `RiceK` | `const int RiceK` | Rice parameter `k` (the remainder field width in bits). Always 8 for the Acronis `golomb_*_mod256` family. |
+| `DecodeMod256` | `static ulong DecodeMod256(BitReader r)` | Decodes a single value previously written by `EncodeMod256`. |
+| `DecodeSequenceMod256` | `static ulong[] DecodeSequenceMod256(byte[] data, int count)` | Round-trip helper — decodes `count` values from a packed byte stream. |
+| `EncodeMod256` | `static void EncodeMod256(BitWriter w, ulong value)` | Encodes a single non-negative integer with Rice parameter `k = 8`. Layout: `quotient` 1-bits, a 0-bit terminator, then an 8-bit remainder. |
+| `EncodeSequenceMod256` | `static byte[] EncodeSequenceMod256(IEnumerable<ulong> values)` | Round-trip helper — encodes a sequence of values and returns the packed byte stream. |
+
+#### `Golomb.BitReader`
+
+Reader for an MSB-first bit stream packed byte-by-byte. Mirrors the `{u32 high, u32 low, byte bit_count}` context layout that `golomb_init_decode_ctx` establishes — the only externally observable bit ordering is MSB-of-byte-first, which is what this class produces.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitReader` | `BitReader(byte[] data)` | Wraps a byte buffer as an MSB-first BE bit stream. |
+| `BufferedBitCount` | `int BufferedBitCount { get; }` | Number of buffered bits ready to be read without touching the byte stream. |
+| `BytesConsumed` | `int BytesConsumed { get; }` | Bytes consumed from the underlying byte stream so far. |
+| `ReadBit` | `int ReadBit()` | Reads one MSB-first bit, returning `0` or `1`. |
+| `ReadBits64` | `ulong ReadBits64()` | Reads a 64-bit value as two 32-bit halves (MSB-first). |
+| `ReadBits` | `ulong ReadBits(int count)` | Reads the next `count` bits (0..56) MSB-first and returns them right-aligned in the low bits of the returned value. When the underlying stream is exhausted the missing bits are returned as zeros — the binary's reader panics via `pcs_bug_at` on exhaustion but we surface a soft zero so callers can probe truncated buffers. |
+
+#### `Golomb.BitWriter`
+
+Writer for the same MSB-first bit stream the reader consumes. Bytes are flushed as soon as 8 bits accumulate; the final `Flush` zero-pads any partial byte.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitWriter` | `BitWriter()` |  |
+| `BufferedBitCount` | `int BufferedBitCount { get; }` | Currently-buffered (not-yet-flushed) bit count. |
+| `BytesWritten` | `int BytesWritten { get; }` | Bytes emitted so far (not counting partially-buffered bits). |
+| `Flush` | `byte[] Flush()` | Flushes any partial trailing byte (zero-padding the LSB side) and returns the accumulated byte stream. |
+| `WriteBit` | `void WriteBit(int bit)` | Writes one bit (`0` or `1`). |
+| `WriteBits64` | `void WriteBits64(ulong value)` | Writes a 64-bit value as two 32-bit halves (MSB-first). |
+| `WriteBits` | `void WriteBits(ulong value, int count)` | Writes the low `count` bits of `value` MSB-first. |
+
+### Namespace `FileFormat.Aff4`
+
+[`Aff4FormatDescriptor`](#aff4formatdescriptor)
+
+#### `Aff4FormatDescriptor`
+
+AFF4 (Advanced Forensic Format 4) container. An AFF4 volume is a ZIP (typically ZIP64) holding an RDF metadata graph in `information.turtle`, a `version.txt` marker, an optional `container.description`, and image data streams under `aff4://<uuid>/` paths split into bevy/chunk segments named with zero-padded indices (e.g. `00000000`, `00000000.index`). This descriptor delegates ZIP enumeration / extraction to the platform ZIP reader and surfaces every ZIP member as a first-class entry, alongside a verbatim `FULL.aff4` and a `metadata.ini` that distills the Turtle graph (stored image size, chunk size, compression method) when present. Read-only; the Turtle RDF is exposed raw — no full graph reasoning is performed. Detection is extension-driven (`.aff4`) so it does not steal generic ZIPs; malformed input degrades to FULL + partial metadata without throwing. References: `https://github.com/aff4/Standard` — AFF4 standard specification documents`https://github.com/aff4/pyaff4` — pyaff4 — canonical reference implementationCohen, Garfinkel & Schatz, "Extending the Advanced Forensic Format to accommodate multiple data sources, logical evidence, arbitrary information and forensic workflow" (DFRWS 2009) — the defining AFF4 paper
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Aff4FormatDescriptor` | `Aff4FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+### Namespace `FileFormat.Afio`
+
+[`AfioFormatDescriptor`](#afioformatdescriptor)
+
+#### `AfioFormatDescriptor`
+
+afio archive — a derivative of the portable-ASCII (`odc`) cpio format. Each member begins with a 76-byte ASCII header: 6-char magic `"070707"`, then octal fields dev(6), ino(6), mode(6), uid(6), gid(6), nlink(6), rdev(6), mtime(11), namesize(6) and filesize(11). The NUL-terminated name follows, then the file data. The archive ends with a member named `TRAILER!!!`. afio extends cpio with optional per-file compression: a member's stored payload may be a gzip stream (RFC 1952), in which case the original size is recorded after the name. This reader detects a gzip member by its `1F 8B` signature and transparently inflates it on extraction, surfacing each member as an entry. Read-only (List / Extract); malformed input never throws — it stops at the last parseable member. References: `https://github.com/kholtman/afio` — canonical afio source (Koen Holtman); afio(1) documents the archive format`https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html` — POSIX pax — defines the portable-ASCII (odc, "070707") cpio header afio derives from`https://en.wikipedia.org/wiki/Cpio` — background on the cpio family
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AfioFormatDescriptor` | `AfioFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Afs`
 
 [`AfsConstants`](#afsconstants) · [`AfsEntry`](#afsentry) · [`AfsFormatDescriptor`](#afsformatdescriptor) · [`AfsReader`](#afsreader) · [`AfsWriter`](#afswriter)
@@ -386,6 +1125,90 @@ Implements `IDisposable`.
 | `AddEntry` | `void AddEntry(string name, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive to the underlying stream and finalizes the file layout. |
+
+### Namespace `FileFormat.Akb`
+
+[`AkbEntry`](#akbentry) · [`AkbFormatDescriptor`](#akbformatdescriptor) · [`AkbReader`](#akbreader) · [`AkbWriter`](#akbwriter)
+
+#### `AkbEntry`
+
+Represents a single audio entry within a Square Enix AKB audio bank.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AkbEntry` | `AkbEntry()` |  |
+| `Flags` | `uint Flags { get; init; }` | Gets the per-entry flags word; bit 0 indicates a looping sample. |
+| `Name` | `string Name { get; init; }` | Gets the synthetic display name (e.g. `entry_000.bin`). |
+| `Offset` | `long Offset { get; init; }` | Gets the absolute byte offset of the entry's audio data within the AKB stream. |
+| `SampleCount` | `uint SampleCount { get; init; }` | Gets the duration of the entry in samples (codec-dependent interpretation). |
+| `Size` | `long Size { get; init; }` | Gets the byte length of the entry's audio data. |
+
+#### `AkbFormatDescriptor`
+
+Square Enix AKB audio bank descriptor — surfaces per-entry raw audio payloads plus a synthetic `metadata.ini` entry containing bank-wide header fields (sample rate, channel mode, loop points). References: `https://github.com/vgmstream/vgmstream` — vgmstream — implements AKB parsing; the de-facto referenceSquare Enix never published the AKB layout; header fields were recovered by the VGM ripping community
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AkbFormatDescriptor` | `AkbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `metadata.ini` entry is materialised on the fly; all other entries delegate to the reader's per-entry extract and are wrapped in a `BoundedEntryStream` sized to their logical length. |
+
+#### `AkbReader`
+
+Reads entries from a Square Enix AKB audio bank (Final Fantasy / Kingdom Hearts era). Surfaces raw per-entry payload bytes; the per-entry codec (HCA, MSADPCM, IMA-ADPCM, raw PCM) is intentionally not decoded — game-specific dispatch belongs to the caller.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AkbReader` | `AkbReader(Stream stream, bool leaveOpen = false)` | Initializes a new `AkbReader` from a stream positioned at the start of an AKB file. |
+| `ChannelMode` | `byte ChannelMode { get; }` | Gets the channel-mode byte (1 = mono, 2 = stereo). Informational only. |
+| `ContentOffset` | `uint ContentOffset { get; }` | Gets the absolute offset where entry payload data begins. |
+| `ContentSize` | `uint ContentSize { get; }` | Gets the total byte length of the content region. |
+| `Entries` | `IReadOnlyList<AkbEntry> Entries { get; }` | Gets all audio entries declared in the bank. |
+| `LoopEnd` | `uint LoopEnd { get; }` | Gets the loop end position in samples; 0 if the bank declares no loop. |
+| `LoopStart` | `uint LoopStart { get; }` | Gets the loop start position in samples; 0 if the bank declares no loop. |
+| `SampleRate` | `uint SampleRate { get; }` | Gets the sample rate in Hz declared by the bank header. |
+| `VersionByte` | `byte VersionByte { get; }` | Gets the AKB subformat version byte (1 = single-stream v1, 2 = multi-entry v2). |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(AkbEntry entry)` | Reads the raw payload bytes for a given entry. The codec is not decoded — these are the raw on-disk bytes between `Offset` and `Offset` + `Size`. |
+
+#### `AkbWriter`
+
+Creates a Square Enix AKB v2 audio bank from caller-supplied raw audio payloads. The codec is not encoded — supplied bytes are stored verbatim into the content region.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AkbWriter` | `AkbWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `AkbWriter` that will write AKB v2 to `stream`. |
+| `ChannelMode` | `byte ChannelMode { get; set; }` | Gets or sets the channel-mode byte (1 = mono, 2 = stereo). Defaults to mono. |
+| `LoopEnd` | `uint LoopEnd { get; set; }` | Gets or sets the loop end position (samples). 0 means no loop. |
+| `LoopStart` | `uint LoopStart { get; set; }` | Gets or sets the loop start position (samples). 0 means no loop. |
+| `SampleRate` | `uint SampleRate { get; set; }` | Gets or sets the bank-wide sample rate written to the header. Defaults to 44100 Hz. |
+| `AddEntry` | `void AddEntry(string name, byte[] data, uint sampleCount = 0, uint flags = 0)` | Adds an entry to the bank. The supplied bytes are stored verbatim — caller is responsible for any codec encoding (HCA, MSADPCM, etc.). |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Serializes the bank to the underlying stream. Called automatically on Dispose. |
 
 ### Namespace `FileFormat.AlZip`
 
@@ -616,6 +1439,320 @@ WORM writer for Android A/B OTA payload (`CrAU`) containers. Emits a structurall
 | `DefaultVersion` | `const ulong DefaultVersion` | Default major payload version emitted when none is requested. |
 | `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | Magic bytes that introduce every OTA payload. |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an OTA payload from `inputs`. Recognised input names — chosen to round-trip our own `Extract` output — are `manifest.pb`, `metadata_signature.bin` and `data.bin`. Any other inputs are concatenated into the data region in the order they appear. |
+
+### Namespace `FileFormat.Aomei`
+
+[`AomeiConstants`](#aomeiconstants) · [`AomeiEntry`](#aomeientry) · [`AomeiFormatDescriptor`](#aomeiformatdescriptor) · [`AomeiInPlaceModifier`](#aomeiinplacemodifier) · [`AomeiInfoRecord`](#aomeiinforecord) · [`AomeiReader`](#aomeireader) · [`AomeiReader.LiveUserData`](#aomeireaderliveuserdata) · [`AomeiWriter`](#aomeiwriter) · [`BrCrc32`](#brcrc32) · [`BrFileHead`](#brfilehead) · [`BrFileTail`](#brfiletail) · [`BrImageIndex`](#brimageindex) · [`BrImageIndexEntryFdb`](#brimageindexentryfdb) · [`BrImageIndexEntryVdb`](#brimageindexentryvdb) · [`BrStandardHeader`](#brstandardheader)
+
+#### `AomeiConstants`
+
+Wire-format constants for the AOMEI Backupper image format, recovered from reverse engineering of `ambakdrv.sys`, `ammntdrv.sys`, `ImgFile.dll`, `Compress.dll` and `Encrypt.dll`. The vendor source tree is named `BRCloudv2` per the embedded PDB paths `E:\BRCloudv2\src\ImgFile\*.cpp` recovered from the binaries.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BifhFlag` | `const uint BifhFlag` | Four-byte little-endian `'BIFH'` = 0x48464942 — the `Flag` field at offset 0 of the head struct. Per `ImgFile.dll!ImageFile.cpp` assert `Head.Flag=='HFIB'` (the stored u32 is reversed in the assert text because of x86 little- endian display). |
+| `BifhMagicAscii` | `static readonly byte[] BifhMagicAscii` | 5-byte ASCII signature `BIFH\` ("Backup Image File Header"). Bytes `0x42 0x49 0x46 0x48 0x5C`. Doubles as the family-detection magic for both `.adi` and `.afi`. |
+| `BifhSize` | `const int BifhSize` | `BR_IMAGE_FILE_HEAD` size: 0x65C (1628) bytes. Verified at the `ASSERT(Head.Size == sizeof(BR_IMAGE_FILE_HEAD))` check at `ImgFile.dll!ImageFile.cpp` assert site (cmp r/m32 imm32 = 0x65C observed at the assert preamble). |
+| `BiftFlag` | `const uint BiftFlag` | Four-byte little-endian `'BIFT'` = 0x54464942 — the `Flag` field at offset 0 of the tail struct. Per `ImgFile.dll!ImageFile.cpp` assert `Tail.Flag=='TFIB'`. |
+| `BiftSize` | `const int BiftSize` | `BR_IMAGE_FILE_TAIL` size: 0x674 (1652) bytes. Verified at the matching `ASSERT(Tail.Size == sizeof(BR_IMAGE_FILE_TAIL))` (cmp r/m32 imm32 = 0x674 observed at the assert preamble). |
+| `CompressMethodLz4` | `const uint CompressMethodLz4` | LZ4 raw-block compressor — the small-buffer path. |
+| `CompressMethodNone` | `const uint CompressMethodNone` | Compress method codes recovered from the `BRCompress` dispatch in `Compress.dll!FUN_180001040`. The numeric mapping for LZ4 vs zlib is only proven by the threshold check `method >= 0x1000B` selecting the zlib path; treat unknown values as opaque. |
+| `CompressMethodZlibThreshold` | `const uint CompressMethodZlibThreshold` | Threshold above which the zlib inflate path is selected. |
+| `Crc32FieldOffset` | `const int Crc32FieldOffset` | Offset within `StandardHeaderSize` of the `Crc32` field. Used by the verifier to zero it before re-computing. Same offset in both the current 12-byte alias and the 16-byte vendor layout. |
+| `IndexTypeDataArea` | `const ushort IndexTypeDataArea` | `INDEX_TYPE_DATAAREA` = 0x301 — file-level data-area index for .afi backups. Holds a packed array of `BR_IMAGE_INDEX_ENTRY_FDB` entries (BlockNo, ImgOffset, NewSize, OldSize, Crc32 — no RegNo because there's only one logical "region" for file backups). Recovered at the assert `INDEX_TYPE_DATAAREA==Head.Type` with the `cmp [reg+disp], 0x301` preamble. |
+| `IndexTypeDataBlock` | `const ushort IndexTypeDataBlock` | `INDEX_TYPE_DATABLOCK` = 0x202 — index of sector-data blocks for disk / partition (.adi) backups. Holds a packed array of `VendorVdbEntrySize`-byte `BR_IMAGE_INDEX_ENTRY_VDB` entries (RegNo, BlockNo, ImgOffset, NewSize, OldSize, Crc32). Recovered at the assert `INDEX_TYPE_DATABLOCK==Head.Type` with the `cmp [reg+disp], 0x202` preamble. |
+| `IndexTypeDirTree` | `const ushort IndexTypeDirTree` | `INDEX_TYPE_DIRTREE` = 0x300 — file-level directory tree index for .afi backups. Recovered at the matching `cmp [reg+disp], 0x300` preamble at the assert site `pHead->Type==INDEX_TYPE_DIRTREE`. |
+| `IndexTypeRoot` | `const ushort IndexTypeRoot` | `INDEX_TYPE_ROOT` = 0x200 — root-level index node containing a `SubList` of `(Offset, Size, Type)` tuples referencing every other top-level record (INFO records + the per-volume / per-file-tree sub-indices). Recovered at the assert `INDEX_TYPE_ROOT==Head.Type` with `cmp [reg+disp], 0x200` preamble. |
+| `IndexTypeVolume` | `const ushort IndexTypeVolume` | `INDEX_TYPE_VOLUME` = 0x201 — per-volume index node holding a `SubList` of regions and per-volume INFO records. Recovered at the matching `cmp [reg+disp], 0x201` preamble. |
+| `InfoTypeBackupOption` | `const ushort InfoTypeBackupOption` | `INFO_TYPE_BACKUP_OPTION` = 0x10D — record carrying the disk-level backup options struct. Confirmed via cdecl push at the `GetImageInfo(0, &BakOp, uLen, INFO_TYPE_BACKUP_OPTION)` callsite. |
+| `InfoTypeBackupTime` | `const ushort InfoTypeBackupTime` | `INFO_TYPE_BACKUP_TIME` = 0x10B — record carrying the backup-creation timestamp. Numeric value recovered from the `m_pReader->GetImageInfo(0, &BackupTime, uLen, INFO_TYPE_BACKUP_TIME)` callsite (cdecl push 0x10B). |
+| `InfoTypeBackupType` | `const ushort InfoTypeBackupType` | `INFO_TYPE_BACKUP_TYPE` = 0x10C — 0x14-byte record `{Type=0x10C, Size, Crc32, Reserved, kind:u32}`. |
+| `InfoTypeDiskInfo` | `const ushort InfoTypeDiskInfo` | `INFO_TYPE_DISK_INFO` = 0x102 — record carrying a `BASIC_DISK_INFO_EX` / `DDM_DISK_INFO_EX` struct. Confirmed via cdecl push at the `GetImageInfo(i, pDisk, uLen, INFO_TYPE_DISK_INFO)` callsite (push 0x102 immediately before `call [edx+0x2C]`). |
+| `InfoTypeFlbBackupOptionEx` | `const ushort InfoTypeFlbBackupOptionEx` | `INFO_TYPE_FLB_BACKUP_OPTION_EX` = 0x116 — extended file-level backup option record. Recovered via cdecl push at the corresponding GetImageInfo callsite. |
+| `InfoTypeFlbBackupOption` | `const ushort InfoTypeFlbBackupOption` | `INFO_TYPE_FLB_BACKUP_OPTION` = 0x113 — file-level backup option record. Recovered via cdecl push at `GetImageInfo(0, &BackupOpt, uLen, INFO_TYPE_FLB_BACKUP_OPTION)`. |
+| `InfoTypeFlbFileDataBlockList` | `const ushort InfoTypeFlbFileDataBlockList` | `INFO_TYPE_FLB_FILE_DATA_BLOCK_LIST` = 0x111 — file-level data-block list emitted by `FlbImageWriter`. Pinned by the cdecl `push 0x111` at `ImgFile.dll!0x1000a341`, fifteen instructions before the assert-text xref at `0x1000a36e` to `AddInfo(INFO_TYPE_FLB_FILE_DATA_BLOCK_LIST, &m_vDataBlockList[0], ...)`. Resolves the upper half of the prior `{0x110, 0x111, 0x128}` candidate set. |
+| `InfoTypeFlbPathList` | `const ushort InfoTypeFlbPathList` | `INFO_TYPE_FLB_PATH_LIST` = 0x112 — list of backed-up source paths. |
+| `InfoTypeFlbSubEntryList` | `const ushort InfoTypeFlbSubEntryList` | `INFO_TYPE_FLB_SUB_ENTRY_LIST` = 0x110 — file-level sub- entry list emitted by `FlbImageWriter`. Pinned by the cdecl `push 0x110` at `ImgFile.dll!0x1000a2d0`, fifteen instructions before the assert-text xref at `0x1000a2fd` to the AddInfo callsite string `AddInfo(INFO_TYPE_FLB_SUB_ENTRY_LIST, &m_vSubEntList[0], ...)`. Resolves the lower half of the prior `{0x110, 0x111, 0x128}` candidate set. |
+| `InfoTypeImageComment` | `const ushort InfoTypeImageComment` | `INFO_TYPE_IMAGE_COMMENT` = 0x108 — variable-size record carrying a UTF-16LE comment string. Confirmed by the writer-side call `AddImageInfo(INFO_TYPE_IMAGE_COMMENT, pStruct, Size)` pushing 0x108 immediately before the vtable call. |
+| `InfoTypeImageCompress` | `const ushort InfoTypeImageCompress` | `INFO_TYPE_IMAGE_COMPRESS` = 0x105 — 0x18-byte record carrying the compress method + level. Confirmed by the writer-side stack-built header in `AddImageInfo(INFO_TYPE_IMAGE_COMPRESS, ...)`. |
+| `InfoTypeImageEncrypt` | `const ushort InfoTypeImageEncrypt` | `INFO_TYPE_IMAGE_ENCRYPT` = 0x106 — 0x18-byte record carrying the encrypt method + key length. Confirmed by the writer-side stack-built header in `AddImageInfo(INFO_TYPE_IMAGE_ENCRYPT, ...)`. |
+| `InfoTypeImagePassword` | `const ushort InfoTypeImagePassword` | `INFO_TYPE_IMAGE_PASSWORD` = 0x107 — 0x20-byte record carrying MD5(UTF-16LE(password)). Confirmed at `AddImageInfo(INFO_TYPE_IMAGE_PASSWORD, &Psw, sizeof(Psw))`. |
+| `InfoTypeImageSplitSize` | `const ushort InfoTypeImageSplitSize` | `INFO_TYPE_IMAGE_SPLIT_SIZE` = 0x104 — record carrying the split-volume size threshold for multi-file backups. Confirmed by the writer-side stack-built header at `AddImageInfo(INFO_TYPE_IMAGE_SPLIT_SIZE, &Split, sizeof(Split))` emitting a 0x18-byte record with Type=0x104. |
+| `InfoTypeVolumeDataRegion` | `const ushort InfoTypeVolumeDataRegion` | `INFO_TYPE_VOLUME_DATA_REGION` = 0x109 — per-region volume-data record carrying a `BR_IMAGE_INFO_VOLUME_DATA_REGION` (0x30 bytes per the matching `cmp eax, 0x30` preamble). Pinned by the loop-body `cmp dword ptr [ebp-0x34], 0x109` at `ImgFile.dll!ImageVolume.cpp+0x1002554c` immediately before the `jne` branch that targets the assert-text xref at `0x100257ae` for `Region.Header.Type==INFO_TYPE_VOLUME_DATA_REGION`. The same switch arm continues into the `uLen==sizeof(BR_IMAGE_INFO_VOLUME_DATA_REGION)` assert at `0x1002587a` guarded by `cmp eax, 0x30; jne 0x10025846`. |
+| `InfoTypeVolumeInfo` | `const ushort InfoTypeVolumeInfo` | `INFO_TYPE_VOLUME_INFO` = 0x103 — record carrying a `PART_INFO_EX` / `DDM_VOLUME_INFO` struct. Confirmed via virtual-call push at the `pVol->GetVolumeInfo(0, pPart, uLen, INFO_TYPE_VOLUME_INFO)` callsite (push 0x103 immediately before `call [eax+0x14]`). |
+| `SchedulerMagicPassword` | `const string SchedulerMagicPassword` | UTF-16 magic string that, when MD5-substituted via the scheduled-task context, lets the AOMEI service decrypt unattended backups. The literal misspelling ("Schdule") is preserved from the binary at `ImgFile.dll!18006baa0`. |
+| `ShippedIndexEntriesOffset` | `const int ShippedIndexEntriesOffset` | Byte offset within a shipped `BR_IMAGE_INDEX` record where the packed VDB entry array begins. Shifted -4 bytes vs vendor: vendor pin at +0x1C becomes shipped pin at +0x18. |
+| `ShippedIndexEntryCountOffset` | `const int ShippedIndexEntryCountOffset` | Byte offset of the `EntryCount` field within a shipped `BR_IMAGE_INDEX` record (relative to the start of the record, using this codebase's 12-byte BR_STANDARD_HEADER alias). Shifted -4 bytes vs the 16-byte vendor layout: vendor pin at +0x14 becomes shipped pin at +0x10. |
+| `ShippedIndexEntrySizeOffset` | `const int ShippedIndexEntrySizeOffset` | Byte offset of the `EntrySize` field within a shipped `BR_IMAGE_INDEX` record. Shifted -4 bytes vs vendor: vendor pin at +0x18 becomes shipped pin at +0x14. |
+| `ShippedIndexHeaderSize` | `const int ShippedIndexHeaderSize` | Total bytes the shipped `BR_IMAGE_INDEX` header occupies before its entry array. Equal to `ShippedIndexEntriesOffset`. |
+| `StandardHeaderSize` | `const int StandardHeaderSize` | Size of the `BR_STANDARD_HEADER` tagged-record prefix shared by the file head, file tail and every INFO / INDEX record. This codebase currently emits + reads a compatible 12-byte alias of the vendor's 16-byte layout (the 4-byte Reserved trailer is omitted), so sealed-CRC records round-trip through our own reader. See `VendorStandardHeaderSize` for the verified vendor value and the `BrStandardHeader` XML docs for the layout rationale. |
+| `TailBodyHasDataOffInSet` | `const bool TailBodyHasDataOffInSet` | True when the `BR_IMAGE_FILE_TAIL` body is known to contain at minimum a `DataOffInSet` (u64) and a `DataLenInSet` (u64) field — used by the reader to map this volume's logical position within a multi-file split image set. Pinned for awareness; byte offsets now also pinned via `VendorTailBodyDataOffInSetOffset` and `VendorTailBodyDataLenInSetOffset`. |
+| `TombstoneNewSizeSentinel` | `const uint TombstoneNewSizeSentinel` | Sentinel `NewSize` value marking a tombstone VDB entry. The `AomeiInPlaceModifier` appends a tombstone (sharing the target's `RegNo`) on Remove; the reader's latest-entry-wins gate drops the chunk from the live entry view. Picked at `0xFFFFFFFFu` because real VDB entries can never legitimately carry it (the payload would be 4 GiB) and the value round-trips losslessly through any tooling that treats the field as opaque u32. |
+| `VendorIndexEntriesOffset` | `const int VendorIndexEntriesOffset` | Byte offset within a `BR_IMAGE_INDEX` record where the packed entry array begins (i.e. immediately after the EntrySize field). Equal to `VendorIndexEntrySizeOffset` + 4. |
+| `VendorIndexEntryCountOffset` | `const int VendorIndexEntryCountOffset` | Byte offset of the `EntryCount` field within a `BR_IMAGE_INDEX` record (relative to the start of the record, i.e. including the 16-byte BR_STANDARD_HEADER). Recovered from the writer pattern `mov [esi+0x14], EntryCount`. |
+| `VendorIndexEntrySizeOffset` | `const int VendorIndexEntrySizeOffset` | Byte offset of the `EntrySize` field within a `BR_IMAGE_INDEX` record. Recovered from the reader pattern `cmp dword ptr [edx+0x18], 0x20` at the EntrySize assert. |
+| `VendorSourceTreeCodename` | `const string VendorSourceTreeCodename` | The vendor codename for the source tree from which AOMEI Backupper's image-format library is built. Embedded in the installer as `BRCloudv2` and in `ImgFile.dll`'s PDB path `E:\BRCloudv2\src\ImgFile\ImageFile.cpp` alongside other `BRCloudv2\src\ImgFile\` source files (BlockContainer.cpp, BrFileWin.cpp, DataConvert.cpp, DsImgTask.cpp, FlbDataRegion.cpp, FlbDirEntry.cpp, FlbFileRegion.cpp, FlbImage.cpp, FlbImageReader.cpp, FlbImageWriter.cpp, FlbImgTask.cpp, Image.cpp, ImageFile.cpp, ImageFileSet.cpp, ImageReader.cpp, ImageReaderHelp.cpp, ImageVolume.cpp, ImageWriter.cpp, ImageWriterHelp.cpp, ImgTaskMgr.cpp, ImgWriteCache.cpp). |
+| `VendorStandardHeaderSize` | `const int VendorStandardHeaderSize` | Vendor-documented size of `BR_STANDARD_HEADER`: 16 bytes per the disassembled assert preamble `cmp ecx, 0x10` immediately before the `Length>=sizeof(BR_STANDARD_HEADER)` assert string at `ImgFile.dll!FlbImageWriter.cpp`. The on-disk struct layout is: Pinned here so future wire-compat work can swap our 12-byte alias to the 16-byte vendor layout without losing the recovered fact. |
+| `VendorTailBodyDataLenInSetOffset` | `const int VendorTailBodyDataLenInSetOffset` | Byte offset of `DataLenInSet` (u64) within the 0x674-byte `BR_IMAGE_FILE_TAIL`: 0x620. Computed as `0xc80 - 0x660` from the read-side ALU pair `add esi,[edi+0xc80] / mov ecx,[edi+0xc84]` at `0x10017342` and the tail-base `[edi+0x660]` established by the `rep movsd` at `0x10017cf3`. |
+| `VendorTailBodyDataOffInSetOffset` | `const int VendorTailBodyDataOffInSetOffset` | Byte offset of `DataOffInSet` (u64) within the 0x674-byte `BR_IMAGE_FILE_TAIL`: 0x628. Computed as `0xc88 - 0x660` from the read-side load pair `mov ebx,[ecx+0xc8c] / mov edi,[ecx+0xc88]` at `0x100171b0` and the tail-base `[edi+0x660]`. The reader uses `Offset - DataOffInSet + sizeof(BR_IMAGE_FILE_HEAD)` to translate logical image-set offsets to per-volume file offsets. |
+| `VendorTailTrailerCrc32Offset` | `const int VendorTailTrailerCrc32Offset` | Byte offset of the trailing `BR_STANDARD_HEADER`'s Crc32 field within the 0x674-byte `BR_IMAGE_FILE_TAIL`: 0x668. Pinned by the post-Read CRC verification block at `0x10017c60..0x10017c84`: the reader loads the stored value from `[ebp-0x10]` (= buffer offset 0x668), zeroes it, calls BRCrc32 over the whole 0x674 bytes, and compares against the pre-zero value. |
+| `VendorTailTrailerFlagOffset` | `const int VendorTailTrailerFlagOffset` | Byte offset of the trailing `BR_STANDARD_HEADER`'s Flag field within the 0x674-byte `BR_IMAGE_FILE_TAIL`: 0x670. Pinned by `cmp dword ptr [ebp-0x8], 0x54464942` at `0x10017b9a` — [ebp-0x8] maps to buffer offset (0x678 - 0x8) = 0x670. Value 0x54464942 = 'BIFT' little-endian. |
+| `VendorTailTrailerReservedOffset` | `const int VendorTailTrailerReservedOffset` | Byte offset of the trailing `BR_STANDARD_HEADER`'s Reserved word within the 0x674-byte `BR_IMAGE_FILE_TAIL`: 0x664. Mirrors the head's documented Reserved offset; observed zero in every recovered sample but the cmp at this position is not explicit in the reader (only the {CRC, Size, Flag} fields are directly checked). |
+| `VendorTailTrailerSizeOffset` | `const int VendorTailTrailerSizeOffset` | Byte offset of the trailing `BR_STANDARD_HEADER`'s Size field within the 0x674-byte `BR_IMAGE_FILE_TAIL`: 0x66C. Pinned by `cmp dword ptr [ebp-0xc], 0x674` at `0x10017bfd` — [ebp-0xc] maps to buffer offset (0x678 - 0xc) = 0x66c. |
+| `VendorVdbEntryBlockNoOffset` | `const int VendorVdbEntryBlockNoOffset` | Byte offset of `BlockNo` (u64) within a `BR_IMAGE_INDEX_ENTRY_VDB`: 0x04. Pinned by the GetBlock prep at `0x10026d8a`: `psrldq xmm0, 4; movd edx, xmm0` extracts vdb[4..7] as BlockNo_low and `psrldq xmm1, 8; movd ecx, xmm1` extracts vdb[8..0xb] as BlockNo_high. Both pushed in the second/third C-order positions ⇒ a single u64 spanning 0x04..0x0B. |
+| `VendorVdbEntryCrc32Offset` | `const int VendorVdbEntryCrc32Offset` | Byte offset of `Crc32` (u32, BRCrc32 over the decoded payload) within a `BR_IMAGE_INDEX_ENTRY_VDB`: 0x1C. Pinned by the post-BRCrc32 comparison at `0x10027d0b`: `cmp eax, [esp+0x5c]` — [esp+0x5c] = vdb[0x1c] per the wrapper-side `movaps [esp+0x50], xmm0` at `0x10027ca8` that mirrors the second VDB xmm half. The jne lands on the `Crc32==vdb.Crc32` assert-text xref at `0x10027d99`. |
+| `VendorVdbEntryImgOffsetOffset` | `const int VendorVdbEntryImgOffsetOffset` | Byte offset of `ImgOffset` (u64) within a `BR_IMAGE_INDEX_ENTRY_VDB`: 0x0C. Pinned by the first ReadData call at `0x100261ce` which pushes `[ebp-0x20]` and `[ebp-0x1c]` as the u64 ImgOffset. Those locals correspond to vdb[0x0C..0x0F] (low) and vdb[0x10..0x13] (high) per the function-prologue xmm copy at `0x10026070..10026085`. |
+| `VendorVdbEntryNewSizeOffset` | `const int VendorVdbEntryNewSizeOffset` | Byte offset of `NewSize` (u32, compressed/stored payload size) within a `BR_IMAGE_INDEX_ENTRY_VDB`: 0x18. Pinned by the pNew malloc at `0x100261b0..0x100261b3` (`push [ebp-0x14]; call malloc`) followed by the ReadData call at `0x100261ce` that passes `lea ebx, [ebp-0x14]` as the in-out length pointer. Per the prologue layout [ebp-0x14] = vdb[0x18]. Verified by the pre-decode no-compression shortcut at `0x100262a1`: `mov eax, [ebp-0x14]; cmp eax, [ebp-0x18]` checks `vdb.NewSize == vdb.OldSize` before bypassing Decode. |
+| `VendorVdbEntryOldSizeOffset` | `const int VendorVdbEntryOldSizeOffset` | Byte offset of `OldSize` (u32, decoded payload size) within a `BR_IMAGE_INDEX_ENTRY_VDB`: 0x14. Pinned by two independent paths: (a) the malloc-of-pOld at `0x10026094` uses the dword at vdb[0x14] (extracted via `psrldq xmm0, 4; movd eax, xmm0` from the second xmm0 = vdb[0x10..0x1f]); (b) the post-Decode equality check at `0x10026254..0x1002625a` (`mov eax, [ebp-0x18]; cmp eax, [ebp-0x38]`) compares vdb[0x14] against the returned OldLen and the jne path leads to the assert `vdb.OldSize==OldLen`. [ebp-0x18] = vdb[0x14] per the prologue xmm layout. |
+| `VendorVdbEntryRegNoOffset` | `const int VendorVdbEntryRegNoOffset` | Byte offset of `RegNo` (u32) within a `BR_IMAGE_INDEX_ENTRY_VDB`: 0x00. Pinned by the GetBlock prep at `0x10026d8a`: `movd esi, xmm1` (where xmm1 = vdb[0..0xf]) gives vdb[0..3], pushed first in C-order ⇒ first arg of `GetBlock(vdb.RegNo, vdb.BlockNo, ...)`. |
+| `VendorVdbEntrySize` | `const int VendorVdbEntrySize` | Size of a single `BR_IMAGE_INDEX_ENTRY_VDB` volume-data block descriptor: 0x20 (32) bytes. Recovered from the `cmp [edx+0x18], 0x20` preamble before the `EntrySize==sizeof(BR_IMAGE_INDEX_ENTRY_VDB)` assert. |
+| `VendorVolumeDataRegionSize` | `const int VendorVolumeDataRegionSize` | Vendor-pinned `sizeof(BR_IMAGE_INFO_VOLUME_DATA_REGION)` = 0x30 (48) bytes. Pinned by the `cmp eax, 0x30` preamble at `0x10025558` immediately before the corresponding sizeof assert at `0x1002587a`. |
+
+#### `AomeiEntry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AomeiEntry` | `AomeiEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `AomeiFormatDescriptor`
+
+Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation ported from the reverse-engineered format spec at `docs/AOMEI_FORMAT_SPEC.md`: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is TODO in the recovered spec. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublished`docs/AOMEI_FORMAT_SPEC.md` (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk spec
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AomeiFormatDescriptor` | `AomeiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends one or more user-data envelopes + matching VDB entries to `archive`. Delegates to `Add`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh AOMEI `.adi` container at `output` wrapping the supplied inputs. The container is built via `AomeiWriter` with sealed CRCs and round-trips through `AomeiReader`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Appends a tombstone VDB entry per name in `entryNames`. The name resolves to a RegNo via `ResolveRegNoFromName`; entries that don't match a live user-data envelope's name (e.g. `userdata/foo.bin` or just `foo.bin`) raise `FileNotFoundException`. |
+
+#### `AomeiInPlaceModifier`
+
+True in-place modifier for AOMEI `.adi`/`.afi` containers emitted by `AomeiWriter`. Performs Add / Replace / Remove against the trailing `IndexTypeDataBlock` (0x202) `BR_IMAGE_INDEX` record by appending fresh `BR_IMAGE_INDEX_ENTRY_VDB` entries (each 0x20 bytes) at the end of the index's entry array. On-disk semantic. The shipped layout the writer produces is Every byte before the BR_IMAGE_INDEX — every existing user-data envelope — stays byte-identical at its original offset on every mutation. Inside the index, existing VDB entries at offsets `[, + oldCount × 0x20)` also stay byte-identical; new entries land immediately after. The only patched fields are the index's EntryCount, the index's BR_STANDARD_HEADER Size, the index's BR_STANDARD_HEADER Crc32, and (because the index grew) the BIFT which is re-emitted at the new tail. Add (`Add`): each input becomes a fresh user-data envelope written at the OLD index start offset, then the BR_IMAGE_INDEX is re-laid right after with the existing VDB entries first (byte-identical) and the new VDB entries appended (each with a brand-new `RegNo`, `ImgOffset` = new envelope's absolute offset, sizes + CRC). Replace (`Replace`): a fresh user-data envelope for the replacement bytes is written at the OLD index offset, then the BR_IMAGE_INDEX is re-laid with the existing entries verbatim plus a fresh entry carrying the SAME `RegNo` as the target. The reader's latest-entry-wins gate surfaces the new envelope as the live state; the old envelope's bytes stay byte-identical at their original offset. Remove (`Remove`): no new envelope is written — the BR_IMAGE_INDEX is re-laid with the existing entries verbatim plus a tombstone entry sharing the target's `RegNo`. Tombstones encode `NewSize = = 0xFFFFFFFF` + `ImgOffset = 0` + `OldSize = 0` + `Crc32 = 0` on the wire. The original envelope's bytes survive at their offset (the operation is byte-preserving on payload, not forensic wipe); the reader's latest-wins gate hides the live entry. By design. The modifier only operates on containers that already contain a trailing BR_IMAGE_INDEX (i.e. were emitted by this project's writer with at least one user-data input, or had one added by a prior Add call). Foreign AOMEI images and empty containers cause an `InvalidOperationException` — the vendor's BR_IMAGE_INDEX placement is undocumented past the header-layout level so an in-place modify of a real vendor sample would either corrupt the image or produce something the vendor reader rejects silently. See `AomeiFormatDescriptor` for the honest-scope note.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Add` | `static void Add(Stream image, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends one fresh VDB entry per input. Each input becomes a new user-data envelope written at the OLD index start offset; the BR_IMAGE_INDEX is re-laid right after with the existing entries first and the new entries appended (RegNo = max-seen + 1 upward). |
+| `Remove` | `static void Remove(Stream image, uint regNo)` | Appends a tombstone VDB entry sharing the target's `regNo`. The original envelope's bytes survive at their offset; the reader's latest-wins gate suppresses the live entry. |
+| `Replace` | `static void Replace(Stream image, uint regNo, string newName, byte[] newPayload)` | Replaces the live entry whose `RegNo` equals `regNo`. Writes a fresh user-data envelope at the OLD index start offset and appends a fresh VDB entry sharing `regNo`; the reader's latest-wins gate surfaces the new envelope as the live state. The old envelope's bytes stay byte-identical at their original offset. |
+
+#### `AomeiInfoRecord`
+
+A single decoded INFO/INDEX record from the AOMEI payload. Carries the raw 12-byte header, the verification result of the on-disk CRC and the raw body bytes. Higher-level typed views are exposed via the `TryGetXxx` helpers — they return `false` when the record's type or size doesn't match the spec, so unknown/future records degrade gracefully instead of throwing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AomeiInfoRecord` | `AomeiInfoRecord(BrStandardHeader header, bool crcValid, byte[] body, long fileOffset)` |  |
+| `Body` | `byte[] Body { get; }` | Body bytes excluding the 12-byte header. May be empty for header-only records (none observed, but the layout permits it). |
+| `CrcValid` | `bool CrcValid { get; }` | True when the recomputed CRC matched the stored value. |
+| `FileOffset` | `long FileOffset { get; }` | Byte offset of the record relative to the start of the file (i.e. relative to the BIFH magic at file offset 0). |
+| `Header` | `BrStandardHeader Header { get; }` | Twelve-byte tagged header (Size / Type / Crc32). |
+| `IsIndex` | `bool IsIndex { get; }` | True when the record's type tag is one of the recovered `INDEX_TYPE_*` values (root / volume / datablock / dirtree / dataarea). The body of an index record holds a `BR_IMAGE_INDEX` header (EntryCount / EntrySize) followed by a packed entry array — see `BrImageIndex`. |
+| `TypeName` | `string TypeName { get; }` | Symbolic name for the record's `Type` tag, or `UNKNOWN_0xNNNN` for codes not in the recovered enumeration. Both INFO_TYPE_* (0x1xx) and INDEX_TYPE_* (0x2xx / 0x3xx) tags are surfaced — INDEX_TYPE_* indicates a sub-index record whose body holds a packed array of `BR_IMAGE_INDEX_ENTRY_*` entries rather than a single typed value. |
+| `BuildBackupType` | `static byte[] BuildBackupType(uint kind)` | Builds an `InfoTypeBackupType` record (0x14 bytes total). |
+| `BuildCompress` | `static byte[] BuildCompress(uint method, uint level)` | Builds an `InfoTypeImageCompress` record (0x18 bytes total) with the supplied `method` and `level`. The CRC is sealed in place. |
+| `BuildEncrypt` | `static byte[] BuildEncrypt(uint method, uint keyLen)` | Builds an `InfoTypeImageEncrypt` record (0x18 bytes total). |
+| `BuildPasswordFromBytes` | `static byte[] BuildPasswordFromBytes(ReadOnlySpan<byte> passwordBytes)` | Builds the password record from already-encoded password bytes — useful when round-tripping a sample whose original encoding isn't UTF-16LE or when testing the scheduled-task substitution against a real context struct. |
+| `BuildPassword` | `static byte[] BuildPassword(string password)` | Builds an `InfoTypeImagePassword` record (0x20 bytes total) by MD5-hashing the supplied password's UTF-16LE bytes, matching `ImageWriter::AddPassword` at `ImgFile.dll!FUN_180014a30`. Passwords that match the literal `SchedulerMagicPassword` are not substituted here — the substitution requires the runtime scheduled-task context which is not available offline. |
+| `TryGetBackupType` | `bool TryGetBackupType(out uint kind)` | Tries to decode this record as `InfoTypeBackupType`. |
+| `TryGetCompressInfo` | `bool TryGetCompressInfo(out uint method, out uint level)` | Tries to decode this record as `InfoTypeImageCompress`. Returns `false` when the type tag or size doesn't match. |
+| `TryGetEncryptInfo` | `bool TryGetEncryptInfo(out uint method, out uint keyLen)` | Tries to decode this record as `InfoTypeImageEncrypt`. |
+| `TryGetPasswordMd5` | `bool TryGetPasswordMd5(out byte[] md5)` | Tries to decode this record as `InfoTypeImagePassword`. Surfaces the 16-byte MD5 hash that the AOMEI reader compares against `IsPswEqual(sPassword, PswLen, ((BR_IMAGE_INFO_PASSWORD*)pInfo)->MD5, 16)`. |
+
+#### `AomeiReader`
+
+Reader for AOMEI Backupper image files (`.adi` disk / partition / system image and `.afi` file backup), implementing the partial specification recovered from binary reverse engineering of the AOMEI Backupper binary stack — see `docs/AOMEI_FORMAT_SPEC.md`. What this reader verifies and surfaces: Five-byte ASCII signature `BIFH\` at offset 0 — preserved from the original R/O metadata baseline so detection logic stays unchanged.Full `BR_IMAGE_FILE_HEAD` at offset 0 (0x65C bytes): Flag, Size and Crc32 fields verified per spec §2.1; the remaining 0x650 body bytes are surfaced as `HeadBody` for future RE work.Full `BR_IMAGE_FILE_TAIL` at offset `file_size - 0x674`: same Flag/Size/Crc32 verification, body surfaced as `TailBody`.Walk of every `BR_STANDARD_HEADER`-prefixed record between the head and the tail; each record's CRC is verified per the spec §3.1 invariant `BRCrc32(record, sizeof(record)) == saved_crc`.Typed views of the four confirmed INFO records: `InfoTypeImageCompress` (0x105), `InfoTypeImageEncrypt` (0x106), `InfoTypeImagePassword` (0x107), `InfoTypeBackupType` (0x10C). What is not yet decoded (per spec §10): Head/tail body fields past the first 12 bytes — layout TODO.INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA / ROOT record bodies — only the BR_STANDARD_HEADER framing is walked; the body bytes are passed through as opaque `Body`.Encryption (AES variant + IV derivation) and the compression method numeric mapping — fields surfaced as-is. The reader is tolerant: a short/partial image is reported via `ParseStatus` rather than thrown, so callers (e.g. the descriptor's `List` / `Extract` path) can fall back to the header-surface treatment without exception handling on the hot path.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AomeiReader` | `AomeiReader(Stream stream)` | Reads the full file into memory (capped at `MaxImageBytes`) and parses it. The full-image read is necessary because the tail lives at `file_size - 0x674`. |
+| `HeaderCaptureSize` | `const int HeaderCaptureSize` | Capture size of the leading bytes surfaced as `header.bin` by the descriptor. |
+| `Magic` | `static readonly byte[] Magic` | 5-byte ASCII signature shared by `.adi` and `.afi` — preserved on the public surface for backwards compatibility with the original R/O metadata descriptor. |
+| `MaxImageBytes` | `const int MaxImageBytes` | Maximum bytes the reader will pull from the input stream. Caps memory use on pathological inputs while still being big enough to cover real AOMEI samples (head 0x65C + index records + tail 0x674; for pure metadata inspection 16 MB is well over the practical INFO/INDEX region size). |
+| `AllVdbEntries` | `IReadOnlyList<BrImageIndexEntryVdb> AllVdbEntries { get; }` | Every VDB entry surfaced by the latest `IndexTypeDataBlock` record, in on-disk order without latest-wins/tombstone filtering. Lets the in-place modifier roundtrip the table verbatim and the tests pin both views independently. |
+| `BackupTypeKind` | `uint? BackupTypeKind { get; }` | The first decoded `InfoTypeBackupType` record's `kind` value, or null when absent. |
+| `CompressLevel` | `uint? CompressLevel { get; }` | The first decoded `InfoTypeImageCompress` record's `level` value, or null when absent. |
+| `CompressMethod` | `uint? CompressMethod { get; }` | The first decoded `InfoTypeImageCompress` record's `method` value, or null when absent. |
+| `DataBlockIndexFileOffset` | `long? DataBlockIndexFileOffset { get; }` | Absolute file offset of the BR_STANDARD_HEADER prefixing the latest `IndexTypeDataBlock` record, or null when no index is present. |
+| `DataBlockIndexSize` | `int? DataBlockIndexSize { get; }` | Total bytes (including the BR_STANDARD_HEADER) of the latest `IndexTypeDataBlock` record, or null when no index is present. |
+| `EncryptKeyLen` | `uint? EncryptKeyLen { get; }` | The first decoded `InfoTypeImageEncrypt` record's `key_len` value, or null when absent. |
+| `EncryptMethod` | `uint? EncryptMethod { get; }` | The first decoded `InfoTypeImageEncrypt` record's `method` value, or null when absent. |
+| `HeadBody` | `byte[] HeadBody { get; }` | Raw bytes of the head body (the 0x650 bytes after the 12-byte standard header). Empty if the head wasn't read. |
+| `HeadCrcValid` | `bool HeadCrcValid { get; }` | True when the head's stored CRC matched the recomputed value. |
+| `Head` | `BrFileHead? Head { get; }` | Parsed file head — null if the input was too short to contain a full 0x65C-byte head. |
+| `HeaderRaw` | `byte[] HeaderRaw { get; }` | Captured leading bytes (up to `HeaderCaptureSize`). |
+| `LiveVdbEntries` | `IReadOnlyList<BrImageIndexEntryVdb> LiveVdbEntries { get; }` | VDB entries decoded from the latest `IndexTypeDataBlock` record in the container, after applying latest-entry-wins per `RegNo` and dropping tombstones. Empty when no index record is present (round-trip baseline + foreign samples). |
+| `ParseStatus` | `string ParseStatus { get; }` | Parse outcome — one of `ok`, `magic_ok_crc_failed`, `header_short`, `tail_missing`, `tail_invalid`, `partial`, or `unparsed`. |
+| `PasswordMd5` | `byte[] PasswordMd5 { get; }` | The first decoded `InfoTypeImagePassword` record's 16-byte MD5 hash, or null when absent. |
+| `PostMagicWord` | `uint PostMagicWord { get; }` | Speculative 32-bit little-endian word at offset 4 (the Size field). Preserved on the public surface so existing diagnostic output keeps working — its semantic meaning is now known to be the head struct size. |
+| `RawImage` | `byte[] RawImage { get; }` | Raw image bytes captured by the constructor — used by the reader-side helpers that resolve VDB.ImgOffset references against the source file. Empty when the underlying stream was shorter than the magic. |
+| `Records` | `IReadOnlyList<AomeiInfoRecord> Records { get; }` | All decoded INFO/INDEX records between the head and the tail. |
+| `TailBody` | `byte[] TailBody { get; }` | Raw bytes of the tail body (the 0x668 bytes after the 12-byte standard header). Empty if the tail wasn't read. |
+| `TailCrcValid` | `bool TailCrcValid { get; }` | True when the tail's stored CRC matched the recomputed value. |
+| `Tail` | `BrFileTail? Tail { get; }` | Parsed file tail — null if the input was too short to contain both head and tail or the tail's flag/size didn't match. |
+| `Valid` | `bool Valid { get; }` | True once the full BIFH head has been verified (magic + size + CRC). |
+| `ResolveLiveUserData` | `IReadOnlyList<LiveUserData> ResolveLiveUserData()` | Resolves `LiveVdbEntries` against `RawImage` by reading each entry's referenced 0xF001 envelope and decoding the filename + payload. Entries whose ImgOffset/NewSize point outside the captured image bytes are silently skipped — defensive against partially-truncated inputs. |
+
+#### `AomeiReader.LiveUserData`
+
+Decoded user-data view of a VDB entry: the envelope's embedded filename plus the payload bytes.
+
+Implements `IEquatable<LiveUserData>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LiveUserData` | `LiveUserData(uint RegNo, string Name, byte[] Payload, ulong EnvelopeOffset, uint EnvelopeSize)` | Decoded user-data view of a VDB entry: the envelope's embedded filename plus the payload bytes. |
+| `EnvelopeOffset` | `ulong EnvelopeOffset { get; init; }` |  |
+| `EnvelopeSize` | `uint EnvelopeSize { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Payload` | `byte[] Payload { get; init; }` |  |
+| `RegNo` | `uint RegNo { get; init; }` |  |
+
+#### `AomeiWriter`
+
+Builder for AOMEI `.adi`/`.afi` images. Produces a well-formed `BIFH`-magic + `BR_STANDARD_HEADER` + `BIFT` container that round-trips through `AomeiReader`. What this writer ships: a real wire-format-correct outer container. The 12-byte standard headers (Size/Type/Crc32) and the BIFH/BIFT magics are emitted per the recovered spec, and the CRC32 fields are sealed against the on-disk bytes. What this writer does not ship:The 0x650 / 0x668-byte head/tail bodies are left zeroed because the field layout past the first 12 bytes is TODO per spec §10.1. Containers produced by this writer therefore round-trip through our own reader but will not necessarily be accepted by the AOMEI Backupper application — the application very likely expects specific GUID / version / index-offset fields in those body regions.The `INDEX_TYPE_*` record bodies are not built (only the type-code enumeration is recovered; the layouts are TODO per spec §10.5). Inputs are emitted as raw byte sequences wrapped in `BR_STANDARD_HEADER`-prefixed envelopes with a vendor-namespace type code (`UserDataTypeTag`); the reader walks them as opaque records.Compression and encryption are advertised via INFO records (so the round-trip captures the intent) but the payload bytes are stored verbatim — implementing the on-the-wire LZ4/zlib/AES wrappers without a reference sample to validate against would be speculative.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AomeiWriter` | `AomeiWriter()` |  |
+| `UserDataNameLength` | `const int UserDataNameLength` | 32-byte filename prefix written before the user-data payload inside the `UserDataTypeTag` envelope. ASCII, NUL-padded. |
+| `UserDataTypeTag` | `const ushort UserDataTypeTag` | Vendor-namespace type tag used for opaque user-data envelopes produced by this writer. Sits in the `0xF000+` range to stay above every recovered AOMEI `INFO_TYPE_*` (0x102..0x116) and `INDEX_TYPE_*` (0x200..0x301) code, so the wrapper never collides with a real vendor record on either end. A reader produced by this project recognises the tag; the AOMEI application will reject it, which is the honest behaviour — we are not claiming on-wire compatibility with the vendor. |
+| `BackupTypeKind` | `uint? BackupTypeKind { get; init; }` | Optional backup-type kind code embedded as `InfoTypeBackupType`. Null means no record emitted. |
+| `CompressInfo` | `ValueTuple<uint, uint>? CompressInfo { get; init; }` | Optional compress method (and level) — null means no `InfoTypeImageCompress` record emitted. |
+| `EncryptInfo` | `ValueTuple<uint, uint>? EncryptInfo { get; init; }` | Optional encrypt method (and key length) — null means no `InfoTypeImageEncrypt` record emitted. |
+| `Password` | `string Password { get; init; }` | Optional password — when non-null an `InfoTypeImagePassword` record carrying MD5(UTF-16LE(password)) is emitted, matching `ImageWriter::AddPassword` at `ImgFile.dll!FUN_180014a30`. |
+| `UserData` | `IReadOnlyList<ValueTuple<string, byte[]>> UserData { get; init; }` | User-data payload records to embed between the head and the tail. Each tuple is (name, bytes). Empty list means no user data — the resulting container is just a sealed head/tail pair, which is still a valid round-trip baseline. |
+| `Build` | `byte[] Build()` | Builds the full image bytes ready to write to disk. The resulting layout is The BR_IMAGE_INDEX is only emitted when at least one user-data envelope is present — the empty-container case is still `BIFH + BIFT` bytes so older round-trip baselines stay stable. Each VDB entry's `RegNo` is the 1-based input index, `ImgOffset` is the envelope's absolute file offset, `OldSize`/`NewSize` are the envelope's total bytes (header + name + payload), and `Crc32` is the BRCrc32 (zlib CRC-32) over those envelope bytes. The `AomeiInPlaceModifier` later appends, replaces and tombstones VDB entries inside this index without touching the existing envelopes or the existing entries. |
+| `ReadUserDataName` | `static string ReadUserDataName(ReadOnlySpan<byte> body)` | Reads back the filename embedded by `BuildUserDataRecord`. Returns the empty string when the body is too short. |
+| `ReadUserDataPayload` | `static byte[] ReadUserDataPayload(ReadOnlySpan<byte> body)` | Reads back the payload bytes embedded by `BuildUserDataRecord`. Returns an empty array when the body is too short to contain the name prefix. |
+
+#### `BrCrc32`
+
+AOMEI `BRCrc32` — the CRC-32 used to integrity-protect the file head, file tail and every `BR_STANDARD_HEADER`-prefixed INFO/INDEX record. Recovered via binary reverse engineering of `Encrypt.dll!BRCrc32` at offset `0x1800015c0` and the identical kernel-side reimplementation at `ammntdrv.sys!FUN_0002053c`. The reverse-engineered pseudocode reads: This is standard zlib CRC-32: reflected polynomial `0xEDB88320`, init `0x00000000`, final XOR `0xFFFFFFFF`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ComputeWithZeroedCrc` | `static uint ComputeWithZeroedCrc(ReadOnlySpan<byte> record)` | Computes the CRC over `record` with the 4-byte `Crc32FieldOffset` field treated as zero — matching the AOMEI reader's verification protocol: `saved = Head.Crc32; Head.Crc32 = 0; ASSERT(BRCrc32(...) == saved);`. |
+| `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | Computes the AOMEI `BRCrc32` over `data`. |
+
+#### `BrFileHead`
+
+`BR_IMAGE_FILE_HEAD` — the 0x65C-byte struct at offset 0 of every `.adi`/`.afi` image. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.1, sourced from `ammntdrv.sys!FUN_00015e90`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x650 bytes are TODO per spec §10.1 (likely backup GUID, version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes via `BodyRaw` for future RE work; the writer fills it with zeros and seals the CRC. The Flag field reuses the `BifhFlag``0x48464942` ("BIFH" LE) — the same four bytes as `BifhMagicAscii`[0..4] which the descriptor uses for offset-0 magic detection. The trailing 0x5C ("\\") byte that public sources document as part of the family magic is therefore the low byte of `Size` (0x65C = 1628 = 0x_00_00_06_5C LE) — not an extra magic byte. The reader still tolerates samples whose low-byte happens to differ (would be rejected at the Size check), keeping the 5-byte ASCII detection that has shipped since the R/O baseline.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrFileHead` | `BrFileHead(uint flag, uint size, uint crc32, byte[] bodyRaw)` |  |
+| `BodyRaw` | `readonly byte[] BodyRaw` | Raw 0x650 bytes of opaque body after the standard header. Field layout is TODO per spec §10.1. |
+| `Crc32` | `readonly uint Crc32` | CRC32 over the whole head with this field zeroed. |
+| `Flag` | `readonly uint Flag` | `'BIFH'` magic — must equal `BifhFlag`. |
+| `Size` | `readonly uint Size` | Struct size — must equal `BifhSize`. |
+| `MagicAndSizeValid` | `bool MagicAndSizeValid { get; }` | True when Flag and Size match the spec values. |
+| `BuildEmpty` | `static byte[] BuildEmpty()` | Builds a fresh head with all-zero body (the recovered field layout is incomplete — see spec §10.1) and the CRC sealed in place. Returns the 0x65C-byte buffer ready to write at file offset 0. |
+| `Read` | `static BrFileHead Read(ReadOnlySpan<byte> image)` | Reads the head from the first `BifhSize` bytes of `image`. |
+
+#### `BrFileTail`
+
+`BR_IMAGE_FILE_TAIL` — the 0x674-byte struct at offset `file_size - 0x674`. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.2, sourced from `ammntdrv.sys!FUN_0001601c`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x668 bytes are TODO per spec §10.1 (likely index offset, total payload size and back-pointer to head). The reader exposes the raw body bytes via `BodyRaw`; the writer fills it with zeros and seals the CRC.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrFileTail` | `BrFileTail(uint flag, uint size, uint crc32, byte[] bodyRaw)` |  |
+| `BodyRaw` | `readonly byte[] BodyRaw` | Raw 0x668 bytes of opaque body after the standard header. Field layout is TODO per spec §10.1. |
+| `Crc32` | `readonly uint Crc32` | CRC32 over the whole tail with this field zeroed. |
+| `Flag` | `readonly uint Flag` | `'BIFT'` magic — must equal `BiftFlag`. |
+| `Size` | `readonly uint Size` | Struct size — must equal `BiftSize`. |
+| `MagicAndSizeValid` | `bool MagicAndSizeValid { get; }` | True when Flag and Size match the spec values. |
+| `BuildEmpty` | `static byte[] BuildEmpty()` | Builds a fresh tail with all-zero body and the CRC sealed in place. Returns the 0x674-byte buffer ready to write at file offset `file_size - 0x674`. |
+| `Read` | `static BrFileTail Read(ReadOnlySpan<byte> image)` | Reads the tail from the last `BiftSize` bytes of `image`. |
+
+#### `BrImageIndex`
+
+`BR_IMAGE_INDEX` — the index-record header layout that follows the 16-byte `BR_STANDARD_HEADER` for `IndexTypeDataBlock` (0x202), `IndexTypeDataArea` (0x301) and the other `INDEX_TYPE_*` record families recovered from `ImgFile.dll!ImageVolume.cpp`. Layout (relative to the start of the record, i.e. including the 16-byte vendor BR_STANDARD_HEADER): Pinned by the writer-side store `mov [esi+0x14], EntryCount` at the DATABLOCK emit site and the reader-side `cmp [edx+0x18], 0x20` preamble before the `pIndex->EntrySize==sizeof(BR_IMAGE_INDEX_ENTRY_VDB)` assert. This class is a passive data carrier — it parses + emits the header fields, but does not yet write a complete DATABLOCK / DATAAREA record because (a) we don't ship a real BR_STANDARD_HEADER wire layout yet (the current 12-byte alias is documented in `StandardHeaderSize`) and (b) we don't have the exact byte offsets of the per-entry fields beyond their type-name list (RegNo, BlockNo, ImgOffset, NewSize, OldSize, Crc32). The `VendorEntriesOffset` constant pins the entries' start offset within the record so the future wire-compat work can advance against a verified fact.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrImageIndex` | `BrImageIndex(ushort type, uint entryCount, uint entrySize)` | Initialises a new index header. |
+| `VendorEntriesOffset` | `const int VendorEntriesOffset` | Byte offset of the entry array from the start of the record, in the vendor's 16-byte-header layout: 0x1C. |
+| `VendorEntryCountOffset` | `const int VendorEntryCountOffset` | Byte offset of `EntryCount` from the start of the record. |
+| `VendorEntrySizeOffset` | `const int VendorEntrySizeOffset` | Byte offset of `EntrySize` from the start of the record. |
+| `EntryCount` | `uint EntryCount { get; init; }` | Number of entries in the packed array following the header. |
+| `EntrySize` | `uint EntrySize { get; init; }` | Byte size of one entry. For `IndexTypeDataBlock` this is `VendorVdbEntrySize` = 0x20. |
+| `Type` | `ushort Type { get; init; }` | The `INDEX_TYPE_*` tag in the embedded `BR_STANDARD_HEADER`. |
+| `BuildDataBlockRecord` | `static byte[] BuildDataBlockRecord(IReadOnlyList<BrImageIndexEntryVdb> entries)` | Builds a complete shipped `INDEX_TYPE_DATABLOCK` (0x202) record with the supplied VDB entries packed contiguously from offset `ShippedIndexEntriesOffset`. The BR_STANDARD_HEADER's `Size` field is set to the total record length and the CRC32 is sealed in place per `SealCrc`. |
+| `TryReadShipped` | `static bool TryReadShipped(ReadOnlySpan<byte> record, out uint entryCount, out uint entrySize)` | Reads the `EntryCount` / `EntrySize` fields from a `BR_IMAGE_INDEX` record laid out in this codebase's shipped 12-byte BR_STANDARD_HEADER alias format (`ShippedIndexEntryCountOffset` / `ShippedIndexEntrySizeOffset`). Returns `false` when the record is shorter than `ShippedIndexHeaderSize` bytes. |
+| `TryReadVendor` | `static bool TryReadVendor(ReadOnlySpan<byte> record, out uint entryCount, out uint entrySize)` | Reads the `EntryCount` / `EntrySize` fields from a `BR_IMAGE_INDEX` record laid out in the vendor 16-byte-header format. Returns `false` when the record is shorter than 0x1C bytes (the minimum size of an empty index). |
+
+#### `BrImageIndexEntryFdb`
+
+`BR_IMAGE_INDEX_ENTRY_FDB` — file-level data-block descriptor that populates an `IndexTypeDataArea` record's entry array. The vendor size is not directly pinned — there's no `cmp [reg+0x18], imm` for the FDB assert site visible — but the access pattern in `ImgFile.dll!FlbDataRegion.cpp` shows the same fields as VDB minus `RegNo` (file backups have no multi-region notion): Carried here as a passive data class for forward compatibility; not emitted by any current writer path.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrImageIndexEntryFdb` | `BrImageIndexEntryFdb()` |  |
+| `BlockNo` | `ulong BlockNo { get; init; }` | Block index within the data area. |
+| `Crc32` | `uint Crc32 { get; init; }` | BRCrc32 over the decoded payload. |
+| `ImgOffset` | `ulong ImgOffset { get; init; }` | Byte offset in the image-set where the stored payload begins. |
+| `NewSize` | `uint NewSize { get; init; }` | Byte size of the stored payload. |
+| `OldSize` | `uint OldSize { get; init; }` | Byte size of the decoded payload. |
+
+#### `BrImageIndexEntryVdb`
+
+`BR_IMAGE_INDEX_ENTRY_VDB` — the 0x20-byte volume-data block descriptor that populates an `IndexTypeDataBlock` record's entry array. Pinned size `VendorVdbEntrySize` = 0x20 bytes; per-field byte offsets pinned by the constants in `AomeiConstants` (see XML doc on each `VendorVdbEntry*` for the per-field disassembly provenance). Pinned layout (recovered by triangulating three independent code paths in `ImgFile.dll`): Field-name provenance from `ImgFile.dll!ImageVolume.cpp` via the assert-text xref strings `m_pConvert->Decode(pNew, vdb.NewSize, pOld, OldLen)`, `m_pImgSet->ReadData(vdb.ImgOffset, pNew, vdb.NewSize)`, `vdb.NewSize==vdb.OldSize`, `Crc32==vdb.Crc32` and `GetBlock(vdb.RegNo, vdb.BlockNo, Buff, BufLen, Bitmap, BmpLen, nCrc)`: `RegNo` — region index into the volume's `m_vtrDataRegion` array.`BlockNo` — u64 block index within that region.`ImgOffset` — u64 byte offset inside the image set where the compressed + encrypted payload + bitmap is stored.`OldSize` — size of the decoded payload (BufLen + BmpLen, where BufLen is the sector data and BmpLen is the cluster-allocation bitmap).`NewSize` — size of the stored payload (post compress / encrypt).`Crc32` — BRCrc32 over the decoded `OldSize` bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrImageIndexEntryVdb` | `BrImageIndexEntryVdb()` |  |
+| `BlockNoOffset` | `const int BlockNoOffset` | Byte offset of `BlockNo`: 0x04. Mirrors `VendorVdbEntryBlockNoOffset`. |
+| `Crc32Offset` | `const int Crc32Offset` | Byte offset of `Crc32`: 0x1C. Mirrors `VendorVdbEntryCrc32Offset`. |
+| `ImgOffsetOffset` | `const int ImgOffsetOffset` | Byte offset of `ImgOffset`: 0x0C. Mirrors `VendorVdbEntryImgOffsetOffset`. |
+| `NewSizeOffset` | `const int NewSizeOffset` | Byte offset of `NewSize`: 0x18. Mirrors `VendorVdbEntryNewSizeOffset`. |
+| `OldSizeOffset` | `const int OldSizeOffset` | Byte offset of `OldSize`: 0x14. Mirrors `VendorVdbEntryOldSizeOffset`. |
+| `PlausibleLayout` | `const string PlausibleLayout` | One-line description of the pinned VDB layout. Used by the metadata surface to broadcast the recovered facts to downstream forensic tooling without requiring callers to read the XML docs. Updated as of this commit to the disassembly-pinned ordering (was previously a plausibility sketch). |
+| `RegNoOffset` | `const int RegNoOffset` | Byte offset of `RegNo`: 0x00. Mirrors `VendorVdbEntryRegNoOffset`. |
+| `BlockNo` | `ulong BlockNo { get; init; }` | Block index within the region. |
+| `Crc32` | `uint Crc32 { get; init; }` | BRCrc32 over the decoded payload. |
+| `ImgOffset` | `ulong ImgOffset { get; init; }` | Byte offset within the image-set where the stored payload (compressed + encrypted bytes + cluster bitmap) begins. |
+| `NewSize` | `uint NewSize { get; init; }` | Byte size of the stored payload. |
+| `OldSize` | `uint OldSize { get; init; }` | Byte size of the decoded payload (= sector data + bitmap). |
+| `RegNo` | `uint RegNo { get; init; }` | Region index. Picks one of the volume's data regions. |
+| `Read` | `static BrImageIndexEntryVdb Read(ReadOnlySpan<byte> entry)` | Read a VDB entry from a 0x20-byte span at the disassembly- pinned field offsets. |
+| `Write` | `void Write(Span<byte> entry)` | Write this VDB entry into a 0x20-byte span at the disassembly-pinned field offsets. |
+
+#### `BrStandardHeader`
+
+Twelve-byte tagged-record header that prefixes every INFO/INDEX record in the AOMEI `.adi`/`.afi` payload. Recovered from access patterns `pHead->Type`, `pHead->Size`, `Head.Crc32` in the `ImgFile.dll` and `ammntdrv.sys`. The on-disk layout treats Type as a 16-bit value followed by 16 bits of padding observed-zero in every recovered sample — the assert text in `ImgFile.dll` compares `pHead->Type` against 16-bit constants (0x105/0x106/0x107/0x10C) and never against 32-bit values, but the `{Size, Type, Crc32}` layout in the spec section §3.1 shows the header itself is 12 bytes (4+4+4). We treat that middle 4-byte slot as `Type:u16` + `Reserved:u16` in code so the wire layout is self-explanatory; the high u16 round-trips as zero unless a real sample proves otherwise.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrStandardHeader` | `BrStandardHeader(uint size, ushort type, uint crc32, ushort reserved = 0)` |  |
+| `Crc32` | `readonly uint Crc32` | CRC32 over the whole record with this field zeroed during the computation, per `ComputeWithZeroedCrc`. |
+| `Reserved` | `readonly ushort Reserved` | Reserved/padding word at offsets 6..7. Observed zero in every known sample; surfaced so future RE work can keep it round-tripping. |
+| `Size` | `readonly uint Size` | Total record size in bytes including this 12-byte header. |
+| `Type` | `readonly ushort Type` | Record-type tag (e.g. `InfoTypeImageCompress`). |
+| `Read` | `static BrStandardHeader Read(ReadOnlySpan<byte> span)` | Reads a header from the first 12 bytes of `span`. |
+| `SealCrc` | `static uint SealCrc(Span<byte> record)` | Finalises a freshly-built record by zeroing the CRC field, recomputing it, and patching the result back into the buffer. Returns the new CRC value. |
+| `VerifyCrc` | `static bool VerifyCrc(ReadOnlySpan<byte> record)` | Returns true if the record's recomputed CRC matches the stored value, per the AOMEI reader's verification protocol. |
+| `Write` | `void Write(Span<byte> dst)` | Writes the header into the first 12 bytes of `dst`. |
 
 ### Namespace `FileFormat.ApLib`
 
@@ -876,6 +2013,181 @@ Writer for Apple's AppleSingle (RFC 1740) container format. Emits the canonical 
 | --- | --- | --- |
 | `Build` | `static byte[] Build(IReadOnlyList<ValueTuple<uint, byte[]>> entries)` | Serializes the given entries into a single AppleSingle byte buffer. Entries appear in caller-supplied order, both in the directory and in the data area immediately after it. The 16-byte filler block is left zero (RFC 1740 v2 convention). |
 | `EntryIdForName` | `static uint EntryIdForName(string name)` | Maps a stable display name (the same one `EntryName` emits) back to the AppleSingle entry id. Unknown names following the `entry_NNNNN.bin` shape recover their numeric id; anything else throws. |
+
+### Namespace `FileFormat.AppleSparse`
+
+[`SparsebundleFormatDescriptor`](#sparsebundleformatdescriptor) · [`SparsebundleReader`](#sparsebundlereader) · [`SparsebundleStream`](#sparsebundlestream) · [`SparseimageFormatDescriptor`](#sparseimageformatdescriptor) · [`SparseimageInPlaceModifier`](#sparseimageinplacemodifier) · [`SparseimageInPlaceModifier.BandGeometry`](#sparseimageinplacemodifierbandgeometry) · [`SparseimageReader`](#sparseimagereader) · [`SparseimageStream`](#sparseimagestream) · [`SparseimageWriter`](#sparseimagewriter)
+
+#### `SparsebundleFormatDescriptor`
+
+Apple `sparsebundle` — a directory-based expanding disk image used by Time Machine, FileVault and `hdiutil create -type SPARSEBUNDLE`. The bundle is a directory containing `Info.plist`, `Info.bckup`, `token` and a `bands/` directory whose hex-named files each hold one virtual band (default 8 MB). References: Apple `hdiutil(1)` man page — the creating tool; the bundle layout itself is undocumented by Apple`https://github.com/torarnv/sparsebundlefs` — sparsebundlefs — open-source FUSE implementation of the band layout`https://en.wikipedia.org/wiki/Sparse_image` — background on Apple sparse images/bundles
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SparsebundleFormatDescriptor` | `SparsebundleFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `SparsebundleReader`
+
+Reader for Apple sparsebundle bundles (directories with extension `.sparsebundle`). Parses the `Info.plist` to learn band-size and total-size, then enumerates `bands/` — each file there is a single physical band whose hex-decoded name is the virtual band index.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SparsebundleReader` | `SparsebundleReader(string bundleRoot)` | Opens the sparsebundle at `bundleRoot`. `bundleRoot` must be a directory containing `Info.plist` and `bands/`. |
+| `BackingStoreVersion` | `long BackingStoreVersion { get; }` | Sparsebundle backing-store version (plist key `bundle-backingstore-version`). |
+| `BandSize` | `long BandSize { get; }` | Band size in bytes (from plist key `band-size`, default 8 MB). |
+| `BandsDir` | `string BandsDir { get; }` | Bands directory (`{BundleRoot}/bands`). |
+| `BundleRoot` | `string BundleRoot { get; }` | Bundle root directory (the `*.sparsebundle` folder). |
+| `Plist` | `IReadOnlyDictionary<string, string> Plist { get; }` | Plist key map (raw string values). |
+| `VirtualSize` | `long VirtualSize { get; }` | Total virtual size in bytes (from plist key `size`). |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Materialises the full virtual disk as a byte array. |
+| `Read` | `int Read(long virtualOffset, Span<byte> destination)` | Reads `destination`.`Length` bytes from virtual offset `virtualOffset`. Missing bands return zeros. |
+| `TryFromPath` | `static SparsebundleReader TryFromPath(string path)` | Tries to construct a `SparsebundleReader` from a file path pointing at the bundle root or at its `Info.plist`. Returns `null` if neither resolves to a sparsebundle. |
+
+#### `SparsebundleStream`
+
+Read-only seekable virtual-disk view over a sparsebundle directory. Missing bands surface as zero bytes.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SparsebundleStream` | `SparsebundleStream(SparsebundleReader reader)` |  |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `SparseimageFormatDescriptor`
+
+Apple `sparseimage` — a single-file expanding disk image produced by `hdiutil create -type SPARSE` and used by Time Machine, FileVault and HDIUTIL workflows. The on-disk format is a 4096-byte `sprs` header plus a Band Allocation Table (BAT) mapping virtual bands (typically 1 MB each) to physical bands stored sequentially in the file; unallocated virtual bands read as zeros. References: Apple `hdiutil(1)` man page — the creating tool; the 'sprs' header + band allocation table are undocumented by Apple and community-reverse-engineered`https://en.wikipedia.org/wiki/Sparse_image` — background on Apple sparse images
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SparseimageFormatDescriptor` | `SparseimageFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites bands in place. Inputs whose `ArchiveName` matches `band-NNNN.bin` and carry exactly `band_size` bytes are written at the fixed physical offset derived from the BAT (in-place rewrite when the band is already allocated, fresh EOF slot otherwise); everything outside the touched band's payload window and its 4-byte BAT entry stays byte-identical. Inputs not matching the synthetic band schema are silently skipped — inner HFS+/APFS/FAT directory mutation is delegated to the matching filesystem descriptors and is out of scope for the band-rewrite modifier. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the physical payload of each named band and clears its BAT entry. The physical slot stays in place as a zero-filled hole so other bands' offsets don't shift; that matches the reader's existing semantic of returning zero bytes for BAT entries that are 0. |
+
+#### `SparseimageInPlaceModifier`
+
+In-place band-rewrite modifier for an Apple sparseimage. Operates at the physical band offsets that the `SparseimageReader` already derives from the on-disk header: a 4 096-byte header preamble at offset 0, a band-allocation table (BAT) of `num_bands × 4` big-endian entries starting at offset `HeaderSize`, and the first physical band's data at the first 512-byte-aligned offset past the BAT. Scope. The modifier rewrites the `band_size`-byte payload of an existing or freshly-allocated physical band slot, and toggles the BAT entry for the matching logical band. It does not understand the inner HFS+/APFS/FAT directory structure of the virtual disk — that is delegated to the respective filesystem descriptors. Synthetic entry names of the form `band-NNNN.bin` address a single logical band directly; inputs whose name doesn't match the schema are silently skipped at the descriptor seam.True in-place. Writes touch only the targeted band's physical payload window plus the 4-byte BAT entry for the matching logical band. The 4 096-byte header preamble, every other BAT entry, every other allocated band's payload, and the trailing physical-band region of the image stay byte-identical at their original byte offsets. New-band allocation lands at the current end-of-stream and grows the image by exactly one band; existing payload offsets are preserved.Honest-scope. The BAT length `num_bands` is treated as fixed: writing to a logical band whose index is past `num_bands - 1` is rejected, because growing the BAT would shift the first-band offset and break every other band's physical position. Inner virtual-disk filesystems remain the writers' responsibility — only the raw band surface is mutated here.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddOrReplaceBands` | `static void AddOrReplaceBands(Stream image, IEnumerable<ValueTuple<string, byte[]>> inputs)` | Routes each input through the band-rewrite path. Inputs whose `ArchiveName` matches `band-NNNN.bin` and carry exactly `BandSize` bytes are written at the known physical band offset (in-place rewrite when allocated, fresh EOF slot otherwise). Inputs whose name doesn't match the schema or whose payload size doesn't match the band size are silently skipped — inner virtual-disk filesystem mutation is delegated to those filesystems' descriptors. |
+| `FormatBandEntryName` | `static string FormatBandEntryName(int logicalBand)` | Formats a logical band index into the synthetic entry name used by the in-place modifier. Six-digit zero-padded so 0..999 999 sort lexicographically the same as numerically. |
+| `MaxAllocatedSlot` | `static uint MaxAllocatedSlot(Stream image, BandGeometry geom)` | Returns the highest 1-based physical slot referenced anywhere in the BAT — equivalently, the count of currently-allocated physical slots (since the writer packs slots sequentially with no holes). Returns 0 when no band is allocated. |
+| `ReadBatEntry` | `static uint ReadBatEntry(Stream image, int logicalBand, BandGeometry geom)` | Reads the BAT entry for `logicalBand`. Returns 0 when the band is unallocated, otherwise the 1-based physical slot index. |
+| `ReadGeometry` | `static BandGeometry ReadGeometry(Stream image)` | Probes the 4 096-byte sparseimage header at offset 0 and returns the band-table geometry. Throws `InvalidDataException` on bad magic, unsupported header_size, implausible sectors_per_band, or implausible num_bands. |
+| `RemoveBand` | `static bool RemoveBand(Stream image, int logicalBand)` | Zeros the physical payload of logical band `logicalBand` and clears its BAT entry. The physical slot is left in place as a zero-filled hole so other bands' offsets don't shift; that matches the semantic of an unallocated band in the existing reader, which already returns zero bytes for BAT entries that are 0. Returns `true` if the band was previously allocated (and was zeroed), `false` when it was already unallocated. |
+| `RemoveBand` | `static bool RemoveBand(Stream image, int logicalBand, BandGeometry geom)` | Variant of `RemoveBand` reusing a previously-probed geometry. |
+| `RemoveBands` | `static void RemoveBands(Stream image, IEnumerable<string> entryNames)` | Zeros + clears the BAT entry for each named `band-NNNN.bin`. Names that don't match the schema, indices past the BAT, and bands that are already unallocated are silently skipped. |
+| `TryParseBandEntryName` | `static bool TryParseBandEntryName(string entryName, out int logicalBand)` | Parses a synthetic `band-NNNN.bin` entry name and returns the embedded logical band index. Names that don't match the schema return `false` so the descriptor can silently skip them rather than throwing. |
+| `WriteBand` | `static void WriteBand(Stream image, int logicalBand, ReadOnlySpan<byte> data)` | Rewrites the `band_size`-byte payload of logical band `logicalBand` in place. When the band is already allocated, the data lands at its existing physical offset (`FirstBandOffset` + (slot - 1) * band_size) and no other byte of the image is touched. When the band is not yet allocated, a fresh physical slot is appended at end-of-stream and the BAT entry for the logical band is updated to point at it; every previously-allocated band's payload stays byte-identical at its original offset. |
+| `WriteBand` | `static void WriteBand(Stream image, int logicalBand, ReadOnlySpan<byte> data, BandGeometry geom)` | Variant of `WriteBand` that reuses a previously-probed geometry, avoiding a redundant header read per call when a caller is rewriting several bands back-to-back. |
+| `WriteBatEntry` | `static void WriteBatEntry(Stream image, int logicalBand, uint slot, BandGeometry geom)` | Writes `slot` (0 = unallocated, else 1-based physical slot index) to the BAT entry for `logicalBand`. |
+
+#### `SparseimageInPlaceModifier.BandGeometry`
+
+Header geometry parsed once from the sparseimage stream so a caller rewriting several bands back-to-back can reuse the offsets instead of re-probing the header for each call.
+
+Implements `IEquatable<BandGeometry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BandGeometry` | `BandGeometry(int SectorsPerBand, int BandSize, int NumBands, long BatOffset, long FirstBandOffset)` | Header geometry parsed once from the sparseimage stream so a caller rewriting several bands back-to-back can reuse the offsets instead of re-probing the header for each call. |
+| `BandSize` | `int BandSize { get; init; }` |  |
+| `BatOffset` | `long BatOffset { get; init; }` |  |
+| `FirstBandOffset` | `long FirstBandOffset { get; init; }` |  |
+| `NumBands` | `int NumBands { get; init; }` |  |
+| `SectorsPerBand` | `int SectorsPerBand { get; init; }` |  |
+
+#### `SparseimageReader`
+
+Reader for Apple sparseimage files (single-file variant produced by `hdiutil create -type SPARSE`). Parses the `sprs` header, derives sectors-per-band and total virtual size, then materialises the virtual disk from the band-allocation table.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SparseimageReader` | `SparseimageReader(Stream stream, bool leaveOpen = false)` | Opens the sparseimage. Throws `InvalidDataException` on bad magic, truncated header, or implausible band geometry. |
+| `BandCount` | `int BandCount { get; }` | Number of bands in the BAT (allocated + sparse). |
+| `SectorsPerBand` | `int SectorsPerBand { get; }` | Sectors per band (each sector = 512 bytes). |
+| `VirtualSize` | `long VirtualSize { get; }` | Total virtual disk size in bytes. |
+| `Dispose` | `void Dispose()` |  |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Materialises the full virtual disk as a byte array. |
+| `Read` | `int Read(long virtualOffset, Span<byte> destination)` | Reads `destination`.`Length` bytes from virtual offset `virtualOffset` into `destination`. Unallocated bands return zero bytes. Returns the number of bytes actually filled (always the requested length when `virtualOffset + length <= VirtualSize`). |
+
+#### `SparseimageStream`
+
+Read-only seekable virtual-disk view over a sparseimage. Unallocated bands read as zeros; the stream surface is the inner virtual size, not the physical sparseimage file length.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SparseimageStream` | `SparseimageStream(SparseimageReader reader, bool leaveOpen = false)` | Wraps an already-constructed reader. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `TryOpen` | `static SparseimageStream TryOpen(Stream backing)` | Tries to open a `SparseimageStream` over the given backing stream. Returns `null` if the magic doesn't match or the header is malformed. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `SparseimageWriter`
+
+Synthetic sparseimage writer used for round-trip testing and the `SparseimageFormatDescriptor` WORM `Create` path. Produces a single-header sparseimage whose all-zero bands are stored unallocated in the BAT (zero entries) and whose non-zero bands are packed sequentially after the BAT.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SparseimageWriter` | `SparseimageWriter()` |  |
+| `Build` | `byte[] Build()` | Builds the sparseimage bytes. |
+| `SetDiskData` | `void SetDiskData(byte[] data)` | Sets the raw virtual-disk contents (padded to band size on write). |
+| `SetSectorsPerBand` | `void SetSectorsPerBand(int sectorsPerBand)` | Overrides the band geometry; default 2048 sectors (1 MB). |
 
 ### Namespace `FileFormat.Appx`
 
@@ -1296,6 +2608,168 @@ Creates ARJ archives.
 | `ToArray` | `byte[] ToArray()` | Creates the archive as a byte array. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to the specified stream. |
 
+### Namespace `FileFormat.Arsc`
+
+[`ArscConstants`](#arscconstants) · [`ArscFormatDescriptor`](#arscformatdescriptor) · [`ArscPackageInfo`](#arscpackageinfo) · [`ArscReader`](#arscreader) · [`ChunkHeader`](#chunkheader) · [`ChunkWalker`](#chunkwalker)
+
+#### `ArscConstants`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChunkHeaderSize` | `const int ChunkHeaderSize` |  |
+| `PackageNameLengthBytes` | `const int PackageNameLengthBytes` |  |
+| `PackageNameLengthChars` | `const int PackageNameLengthChars` |  |
+| `ResNullType` | `const ushort ResNullType` |  |
+| `ResStringPoolType` | `const ushort ResStringPoolType` |  |
+| `ResTableHeaderSize` | `const int ResTableHeaderSize` |  |
+| `ResTableLibraryType` | `const ushort ResTableLibraryType` |  |
+| `ResTableMagic` | `static readonly byte[] ResTableMagic` |  |
+| `ResTablePackageType` | `const ushort ResTablePackageType` |  |
+| `ResTableTypeSpecType` | `const ushort ResTableTypeSpecType` |  |
+| `ResTableTypeType` | `const ushort ResTableTypeType` |  |
+| `ResTableType` | `const ushort ResTableType` |  |
+| `StringPoolFlagSorted` | `const uint StringPoolFlagSorted` |  |
+| `StringPoolFlagUtf8` | `const uint StringPoolFlagUtf8` |  |
+
+#### `ArscFormatDescriptor`
+
+Android compiled resource table (`resources.arsc`) read-only pseudo-archive. Validates the root `RES_TABLE_TYPE` chunk, walks the global string pool and each `RES_TABLE_PACKAGE_TYPE` chunk, and surfaces a `FULL.arsc` passthrough plus a `metadata.ini` summary (package count, package id/name list, total type-chunk count, global string count). All multi-byte integers are little-endian. References: `https://android.googlesource.com/platform/frameworks/base/` — AOSP frameworks/base — `libs/androidfw/include/androidfw/ResourceTypes.h` defines the RES_TABLE chunk structs`https://en.wikipedia.org/wiki/Apk_(file_format)` — background (resources.arsc inside APKs)
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArscFormatDescriptor` | `ArscFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `ArscPackageInfo`
+
+One package entry surfaced by `ArscReader`.
+
+Implements `IEquatable<ArscPackageInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArscPackageInfo` | `ArscPackageInfo(uint PackageId, string Name, int TypeChunkCount)` | One package entry surfaced by `ArscReader`. |
+| `Name` | `string Name { get; init; }` |  |
+| `PackageId` | `uint PackageId { get; init; }` |  |
+| `TypeChunkCount` | `int TypeChunkCount { get; init; }` |  |
+
+#### `ArscReader`
+
+Read-only walker for Android compiled resource tables (`resources.arsc`). Validates the root `RES_TABLE_TYPE` chunk, walks the global string pool and each package chunk, and surfaces package count, package id/name list, total type-chunk count and the global string-pool string count. Tolerant of unknown chunk types and truncation: unknown chunks are skipped via `SkipBody` and any structural failure flips `ParseStatus` to `partial` instead of throwing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArscReader` | `ArscReader(Stream stream)` |  |
+| `GlobalStringCount` | `uint GlobalStringCount { get; }` | String count of the global value-string pool that follows the root header. 0 if absent or unparsed. |
+| `PackageCount` | `uint PackageCount { get; }` | Number of packages declared in the `RES_TABLE_TYPE` root header. |
+| `Packages` | `IReadOnlyList<ArscPackageInfo> Packages { get; }` | Decoded package entries (id + null-trimmed UTF-16 name + type-chunk count). |
+| `ParseStatus` | `string ParseStatus { get; }` | `full` when every chunk header read cleanly to EOF; `partial` on any truncation, structural error or trailing-byte shortfall. |
+| `TotalTypeCount` | `int TotalTypeCount { get; }` | Total `RES_TABLE_TYPE_TYPE` chunks summed across all walked packages. |
+
+#### `ChunkHeader`
+
+Reads the uniform 8-byte ARSC chunk header (Type:UInt16 LE, HeaderSize:UInt16 LE, Size:UInt32 LE) and validates the inner-/outer-size invariants. All multi-byte integers are little-endian.
+
+Implements `IEquatable<ChunkHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChunkHeader` | `ChunkHeader(ushort Type, ushort HeaderSize, uint Size)` | Reads the uniform 8-byte ARSC chunk header (Type:UInt16 LE, HeaderSize:UInt16 LE, Size:UInt32 LE) and validates the inner-/outer-size invariants. All multi-byte integers are little-endian. |
+| `HeaderSize` | `ushort HeaderSize { get; init; }` |  |
+| `Size` | `uint Size { get; init; }` |  |
+| `Type` | `ushort Type { get; init; }` |  |
+
+#### `ChunkWalker`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadHeader` | `static ChunkHeader ReadHeader(Stream stream)` | Reads an 8-byte chunk header from `stream`. Throws `EndOfStreamException` on truncation, `InvalidDataException` when `HeaderSize < 8` or `Size < HeaderSize`. |
+| `SkipBody` | `static bool SkipBody(Stream stream, ChunkHeader chunk)` | Skips the remaining bytes of a chunk after its 8-byte common header has already been read. Returns false when the stream is too short to skip the requested distance. |
+
+### Namespace `FileFormat.Asar`
+
+[`AsarEntry`](#asarentry) · [`AsarFormatDescriptor`](#asarformatdescriptor) · [`AsarReader`](#asarreader) · [`AsarWriter`](#asarwriter)
+
+#### `AsarEntry`
+
+One node in an Electron `.asar` archive: either a file (with a byte range relative to the end of the header) or a directory. Paths use forward slashes and are relative to the archive root.
+
+Implements `IEquatable<AsarEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsarEntry` | `AsarEntry(string Path, long Offset, long Size, bool Executable, bool IsDirectory)` | One node in an Electron `.asar` archive: either a file (with a byte range relative to the end of the header) or a directory. Paths use forward slashes and are relative to the archive root. |
+| `Executable` | `bool Executable { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `AsarFormatDescriptor`
+
+Descriptor for Electron `.asar` archives — the concatenated-blob format Electron apps use to bundle their sources. Backed by a Chromium `Pickle`-wrapped JSON directory tree; supports List / Extract / Create. References: `https://github.com/electron/asar` — canonical tool and format description (README documents the Pickle header + JSON index + concatenated files layout)Chromium `base/pickle.h` — the Pickle serialization the size/header prelude uses
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsarFormatDescriptor` | `AsarFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `AsarReader`
+
+Reader for Electron `.asar` archives. The archive begins with a Chromium `Pickle`-wrapped header: a size pickle — `uint32 = 4` followed by `uint32 = headerBufferLength`;a header pickle — `uint32 = payloadSize`, `uint32 = jsonLength`, then a UTF-8 JSON directory tree padded to a 4-byte boundary. File bytes are concatenated immediately after the header; each file node's `offset` is a decimal string relative to the end of the header.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsarReader` | `AsarReader(Stream stream, bool leaveOpen = false)` |  |
+| `DataStart` | `long DataStart { get; }` | Absolute byte offset where the concatenated file data begins. |
+| `Entries` | `IReadOnlyList<AsarEntry> Entries { get; }` | All files and directories declared in the header, in tree order. |
+| `Dispose` | `void Dispose()` |  |
+| `ReadData` | `byte[] ReadData(AsarEntry entry)` | Reads a file entry's raw bytes from the data region. |
+
+#### `AsarWriter`
+
+Builder for Electron `.asar` archives. Files are concatenated back to back (no per-file padding, matching the reference `asar` tool) and their header `offset` is the running byte position relative to the end of the header. The JSON header is wrapped in the two-pickle prelude and padded to a 4-byte boundary.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsarWriter` | `AsarWriter()` |  |
+| `AddDirectory` | `void AddDirectory(string path)` | Records an (optionally empty) directory so it survives a round-trip. |
+| `AddFile` | `void AddFile(string path, byte[] data, bool executable = false)` | Queues a file at the given archive-relative path (forward slashes). |
+| `WriteTo` | `void WriteTo(Stream output)` | Serialises the archive to `output`. |
+
 ### Namespace `FileFormat.Avi`
 
 [`AviFormatDescriptor`](#aviformatdescriptor) · [`AviLayoutMap`](#avilayoutmap) · [`AviOptimizer`](#avioptimizer) · [`AviReader`](#avireader) · [`AviReader.ChunkEntry`](#avireaderchunkentry) · [`AviReader.ParsedAvi`](#avireaderparsedavi) · [`AviReader.Track`](#avireadertrack)
@@ -1402,6 +2876,86 @@ Implements `IEquatable<Track>`.
 | `Index` | `int Index { get; init; }` |  |
 | `StreamType` | `string StreamType { get; init; }` |  |
 | `Width` | `int Width { get; init; }` |  |
+
+### Namespace `FileFormat.Awb`
+
+[`AwbEntry`](#awbentry) · [`AwbFormatDescriptor`](#awbformatdescriptor) · [`AwbReader`](#awbreader) · [`AwbWriter`](#awbwriter)
+
+#### `AwbEntry`
+
+Represents a single audio entry inside a CRI Audio Wave Bank (AFS2). The wave bank stores raw codec payload (HCA, ADX, etc.) — payload bytes are surfaced verbatim.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AwbEntry` | `AwbEntry()` |  |
+| `CueId` | `uint CueId { get; init; }` | Game-specific cue identifier (lookup key into the paired ACB cue sheet). |
+| `Name` | `string Name { get; init; }` | Synthetic name in the form `cue_NNNNN.bin` where NNNNN is the zero-padded cue ID. |
+| `Offset` | `long Offset { get; init; }` | Absolute byte offset of this entry's data inside the AWB file (already alignment-resolved). |
+| `Size` | `long Size { get; init; }` | Length of this entry's payload in bytes. |
+
+#### `AwbFormatDescriptor`
+
+CRI Audio Wave Bank (AFS2) — used by Capcom (Resident Evil, Monster Hunter), Sega (Yakuza, Persona 5), and other CRI Middleware titles. Contains raw codec payloads (HCA, ADX, etc.) which are surfaced verbatim — we do not decode the inner audio. References: `https://github.com/vgmstream/vgmstream` — vgmstream — implements AFS2/AWB parsing; the de-facto referenceCRI Middleware never published the AFS2 layout; it was recovered by the VGM ripping community
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AwbFormatDescriptor` | `AwbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The underlying reader produces the entry's bytes (decoded if the format compresses per-entry); the returned stream is a `BoundedEntryStream` sized to the entry's logical length so adjacent entries and any trailing padding are physically unreachable through this view. |
+
+#### `AwbReader`
+
+Reads entries from a CRI Audio Wave Bank (AFS2). Audio payloads are surfaced as raw bytes — the inner codec (HCA, ADX, etc.) is the caller's concern.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AwbReader` | `AwbReader(Stream stream, bool leaveOpen = false)` | Initializes a new `AwbReader`, parsing the header, cue-ID table, and offset table. |
+| `Alignment` | `uint Alignment { get; }` | Audio-data alignment in bytes (typically 0x20). Each entry's payload starts at the next multiple of this value. |
+| `Entries` | `IReadOnlyList<AwbEntry> Entries { get; }` | All audio entries in the wave bank, in storage order. |
+| `IdSize` | `byte IdSize { get; }` | Width in bytes of each cue-ID-table entry (typically 2). |
+| `OffsetSize` | `byte OffsetSize { get; }` | Width in bytes of each offset-table entry (2 or 4). |
+| `SubKey` | `uint SubKey { get; }` | Sub-key used by HCA decryption derivation. Preserved verbatim — we do not decrypt. |
+| `Version` | `byte Version { get; }` | Container version byte from the header (1, 2, or 4 are observed in the wild). |
+| `BuildMetadataIni` | `byte[] BuildMetadataIni()` | Returns a UTF-8 INI document describing the wave bank's header values for analyst tooling. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(AwbEntry entry)` | Reads the raw payload bytes for a single entry. |
+
+#### `AwbWriter`
+
+Builds a CRI Audio Wave Bank (AFS2) container from in-memory payloads. Writes `DefaultVersion` with 4-byte offsets and 2-byte cue IDs for maximum compatibility.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AwbWriter` | `AwbWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `AwbWriter`. |
+| `Alignment` | `uint Alignment { get; set; }` | Audio-data alignment in bytes. Must be a non-zero power of two. Defaults to 0x20. |
+| `AddEntry` | `void AddEntry(byte[] data)` | Adds an entry with an auto-assigned sequential cue ID (next available, starting from 0 if empty). |
+| `AddEntry` | `void AddEntry(uint cueId, byte[] data)` | Adds an entry with an explicit cue ID. |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Writes the AFS2 container and finalizes the stream. |
 
 ### Namespace `FileFormat.Ba2`
 
@@ -1674,6 +3228,102 @@ Encodes files into BinHex 4.0 (.hqx) text format.
 | --- | --- | --- |
 | `BinHexWriter` | `BinHexWriter()` |  |
 | `Write` | `static void Write(Stream output, string fileName, byte[] dataFork, byte[] resourceFork = null, string fileType = "TEXT", string fileCreator = "ttxt")` | Writes a BinHex 4.0 encoded file to the output stream. |
+
+### Namespace `FileFormat.Bkf`
+
+[`BkfEntry`](#bkfentry) · [`BkfFormatDescriptor`](#bkfformatdescriptor) · [`BkfInPlaceModifier`](#bkfinplacemodifier) · [`BkfReader`](#bkfreader) · [`BkfWriter`](#bkfwriter) · [`BkfWriter.Item`](#bkfwriteritem)
+
+#### `BkfEntry`
+
+A single entry surfaced from a Microsoft NTBackup (.bkf) Microsoft Tape Format (MTF) stream. Currently maps to FILE/DIRB DBLKs that carry a payload (DATA streams of type STAN — Standard). Empty/zero-byte placeholders for directories are reported with `IsDirectory` = `true`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BkfEntry` | `BkfEntry()` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True when the entry represents a DIRB (directory) rather than a FILE. |
+| `Name` | `string Name { get; init; }` | Display name (relative path, forward slashes). |
+| `Size` | `long Size { get; init; }` | Uncompressed payload length in bytes. |
+
+#### `BkfFormatDescriptor`
+
+Microsoft NTBackup (`.bkf`) — Microsoft Tape Format (MTF) v1.0 container. Surfaces FILE/DIRB entries via the `STAN` (Standard) data streams. Compressed streams are surfaced as "compressed" in the listing; the MTF spec does not name a compression algorithm and most ntbackup.exe writes are uncompressed. In-place R/W tier: `Add` appends one FILE DBLK per input at the position of the existing EOTM block (or at EOF when absent) and re-emits a fresh EOTM at the new end, leaving every pre-existing DBLK byte-identical at its original offset. `Remove` tombstones the matching FILE DBLK by overwriting its 4-byte type field with the `XXXX` sentinel and zero-wiping the rest of that FLB block; the reader's parse loop hits an unknown DBLK type and skips it. References: "Microsoft Tape Format Specification" v1.00a (Seagate Software, 1998) — the defining MTF document`https://en.wikipedia.org/wiki/NTBackup` — background on the creating tool
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BkfFormatDescriptor` | `BkfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends one FILE DBLK per non-directory input at the current EOTM position (or EOF when EOTM is absent), then re-emits a fresh EOTM. All existing DBLKs stay byte-identical at their original offsets. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Produces a fresh MTF backup at `output` from `inputs`. Emits the full TAPE → SSET → VOLB → (DIRB → FILE*)* → ESET → EOTM DBLK chain via `BkfWriter`. Files are bucketed by their parent directory; directory inputs become DIRB blocks. Payloads are stored uncompressed. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Tombstones each named entry's FILE DBLK in place. The DBLK's 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB block is zero-wiped so the file name and STAN payload leave no forensic trace. Surrounding DBLKs are not touched. |
+
+#### `BkfInPlaceModifier`
+
+In-place modifier for Microsoft NTBackup (.bkf) Microsoft Tape Format (MTF) containers. Implements two byte-preserving mutation primitives against the FLB-aligned DBLK chain: Append: writes a fresh FILE DBLK (CBH + FNAM stream + STAN payload) at the position of the existing EOTM (End-Of-Tape Marker) block — or at EOF when EOTM is absent — then re-emits an EOTM block at the new end. All pre-existing DBLKs (TAPE, SSET, VOLB, prior FILE/DIRB, ESET) stay byte-identical at their original offsets.Tombstone: locates the FILE DBLK whose FNAM matches the requested name, overwrites its 4-byte type field with the `XXXX` sentinel, then zero-wipes the rest of that FLB so the FNAM / STAN streams leave no forensic trace. The reader's parse loop hits an unknown DBLK type and advances to the next FLB boundary, so the tombstoned entry simply disappears from `Entries`. Surrounding DBLKs remain byte-identical at their original offsets. The strategy avoids the legacy 1990s ntbackup "tape link offset" mechanism — MTF stores cumulative tape addresses in CBH fields that any post-hoc insertion would have to renumber across every DBLK that follows. The reader doesn't honour those fields (it walks by FLB boundaries instead), so the simpler append + tombstone scheme is forensically clean and round-trips through `BkfReader`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream archive, string fileName, byte[] data)` | Appends a new FILE DBLK carrying `data` at the position where the current EOTM block lives (or at EOF when EOTM is absent), then re-emits a fresh EOTM block at the new end. The TAPE / SSET / VOLB and any pre-existing FILE/DIRB blocks remain byte-identical at their original offsets. |
+| `RemoveFile` | `static bool RemoveFile(Stream archive, string fileName)` | Tombstones the first FILE DBLK whose FNAM matches `fileName`: the 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB-aligned FILE block (CBH tail + every attached stream payload) is zero-wiped. Returns `true` when a tombstone was applied. |
+
+#### `BkfReader`
+
+Reads Microsoft NTBackup (`.bkf`) files written in the Microsoft Tape Format (MTF) v1.0 — the public spec used by `ntbackup.exe` on Windows 95 through Windows Server 2003. Read-only: lists and extracts FILE entries with their `STAN` (Standard) data streams.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BkfReader` | `BkfReader(Stream stream, bool leaveOpen = false)` | Constructs a reader and parses the entire stream into `Entries`. |
+| `DirbType` | `static readonly uint DirbType` |  |
+| `EotmType` | `static readonly uint EotmType` |  |
+| `EsetType` | `static readonly uint EsetType` |  |
+| `EspbType` | `static readonly uint EspbType` |  |
+| `FileType` | `static readonly uint FileType` |  |
+| `SfmbType` | `static readonly uint SfmbType` |  |
+| `SsetType` | `static readonly uint SsetType` |  |
+| `TapeType` | `static readonly uint TapeType` | 4-char DBLK type identifiers as little-endian uint32 for fast comparison. |
+| `VolbType` | `static readonly uint VolbType` |  |
+| `Entries` | `IReadOnlyList<BkfEntry> Entries { get; }` | All FILE and DIRB entries surfaced from the .bkf stream. |
+| `LogicalBlockSize` | `int LogicalBlockSize { get; }` | Format Logical Block size detected from the TAPE DBLK. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(BkfEntry entry)` | Returns the raw STAN data for an entry. Empty for directories. |
+
+#### `BkfWriter`
+
+Writes a complete Microsoft NTBackup (`.bkf`) container in the Microsoft Tape Format (MTF) v1.0 from a set of files and directories. Emits the full DBLK chain the spec prescribes — and that `BkfReader` parses — in order:
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Build` | `static byte[] Build(IEnumerable<Item> items)` | Builds a full MTF backup from `items` and returns the raw bytes. Files are bucketed by their parent directory; a DIRB precedes every non-root group. The default 1024-byte FLB is used. |
+| `Build` | `static byte[] Build(IEnumerable<Item> items, int logicalBlockSize)` | Builds a full MTF backup with an explicit Format Logical Block size (must be a power of two between 512 and 65536). |
+
+#### `BkfWriter.Item`
+
+One file or directory destined for the backup, with archive-relative path.
+
+Implements `IEquatable<Item>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Item` | `Item(string Path, byte[] Data, bool IsDirectory)` | One file or directory destined for the backup, with archive-relative path. |
+| `Data` | `byte[] Data { get; init; }` | File payload. Ignored when `IsDirectory` is true. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True for an explicit directory entry. |
+| `Path` | `string Path { get; init; }` | Archive-relative path using `/` or `\` separators. |
 
 ### Namespace `FileFormat.BriefLz`
 
@@ -2621,6 +4271,34 @@ CSC: Context Stream Compression by Fu Siyuan. Format: 10-byte big-endian propert
 | `Compress` | `static void Compress(Stream input, Stream output)` |  |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` |  |
 
+### Namespace `FileFormat.Dar`
+
+[`DarFormatDescriptor`](#darformatdescriptor)
+
+#### `DarFormatDescriptor`
+
+DAR (Disk ARchive) slice — the libdar on-disk container. A slice begins with a slice header carrying the magic number `0x00 0x00 0x00 0x7E` (libdar's `SAUV_MAGIC_NUMBER`, stored big-endian) followed by the archive's internal label and a one-byte format/version flag. The terminal slice ends with a catalogue (the file tree) plus a trailing terminator that records the catalogue's start offset, letting a reader seek directly to the file listing. Honest scope: this descriptor surfaces a verbatim `FULL.dar`, a `metadata.ini` (slice magic validity, detected archive label, header flag, and — when locatable — the catalogue region offset/length read from the trailing terminator) and, when the catalogue region can be bounded, a structural `catalogue.bin` entry covering it. Full per-member enumeration requires decoding libdar's compressed catalogue tree and is deferred (documented via `member_enumeration=deferred` in the metadata). Detection is extension-driven (`.dar`) because the slice magic is too weak to claim generic files. Read-only; malformed input degrades to FULL + partial metadata without throwing. References: `http://dar.linux.free.fr` — official DAR site — libdar archive-structure notes`https://github.com/Edrusb/DAR` — canonical DAR/libdar source`https://en.wikipedia.org/wiki/Dar_(disk_archiver)` — background
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DarFormatDescriptor` | `DarFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Deb`
 
 [`DebCompression`](#debcompression) · [`DebConstants`](#debconstants) · [`DebEntry`](#debentry) · [`DebFormatDescriptor`](#debformatdescriptor) · [`DebReader`](#debreader) · [`DebWriter`](#debwriter)
@@ -3166,6 +4844,184 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+
+### Namespace `FileFormat.EaseUs`
+
+[`EaseUsChunkInflateStatus`](#easeuschunkinflatestatus) · [`EaseUsContainerIndex`](#easeuscontainerindex) · [`EaseUsEntry`](#easeusentry) · [`EaseUsFormatDescriptor`](#easeusformatdescriptor) · [`EaseUsReader`](#easeusreader) · [`EaseUsWriter`](#easeuswriter) · [`EaseUsWriter.FileEntry`](#easeuswriterfileentry) · [`EaseUsZlibChunk`](#easeuszlibchunk) · [`EaseUsZlibScanner`](#easeuszlibscanner)
+
+#### `EaseUsChunkInflateStatus`
+
+Result of the trial inflate run against a candidate zlib substream header located by linear scan.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `NotAttempted` | `0` | Trial inflate has not been attempted (placeholder). |
+| `Inflated` | `1` | Inflated successfully end-to-end; Adler-32 trailer validated. |
+| `FailedHeaderInvalid` | `2` | Decoder rejected the bitstream — the 0x78-byte was a false positive, or the surrounding chunk-table framing offset the start by a few bytes. |
+| `FailedTruncated` | `3` | Decoder consumed bytes but the stream ended before zlib's terminal block — either the chunk is segmented across vendor-private framing boundaries we don't understand, or this was a partial match. |
+| `FailedCorrupt` | `4` | Decoder threw a generic `InvalidDataException` at some point past the header — typical when the FCHECK byte matched by coincidence inside a different (non-zlib) data structure. |
+| `InflatedOverCap` | `5` | Inflated payload exceeded the per-chunk decompressed cap; bytes were counted but not retained. This is rare for header / metadata chunks (typically < 1 KiB) but expected for payload chunks once we hit the body region past offset `0xB28`. |
+
+#### `EaseUsContainerIndex`
+
+Reverse-engineered on-disk structure pin for the EaseUS Todo Backup (`.pbd`) container. Populated by binary-RE of the official `TBImageExplorer.exe` file-explorer utility (the standalone PBD reader EaseUS publishes for users who don't want to install the full backup engine; pulled from the EaseUS CDN at `download.easeus.com/free/TBImageExplorer.exe`). The 32-bit PE statically links zlib 1.2.3 and exposes its full PDB-rich symbol set (`F:\code\TBNet\FileBackup\mod.FlImgFile\TbFile.cpp`, `CImgFile`, `CFsDsReader`, `CImgFileHlp`, ...). What we promoted in this pass. Three concrete shapes that the previous chunk-stream-only reader treated as opaque are now pinned by binary analysis: `HeaderBlockSize` = `0x4E8` (1256) bytes — not the 12-byte top-of-file slice the previous reader assumed. The fixed-position `ReadFile` in `CImgFile::CheckHeader` (binary offset 0x000CE170 inside `TBImageExplorer.exe`, MD5 `b1810cddab25e4dadee0c20922a19f60`) issues a single `ReadFile(hFile, buf, 0x4E8, ...)` from file offset 0 and then verifies `buf[0..4] == "IMGF"`. The two community-known zlib substream headers at file offsets `0x98` and `0x10F` (Rune-Server thread 694189) are therefore inside the 1256-byte header block — they're header-bank sub-streams, not body chunks. The two header fields immediately after the magic (`HeaderSizeFieldOffset` = 4 and `HeaderVersionFieldOffset` = 8) are written by the writer at `TBImageExplorer.exe` binary offset 0x000CE913 as `{"IMGF", 0x000004E8, 0x00010001}`. `TrailerBlockSize` = `0xC0` (192) bytes — read by the same `CImgFile::CheckHeader` routine via a `SetFilePointerEx(EOF-0xC0); ReadFile(buf, 0xC0)` pair, with the second IMGF marker located at `trailer+0xBC` (i.e. the last four bytes of the file proper, immediately ahead of the 0xFF padding run). The trailer body holds 188 structured bytes; the writer side at binary offset 0x000CE971 zero-fills the block and then writes `"IMGF"` at `TrailerMagicFieldOffset`, `0xC0` at `TrailerSizeFieldOffset`, and `0x00010001` at `TrailerVersionFieldOffset`. The in-memory `IndxBlockMagic` (`"INDX"`) record surfaced inside `CImgFile` at member offset `+0x14D4`: 16-byte header (`"INDX"` + u32 current-offset + u32 total-length + u32 reserved) followed by an array of `IndxEntrySize` = `0x18` (24-byte) entries. The iteration step in `CImgFile::ReadIndx` (binary offset 0x000D1085) walks the array by advancing `+0x18` per entry and verifies the running offset stays under `[INDX+8]`. Each entry packs a 32-bit start key, a run-length field whose low 10 bits encode the entry length (mask `0x3FF`), and three more u32 payload fields. This is the proprietary block-allocation table — it's what maps logical sectors back to compressed-body chunks. We pin the shape but explicitly do NOT advertise sector reconstruction: the INDX block itself lives behind a zlib-compressed and possibly AES-wrapped header bank, and the entry payload-field semantics (cluster index? body-chunk offset?) need a sample diff to nail down. `VolmBlockMagic` (`"VOLM"`) is the per-partition record referenced from the trailer (offsets `+0x10..+0x40` hold u16 cluster-shift, u32 sector count, u16 magic-tag-2); `FdirBlockMagic` (`"FDIR"`) is a file-system-side directory record routed through the FsDsReader filesystem layer (NTFS / FAT / ext4 walkers consume it after sector reconstruction). What remains documented-TODO. Even with the header / trailer / INDX shapes pinned, sector reconstruction stays Stage-0 because (a) the header-bank zlib sub-streams at `0x98` and `0x10F` hold the INDX root + VOLM table but the per-entry payload fields haven't been disambiguated against a known-content sample (single-text-file v1 vs v2 backup), (b) the AES-256 key envelope wraps every body chunk on encrypted backups and that key-derivation routine isn't reproduced here, and (c) the parent-chain / incremental-backup pointer chase across `.pbd` chain-mates lives inside the trailer's 180 structured bytes but only the magic + size + version fields at the tail (`+0xB4..+0xBF`) have been confirmed via the writer-side init. Promotion past chunk-stream surfacing to filesystem walk needs a real-world `.pbd` corpus plus a sample diff — neither is in the repo today. Provenance. The `TBImageExplorer.exe` binary was pulled from the EaseUS CDN under the path documented in the `Hybrid-Analysis` report `5c5e6e4b7ca3e1762651fb6b` (i.e. `download.easeus.com/free/TBImageExplorer.exe`) and stays in the operator's local binary-RE workspace (never committed). MD5 of the analysed build: `b1810cddab25e4dadee0c20922a19f60`, 2,987,920 bytes, signed by EaseUS via DigiCert. All offsets cited below are file offsets inside that exact build — re-derive from scratch if EaseUS ships a newer build.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FdirBlockMagic` | `static readonly byte[] FdirBlockMagic` | File-system directory record magic — checked by `CFsDsReader::HandleFdir` at binary offset 0x0009949C. |
+| `FltrRecordMagic` | `static readonly byte[] FltrRecordMagic` | Filter-record magic — checked by `CImgFile::Mount` at binary offset 0x000D3D99 (used as a buffer-type tag, not a file-format magic). |
+| `HeaderBankZlibSubstream1Offset` | `const int HeaderBankZlibSubstream1Offset` | Empirically-observed file offset of the first header-bank zlib substream inside every .pbd analysed in Rune-Server thread 694189 (152 = 0x98). This sits INSIDE the `HeaderBlockSize` 1256-byte header block, not after it, so it's a header-bank sub-stream rather than a body chunk. |
+| `HeaderBankZlibSubstream2Offset` | `const int HeaderBankZlibSubstream2Offset` | Second header-bank zlib substream offset (271 = 0x10F) — also inside the header block. Per the Rune-Server analysis this and substream-1 are stable across v1 / v2 backup pairs while the body-region substreams shift by the payload-delta byte count. |
+| `HeaderBlockSize` | `const int HeaderBlockSize` | Fixed header block size as enforced by `CImgFile::CheckHeader`'s single `ReadFile(buf, 0x4E8)` at file offset 0. |
+| `HeaderMagicFieldOffset` | `const int HeaderMagicFieldOffset` | "IMGF" magic at file offset 0 (and at `HeaderMagicFieldOffset` in the in-memory struct). |
+| `HeaderSizeFieldExpectedValue` | `const uint HeaderSizeFieldExpectedValue` | U32 header-size value written by `TBImageExplorer.exe` at binary offset 0x000CE933. |
+| `HeaderSizeFieldOffset` | `const int HeaderSizeFieldOffset` | U32 header-size field at file offset 4; writer pins to `0x000004E8` (matches `HeaderBlockSize`). |
+| `HeaderVersionFieldExpectedValue` | `const uint HeaderVersionFieldExpectedValue` | U32 version-word value written by `TBImageExplorer.exe` at binary offset 0x000CE923. |
+| `HeaderVersionFieldOffset` | `const int HeaderVersionFieldOffset` | U32 version-word field at file offset 8; writer pins to `0x00010001` (major=1 / minor=1 per the build inspected). |
+| `IndxBlockHeaderSize` | `const int IndxBlockHeaderSize` | Size in bytes of the fixed INDX block header that precedes the 24-byte entry array. `+0x00..+0x03` = "INDX", `+0x04..+0x07` = first-entry offset, `+0x08..+0x0B` = total-length (used as the iteration cap), `+0x0C..+0x0F` = reserved / chain ptr. |
+| `IndxBlockMagic` | `static readonly byte[] IndxBlockMagic` | Block-allocation table magic — verified by `CImgFile::ReadIndx` at binary offsets 0x000D00BB, 0x000D1089, 0x000D234D. |
+| `IndxEntryLengthMask` | `const uint IndxEntryLengthMask` | Bit mask applied to the low 32 bits of `entry[4..7]` in the INDX array to extract the run-length: `(entry[4..7] & 0x3FF)` per the test at binary offset 0x000D11D6 (`and eax, 0x3FF`). |
+| `IndxEntrySize` | `const int IndxEntrySize` | Size in bytes of one entry in the INDX block-allocation array. The iterator step in `CImgFile::ReadIndx` at binary offset 0x000D11C2 advances by exactly `0x18` bytes per entry. |
+| `RindBlockMagic` | `static readonly byte[] RindBlockMagic` | Reverse-index record magic — checked by `CImgFile::ReadRind` at binary offset 0x000D0AC3. |
+| `TrailerBlockSize` | `const int TrailerBlockSize` | Fixed trailer block size as enforced by `CImgFile::CheckHeader`'s `SetFilePointerEx(EOF-0xC0); ReadFile(buf, 0xC0)`. |
+| `TrailerMagicFieldOffset` | `const int TrailerMagicFieldOffset` | Offset (within the trailer block) of the trailer's second "IMGF" magic — checked by `CImgFile::CheckHeader` at binary offset 0x000CE2DA. |
+| `TrailerSizeFieldExpectedValue` | `const uint TrailerSizeFieldExpectedValue` | U32 trailer-size value written by `TBImageExplorer.exe` at binary offset 0x000CE991. |
+| `TrailerSizeFieldOffset` | `const int TrailerSizeFieldOffset` | Offset (within the trailer block) of the trailer's `0xC0` size word — writer pins this at binary offset 0x000CE991. |
+| `TrailerVersionFieldExpectedValue` | `const uint TrailerVersionFieldExpectedValue` | U32 trailer-version value written by `TBImageExplorer.exe` at binary offset 0x000CE981. |
+| `TrailerVersionFieldOffset` | `const int TrailerVersionFieldOffset` | Offset (within the trailer block) of the trailer's `0x00010001` version word — writer pins this at binary offset 0x000CE981. |
+| `VolmBlockMagic` | `static readonly byte[] VolmBlockMagic` | Per-partition / volume record magic — verified by `CImgFile::LoadVolm` at binary offsets 0x000CFE01, 0x000D06E2, 0x000D5D15. |
+| `ComputeTrailerOffset` | `static long ComputeTrailerOffset(long fileLength, int trailingFfPadding)` | Returns the file offset where the trailer block starts for a .pbd of `fileLength` bytes (the count of trailing 0xFF padding bytes excluded — pass them in `trailingFfPadding`). |
+| `DescribeStructure` | `static string DescribeStructure()` | Dumps the reverse-engineered structure constants as a key=value block suitable for embedding in `metadata.ini`. |
+| `LooksLikeWellFormedHeader` | `static bool LooksLikeWellFormedHeader(ReadOnlySpan<byte> header)` | True if `header` is at least `HeaderBlockSize` bytes and the embedded size + version fields match the writer-side constants. Useful as a fail-soft pre-flight before reading the full block. |
+| `LooksLikeWellFormedTrailer` | `static bool LooksLikeWellFormedTrailer(ReadOnlySpan<byte> trailer)` | True if `trailer` is exactly `TrailerBlockSize` bytes and the size / version / magic words at the tail are the writer-side constants. Use after locating the trailer by scanning back from EOF past the 0xFF padding run. |
+
+#### `EaseUsEntry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EaseUsEntry` | `EaseUsEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `EaseUsFormatDescriptor`
+
+Read-only metadata descriptor for EaseUS Todo Backup (`.pbd`) containers. Parses the IMGF header, surfaces the embedded UTF-16LE source path, locates inner zlib substream offsets, and reports the trailer IMGF marker + 0xFF padding count as a synthetic `metadata.ini`; the raw container is exposed verbatim as `easeus-backup.pbd`. Treatment: R/O chunk-stream. EaseUS Todo Backup is a proprietary closed-source Chinese backup product from CHENGDU Yiwo Tech Development. The vendor has never published the `.pbd` on-disk specification; community reverse-engineering (R-Studio custom file type, hex-editor walks on tenforums / xyplorer, binwalk scans on Rune-Server thread 694189) has nailed down the IMGF / FIMG header, the UTF-16LE source-path field, the zlib-substream layout, and the IMGF + 0xFF trailer convention. The reader walks every `0x78 {0x01|0x9C|0xDA}` candidate zlib substream header in the body, runs a real trial inflate against each one (using `ZLibStream`), and surfaces every confirmed substream as a forensic entry stamped with its offset and compressed / decompressed sizes. The block-allocation table that maps logical sectors back to compressed chunks, the AES-256 key envelope, and the parent-chain backup-job index remain undocumented and gate sector reconstruction — that promotion stays Stage-0 indefinitely. Chunk-stream surfacing is the honest promotion ceiling here. The synthetic metadata.ini pins the upgrade blockers so a future edit can't silently advertise more capability. Magic recognised: ASCII `"IMGF"` (49 4D 47 46) at offset 0 — primary, ~85% of real-world files; ASCII `"FIMG"` (46 49 4D 47) — byte-reversed variant, ~15% of files (older / OEM builds). R-Studio's 12-byte forensic-carving signature `49 4D 47 46 2C 05 00 00 00 00 02 00` is detected and reported when present. References: `https://www.easeus.com` — vendor — the .pbd container is proprietary and unpublishedIMGF header / zlib-substream layout recovered by community reverse engineering and binary RE of TBImageExplorer.exe (see remarks above); no public spec exists
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EaseUsFormatDescriptor` | `EaseUsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `EaseUsReader`
+
+Read-only chunk-stream reader for EaseUS Todo Backup container files (`.pbd` — Personal Backup Disk / EaseUS Backup Disk). EaseUS Todo Backup is a proprietary closed-source backup product from CHENGDU Yiwo Tech Development (Sichuan, China). The `.pbd` container holds a full / incremental / differential image of one or more source volumes plus the backup-job metadata (chain id, snapshot id, parent-chain references, optional AES-256 key envelope). The vendor has never published the on-disk format; what follows is the best-effort reconstruction from community reverse-engineering (R-Studio custom file-type definition on the R-TT data-recovery forum, hex-editor walkthroughs on tenforums / xyplorer / Rune-Server, the file-extensions.com / filext.com / fileinfo.com aggregator pages, and the EaseUS support documentation). Chunk-stream R/O promotion. The Rune-Server thread 694189 pinned two stable observations: binwalk locates zlib substream headers at predictable positions inside every observed .pbd (first two metadata streams at offsets 0x98 and 0x10F, payload streams from 0xB28 onward), and the offsets are stable across v1 / v2 backup pairs for the metadata streams while the payload streams shift by exactly the payload-delta byte count. That makes the zlib substreams the strongest universally observable landmark inside the body. This reader now walks every `0x78 {0x01|0x9C|0xDA}` candidate header in the body and runs a trial inflate (the Adler-32 trailer plus the DEFLATE terminal-block flag give a strong false-positive rejection); each confirmed substream is surfaced as a forensic entry with the offset, compressed-length, and decompressed-length stamped into the entry name so downstream consumers can correlate hits across chain-mate files without parsing metadata.ini. What this reader parses from the header (R/O, no decryption, no decompression): Magic at offset 0: ASCII `"IMGF"` = 49 4D 47 46 (the universal "Image File" marker found in ~85% of real-world .pbd files; R-Studio uses the 12-byte signature `49 4D 47 46 2C 05 00 00 00 00 02 00` for forensic carving). The byte-reversed variant `"FIMG"` = 46 49 4D 47 (~15% of files; OEM / older partner builds) is also accepted. Header word (bytes 4..7, LE u32): observed value `0x0000052C` = 1324. Interpretation per community RE: header-table or first-zlib-stream offset. Captured as-is for diagnostics; not load-bearing. Version word (bytes 8..11, LE u32): observed value `0x00020000`. Captured as a 16/16 split — top half (`0x0002`) consistently reads as the major version, bottom half (`0x0000`) as a minor/reserved field. Embedded source path: a UTF-16LE wide-char run starting after the 12-byte header (e.g. `"G:\backup\msi laptop\..."`). The reader scans the first 4 KiB after the header for the longest printable wide-char run (>= 6 chars) and surfaces it as the original backup target. Zlib substreams: the file body is a sequence of zlib deflate streams (binwalk routinely finds the 0x78 0x9C / 0x78 0xDA / 0x78 0x01 markers throughout). The reader walks every `0x78 {0x01|0x9C|0xDA}` candidate header and runs a trial inflate via `ZLibStream`; the Adler-32 trailer plus the DEFLATE terminal-block flag reject coincidental matches. Each confirmed substream is recorded with its offset, compressed length, decompressed length, and the inflated payload (capped per chunk to bound memory) and surfaced as a per-chunk forensic entry. For password-protected backups the AES-256 envelope wraps every payload-region block, so chunks past the metadata streams (offsets 0x98 and 0x10F) will fail header-validation cleanly and surface as `FailedHeaderInvalid` entries — the chunk-stream inventory remains useful as a forensic landmark even when no body byte is recoverable. Trailer: real-world .pbd files terminate with another `"IMGF"` marker followed by variable bytes and a run of `0xFF` padding to the file's nominal end. The reader walks back from EOF, counts trailing `0xFF` padding bytes, and captures whether a second IMGF marker is present. What this reader still does NOT do (these remain blocked by the vendor's closed format): No decryption — when AES-256 key envelope is present the key derivation and the chunk-cipher framing are vendor-private. Encrypted backups still surface a chunk-stream inventory but the payload-region trial inflate cleanly fails. No sector reconstruction / volume-image walk — EaseUS uses a proprietary block-allocation table to map logical sectors back to compressed chunks, and that table format has never been published. Even with every zlib substream successfully inflated we have no offset-to-LBA mapping, so we cannot assemble a restorable disk image. Use the EaseUS engine's mount tool for that. No backup-chain navigation — the parent-snapshot pointers and the per-file-version index live behind the vendor's job-metadata header. Sources (last verified June 2026): `forum.r-tt.com/viewtopic.php?t=11516` (R-Studio custom file type — 12-byte IMGF signature), `tenforums.com/software-apps/116663-cant-open-pbd-files-easeus-todo-backup.html` (hex-editor walk; UTF-16LE source path; 0xFF tail padding), `xyplorer.com/xyfc/viewtopic.php?t=28249` (FIMG variant — ~15% of files), `file-extensions.com/docs/pbd`, `filext.com/file-extension/PBD`, `fileinfo.com/extension/pbd`, EaseUS support (`easeus.com/support/todo-backup/index.html` — official mode + filesystem-support documentation), Rune-Server thread 694189 (binwalk zlib-substream offsets).
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EaseUsReader` | `EaseUsReader(Stream stream)` |  |
+| `FimgMagic` | `static readonly byte[] FimgMagic` | EaseUS PBD byte-reversed variant magic: ASCII "FIMG" = 0x46 0x49 0x4D 0x47. |
+| `HeaderSize` | `const int HeaderSize` | Header observed at offset 0; minimum bytes the parser needs in front of it. |
+| `ImgfExtendedSignature` | `static readonly byte[] ImgfExtendedSignature` | R-Studio 12-byte forensic-carving signature: "IMGF" + 0x2C 0x05 0x00 0x00 0x00 0x00 0x02 0x00. |
+| `ImgfMagic` | `static readonly byte[] ImgfMagic` | EaseUS PBD primary magic: ASCII "IMGF" = 0x49 0x4D 0x47 0x46. |
+| `MaxChunkEntriesSurfaced` | `const int MaxChunkEntriesSurfaced` | Maximum number of confirmed zlib chunks surfaced as individual forensic entries. Beyond this cap the chunk inventory in metadata.ini still reports the full count, but only the first N chunks are exposed as extractable entries to keep the archive surface bounded for files with hundreds of chunks (real .pbd backups can easily contain 100+). |
+| `MaxRetainedChunkPayloadBytes` | `const int MaxRetainedChunkPayloadBytes` | Per-chunk decompressed payload retention cap (passed to the scanner). Header/metadata chunks at 0x98 / 0x10F are typically < 1 KiB so they always fit; payload chunks past 0xB28 are usually larger and surface with `InflatedOverCap` when the trial inflate succeeds but the payload is dropped on the floor. |
+| `MaxZlibOffsetsRecorded` | `const int MaxZlibOffsetsRecorded` | Maximum number of inner zlib substream offsets to record for the metadata.ini summary line. |
+| `PathScanWindow` | `const int PathScanWindow` | Window after the header in which to scan for the embedded UTF-16LE source-path string. |
+| `TrailerScanWindow` | `const int TrailerScanWindow` | Trailer window scanned back from EOF for the closing IMGF marker + 0xFF padding. |
+| `Chunks` | `IReadOnlyList<EaseUsZlibChunk> Chunks { get; }` | Full chunk inventory from the trial-inflate scan: every candidate zlib substream header in scan order with its offset, FCH byte, compressed length (when inflate succeeded), decompressed length, inflate status, and (within the per-chunk retention cap) the inflated payload bytes. |
+| `ConfirmedZlibChunkCount` | `int ConfirmedZlibChunkCount { get; }` | Number of substreams that inflated end-to-end (`Inflated` or `InflatedOverCap`). |
+| `EmbeddedSourcePathOffset` | `long EmbeddedSourcePathOffset { get; }` | Byte offset (relative to file start) where `EmbeddedSourcePath` starts, or -1 if none. |
+| `EmbeddedSourcePath` | `string EmbeddedSourcePath { get; }` | Longest printable UTF-16LE wide-char run found in the first `PathScanWindow` bytes after the header (empty string if none). |
+| `Entries` | `IReadOnlyList<EaseUsEntry> Entries { get; }` |  |
+| `ExtendedSignatureMatch` | `bool ExtendedSignatureMatch { get; }` | True if the file matches the R-Studio 12-byte forensic-carving signature exactly. |
+| `FirstZlibOffsets` | `IReadOnlyList<long> FirstZlibOffsets { get; }` | Up to `MaxZlibOffsetsRecorded` first zlib-stream offsets, for the metadata.ini summary line. |
+| `HeaderBlockFullyValidated` | `bool HeaderBlockFullyValidated { get; }` | True iff the file is at least `HeaderBlockSize` bytes long AND the size + version fields at file offsets 4 and 8 carry the exact writer-side constants pinned by `TBImageExplorer.exe` (`HeaderSizeFieldExpectedValue` / `HeaderVersionFieldExpectedValue`). |
+| `HeaderWord` | `uint HeaderWord { get; }` | Raw LE u32 read at bytes 4..7 (community RE calls this the header-table or first-stream offset). |
+| `MagicVariant` | `string MagicVariant { get; }` | "IMGF" (primary) or "FIMG" (byte-reversed variant). |
+| `TotalCompressedChunkBytes` | `long TotalCompressedChunkBytes { get; }` | Total compressed bytes consumed across all confirmed chunks. |
+| `TotalDecompressedChunkBytes` | `long TotalDecompressedChunkBytes { get; }` | Total decompressed bytes produced across all confirmed chunks. |
+| `TrailerBlockFullyValidated` | `bool TrailerBlockFullyValidated { get; }` | True iff a 0xC0-byte trailer block at `TrailerBlockOffset` carries the writer-side size + version + magic words pinned by `TBImageExplorer.exe` at binary offsets 0x000CE971..0x000CE991 (= a strict-form trailer match). Weaker than `TrailerImgfPresent` — the lenient trailer-scan only requires "IMGF" somewhere in the last 4 KiB, the strict form requires the exact 0xC0-byte block shape. |
+| `TrailerBlockOffset` | `long TrailerBlockOffset { get; }` | File offset where the 0xC0-byte trailer block starts (= file_length - 0xFF padding - 0xC0). `-1` if the file is too small or the trailer-magic search fell through. |
+| `TrailerImgfPresent` | `bool TrailerImgfPresent { get; }` | True if a second "IMGF" marker is present in the last `TrailerScanWindow` bytes. |
+| `TrailingFfPadding` | `int TrailingFfPadding { get; }` | Number of trailing 0xFF padding bytes at EOF. |
+| `ValidHeader` | `bool ValidHeader { get; }` | True once the header magic has been recognised. |
+| `VersionMajor` | `ushort VersionMajor { get; }` | Likely "major version" — high 16 bits of `VersionWord`. |
+| `VersionMinor` | `ushort VersionMinor { get; }` | Likely "minor/reserved" — low 16 bits of `VersionWord`. |
+| `VersionWord` | `uint VersionWord { get; }` | Raw LE u32 read at bytes 8..11 (community RE calls this the version word; major in the high half). |
+| `ZlibStreamCount` | `int ZlibStreamCount { get; }` | Number of `0x78 {0x01\|0x9C\|0xDA}` candidate zlib substream headers located by linear scan — includes both confirmed and rejected candidates. Use `ConfirmedZlibChunkCount` for the trial-inflate confirmed count. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(EaseUsEntry entry)` |  |
+
+#### `EaseUsWriter`
+
+Writer for the EaseUS Todo Backup container (`.pbd`). Emits a container whose framing matches the on-disk shape recovered from the EaseUS image engine (`ImgFile.dll`) and pinned in `EaseUsContainerIndex`: A `HeaderBlockSize` (0x4E8 = 1256 byte) header block at file offset 0 carrying the `{"IMGF", header_size=0x000004E8, version=0x00010001}` words at offsets 0 / 4 / 8 (the constants the engine's header check enforces), followed by the embedded UTF-16LE source-path string. A body region consisting of one zlib (RFC 1950 + DEFLATE + Adler-32) substream per stored file — the same `0x78 {0x01|0x9C|0xDA}` framing the body uses, so our own `EaseUsZlibScanner` trial-inflate recovers every payload byte-identical. A `TrailerBlockSize` (0xC0 = 192 byte) trailer block carrying the `{version=0x00010001, size=0x000000C0, "IMGF"}` words at trailer offsets 0xB4 / 0xB8 / 0xBC, followed by a 0xFF padding run to the file's nominal end. A self-describing manifest is stored as the first body substream so the writer's output can be losslessly re-walked back into the original file tree: a small UTF-8 table of `relpath\tsize\tchunk_index` rows. Each subsequent substream is the zlib-compressed bytes of one file in manifest order (empty files emit a zero-length payload, still a real zlib stream). This makes the writer's output round-trip byte-identical through our own reader and gives the container a deterministic body layout. Validation status: writer implemented; pending vendor-restore validation. The container framing reproduces the header / trailer constants the engine checks, and the body uses the same zlib-substream envelope. Whether the EaseUS engine restores this exact byte layout (its block-allocation INDX table and per-partition VOLM records map logical sectors back to compressed chunks, and that mapping is not reproduced here) can only be confirmed by feeding the output to the vendor application. Until that restore-test passes the descriptor does NOT advertise `CanCreate`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BodyCompressionLevel` | `const CompressionLevel BodyCompressionLevel` | Zlib compression level used for every body substream (maps to the 0x78 0xDA FCHECK byte). |
+| `DefaultTrailingFfPadding` | `const int DefaultTrailingFfPadding` | Number of 0xFF padding bytes appended after the trailer block (matches the observed tail convention). |
+| `BuildFromDirectory` | `static byte[] BuildFromDirectory(string rootDirectory, int trailingFfPadding = 16)` | Builds a container from every file under `rootDirectory` (recursively), storing each with a forward-slash relative path. |
+| `Build` | `static byte[] Build(IReadOnlyList<FileEntry> files, string sourcePath = "", int trailingFfPadding = 16)` | Builds a complete `.pbd` container holding `files`. |
+
+#### `EaseUsWriter.FileEntry`
+
+One file to store inside the container.
+
+Implements `IEquatable<FileEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FileEntry` | `FileEntry(string RelativePath, byte[] Content)` | One file to store inside the container. |
+| `Content` | `byte[] Content { get; init; }` |  |
+| `RelativePath` | `string RelativePath { get; init; }` |  |
+
+#### `EaseUsZlibChunk`
+
+One zlib-deflate substream located inside an EaseUS Todo Backup `.pbd` container. The PBD body is a sequence of zlib streams (the 0x78 header + Adler-32 trailer envelope around RFC-1951 DEFLATE); binwalk routinely lists 100+ such streams per file, with stable header positions for the first two metadata streams (offsets `0x98` and `0x10F` across observed v1 / v2 backup pairs per the Rune-Server reverse-engineering thread 694189) and shifting positions for the payload streams (offsets `0xB28+`). EaseUS never published the chunk-table framing that wraps each zlib stream — so we cannot, offline, identify which logical sector a chunk represents nor whether the inflated payload is plain volume data, AES-256 ciphertext (for password-protected backups), or a parent-chain pointer. What we CAN do, deterministically and reproducibly, is locate each zlib header by linear scan, attempt a trial inflate, and record the compressed + decompressed sizes. Forensic users get a verifiable chunk inventory; everything beyond that requires the vendor engine.
+
+Implements `IEquatable<EaseUsZlibChunk>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EaseUsZlibChunk` | `EaseUsZlibChunk()` |  |
+| `CompressedLength` | `long CompressedLength { get; init; }` | Compressed substream length in bytes (header + DEFLATE + Adler-32), determined by the trial inflate. `0` when inflation failed. |
+| `DecompressedLength` | `long DecompressedLength { get; init; }` | Decompressed payload length in bytes. `0` when inflation failed. |
+| `FchByte` | `byte FchByte { get; init; }` | The FCHECK / preset-dict byte that follows the 0x78 — one of 0x01 (no/low compression), 0x9C (default compression), 0xDA (best compression). Other bytes are skipped during the scan because the 0x78-byte alone is too prone to false positives. |
+| `InflateStatus` | `EaseUsChunkInflateStatus InflateStatus { get; init; }` | Outcome of the trial inflate. See `EaseUsChunkInflateStatus`. |
+| `Offset` | `long Offset { get; init; }` | Byte offset of the zlib header (the 0x78 byte) within the .pbd file. |
+| `PayloadRetained` | `bool PayloadRetained { get; init; }` | True if the trial inflate succeeded and the decompressed payload was retained for forensic surfacing. Large payloads (above the reader's retention cap) are inflated but not retained to bound memory. |
+| `Payload` | `byte[] Payload { get; init; }` | Decompressed payload bytes (only populated when `PayloadRetained` is true; empty array otherwise — callers should consult `DecompressedLength` for the actual size). |
+
+#### `EaseUsZlibScanner`
+
+Linear scanner that locates zlib substreams inside an EaseUS Todo Backup `.pbd` container and runs a trial inflate against each candidate to confirm the substream is well-formed. Why scan instead of follow a chunk table? EaseUS has never published the on-disk chunk-table framing that wraps each zlib stream inside a .pbd file, and the parent-chain index that maps logical sectors back to compressed chunks lives behind the AES-256 key envelope when encryption is enabled. The only universally observable landmark inside the body is the zlib header itself (0x78 followed by 0x01 / 0x9C / 0xDA — the three FCHECK-valid combinations RFC 1950 permits with the EaseUS-writer's CINFO=7 / FLEVEL = {fastest, default, max}). Binwalk has confirmed this layout across every public sample. Trial-inflate guard. A bare 0x78-byte produces ~0.4% false positives even in random data, and the FCHECK constraint only narrows that down to a few-per-MiB pattern hit rate. The only reliable way to distinguish a real zlib substream from a coincidental byte sequence is to actually inflate it — the Adler-32 trailer plus the DEFLATE terminal-block bit make this a strong test. We use `ZLibStream` for the inflation; failures (header invalid, truncated, corrupt past header) are captured as `EaseUsChunkInflateStatus` values rather than thrown so forensic users see the full candidate inventory.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultMaxCandidates` | `const int DefaultMaxCandidates` | Maximum total candidate substream count to evaluate (cheap guard against pathological inputs). |
+| `DefaultMaxRetainedPayloadBytes` | `const int DefaultMaxRetainedPayloadBytes` | Maximum decompressed bytes retained per chunk before `InflatedOverCap` kicks in. |
+| `Scan` | `static List<EaseUsZlibChunk> Scan(byte[] data, int startOffset = 12, int maxRetainedPayloadBytes = 65536, int maxCandidates = 4096, bool onlyOverlapping = false)` | Walks `data` from offset `startOffset` onward, locating each `0x78 {0x01\|0x9C\|0xDA}` candidate header and running a trial inflate. Returns the full chunk inventory in scan order. |
+| `TryInflate` | `static EaseUsZlibChunk TryInflate(byte[] data, int offset, int maxRetainedPayloadBytes = 65536)` | Attempts to inflate the candidate zlib substream starting at `offset` in `data`. The decoder reads through a byte-counting one-byte-at-a-time wrapper so the final consumed-byte count is exact — `ZLibStream` internally buffers ~8 KiB at a time, which would otherwise overrun the substream boundary and break multi-stream scanning. |
 
 ### Namespace `FileFormat.Epub`
 
@@ -5076,6 +6932,223 @@ Parses a GNU gettext .po text catalog. Supports msgctxt, msgid / msgid_plural, m
 | `PoReader` | `PoReader()` |  |
 | `Read` | `List<CatalogEntry> Read(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `FileFormat.Ghost`
+
+[`GhostAnnotation`](#ghostannotation) · [`GhostConstants`](#ghostconstants) · [`GhostCrc16Cipher`](#ghostcrc16cipher) · [`GhostEntry`](#ghostentry) · [`GhostFastLz`](#ghostfastlz) · [`GhostFormatDescriptor`](#ghostformatdescriptor) · [`GhostGenerationHint`](#ghostgenerationhint) · [`GhostInPlaceModifier`](#ghostinplacemodifier) · [`GhostLegacyConstants`](#ghostlegacyconstants) · [`GhostLegacyReader`](#ghostlegacyreader) · [`GhostModifier`](#ghostmodifier) · [`GhostReader`](#ghostreader) · [`GhostWriter`](#ghostwriter) · [`GhostZlib`](#ghostzlib)
+
+#### `GhostAnnotation`
+
+A CompressionWorkbench annotation parsed off the wire — the in-place modifier appends one of these per Remove / Replace call so the existing partition bytes can stay byte-identical at their original offsets.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GhostAnnotation` | `GhostAnnotation()` |  |
+| `Op` | `byte Op { get; init; }` | Operation code: `AnnotationOpRemove` or `AnnotationOpReplace`. |
+| `Payload` | `byte[] Payload { get; init; }` | Replacement bytes (empty for Remove ops). |
+| `TargetName` | `string TargetName { get; init; }` | The entry name the annotation targets (e.g. `partition1.bin`). |
+
+#### `GhostConstants`
+
+On-disk constants for the Ghost 11.x / 12.x record container. Reverse-engineered from Norton Ghost 11.5.1 (see `GhostReader` header comment for source attribution + scope notes).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AnnotationMagic` | `const uint AnnotationMagic` | Sentinel at the head of every `RecordTypeAnnotation` body — ASCII "GHO1" little-endian. Lets the reader skip third-party / Ghost- proper records that happen to land on the same type code. |
+| `AnnotationOpRemove` | `const byte AnnotationOpRemove` | Annotation op: remove the entry named in the annotation body. |
+| `AnnotationOpReplace` | `const byte AnnotationOpReplace` | Annotation op: replace the entry named in the annotation body with the payload bytes that follow. Payload is stored uncompressed inside the annotation record itself (so a Replace tombstone is self-contained). |
+| `BlockSize` | `const int BlockSize` | Compressed data is chopped into 32 KB decompressed blocks. |
+| `CompressionFast` | `const byte CompressionFast` |  |
+| `CompressionHigh3` | `const byte CompressionHigh3` |  |
+| `CompressionHigh4` | `const byte CompressionHigh4` |  |
+| `CompressionHigh5` | `const byte CompressionHigh5` |  |
+| `CompressionHigh6` | `const byte CompressionHigh6` |  |
+| `CompressionHigh7` | `const byte CompressionHigh7` |  |
+| `CompressionHigh8` | `const byte CompressionHigh8` |  |
+| `CompressionHigh9` | `const byte CompressionHigh9` |  |
+| `CompressionNone` | `const byte CompressionNone` |  |
+| `CompressionOld` | `const byte CompressionOld` |  |
+| `FastLzHashSize` | `const int FastLzHashSize` | Fast LZ hash table is 4096 entries (12-bit index). |
+| `FileMagic` | `const ushort FileMagic` | FE EF magic at offset 0 of both the file header and the FEEF partition header. |
+| `FileTypeSingle` | `const byte FileTypeSingle` | Single-file image (no `.ghs` spans). |
+| `FileTypeSpan` | `const byte FileTypeSpan` | First file of a spanned image (subsequent parts use `.ghs`). |
+| `HeaderSize` | `const int HeaderSize` | Both the file header and the FEEF partition header are exactly 512 bytes. |
+| `MaxStoredLen` | `const int MaxStoredLen` | Each block is prefixed with a 16-bit LE `stored_len` that includes the 2-byte length field itself. The largest representable stored_len for a 32 KB raw block plus the 4-byte block header + worst-case expansion overhead is bounded by `0xFFFF`; we cap at this. |
+| `PartitionHeaderSubType` | `const byte PartitionHeaderSubType` | Sub-type byte at offset 2 of the FEEF partition header. |
+| `RecordHeaderSize` | `const int RecordHeaderSize` | Record header layout: [4B type][4B magic][2B body_len]. |
+| `RecordMagic` | `const uint RecordMagic` | Magic at offset 4 of every record header (LE uint32 = 0x012F18D8). |
+| `RecordTypeAnnotation` | `const ushort RecordTypeAnnotation` | CompressionWorkbench annotation record (NOT a stock Ghost record type — chosen from the unused low-16 space). Carried inside a normal 0x012F18D8-magic record so the framing scanner skips it cleanly when the reader does not implement annotation handling. Annotation bodies start with `AnnotationMagic` so accidental data bytes that happen to use this type code are not mis-parsed as annotations. |
+| `RecordTypeContinuation` | `const ushort RecordTypeContinuation` |  |
+| `RecordTypeEnd` | `const ushort RecordTypeEnd` |  |
+| `RecordTypePartition` | `const ushort RecordTypePartition` |  |
+| `RecordTypeTrack0` | `const ushort RecordTypeTrack0` |  |
+
+#### `GhostCrc16Cipher`
+
+Ghost's per-block CRC-16 stream cipher (CRC-16/ARC polynomial 0xA001). The password seeds a running 16-bit CRC state; each plaintext byte is XOR'd with the low byte of the state, then the state is advanced by feeding the plaintext through `Update`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GhostCrc16Cipher` | `GhostCrc16Cipher(string password)` |  |
+| `Decrypt` | `void Decrypt(Span<byte> data)` | Decrypts `data` in place. |
+| `Encrypt` | `void Encrypt(Span<byte> data)` | Encrypts `data` in place. |
+
+#### `GhostEntry`
+
+One synthesised entry surfaced by `GhostReader` to the registry: either metadata, a partition's raw decompressed bytes, or (when extraction fails) the raw container payload.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GhostEntry` | `GhostEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `GhostFastLz`
+
+Ghost Fast LZ (Z1) codec — a custom LZ77 variant with a 4096-entry hash table reverse-engineered from Norton Ghost 11.5.1 (port of the MIT-licensed nyarime/gho Go reference implementation).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> src)` | Compress `src` as a Ghost Fast LZ block (header + payload). If the compressed form would be larger than just storing the literal payload, returns an uncompressed block (tag = 1). |
+| `Decompress` | `static int Decompress(ReadOnlySpan<byte> data, int compLen, Span<byte> dst)` | Decompress one block. `data` is the raw block bytes (header + payload), `compLen` the total compressed length, `dst` the destination buffer (must be at least `BlockSize` bytes). |
+| `Hash` | `static int Hash(byte b0, byte b1, byte b2)` | Compute the Ghost Fast LZ 12-bit hash for three consecutive bytes. Mirrors the original integer truncation semantics — the 32-bit multiply wraps around modulo 2^32. |
+| `StoreUncompressed` | `static byte[] StoreUncompressed(ReadOnlySpan<byte> src)` | Wrap raw bytes in a tag-1 (uncompressed) block. |
+
+#### `GhostFormatDescriptor`
+
+Symantec / Norton Ghost backup-image descriptor — R/W for the FE EF record container shared across the entire Binary Research → Symantec → Norton lineage (v4 DOS-era through Ghost 11.x / 12.x). References: No public specification — proprietary Symantec format; record layout reverse-engineered across Ghost 3.0 through 12.x images`https://en.wikipedia.org/wiki/Ghost_(disk_utility)` — Wikipedia on the Binary Research / Symantec / Norton lineage
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GhostFormatDescriptor` | `GhostFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Produces a fresh Ghost 11.x / 12.x record container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `GhostGenerationHint`
+
+Best-effort hint at which Ghost generation produced an image, based on the file-header bytes. `Unknown` is the expected result for arbitrary or truncated payloads — Symantec has never published the format spec.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` |  |
+| `PossiblyLegacy4To7` | `1` |  |
+| `PossiblyModern8Plus` | `2` |  |
+| `Modern11Plus` | `3` | Ghost 11.x / 12.x record container — the format `GhostReader` is reverse-engineered against (via nyarime/gho). Parses fully when this hint is set. |
+| `PreModern1And2` | `4` | Pre-3.0 (Ghost 1.x / 2.x DOS-era) dump file — FE EF magic + dump-head type byte at offset 2 + 512-byte zero-padded head, no record framing magic and no compression. Parsed by `GhostLegacyReader` to Stage-1 R/O metadata. |
+
+#### `GhostInPlaceModifier`
+
+True in-place mutation for Ghost 3.0+ record-stream images. Unlike `GhostModifier` (which extracts + rebuilds), this modifier preserves the existing record bytes at their original file offsets and only ever appends. The Ghost record framing (FE EF header + 0x012F18D8 record stream + per-partition 32 KB block runs) was designed so the END-of-image record sits at the tail of the file; an append pattern that overwrites the END record and re-emits a fresh one at the new tail keeps every byte before the original END record byte-identical.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Add` | `static void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, string password = null)` | Appends the supplied inputs to the archive as new partition records. The existing record bytes [0, original END-record offset) remain byte-identical after the call. |
+| `Remove` | `static void Remove(Stream archive, string entryName, string password = null)` | Appends a REMOVE annotation tombstone. The existing record bytes stay byte-identical at their original offsets; the modified reader treats the tombstoned name as no longer present. |
+| `Replace` | `static void Replace(Stream archive, string entryName, byte[] newData, string password = null)` | Appends a REPLACE annotation with the new payload, plus (when the payload looks like a brand-new partition / track0) the underlying data record. The existing record bytes stay byte-identical at their original offsets. |
+
+#### `GhostLegacyConstants`
+
+On-disk constants for the pre-3.0 Ghost dump format (Binary Research Ghost 1.6 / 2.x DOS era, 1996-1998). Reverse-engineered from the Ghost 1.6 GHOST.EXE binary's `WriteDumpHeader` and `ReadDumpHeader2` functions.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DumpHeadSize` | `const int DumpHeadSize` | The dump head is exactly 512 bytes (256 words zeroed by the binary's `rep stosw cx=0x100` at file_offset 0x899d). |
+| `HeadTypeBoot` | `const byte HeadTypeBoot` | Head type 3 — boot record / trailer (written by `WriteDumpHeader(3)` at file_offset 0x86a8). |
+| `HeadTypeFirst` | `const byte HeadTypeFirst` | Head type 1 — disk descriptor / first record. The binary's CopyDiskToFile calls `WriteDumpHeader(1)` at file_offset 0x84df then writes 2048 bytes of disk descriptor (1192 bytes from the disk_drive_data struct + 856 bytes zero-pad). |
+| `HeadTypeOffset` | `const int HeadTypeOffset` | The head-type byte sits at offset 2 of the 512-byte head (written by `mov es:[bx+2], al` at file_offset 0x89c2 and read by `mov al, es:[bx+2]` at file_offset 0x8ac8). |
+| `HeadTypePartition` | `const byte HeadTypePartition` | Head type 2 — partition data record (written by `WriteDumpHeader(2)` at file_offset 0x8794). |
+| `MagicByte0` | `const byte MagicByte0` | The first byte of the magic — same as modern Ghost. |
+| `MagicByte1` | `const byte MagicByte1` | The second byte of the magic — same as modern Ghost. |
+| `ModernRecordMagicScanLimit` | `const int ModernRecordMagicScanLimit` | How far into the file we scan for the modern 0x012F18D8 record magic before deciding this is a pre-3.0 image. 64 KiB is enough to cover even a heavily padded modern first record. |
+
+#### `GhostLegacyReader`
+
+Pre-3.0 Ghost dump-file reader (Binary Research Ghost 1.6 / 2.0 / 2.04 era, DOS-only, 1996-1998). Surfaces Stage-1 R/O metadata.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GhostLegacyReader` | `GhostLegacyReader(ReadOnlySpan<byte> data)` |  |
+| `Entries` | `IReadOnlyList<GhostEntry> Entries { get; }` | Synthesised entries: metadata + raw dump head + raw dump body. |
+| `HeadType` | `byte HeadType { get; }` | Head type byte at offset 2 of the file (1, 2, or 3). |
+| `IsRecognised` | `bool IsRecognised { get; }` | True when the bytes were detected as a pre-3.0 Ghost dump. |
+| `LeadingBytes` | `byte[] LeadingBytes { get; }` | First 16 bytes of the file (for diagnostics). |
+| `LooksLikeLegacyHeader` | `static bool LooksLikeLegacyHeader(ReadOnlySpan<byte> data)` | True when the bytes look like a pre-3.0 Ghost dump: FE EF magic at offset 0, a recognised head type at offset 2, and NO occurrence of the modern Ghost 0x012F18D8 record magic anywhere in the file. |
+
+#### `GhostModifier`
+
+Rebuild-based in-place mutation helpers for the Ghost 11.x / 12.x record container. The modify path is read-extract-rebuild — Ghost's record framing chains compressed-block spans with no per-record length-of-payload field, so per-record patching would require rewriting every downstream offset. Rebuilding from the live entry list against the original compression mode + encryption state is simpler and verifiably preserves the FE EF + 0x012F18D8 framing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Add` | `static void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, string password = null)` | Adds (or replaces by name) entries inside an existing Ghost image. The compression mode + encryption state of the source are preserved. |
+| `Remove` | `static void Remove(Stream archive, string[] entryNames, string password = null)` | Removes named entries from an existing Ghost image. The rebuild starts from a fresh byte buffer so the old payload bytes leave no forensic trace; the compression mode + encryption state of the source are preserved. |
+| `Replace` | `static void Replace(Stream archive, string entryName, byte[] newContent, string password = null)` | Replaces the named entry's payload with `newContent`. Sugar for `Remove` followed by `Add`. The named entry must already exist or the call is treated as an Add. |
+
+#### `GhostReader`
+
+Reads Symantec / Norton Ghost backup images (`.gho` primary, `.ghs` spanned-segment continuation).
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GhostReader` | `GhostReader(Stream stream, bool isSpannedSegment = false, string password = null)` |  |
+| `Annotations` | `IReadOnlyList<GhostAnnotation> Annotations { get; }` | Annotations recovered from the file (in the order they appear). Used by `GhostInPlaceModifier` Remove + Replace flows so the reader honours latest-write-wins semantics for tombstones. |
+| `EndRecordOffset` | `long EndRecordOffset { get; }` | File offset of the End-of-image record (type 0x0023) — or -1 when the modern container did not parse cleanly. The in-place modifier appends new records at this offset, overwriting the existing End record, then emits a fresh End record at the new EOF. |
+| `Entries` | `IReadOnlyList<GhostEntry> Entries { get; }` | The entries exposed to the registry (metadata + partitions, or fallback raw image bytes). |
+| `GenerationHint` | `GhostGenerationHint GenerationHint { get; }` | Best-effort generation classification (set after Parse). |
+| `HeaderCompression` | `byte HeaderCompression { get; }` | Compression byte from the parsed file header (offset 3) — 0 = None, 2 = FastLZ, 3..9 = zlib levels. Returns 0 when the modern container did not parse cleanly. Read by `GhostModifier` so the rebuilt image keeps the same codec as the source. |
+| `HeaderId` | `uint HeaderId { get; }` | Image id from the file header (offset 4, u32 LE). Used by `GhostInPlaceModifier` so appended FEEF per-partition headers keep the same id as the original image. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the file header indicates encryption (byte 12, bit 1). |
+| `IsModernContainerParsed` | `bool IsModernContainerParsed { get; }` | True when the modern record container parsed cleanly. |
+| `LeadingBytes` | `byte[] LeadingBytes { get; }` | First 16 bytes of the file (used for diagnostics). |
+| `LegacyHeadType` | `byte LegacyHeadType { get; }` | The head-type byte at offset 2 when a pre-3.0 image was parsed; else 0. |
+| `LikelySpannedSegment` | `bool LikelySpannedSegment { get; }` | True when this stream was opened as a `.ghs` continuation segment. |
+| `RawBytes` | `byte[] RawBytes { get; }` | Raw bytes of the parsed image. Returned as the original bytes the caller's stream held — used by `GhostInPlaceModifier` to compare untouched-prefix integrity after Add. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(GhostEntry entry)` |  |
+
+#### `GhostWriter`
+
+Writes a Ghost 11.x / 12.x record container. Single-file output only — `.ghs` spanning is not emitted (the registry's `IArchiveCreatable` contract always produces one stream).
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GhostWriter` | `GhostWriter(Stream output, byte compression, uint id = 305419896, string password = null, bool leaveOpen = true)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `WriteContinuation` | `void WriteContinuation()` | Write a continuation record (used to split a partition across multiple data spans). |
+| `WriteEnd` | `void WriteEnd()` | Write the end-of-image record. Always call this before disposing. |
+| `WritePartition` | `void WritePartition(ReadOnlySpan<byte> partitionData)` | Write a partition record + FEEF header + compressed blocks. |
+| `WriteTrack0` | `void WriteTrack0(ReadOnlySpan<byte> track0Data, byte sectors)` | Write a Track-0 (MBR + boot sectors) record. |
+
+#### `GhostZlib`
+
+Ghost "High" mode (Z3-Z9) compressed blocks: tag-1 = uncompressed, otherwise the payload starting at offset 4 is a zlib stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> src, byte level)` |  |
+| `Decompress` | `static int Decompress(ReadOnlySpan<byte> data, int compLen, Span<byte> dst)` |  |
+
 ### Namespace `FileFormat.Gob`
 
 [`GobEntry`](#gobentry) · [`GobFormatDescriptor`](#gobformatdescriptor) · [`GobReader`](#gobreader) · [`GobWriter`](#gobwriter)
@@ -6435,6 +8508,43 @@ Writes a Long Range Zip (lrzip) container with the LZMA subtype. Other methods a
 | `MinorVersion` | `byte MinorVersion { get; set; }` | Minor version to write into the header. Defaults to 6 (lrzip 0.6). |
 | `Write` | `void Write(ReadOnlySpan<byte> input, Stream output)` | Compresses `input` with LZMA and writes a complete lrzip container (header + body) to `output`. |
 
+### Namespace `FileFormat.Lynx`
+
+[`LynxFormatDescriptor`](#lynxformatdescriptor)
+
+#### `LynxFormatDescriptor`
+
+Commodore 64 Lynx/LNX archive. The format stores a textual PETSCII-ish directory and uncompressed file extents in 254-byte blocks mirroring a 1541 sector with its two link bytes removed.
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LynxFormatDescriptor` | `LynxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Canonical Lynx BASIC preambles contain the text "USE LYNX..." with LYNX at offset 0x3C. Keeping the offset avoids colliding with Atari Lynx cartridge ROMs, whose LYNX magic is at 0. The parser itself also accepts non-canonical BASIC preamble lengths when opened explicitly. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds new PRG files or directly replaces same-name non-REL entries. The modifier rewrites the directory metadata in place, grows it by whole 254-byte blocks only when needed, and shifts only the affected data tail. Existing unaffected payload bytes are not re-encoded. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Lynx data extents are inherently contiguous and ordered by the directory. Defragmentation therefore consists of validating that layout and dropping transport/trailing padding after the last allocated archive block; intrinsic per-block padding is part of the format. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries by closing their allocated block range and truncating the shifted tail. REL side-sector blocks are removed together with their data blocks. |
+
 ### Namespace `FileFormat.Lz4`
 
 [`Lz4FormatDescriptor`](#lz4formatdescriptor) · [`Lz4FrameReader`](#lz4framereader) · [`Lz4FrameWriter`](#lz4framewriter)
@@ -7131,6 +9241,183 @@ Writes MacBinary I/II/III encoded files.
 | --- | --- | --- |
 | `MacBinaryWriter` | `MacBinaryWriter()` |  |
 | `Write` | `static void Write(Stream output, string fileName, byte[] dataFork, byte[] resourceFork = null, string fileType = null, string fileCreator = null, DateTime? modified = null, int version = 130)` | Writes a MacBinary encoded file to the output stream. |
+
+### Namespace `FileFormat.Macrium`
+
+[`MacriumAesType`](#macriumaestype) · [`MacriumBlock`](#macriumblock) · [`MacriumCrypto`](#macriumcrypto) · [`MacriumEntry`](#macriumentry) · [`MacriumFormatDescriptor`](#macriumformatdescriptor) · [`MacriumPreXCodec`](#macriumprexcodec) · [`MacriumPreXFormatDescriptor`](#macriumprexformatdescriptor) · [`MacriumReader`](#macriumreader) · [`MacriumWriter`](#macriumwriter)
+
+#### `MacriumAesType`
+
+AES variant selector. The numeric value is the key length in bytes (truncation of the 32-byte PBKDF2 derived key).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Aes128` | `16` | AES-128-CBC — first 16 bytes of derived key are used. |
+| `Aes192` | `24` | AES-192-CBC — first 24 bytes of derived key are used. |
+| `Aes256` | `32` | AES-256-CBC — full 32-byte derived key is used. |
+
+#### `MacriumBlock`
+
+A single Macrium Reflect X metadata block, as parsed from the chain that starts at the offset stored in the file footer. On-disk layout per ``: Bytes 0..7: ASCII `block_name` (e.g. `"$JSON "`, `"$INDEX "`).Bytes 8..11: `uint32` little-endian payload length.Bytes 12..27: 16-byte MD5 hash of the (decompressed / decrypted) payload.Byte 28: flags — bit 0 = `last_block`, bit 1 = `compression`, bit 2 = `encryption`, bits 3..7 reserved.Bytes 29..31: padding for 32-byte header alignment.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacriumBlock` | `MacriumBlock()` |  |
+| `Flags` | `byte Flags { get; init; }` | Raw flags byte from the header. |
+| `HeaderOffset` | `long HeaderOffset { get; init; }` | Absolute byte offset of the 32-byte block header within the file. |
+| `IsCompressed` | `bool IsCompressed { get; init; }` | True when bit 1 (`compression`) is set — payload is zstd-compressed. |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | True when bit 2 (`encryption`) is set — payload is AES-CBC encrypted. |
+| `IsLast` | `bool IsLast { get; init; }` | True when bit 0 (`last_block`) is set; terminates the chain walk. |
+| `Md5Hash` | `byte[] Md5Hash { get; init; }` | 16-byte MD5 hash of the payload (decompressed / decrypted form, per spec). |
+| `Name` | `string Name { get; init; }` | ASCII block name with trailing spaces stripped (e.g. `"$JSON"`, `"$INDEX"`, `"$AUXDATA"`). |
+| `PayloadLength` | `long PayloadLength { get; init; }` | Payload length in bytes, as declared in the block header. |
+| `PayloadOffset` | `long PayloadOffset { get; init; }` | Absolute byte offset of the block payload (`HeaderOffset` + 32). |
+
+#### `MacriumCrypto`
+
+AES-CBC + PBKDF2-HMAC-SHA256 + per-block-ESSIV-IV cryptography for Macrium Reflect X images. Implemented strictly per the MIT-licensed vendor spec at ``. Key derivation (`DeriveKey`): The 8-byte `imageid` (raw bytes, NOT hex-text) is hashed via SHA-256 to produce a 32-byte salt.`PBKDF2-HMAC-SHA256(password, salt, iterations)` with the iteration count from the JSON metadata (default 600 000) produces a 32-byte derived key — always 32 bytes regardless of the AES variant (128/192/256). For AES-128 / AES-192 only the first 16 / 24 bytes are used by the cipher.Password validation (`ComputeHmac`): The vendor stores `HMAC-SHA256(key, "")` — i.e. an empty-message HMAC keyed by the derived key — in the JSON header. The reader compares this against the stored `_encryption.hmac` string; a mismatch means the password is wrong. Per-block IV (ESSIV) (`DeriveBlockIv`): Pack a 16-byte plaintext block: `imageid[8] | (uint16 LE) disk_number | (uint16 LE) partition_number | (uint32 LE) block_index`.Hash the derived key with SHA-256 to produce a 32-byte tweak key.AES-256-ECB encrypt the 16-byte plaintext under the tweak key. The 16-byte ciphertext IS the IV.Per-block encryption / decryption (`EncryptBlock` / `DecryptBlock`): standard AES-CBC, with PKCS#7 padding so the ciphertext length is always a multiple of 16. The Macrium writer adds the padding implicitly; on read the reader strips it after decryption.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AesBlockSize` | `const int AesBlockSize` | AES block size in bytes. AES is always 128-bit-block regardless of key size. |
+| `DefaultPbkdf2Iterations` | `const int DefaultPbkdf2Iterations` | Default PBKDF2 iteration count per spec: 600 000. Reviewed periodically by the vendor. |
+| `DerivedKeyLength` | `const int DerivedKeyLength` | Derived key is always 32 bytes per spec (truncated for AES-128 / AES-192 by the cipher init). |
+| `ImageIdSize` | `const int ImageIdSize` | Imageid is always 8 raw bytes (rendered as 16 hex chars in JSON). |
+| `BytesToHex` | `static string BytesToHex(ReadOnlySpan<byte> data)` | Returns lowercase hex without separators — matches Macrium's JSON formatting. |
+| `ComputeHmac` | `static byte[] ComputeHmac(ReadOnlySpan<byte> derivedKey)` | Computes the validation HMAC for a derived key. Macrium stores this as a hex string in `_encryption.hmac`; the reader compares with constant time to validate the password. |
+| `DecryptBlock` | `static byte[] DecryptBlock(ReadOnlySpan<byte> ciphertext, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | AES-CBC decrypts a ciphertext payload, stripping PKCS#7 padding. Key length selects the AES variant. |
+| `DeriveBlockIv` | `static byte[] DeriveBlockIv(ReadOnlySpan<byte> derivedKey, ReadOnlySpan<byte> imageId, int diskNumber, int partitionNumber, int blockIndex)` | Derives the AES-CBC IV for a single data block using ESSIV — encrypted salt-sector IV. See `MacriumCrypto` remarks for the exact byte layout. |
+| `DeriveKey` | `static byte[] DeriveKey(string password, ReadOnlySpan<byte> imageId, int iterations = 600000)` | Derives the 32-byte master key from a password using the Macrium Reflect X scheme: `PBKDF2-HMAC-SHA256(password, SHA256(imageid), iterations, 32)`. |
+| `EncryptBlock` | `static byte[] EncryptBlock(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | AES-CBC encrypts a plaintext payload with PKCS#7 padding. Key length selects the AES variant: 16=AES-128, 24=AES-192, 32=AES-256. |
+| `HexToBytes` | `static byte[] HexToBytes(string hex)` | Parses a hex string (with or without leading whitespace) into bytes. Used for `imageid` (always 16 hex chars => 8 bytes) and the `_encryption.hmac` field (always 64 hex chars => 32 bytes). |
+| `ValidateHmac` | `static bool ValidateHmac(ReadOnlySpan<byte> derivedKey, ReadOnlySpan<byte> expectedHmac)` | Validates a password against the stored HMAC. Constant-time comparison. |
+
+#### `MacriumEntry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacriumEntry` | `MacriumEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `MacriumFormatDescriptor`
+
+Descriptor for Macrium Reflect backup / disk-imaging containers from Paramount Software UK: `.mrimgx` / `.mrbakx` (Reflect X / v9+) — R/W via the MIT-licensed vendor spec ``. Footer parse + metadata block chain walk + `$JSON` decompression + `$INDEX` sector reconstruction (AES-CBC + zstd + PBKDF2-SHA256) for read; full container emit for create; rebuild-based `Add` / `Remove` / replace for in-place modify.`.mrimg` (legacy, Reflect v8.x and earlier) — Stage 0 detection-only. No vendor spec; only ccooper21's partial RE exists (covers decompression only). Legacy EULA also restricts reverse engineering of that product.What is surfaced for Reflect X (R/W):`metadata.ini` — parsed footer offset, block chain summary, R/W status.`metadata.json` — decompressed `$JSON` block when present and unencrypted (zstd-decoded).`block-NN.<name>.bin` — opaque payload for each metadata block (`$JSON`, `$AUXDATA`, `$TRACK0`, `$EPT`, `$BITMAP`, `$INDEX`) with original framing intact.`disk-image.raw` — sector-reconstructed disk image (when password supplied for encrypted containers).`macrium-image.bin` — raw image bytes for downstream tooling.R/W semantics: Macrium Reflect X is a disk-image format whose logical payload is a single contiguous sector stream — the same shape as VHD / VDI / VMDK / QCOW2. `Add` and `Remove` operate on the synthetic `disk-image.raw` entry (Add concatenates supplied input bytes onto the existing image and rebuilds the container; Add of an entry whose name matches an existing one replaces the disk payload; Remove of `disk-image.raw` empties the disk payload). The container is rebuilt from scratch on every modify — old block payloads are wiped because the new `$INDEX` walk references freshly-emitted ciphertext, so no forensic recovery of replaced blocks is possible from the resulting bytes (per `ModifyRebuilder` contract). Remaining limitations (still blockers for full Macrium feature parity):Delta / incremental / differential restores require resolving the parent chain across multiple files (single-file full backups round-trip end-to-end).Mountable VHDX output is not produced; the vendor ships a reference `img_to_vhdx.exe` for that workflow.Encrypted-image modify requires the same password that opened the image; we do NOT support password rotation as part of a modify (re-create with the new password instead).Detection note: the Reflect X marker (`"MACRIUM_FILE"`) lives in the file footer, not at offset 0. `MagicSignature` only supports forward offsets, so detection is extension-driven for both variants; the `MacriumReader` verifies the footer / offset-0 tag once the file is opened. Legacy `.mrimg` samples with the community-RE `"MR_BACKUP"` or `"MACX"` tag at offset 0 are still surfaced by the reader, but those tags are not authoritative magic. References: `https://github.com/macrium/mrimgx_file_layout` — MIT-licensed vendor spec for the Reflect X (.mrimgx/.mrbakx) container`https://www.macrium.com` — Paramount Software UK, the format vendor (Reflect knowledge base)ccooper21's community reverse-engineering of legacy `.mrimg` — decompression layer only; no full legacy spec exists
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacriumFormatDescriptor` | `MacriumFormatDescriptor()` |  |
+| `DiskImageEntryName` | `const string DiskImageEntryName` | The synthetic entry name under which Macrium Reflect X exposes the reconstructed disk-image payload. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh Reflect X (`.mrimgx`) container at `output` with the supplied inputs concatenated into a single synthetic disk image. `options` controls compression and encryption. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `MacriumPreXCodec`
+
+Decoder for the proprietary Lempel-Ziv-derived block payload codec used by Macrium Reflect pre-X (.mrimg / .mrbak / .mrex / .mrsql) containers. This is a clean-room C# re-implementation of the algorithm whose layout is documented (algorithmically — no source copy) in the MIT-licensed community reference project `ccooper21/mrimg-tools` (``). That project reverse-engineered the Reflect block codec from observed compressed/uncompressed pairs and described the token layout in a Python proof-of-concept; the algorithm itself is unencumbered. Decoder shape: A block opens with a 9-byte preamble `[flags:1=0x03][compressed_len:4 LE][uncompressed_len:4 LE]`; this preamble is consumed by `MacriumPreXFormatDescriptor` before `DecodeBlock` is called. The codec entry point receives the post-preamble compressed body and the declared uncompressed length.The compressed body is a stream of tokens guided by an interleaved 32-bit control word. The low bit of the control word decides the next token: `0` = literal byte, `1` = back- reference / RLE operation.Each control word starts as `1` (the sentinel). When the value reaches `1` again it is time to read the next 4 bytes from the input as a fresh control word, then OR in `0x80000000` so the top bit acts as the new "still has bits" sentinel — giving 31 token slots per control word.For an operation token the low nibble of the next 4-byte word dispatches to one of six op variants (see method body for the exact layout). Each variant decodes a `(segment_len, rel_offset)` pair for an LZ77-style back-reference, or a `(run_len, byte)` pair for run-length-encoding.Back-references are emitted byte-at-a-time so that overlapping matches (used for short repeating patterns) work correctly. The encoder is intentionally NOT implemented here. Reflect produces these blocks; our role is to decode them so callers can read backup content. Round-trip is exercised in tests via hand-crafted reference vectors covering every dispatch branch.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DataBlockFlags` | `const byte DataBlockFlags` | The block preamble flags byte that signals a data block. |
+| `MaxUncompressedSize` | `const int MaxUncompressedSize` | Maximum value we tolerate for `uncompressed_len` when validating a preamble. Reflect's default block size is 1 MiB; legitimate blocks almost always sit at or under 4 MiB. Anything beyond this cap is treated as corrupt input. |
+| `PreambleLength` | `const int PreambleLength` | Length of the on-disk preamble in bytes (flags + comp_len + uncomp_len). |
+| `DecodeBlockInto` | `static int DecodeBlockInto(ReadOnlySpan<byte> compressedBody, Span<byte> output)` | Decodes one Reflect block payload into a caller-supplied buffer. Bookkeeping note: each back-reference / RLE token writes `encoded_count + 1` bytes but only advances the output cursor by `encoded_count`. The trailing byte serves as a scratch slot that the next token's first byte overwrites — unless this is the final token of the block, in which case the trailing byte is the final byte of the decoded payload. Literals always advance by 1 (writing one byte). The method therefore tracks `bytesProduced = max(bytesProduced, outputOffset + writeCount)` to report how many bytes are valid in the destination buffer. |
+| `DecodeBlock` | `static byte[] DecodeBlock(ReadOnlySpan<byte> compressedBody, int uncompressedLength)` | Decodes one Reflect block payload. |
+
+#### `MacriumPreXFormatDescriptor`
+
+Macrium Reflect pre-X disk image (`.mrimg`) and file/folder backup (`.mrbak`) container produced by Reflect v6/v7/v8 (and the corresponding rescue media). The Reflect X (`.mrimgx` / `.mrbakx`) format is a completely different layout (MIT-licensed open spec, JSON metadata, MACRIUM_FILE footer) and is handled separately; this descriptor covers ONLY the legacy proprietary format. Stage-2 read-only surfacing: header inspection PLUS block-payload decompression via `MacriumPreXCodec` (clean-room port of the algorithm described by the MIT-licensed ccooper21/mrimg-tools reference project). Surfaces the synthetic entries: `FULL.mrimg` — passthrough slice over the entire archive`metadata.ini` — block preamble decode, compression flag, embedded XML comment, scanned-block totals, decoded-block success/failure counts`header.bin` — raw first preamble (9 bytes)`block-NN.bin` — decoded payload of the first `MaxDecodedBlocks` blocks (zero-padded index). Blocks that fail to decode (truncated / encrypted / corrupt token stream) are skipped and their absence reflected in the metadata.ini `decode_failures` counter. Still out of scope: the BAT-style block-index walk that maps from (volume, sector) to (block, offset) — required for assembling the inner partition image. The AES-128/192/256 catalog decryptor used by password-protected backups. Both are tracked as future phases. References: `https://www.macrium.com` — vendor site — the on-disk image format itself is proprietary and undocumentedNo public specification — header layout reverse-engineered from v6-v8 images
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacriumPreXFormatDescriptor` | `MacriumPreXFormatDescriptor()` |  |
+| `CommentScanWindow` | `const int CommentScanWindow` | How many bytes from the start we are willing to scan looking for an embedded XML comment. The metadata XML is interleaved with compressed payload starting in the first block; we scan a generous window and stop at the first match. |
+| `DataBlockFlags` | `const byte DataBlockFlags` | Flags byte for a data block. The very first byte of every legitimate `.mrimg` / `.mrbak` file is this preamble flag. |
+| `MaxDecodedBlocks` | `const int MaxDecodedBlocks` | Maximum number of leading blocks we attempt to decompress when surfacing decoded synthetic entries. We cap aggressively so that listing a large image stays cheap; callers can extract the FULL.mrimg passthrough and rerun decode for deeper coverage. |
+| `PreambleSize` | `const int PreambleSize` | Preamble length in bytes — flags(1) + block_len(4 LE) + out_len(4 LE). |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `EscapeIni` | `static string EscapeIni(string s)` | Escapes newline/CR/equals so the .ini value stays on one line. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `LooksLikeMrimg` | `static bool LooksLikeMrimg(ReadOnlySpan<byte> header)` | Validates that `header` begins with a Macrium pre-X preamble. The check is intentionally permissive — a single 0x03 flags byte plus plausible block-length fields. Callers that need stronger evidence should also check the file extension and the filename pattern. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `StripBinaryPadding` | `static string StripBinaryPadding(ReadOnlySpan<byte> raw)` | Strips embedded null bytes (the Macrium writer pads short strings with NULs inside the otherwise UTF-8 payload) and falls back to a hex-escaped representation if the result still isn't printable. |
+
+#### `MacriumReader`
+
+Reader for Macrium Reflect X image / backup files (`.mrimgx`, `.mrbakx`) — and Stage-0 detection for the legacy `.mrimg` container. Macrium Reflect is a Windows backup/disk-imaging product from Paramount Software UK. The Reflect X family (`.mrimgx` / `.mrbakx`, Reflect v9+) is fully documented under MIT licence by the vendor at ``. Stage-1 R/O metadata parsing is implemented here per that spec: Final 20 bytes of the file are the footer: `uint64 first_metadata_block_offset` + 12-byte ASCII tag `"MACRIUM_FILE"`. The footer locates the first metadata block. Each metadata block is preceded by a 32-byte header (8-byte ASCII block name, 4-byte little-endian length, 16-byte MD5 hash, 1 flags byte = `last|encryption|compression|unused×5`, 3 padding bytes). Walking the chain stops on `last_block`. The mandatory `$JSON` block (zstd-compressed when flagged) carries human-readable navigational metadata (image id, backup GUID, encryption descriptor, disk & partition list, block sizes). We expose it decompressed as `metadata.json` when possible. Other documented block names (`$AUXDATA`, `$TRACK0`, `$EPT`, `$BITMAP`, `$INDEX`) are surfaced as opaque `block-NN.<name>.bin` entries carrying the still-compressed /still-encrypted payload — sector-content reconstruction would require AES-CBC, zstd, hash validation, and incremental chain resolution, which is out of scope for this metadata-only reader. The legacy`.mrimg` format (Reflect v8.x and earlier) is NOT covered by the published spec. The only public reverse-engineering work (``) covers decompression only and reports the algorithm as a custom LZ-family codec. Macrium's legacy EULA also restricts reverse engineering of that product. We therefore stay Stage-0 for `.mrimg` and surface a `metadata.ini` documenting the blockers. What this reader does NOT do (R/W promotion blockers): Decrypt encrypted blocks (AES-128/192/256-CBC with PBKDF2-SHA256/600k iterations; HMAC-SHA256 password validation; per-block IV derived from imageid + disk + partition + block_index + key hash).Reconstruct sector content from `$INDEX` mapping (would need the data-block read pipeline + zstd + hash validation).Walk delta / incremental / differential parent chains across multiple files.Produce a mountable VHDX (Macrium's own `img_to_vhdx.exe` reference tool covers this).Touch the legacy `.mrimg` body — proprietary custom LZ codec, no published spec.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacriumReader` | `MacriumReader(Stream stream)` |  |
+| `MacriumReader` | `MacriumReader(Stream stream, string password)` | Constructs a reader; the optional `password` unlocks encrypted Reflect X images and triggers sector reconstruction via the `$INDEX` walk. |
+| `FooterMagic` | `static readonly byte[] FooterMagic` | Footer magic of Reflect X files: 12-byte ASCII `"MACRIUM_FILE"` at `file_size − 12`. |
+| `LegacyAsciiTag` | `static readonly byte[] LegacyAsciiTag` | Legacy `.mrimg` ASCII tag occasionally observed at offset 0 in community-RE samples. Detection-only; not authoritative. |
+| `LegacyBinaryTag` | `static readonly byte[] LegacyBinaryTag` | Legacy `.mrimg` binary tag occasionally observed at offset 0 in community-RE samples. Detection-only; not authoritative. |
+| `Blocks` | `IReadOnlyList<MacriumBlock> Blocks { get; }` | Parsed metadata blocks (Reflect X only). Empty for legacy `.mrimg`. |
+| `Entries` | `IReadOnlyList<MacriumEntry> Entries { get; }` | All surfaced entries — `metadata.ini`, `metadata.json` (if a `$JSON` block was decoded), per-block opaque entries, and the raw image. |
+| `FirstMetadataBlockOffset` | `long FirstMetadataBlockOffset { get; }` | Offset (from start of file) of the first metadata block. Reflect X only; 0 when not applicable. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the parsed image had an `_encryption.enable=true` JSON field. Sector reconstruction needs the matching password. |
+| `SectorReconstructionAvailable` | `bool SectorReconstructionAvailable { get; }` | True when sector reconstruction succeeded and a `disk-image.raw` entry is surfaced. |
+| `SectorReconstructionStatus` | `string SectorReconstructionStatus { get; }` | Diagnostic reason why sector reconstruction was skipped, or empty when it succeeded / wasn't attempted. |
+| `Tag` | `string Tag { get; }` | Header tag actually observed (e.g. `"MACRIUM_FILE"`, `"MR_BACKUP"`, `"MACX"`). |
+| `ValidHeader` | `bool ValidHeader { get; }` | True once `Parse` has confirmed at least one known structural marker. |
+| `Variant` | `string Variant { get; }` | Family of the parsed file: `"mrimgx"` (footer-tagged) or `"mrimg-legacy"` (offset-0 community RE). |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(MacriumEntry entry)` |  |
+
+#### `MacriumWriter`
+
+Writes a valid Macrium Reflect X (`.mrimgx`) container from a flat disk-image payload, following the MIT-licensed vendor spec at ``. Container layout produced:Reserved-sectors prefix — first `ReservedSectorsLength` bytes of the input disk image are emitted as a sequence of fixed-size data blocks (no compression / encryption metadata applied per Macrium's "$TRACK0 always uncompressed" convention; we keep it simple and emit them as plain data blocks).Partition data blocks — remaining bytes split into `BlockSize`-byte data blocks, each independently zstd-compressed and / or AES-CBC encrypted depending on the writer's mode. The last block is zero-padded to a full `BlockSize` on disk so the reader can restore byte counts exactly via the JSON `partition_byte_size` field.Metadata chain at `index_file_position` — written in this order so the reader can walk it forward: `$TRACK0` (raw MBR/GPT prefix copy), `$INDEX` (per-partition `DataBlockIndexElement[]`), `$JSON` (navigational metadata), and `$AUXDATA` (terminal block with `last=1`).20-byte footer — `uint64 first_metadata_block_offset LE` + ASCII `"MACRIUM_FILE"`.What this writer does NOT emit (intentional, callers don't need them for round-trip): `$BITMAP` — only populated for exFAT/ReFS per spec, not required for restore.`$EPT` — extended partition table; only required for MBR disks with extended partitions.`$AUXDATA` root payload (we emit only the empty terminator).`Reserved Sectors Index` — only required for FAT12/16/32; out of scope.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacriumWriter` | `MacriumWriter()` |  |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | Default partition block size = 64 KB (matches Macrium's spec example). |
+| `AesType` | `MacriumAesType AesType { get; init; }` | AES variant for data block encryption. Honoured only when `EncryptDataBlocks` is true. |
+| `BlockSize` | `int BlockSize { get; init; }` | The partition block size, in bytes. Always a multiple of 512. |
+| `CompressDataBlocks` | `bool CompressDataBlocks { get; init; }` | Optional zstd compression of data blocks (and metadata blocks). Default off for round-trip predictability. |
+| `DiskNumber` | `int DiskNumber { get; init; }` | Disk number to advertise in `$JSON.disks[0]._header.disk_number`. Default = 0. |
+| `EncryptDataBlocks` | `bool EncryptDataBlocks { get; init; }` | Optional AES-CBC encryption of data blocks. Default off. |
+| `ImageId` | `byte[] ImageId { get; init; }` | Image identifier (8 raw bytes => 16 hex chars in JSON). Random by default; explicit for round-trip tests. |
+| `PartitionNumber` | `int PartitionNumber { get; init; }` | Partition number to advertise in `$JSON.disks[0].partitions[0]._header.partition_number`. Default = 1. |
+| `Password` | `string Password { get; init; }` | Encryption password (required when `EncryptDataBlocks` is true). |
+| `Pbkdf2Iterations` | `int Pbkdf2Iterations { get; init; }` | PBKDF2 iteration count for password key derivation. Spec default = 600 000. |
+| `ReservedSectorsLength` | `int ReservedSectorsLength { get; init; }` | Total bytes copied verbatim into `$TRACK0`. Capped at 1 MB per spec. |
+| `Build` | `byte[] Build(ReadOnlySpan<byte> diskImage)` | Builds a Reflect X container for `diskImage` in memory. |
 
 ### Namespace `FileFormat.Maff`
 
@@ -9066,6 +11353,198 @@ PAQ8 stream compressor. Writes a simplified single-file paq8l container with an 
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` into the PAQ8 container on `output`. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a PAQ8 container from `input` into `output`. |
 
+### Namespace `FileFormat.Paragon`
+
+[`ParagonChunkInfo`](#paragonchunkinfo) · [`ParagonEntry`](#paragonentry) · [`ParagonFormatDescriptor`](#paragonformatdescriptor) · [`ParagonInPlaceModifier`](#paragoninplacemodifier) · [`ParagonReader`](#paragonreader) · [`ParagonWriter`](#paragonwriter)
+
+#### `ParagonChunkInfo`
+
+A single entry in the CWBP chunk-offset table — surfaces the exact per-chunk fields the vendor's `"ChunkNumber: %d, ChunkOffSet: 0x%016I64x, ChunkSize: %d, ChunkIsCompress: %c"` debug-string round-trip emits, plus the additional `LogicalSize` and `Adler32` fields our writer stores so the reader can verify and decompress without guessing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParagonChunkInfo` | `ParagonChunkInfo()` |  |
+| `Adler32` | `uint Adler32 { get; init; }` | Adler-32 of the decompressed bytes — the vendor's "Chunk is not valid, adler32 checksum is wrong." gate. |
+| `ChunkNumber` | `uint ChunkNumber { get; init; }` | The chunk's zero-based ordinal within its segment. |
+| `ChunkOffset` | `ulong ChunkOffset { get; init; }` | Byte offset of the chunk's on-disk body within the file. |
+| `ChunkSize` | `uint ChunkSize { get; init; }` | On-disk byte size of the chunk's body — either the uncompressed bytes or the zlib-stream bytes, depending on `IsCompressed`. |
+| `IsCompressed` | `bool IsCompressed { get; init; }` | Per-chunk compress flag — true when the body is a zlib stream, false when stored verbatim. |
+| `IsTombstone` | `bool IsTombstone { get; init; }` | True when this entry is a tombstone marker emitted by `ParagonInPlaceModifier.Remove`. Tombstones encode `IsCompressed = 0xFF` + `ChunkSize = 0` on the wire and suppress the chunk identified by `ChunkNumber` from the live-entry view. The original chunk body bytes stay byte-identical at their on-disk offset; only the chunk-table tail grows. |
+| `LogicalSize` | `uint LogicalSize { get; init; }` | Decompressed (logical) byte size of the chunk — equal to `ChunkSize` when the chunk is stored verbatim. |
+
+#### `ParagonEntry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParagonEntry` | `ParagonEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `ParagonFormatDescriptor`
+
+R/O metadata descriptor for Paragon Backup & Recovery (`.pbf`) sector-image backup files. Surfaces the corrected (TrID-documented) `"PImg"` magic, a synthetic `metadata.ini` describing the multi-file companion convention and the format-evolution history, and the raw image bytes; no real entry walk is attempted. Promotion outcome: R/O metadata only. The earlier Stage-0 baseline declined any promotion entirely; this revision corrects the detection magic against the public spec and surfaces what little structural information is publicly documented. R/W is still blocked: the byte layout after the 4-byte magic is undocumented, the format is proprietary, vendor restore-only since HDM 16. What the deep-RE research established:Real magic, not the Stage-0 guess. The TrID file-identifier database catalogues the "Paragon Backup Format image" header as the 4-byte ASCII tag `"PImg"` (hex `50 49 6D 67`) at offset 0, cross-confirmed by file-extension.net, recoveryutility.com, and datenrettungtool.de. The earlier Stage-0 baseline had used the ASCII tags `"PBF"` / `"PBR1"`, which were a guess from the format's display name and never observed in real samples — those have been replaced by the documented `"PImg"` signature. Multi-file archive convention is documented. Per Paragon KB article 767 ("Archive Formats"), a complete Paragon backup directory contains: `.pbf` main image / legacy pre-HDM-11 index; `.pfi` Paragon Backup Index Data (main index since HDM 11 / late 2011, small and used to ship deltas over the network); `.pfm` Image Descriptor sidecar consumed by Paragon's Image Explorer for fast browsing; and split data chunks `.000` / `.001` / `.002` / ... at the ~4 GB segment boundary. Format-evolution timeline is documented. PBF was the sole index up to HDM 10 (2009/2010); HDM 11 (late 2011) introduced PFI and demoted PBF to the data file; HDM 14 introduced pVHD (Paragon Virtual Hard Disk) as the new container, with PBF still primary under "Smart Backup"; HDM 15 made pVHD the default, with PBF only via "Legacy Mode"; HDM 16+ removed PBF creation entirely — restore-only. R/W blockers that remain after research. The byte layout after the 4-byte magic is undocumented in every public source consulted — TrID only catalogues the signature, the Paragon Knowledge Base and the HDM / Backup&Recovery user manuals only describe user-facing operations, and no open-source third-party PBF reader exists. The block index, per-cluster allocation bitmap (sector-based mode), snapshot / incremental chain framing, on-disk compressor identifier, per-block frame header, and per-segment split-archive trailer all remain proprietary. The format is also obsolete for creation since HDM 16. Deep-RE audit conclusion. Twelve research vectors were pursued past the bare TrID signature on top of the Stage-0 -> R/O baseline: asmodean expimg (false lead, Japanese visual-novel format unrelated to Paragon), Paragon HDM SDK (partitioning only), Paragon-Software- Group + Paragon-Backup-Recovery GitHub orgs (no backup-format code), USPTO patent search (no Paragon-assigned PBF-layout disclosure), EnCase / X-Ways / FTK forensic-suite custom-carver repositories (no Paragon-PBF-specific carver), Russian Habr / Toster.ru threads, paragon284.rssing.com Drive Backup forum mirror (community confirms the conceptual triple {index, metadata, compressed} but no byte-level layout), Gary Kessler / SEARCH file-signatures table (no PBF entry), Kaitai Struct + 010 Editor / Hexinator / Synalize It! / ImHex template libraries (no `.ksy` / `.bt` template for PBF), Paragon Scripting Language User Manual (0-9 compression dial, `*.pbf` exclusion only), and the Paragon ExtFS / NTFS3 / UFSD / APFS-SDK-CE open-source releases (filesystem drivers only, share no structures with PBF). All twelve vectors dead-ended. The audit produced one material correction: legacy PBF is unencrypted; password protection, compression and splitting are pVHD-only per the B&R 17 / HDM 16 manuals — the earlier baseline's "optional AES with vendor KDF" blocker was incorrect and is retired. Stage stays at R/O metadata; the audit trail is persisted in `metadata.ini` as `re_audit_*` keys so the next maintainer doesn't repeat it. Sources (all public, all consulted during the R/O promotion): TrID file-identifier database; Paragon KB articles 767 (Archive Formats) and 262 (Backup Types); Paragon Backup & Recovery 17 User Manual; Paragon Hard Disk Manager 16 User Manual; cross-references via file-extension.net, recoveryutility.com, datenrettungtool.de, openthefile.net, fileinfo.com, file.org, solvusoft.com. References: `https://www.paragon-software.com` — vendor site — the .pbf container is proprietary and undocumentedNo public specification — vendor images parsed from a reverse-engineered header layout
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParagonFormatDescriptor` | `ParagonFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends each input as a fresh chunk via `AddChunks`. Existing chunk-body bytes stay byte-identical at their original offsets; only the chunk-offset table tail grows. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh Paragon PBF image at `output`. Each input becomes one chunk in the CWBP chunk-offset table — the segment count is always 1. The `MethodName` picks the per-chunk codec: `stored` for verbatim, `zlib` (default) for zlib-compressed. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Appends a tombstone entry per named chunk via `RemoveChunk`. Original chunk-body bytes stay byte-identical at their offsets; the reader's latest-wins-per-chunk-number semantic suppresses the chunk from the live view. |
+
+#### `ParagonInPlaceModifier`
+
+True in-place modifier for CWBP-discriminated Paragon PBF images emitted by `ParagonWriter`. Performs Add / Replace / Remove by appending fresh chunk bodies at the OLD chunk-table position and re-laying the chunk-offset table at the new tail. Existing chunk-body bytes in `[0, oldChunkTableOffset)` stay byte-identical at their original offsets after every mutation — the only header fields the modifier patches are `ChunkCount` at `+0x100`, `ChunkTableOffset` at `+0x104`, and `TotalLogicalSize` at `+0x114`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddChunks` | `static void AddChunks(Stream image, IReadOnlyList<ArchiveInputInfo> inputs, bool compressChunks = true)` | Appends a chunk per input. Each input becomes one new chunk with a brand-new `ChunkNumber` (max-seen + 1). Existing chunk body bytes in `[0, oldChunkTableOffset)` stay byte-identical. |
+| `RemoveChunk` | `static void RemoveChunk(Stream image, string entryName)` | Appends a tombstone entry for the chunk identified by `entryName`. The original body bytes stay byte-identical at their offset; the chunk disappears from the live entry view. Tombstones encode `IsCompressed = = 0xFF` + `ChunkSize = 0` + `ChunkOffset = 0` + `LogicalSize = 0` on the wire. |
+| `ReplaceChunk` | `static void ReplaceChunk(Stream image, string entryName, byte[] newPayload, bool compressChunks = true)` | Replaces the chunk identified by `entryName` (e.g. `chunk_000003.bin`) with `newPayload`. Appends a fresh chunk body at the OLD chunk-table offset and a fresh chunk-table entry sharing the target's `ChunkNumber`; the reader's latest-wins-per-chunk-number semantic surfaces the new body as the live entry. The old body's bytes stay byte-identical at their original offset. |
+
+#### `ParagonReader`
+
+R/O metadata reader for Paragon Backup & Recovery (`.pbf`) sector-image backup files produced by Paragon Software's imaging products (Paragon Backup & Recovery, Hard Disk Manager, Drive Backup). Detection (real spec): a Paragon backup image begins with the 4-byte ASCII tag `"PImg"` (Paragon Image), hex `50 49 6D 67`, at offset 0. This signature is documented in the TrID file-identifier database (Marco Pontello's signature catalogue) as the "Paragon Backup Format image" header, confirmed by independent file-extension reference sites (file-extension.net, recoveryutility.com, datenrettungtool.de), AND now independently confirmed by reverse-engineering of the vendor's own `hdmengine_hdmsdk.dll` from Hard Disk Manager 18.12.0.0744 (see Wave-13 audit below). Multi-file archive structure (Paragon KB article 767). A complete Paragon backup is not a single file. A PBF backup directory typically contains `backup.pbf` (main image / legacy pre-HDM-11 index), `backup.pfi` (Paragon Backup Index Data, post-HDM-11 main index), `backup.pfm` (Image Explorer fast-browse sidecar), and `backup.000` / `backup.001` / ... split chunks at the legacy ~4 GB segment boundary. What this reader does. Verifies the documented `"PImg"` magic at offset 0, parses the structured 16-bit major / 16-bit format-version fields at offsets `+4` / `+6` (reverse-engineered from the vendor's reader at HDM-18 RVA `0x4ae6d1`), surfaces the reverse-engineered chunk / segment / bitmap structural layer in `metadata.ini`, and exposes the raw image as the opaque blob `paragon-backup.bin`. The structured fields at offsets `+0x0C`, `+0x30`, and `+0xD8` identified by the writer / reader audit are captured into diagnostic `structured_field_*` keys for forensic triage. Wave-13 binary RE audit: the 13th vector succeeded. Wave-1..12 public-source research (TrID, KB, GitHub orgs, USPTO, forensic suites, Habr, paragon284, Kessler, Kaitai, Scripting Language manual, ExtFS / NTFS3 / UFSD / APFS-SDK-CE open sources) all dead-ended at the bare `"PImg"` tag. Wave 13 pivoted to direct binary reverse-engineering of the vendor's own HDM 18.12.0.0744 distribution (released 2026-05-19). The bootstrapper is a WiX Burn bundle containing two attached Microsoft cabinet archives; the second wraps the main MSI installer (`Paragon.HDM_x64.msi`), which in turn embeds four cabinet archives as MSI streams. `hdmengine_hdmsdk.dll` in the third inner cabinet (8 837 544 bytes) is the PBF reader / writer. Three direct `0x676D4950` ("PImg") immediate constants in `.text`:RVA `0x4a8d9c` — writer site. Emits `"PImg"` at `[rax+0]` and the immediate `0x00030002` at `[rax+4]`, then writes a flags byte at `[rax+0x26]` and a second flags byte at `[rax+0x27]`, then writes `[rax+0xf1]` from a context field. The exact write sequence is: dword `"PImg"` @+0, dword `0x00030002` @+4 (= little-endian Major `0x0002` at +4, FormatVersion `0x0003` at +6). RVA `0x4ad1c4` — chained-archive consistency-check site. Reads a parent header into `rbx` and a child header into `rdi`, then checks: (a) child magic == `"PImg"`, (b) child `[+0x30]` == parent `[+0x30]` (image-type / fork ID), (c) child `[+0x0C]` == parent `[+0x0C]`, (d) the strcmp-style comparison at `[+0x34]` (volume name / GUID prefix), (e) when parent FormatVersion `[+6] >= 2`, child `[+0xD8]` == parent `[+0xD8]` (parent-id u64; the incremental-chain back-pointer). All five mismatch into error code `0x210a6`. RVA `0x4ae6d1` — primary reader site. Checks: magic == `"PImg"` (else `0x20025` = "Bad signature of the archive"), FormatVersion word @`+6` <= `3` (else `0x210a8` = "Incompatible version of the archive"), and when a parent header is supplied, child `[+0xD8]` == parent `[+0]` (the parent's full ID is at offset 0 of the parent record). Cross-referenced to `pbfhdr.cpp` debug-trace strings `"Size: 0x%08x"`, `"Version: 0x%08x"`, `"Magic: 0x%08x"`, `"Data:: %s"` and the link-dumper `"--------- Paragon link -------------"`. Source-file map recovered from the binary (paths embedded as `__FILE__` macro expansions under `F:\BuildAgent\work\37b1fac28f661ae9\pbfrwb\src\`): `pbfrwb.cpp` main read/write back-end, `pbfhdr.cpp` header parser / dumper, `pbflnk.cpp` chain-link handling, `pbfarc.cpp` archive container, `pbftmpl.cpp` template / volume layout, `pbffdisk.cpp` full-disk image, `pbfexp.cpp` export / extraction. C++ class hierarchy recovered from RTTI / mangled names (namespace `PBF`): `PbfRWBlock` / `PbfRWBlockImpl` (read/write block I/O layer), `PbfLink` / `PbfLinkImpl` / `PrgLink` (incremental-chain links), `PbfArc` / `PbfPart` / `PbfPartImpl` (archive and per-partition view), `PbfRW` / `PbfRWImpl` / `VirtualRW` (virtual disk read/write fronting), `PrgDataList` / `PrgDataFile` / `PbfDataFile` / `PbfDataFileImpl` (per-segment data files), `CPbfBitmapIO` (allocation-bitmap I/O — sector-map for which sectors of the source partition are present). Chunk / segment data layer recovered from debug-trace strings. PBF data is organised as segments (one segment per `.000` / `.001` / ... split file) of chunks. Per segment-cache debug strings: a chunk holds N sectors (`"Sectors per chunk: 0x%08x"`), the segment header carries chunk-table metadata (`"Segment header: %s Segment Number:%d(dec)"`, `"First Chunk:%d, Last Chunk:%d, Started Chunk: %d"`, `"Reserved Chunks: %d, Alloc Chunks: %d, Used Chunks: %d"`), each chunk has parameters `"ChunkNumber: %d, ChunkOffSet: 0x%016I64x, ChunkSize: %d, ChunkIsCompress: %c"`, chunks can be flagged compressed (`"Chunk is compressed"`), and integrity is verified by Adler-32 (`"Chunk is not valid, adler32 checksum is wrong."`). Adler-32 is the zlib checksum; combined with the `zlib_zlib.dll` dependency pulled in by the MSI, this nails the per-chunk compressor as zlib / DEFLATE, not a proprietary codec. Bitmap layer. The allocation bitmap is itself sector-based, stored as chained blocks (`"Bitmap Chains %lu size 0x%lx"`), with `"Bitmap loaded 0x%x"` and `"Bitmap used 0x%x"` diagnostic dumps. The bitmap I/O is wrapped by `CPbfBitmapIO`. Index file (`.pfi`) signature. The reader code path for the post-HDM-11 index file carries error string `"Bad signature of the archive index file."` and `"Wrong backup index file."` — the `.pfi` has its own magic, distinct from `"PImg"`; the actual signature bytes are loaded by an indirect read in the binary that could not be statically resolved. What stays unresolved after Wave 13. The Wave-13 reverse- engineering recovered the in-memory header struct (offsets 0 / 4 / 6 / 0x0C / 0x26 / 0x27 / 0x30 / 0x34 / 0xD8 / 0xE8 / 0xF1), the chunk / segment / bitmap-chain architecture, and the per-chunk Adler-32 + zlib frame model. What was not recovered to a level safe for clean- room reconstruction: the exact on-disk offset of the chunk-table inside the segment (the archive code uses cache-prefetch fast paths that hide the raw offset), the exact bitmap-chain encoding, the `.pfi` magic bytes, and the on-disk relation between the `[+0x30]` image-type tag and the `VIRTUAL_DRIVE_VENDOR_PBF` / `VIRTUAL_DRIVE_ATTRIB_SPLIT` kernel attribute enums. Without real PBF sample files (HDM 16+ is restore-only; the Free Edition only writes pVHD), the recovered structure cannot be byte-validated, and a speculative R/O sector-extraction parser would produce garbage on real archives. The format therefore stays at R/O metadata; the Wave-13 findings are persisted in `metadata.ini` so the next promotion pass can extend the parser against a real sample without re-running the binary RE. Sources consulted (all public). All Wave-1..12 vectors from the prior audit, plus Wave 13: Paragon HDM Free 18.12.0.0744 distribution (dl.paragon-software.com), WiX Burn bundle format (open spec at wixtoolset.org), Microsoft CAB format (open MS-CAB spec), Microsoft MSI embedded-stream tagged-name encoding (Windows Installer SDK), publicly visible debug strings and RTTI names recovered from `hdmengine_hdmsdk.dll` via standard binary analysis tooling. All extraction was static — no vendor DLL was loaded or executed in the analysis pipeline.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParagonReader` | `ParagonReader(Stream stream)` |  |
+| `PImgTag` | `static readonly byte[] PImgTag` | Paragon Backup Format image magic: 4 ASCII bytes `"PImg"` (hex `50 49 6D 67`) at offset 0. Documented in TrID and confirmed by direct binary reverse-engineering of the vendor's `hdmengine_hdmsdk.dll` writer at HDM-18 RVA `0x4a8dba`: `MOV DWORD [rax], 0x676D4950`. |
+| `ChunkCount` | `uint ChunkCount { get; }` | Chunk count read from the CWBP table-of-contents. Zero for vendor- produced files. |
+| `ChunkTable` | `IReadOnlyList<ParagonChunkInfo> ChunkTable { get; }` | Per-chunk metadata as read from the CWBP chunk-offset table. Empty for vendor-produced files. Each entry carries the on-disk offset, the on-disk byte size, the compress flag, the decompressed size and the Adler-32 of the decompressed bytes — i.e. the exact per-chunk struct the vendor's `"ChunkNumber: %d, ChunkOffSet: 0x%016I64x, ChunkSize: %d, ChunkIsCompress: %c"` debug-string round-trip emits. |
+| `Entries` | `IReadOnlyList<ParagonEntry> Entries { get; }` |  |
+| `FormatVersion` | `ushort FormatVersion { get; }` | Format-version word at on-disk offset `+6`. Vendor writer emits `0x0003`; reader rejects values > `3`. Values `>= 2` also unlock the `+0xD8` ParentId chain field per the chained- archive validator at RVA `0x4ad21a`. |
+| `IsCwbpProduced` | `bool IsCwbpProduced { get; }` | True when the file carries the CWBP discriminator at offset `0xF8` — i.e. it was produced by `ParagonWriter` and we can walk a real chunk-offset table. False for vendor-produced files where we fall back to R/O metadata + opaque-blob entries. |
+| `Major` | `ushort Major { get; }` | Major number at on-disk offset `+4`. Vendor writer emits `0x0002`; reader does not gate on this field directly but uses it alongside `FormatVersion` to decide whether the `[+0xD8] ParentId` field is valid. |
+| `SectorsPerChunk` | `uint SectorsPerChunk { get; }` | Sectors-per-chunk value the writer chose. Zero for vendor-produced files. |
+| `TotalLogicalSize` | `ulong TotalLogicalSize { get; }` | Total logical (decompressed) size across all chunks per the CWBP table-of-contents. Zero for vendor-produced files. |
+| `TrailingWord` | `uint TrailingWord { get; }` | The 4 bytes immediately following the `"PImg"` magic, captured as a little-endian unsigned 32-bit word for diagnostic surfacing. Per the Wave-13 reverse-engineering, this 32-bit word decomposes as `(uint16 Major)` at `+4` and `(uint16 FormatVersion)` at `+6`; the vendor's HDM 18 writer emits the literal value `0x00030002` (= Major `0x0002`, FormatVersion `0x0003`). Older archives carry FormatVersion `0x0001` or `0x0002`; the reader rejects values > `3` with error `0x210a8`. |
+| `ValidHeader` | `bool ValidHeader { get; }` |  |
+| `Variant` | `string Variant { get; }` | Detected magic variant; always `"PImg"` when `ValidHeader` is true. |
+| `AssembleLogicalPayload` | `byte[] AssembleLogicalPayload()` | Concatenates the decompressed bytes of every chunk into a single payload — the inverse of `WritePayload`. Throws when called on a vendor-produced file (i.e. not CWBP). |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(ParagonEntry entry)` |  |
+
+#### `ParagonWriter`
+
+Round-trippable writer for the Paragon Backup Format image (`.pbf`) container. Scope: WORM (write-once round-trippable) self-interop. The output file is byte-identical when read back by `ParagonReader` running in CWBP mode. Byte-compat with the vendor's reader (Paragon Backup & Recovery / Hard Disk Manager) is explicitly out of scope — vendor on-disk semantics past offset 8 (the `+0xC F12` discriminator, `+0x30` image-type / fork ID, `+0x34` volume name buffer, the segment-internal chunk-table offset, the bitmap chain encoding, the per-chunk Adler-32 verification site) are reverse- engineered at the architectural level but have never been byte-validated against a real Paragon-produced sample (HDM 16+ is restore-only; the Free Edition only writes pVHD). Vendor offsets `+0xC`, `+0x30`, `+0x34`, `+0xD8`, `+0xE8`, `+0xF1` are left zero by this writer rather than forged. On-disk layout this writer produces.Bytes `+0x00..+0x07` — vendor-real header prefix.`"PImg"` magic at `+0x00`, `Major = 0x0002` at `+0x04`, `FormatVersion = 0x0003` at `+0x06`. These are the same literal values the vendor writer emits at HDM-18 RVA `0x4a8dc4` (`MOV DWORD [rax+4], 0x00030002`) so a vendor reader at least passes the magic + version gate at RVA `0x4ae6e4`; everything past `+0x07` is our own layout. Bytes `+0x08..+0xF7` — zero-fill. The reverse-engineered vendor fields at `+0x0C` (F12 discriminator), `+0x26` (FlagsA), `+0x27` (FlagsB), `+0x30` (image-type / fork ID), `+0x34` (volume name / GUID), `+0xD8` (ParentId u64), `+0xE8` (FlagsC), `+0xF1` (derived byte) are deliberately left zero. Forging them without a real sample to validate against would produce an image the vendor either rejects or misreads silently. Leaving them zero is honest about the scope. Bytes `+0xF8..+0x100` — CWBP discriminator (8 bytes). ASCII `"CWBPbpf1"` at `+0xF8`. This is past the vendor's last initialised offset (`+0xF1`) and tells our own reader "this file was produced by our writer; the trailing chunk-table index is at the offset stored below". A vendor-produced file will not have this marker, in which case our reader falls back to the R/O metadata pass. Bytes `+0x100..+0x140` — CWBP table-of-contents (64 bytes). The fields are all little-endian. `ChunkCount u32` at `+0x100`, `ChunkTableOffset u64` at `+0x104`, `SectorsPerChunk u32` at `+0x10C` (default 256, so 128 KiB per chunk at 512 B sectors — matches the "Sectors per chunk" debug field), `SegmentCount u32` at `+0x110` (we emit a single segment containing all chunks), `TotalLogicalSize u64` at `+0x114`, `HeaderSize u32` at `+0x11C` (the offset of the first chunk body), and zero-padding to `+0x140`. After `+0x140` the chunks start. Chunk body region — `+0x140..ChunkTableOffset`. Each chunk's body is written at the offset recorded in its chunk-table entry. When the chunk is compressed (`ChunkIsCompress = 'Y'`) the body is a raw zlib stream (`ZLibStream`); when not compressed it is the raw bytes verbatim. Per-chunk integrity is verified by Adler-32 (see `ParagonAdler32`) stored in the table entry — the vendor uses the same checksum ("Chunk is not valid, adler32 checksum is wrong.") because the per-chunk codec is zlib/DEFLATE. Chunk-offset table — at `ChunkTableOffset`. An array of `ChunkCount` entries, 40 bytes per entry (little-endian): `ChunkNumber u32`, `ChunkOffSet u64`, `ChunkSize u32` (the on-disk byte size of the chunk body — raw bytes or zlib stream bytes), `ChunkIsCompress u8` (`'Y'` / `'N'`), `3 bytes padding`, `LogicalSize u32` (the decompressed byte size), `Adler32 u32` (zlib Adler-32 of the decompressed bytes), `Reserved u64`. This is exactly the architectural per-chunk struct the vendor's `"ChunkNumber: %d, ChunkOffSet: 0x%016I64x, ChunkSize: %d, ChunkIsCompress: %c"` debug-string round-trip emits. What is intentionally NOT emitted. No allocation bitmap (`CPbfBitmapIO` chained blocks — encoding undocumented), no incremental-chain parent back-pointer (`+0xD8 ParentId u64` — we always write a base image), no per-segment split-archive trailer (`.000` / `.001` / ... — we always write a single segment), no PFI sidecar (`.pfi` magic loaded indirectly in the vendor binary, could not be statically resolved). These stay open for the next promotion pass once a real Paragon-produced sample is available to byte-validate against.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParagonWriter` | `ParagonWriter(Stream output, bool compressChunks = true, int chunkSize = 131072, bool leaveOpen = true)` | Creates a writer over `output`. The stream is left open when `leaveOpen` is true. |
+| `ChunkEntrySize` | `const int ChunkEntrySize` | On-disk size of a single chunk-table entry. |
+| `CwbpDiscriminator` | `static readonly byte[] CwbpDiscriminator` | CWBP discriminator at `+0xF8` — past the vendor's last initialised offset (`+0xF1`). 8 bytes `"CWBPbpf1"`. Used by our reader to detect a file produced by our writer vs. a vendor one. |
+| `DefaultChunkSize` | `const int DefaultChunkSize` | Default chunk size in bytes (128 KiB). |
+| `DefaultSectorsPerChunk` | `const int DefaultSectorsPerChunk` | Default sectors per chunk — 256 sectors × 512 B = 128 KiB per chunk. |
+| `FormatVersion` | `const ushort FormatVersion` | Vendor-literal FormatVersion value at `+0x06`: `0x0003`. |
+| `HeaderSize` | `const int HeaderSize` | Header size up to and including the CWBP table-of-contents. |
+| `Major` | `const ushort Major` | Vendor-literal Major value at `+0x04`: `0x0002`. |
+| `OffsetChunkCount` | `const int OffsetChunkCount` | CWBP TOC offset of the `ChunkCount u32` field. |
+| `OffsetChunkTableOffset` | `const int OffsetChunkTableOffset` | CWBP TOC offset of the `ChunkTableOffset u64` field. |
+| `OffsetCwbpDiscriminator` | `const int OffsetCwbpDiscriminator` | CWBP table-of-contents field offsets — exposed so the in-place modifier and round-trip tests can patch / verify the same canonical layout. |
+| `OffsetHeaderSize` | `const int OffsetHeaderSize` | CWBP TOC offset of the `HeaderSize u32` field. |
+| `OffsetSectorsPerChunk` | `const int OffsetSectorsPerChunk` | CWBP TOC offset of the `SectorsPerChunk u32` field. |
+| `OffsetSegmentCount` | `const int OffsetSegmentCount` | CWBP TOC offset of the `SegmentCount u32` field. |
+| `OffsetTotalLogicalSize` | `const int OffsetTotalLogicalSize` | CWBP TOC offset of the `TotalLogicalSize u64` field. |
+| `PImgTag` | `static readonly byte[] PImgTag` | "PImg" tag at `+0x00` — vendor-documented magic. |
+| `SectorSize` | `const int SectorSize` | Default sector size in bytes. |
+| `TombstoneFlag` | `const byte TombstoneFlag` | Sentinel value the in-place modifier writes into the chunk-table entry's `IsCompressed` byte (offset +16 within the entry) to flag the entry as a Remove tombstone. Combined with `ChunkSize = 0` the tombstone suppresses the chunk identified by `ChunkNumber` from the live view. Picked as a non-ASCII value so it can never collide with the vendor-style `'Y'` / `'N'` compress flag. |
+| `Dispose` | `void Dispose()` |  |
+| `Finalise` | `void Finalise()` | Finalises the file: writes the chunk-offset table at the current body end, patches the header's `ChunkCount` / `ChunkTableOffset` / `TotalLogicalSize` fields, and flushes. Always call this before disposing the writer. |
+| `WriteChunk` | `void WriteChunk(ReadOnlySpan<byte> chunkData)` | Writes a single chunk verbatim — no splitting. Use when the caller already chose the per-chunk granularity (e.g. partition-image emitters that want one chunk per partition). |
+| `WritePayload` | `void WritePayload(ReadOnlySpan<byte> payload)` | Writes a payload as a sequence of chunks. Splits at the configured chunk size; each chunk is either stored verbatim or zlib-compressed per the constructor's `compressChunks` argument. |
+
+### Namespace `FileFormat.Partclone`
+
+[`PartcloneFormatDescriptor`](#partcloneformatdescriptor) · [`PartcloneReader`](#partclonereader) · [`PartcloneReader.PartcloneImage`](#partclonereaderpartcloneimage)
+
+#### `PartcloneFormatDescriptor`
+
+Read-only descriptor for partclone — the Clonezilla backup format that captures only allocated filesystem blocks alongside a per-block usage bitmap. Listing surfaces the reconstructed disk image plus a `metadata.ini` describing the source FS; extraction either writes the raw `image.img` or, when the inner filesystem can be identified, delegates to the matching descriptor so the user gets the original files. Compressed partclone streams (LZ4/zstd) are not handled here — they're a shell-pipe responsibility upstream of this format. References: `https://partclone.org` — official partclone site`https://github.com/Thomas-Tsai/partclone` — canonical source — the image header is defined in src/partclone.h`https://clonezilla.org` — Clonezilla — primary consumer of partclone images
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PartcloneFormatDescriptor` | `PartcloneFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `PartcloneReader`
+
+Reader for partclone images — the file-system-aware backup format used by Clonezilla. Walks `image_head` + `file_system_info` + `image_options` + bitmap to reconstruct the original raw disk/partition image one block at a time, pulling block-sized chunks from the data stream for blocks the bitmap marks as used and emitting zeros for unused blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PartcloneReader` | `PartcloneReader(Stream stream)` |  |
+| `BmBit` | `const int BmBit` |  |
+| `BmByte` | `const int BmByte` |  |
+| `BmNone` | `const int BmNone` |  |
+| `EndianMagic` | `const ushort EndianMagic` |  |
+| `FsMagicSize` | `const int FsMagicSize` |  |
+| `MagicSize` | `const int MagicSize` |  |
+| `Magic` | `static readonly byte[] Magic` |  |
+| `VersionSizeV2` | `const int VersionSizeV2` |  |
+| `Info` | `PartcloneImage Info { get; }` |  |
+| `LooksLikePartclone` | `static bool LooksLikePartclone(ReadOnlySpan<byte> head)` | Cheap signature check used by descriptors that want to peek before instantiating the full reader. |
+| `ReconstructDisk` | `byte[] ReconstructDisk()` | Reconstructs the raw disk image by walking the bitmap and copying `block_size` bytes from the data stream for each used block. Unused blocks become zeros. Result length is `totalblock * block_size`. |
+| `StreamDiskTo` | `void StreamDiskTo(Stream output)` | Streams the reconstructed disk into `output` without materializing the whole thing in memory. Used blocks are copied from the data stream; unused blocks are written as zeros. |
+
+#### `PartcloneReader.PartcloneImage`
+
+Implements `IEquatable<PartcloneImage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PartcloneImage` | `PartcloneImage(string PtcVersion, string FsType, ulong DeviceSize, ulong TotalBlocks, ulong UsedBlocks, uint BlockSize, ushort ImageVersion, ushort ChecksumMode, ushort ChecksumSize, uint BlocksPerChecksum, byte BitmapMode, long BitmapOffset, long DataOffset)` |  |
+| `BitmapMode` | `byte BitmapMode { get; init; }` |  |
+| `BitmapOffset` | `long BitmapOffset { get; init; }` |  |
+| `BlockSize` | `uint BlockSize { get; init; }` |  |
+| `BlocksPerChecksum` | `uint BlocksPerChecksum { get; init; }` |  |
+| `ChecksumMode` | `ushort ChecksumMode { get; init; }` |  |
+| `ChecksumSize` | `ushort ChecksumSize { get; init; }` |  |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `DeviceSize` | `ulong DeviceSize { get; init; }` |  |
+| `FsType` | `string FsType { get; init; }` |  |
+| `ImageVersion` | `ushort ImageVersion { get; init; }` |  |
+| `PtcVersion` | `string PtcVersion { get; init; }` |  |
+| `TotalBlocks` | `ulong TotalBlocks { get; init; }` |  |
+| `UsedBlocks` | `ulong UsedBlocks { get; init; }` |  |
+
 ### Namespace `FileFormat.Pbp`
 
 [`PbpEntry`](#pbpentry) · [`PbpFormatDescriptor`](#pbpformatdescriptor) · [`PbpReader`](#pbpreader) · [`PbpWriter`](#pbpwriter)
@@ -9166,6 +11645,88 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+### Namespace `FileFormat.Pfs0`
+
+[`Pfs0Entry`](#pfs0entry) · [`Pfs0FormatDescriptor`](#pfs0formatdescriptor) · [`Pfs0InPlaceModifier`](#pfs0inplacemodifier) · [`Pfs0Reader`](#pfs0reader) · [`Pfs0Writer`](#pfs0writer)
+
+#### `Pfs0Entry`
+
+Represents a single entry in a Nintendo Switch PartitionFS (PFS0) archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pfs0Entry` | `Pfs0Entry()` |  |
+| `Name` | `string Name { get; init; }` | Gets the entry name (UTF-8, decoded from the string table). |
+| `Offset` | `long Offset { get; init; }` | Gets the absolute stream offset where the entry data begins (translated from the on-disk relative offset). |
+| `Size` | `long Size { get; init; }` | Gets the entry data size in bytes. |
+
+#### `Pfs0FormatDescriptor`
+
+Nintendo Switch PartitionFS (PFS0) archive — the flat file table inside NSP packages. References: `https://switchbrew.org/` — Switchbrew wiki — community reverse-engineered Switch format documentation (PFS0/NSP)`https://github.com/SciresM/hactool` — hactool — reference extraction tool implementing PFS0
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pfs0FormatDescriptor` | `Pfs0FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends or replaces files inside an existing PFS0 archive. PFS0 has a flat header + entry table + string table + data region layout that is rewritten in place via `Pfs0InPlaceModifier` — the existing entries are preserved verbatim, the new file is inserted (or replaces one with the same name), the entry table is re-sorted alphabetically per the Switch SDK convention, and the data region is re-laid out so payloads stay contiguous. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PFS0 archive in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PFS0 archive per the requested mode. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader produces the decoded bytes per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to their logical length. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing PFS0 archive. The data region is re-laid out so the removed payloads are physically dropped — no forensic trace of the removed bytes remains in the resulting archive. |
+
+#### `Pfs0InPlaceModifier`
+
+In-place modifier for Nintendo Switch PartitionFS (PFS0) archives. PFS0 has a flat layout — header + entry table + string table + data region — that lends itself to shift-in-place mutation. On `AddFiles` the existing header / entry table / string table / data region are read into RAM, the new file is appended, the in-memory layout is rewritten with the new alphabetically-sorted entry table + string table + data region, and finally the buffer is written back to the underlying stream. The stream's length is set to the new length. On `RemoveFiles` the chosen entries are dropped from the entry table, the string table is rebuilt without their names, and the data region is re-laid-out so the remaining payloads stay contiguous. Removed payload bytes never appear in the new buffer — no forensic trace of the deleted entry remains. Layout (little-endian): 0x00 char[4] "PFS0" 0x04 u32 file_count 0x08 u32 string_table_size 0x0C u32 reserved 0x10.. file_count × 24-byte entries (data_offset, data_size, name_offset, reserved) then string_table_size bytes of NUL-terminated UTF-8 names then the data region (concatenated payloads).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFiles` | `static void AddFiles(Stream archive, IReadOnlyList<ValueTuple<string, byte[]>> inputs)` | Adds — or replaces by name — files in an existing PFS0 archive. The archive is rewritten in place at the underlying stream. |
+| `RemoveFiles` | `static int RemoveFiles(Stream archive, IReadOnlyList<string> names)` | Removes the named entries from an existing PFS0 archive. Names that don't exist are silently ignored. Returns the number of entries actually removed. |
+
+#### `Pfs0Reader`
+
+Reads entries from a Nintendo Switch PartitionFS (PFS0) archive.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pfs0Reader` | `Pfs0Reader(Stream stream, bool leaveOpen = false)` | Initializes a new `Pfs0Reader` from a stream. |
+| `Entries` | `IReadOnlyList<Pfs0Entry> Entries { get; }` | Gets all entries in the PFS0 archive. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(Pfs0Entry entry)` | Extracts the raw data for a given entry. |
+
+#### `Pfs0Writer`
+
+Creates a Nintendo Switch PartitionFS (PFS0) archive.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pfs0Writer` | `Pfs0Writer(Stream stream, bool leaveOpen = false)` | Initializes a new `Pfs0Writer`. |
+| `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Writes the PFS0 archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.Ply`
 
@@ -9378,6 +11939,105 @@ Implements `IDisposable`.
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. The data is buffered in memory until `Finish` (or `Dispose`) is called. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes the archive: emits header, TOC, block-sizes table, and compressed data. |
+
+### Namespace `FileFormat.Psf`
+
+[`PsfConstants`](#psfconstants) · [`PsfCrc32`](#psfcrc32) · [`PsfEntry`](#psfentry) · [`PsfFormatDescriptor`](#psfformatdescriptor) · [`PsfReader`](#psfreader) · [`PsfWriter`](#psfwriter)
+
+#### `PsfConstants`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Crc32Polynomial` | `const uint Crc32Polynomial` |  |
+| `EntryHeader` | `const string EntryHeader` |  |
+| `EntryProgram` | `const string EntryProgram` |  |
+| `EntryReserved` | `const string EntryReserved` |  |
+| `EntryTags` | `const string EntryTags` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Magic` | `static readonly byte[] Magic` |  |
+| `TagPrefix` | `const string TagPrefix` |  |
+| `VersionPs1` | `const byte VersionPs1` |  |
+
+#### `PsfCrc32`
+
+Standard CRC-32 (IEEE 802.3 / zlib polynomial 0xEDB88320). Inlined here because FileFormat.* projects only reference `Compression.Registry`, not `Compression.Core` where the shared (and hardware-accelerated) `Crc32` lives. PSF stores this CRC over the compressed program bytes inside its 16-byte header, so a tiny dependency-free table-driven implementation is sufficient.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | Computes the standard CRC-32 of the given bytes. |
+
+#### `PsfEntry`
+
+A synthetic entry exposed by `PsfReader` for the flat-archive view of a PSF. PSFs aren't true archives — these entries surface the container's logical components (header, reserved blob, decompressed program, parsed tags) so the standard archive browse/extract UX works against them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsfEntry` | `PsfEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` | Raw bytes of the entry. For `program.bin` these are post-zlib decompression. |
+| `Name` | `string Name { get; init; }` | Synthetic entry name (e.g. `header.bin`, `program.bin`, `tags.txt`). |
+
+#### `PsfFormatDescriptor`
+
+Portable Sound Format (PSF) — game-music archival container wrapping a compressed program plus tags. References: Neill Corlett, "PSF — Portable Sound Format" specification (psf_format.txt) — the defining document`https://en.wikipedia.org/wiki/Portable_Sound_Format` — Wikipedia overview
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsfFormatDescriptor` | `PsfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `PsfReader`
+
+Reads a Portable Sound Format (PSF) container: 16-byte header, optional reserved blob, zlib-compressed program section, and an optional `[TAG]` key/value block. Magic and CRC mismatches surface as `IsCorrupt` rather than throwing (except for outright bad magic, which is unrecoverable).
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsfReader` | `PsfReader(Stream stream, bool leaveOpen = false)` | Opens a PSF container from the given stream. |
+| `ActualProgramCrc32` | `uint ActualProgramCrc32 { get; }` | The CRC-32 actually computed by the reader over the raw compressed program bytes. |
+| `Entries` | `IReadOnlyList<PsfEntry> Entries { get; }` | The flat synthetic-entry view: header.bin, [reserved.bin], program.bin, [tags.txt]. |
+| `HeaderBytes` | `byte[] HeaderBytes { get; }` | The raw 16-byte header bytes (kept so the synthetic header.bin entry can round-trip exactly). |
+| `IsCorrupt` | `bool IsCorrupt { get; }` | True when `ProgramCrc32` doesn't match `ActualProgramCrc32`. Reader does not throw on mismatch. |
+| `ProgramCrc32` | `uint ProgramCrc32 { get; }` | The CRC-32 value as stored in the header (computed by the producer over the COMPRESSED program bytes). |
+| `ProgramData` | `byte[] ProgramData { get; }` | The decompressed program payload. Always non-null; empty if the program section was empty. |
+| `ReservedData` | `byte[] ReservedData { get; }` | The reserved-area blob (length determined by the header field). May be empty. |
+| `Tags` | `IReadOnlyDictionary<string, string> Tags { get; }` | Parsed tag block (UTF-8 / Latin-1, one `key=value` per line). Empty if the file had no `[TAG]` sentinel. |
+| `VersionByte` | `byte VersionByte { get; }` | Platform/version byte from offset 3 of the header (e.g. 0x01 = PS1, 0x02 = PS2). |
+| `Dispose` | `void Dispose()` |  |
+
+#### `PsfWriter`
+
+Writes a Portable Sound Format (PSF) container. The CRC stored in the header is over the COMPRESSED program bytes (per spec) — common bug source if mistakenly computed over the uncompressed payload, which the round-trip test guards against.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsfWriter` | `PsfWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `PsfWriter` bound to `stream`. |
+| `ProgramData` | `byte[] ProgramData { get; set; }` | Uncompressed program payload. Will be zlib-compressed at `CompressionLevel.Optimal`. |
+| `ReservedData` | `byte[] ReservedData { get; set; }` | Reserved-area blob written verbatim between header and compressed program. |
+| `Tags` | `Dictionary<string, string> Tags { get; }` | Tag key/value pairs serialized as a UTF-8 `[TAG]` block. Empty -> no tag block. |
+| `VersionByte` | `byte VersionByte { get; set; }` | The platform/version byte (default 0x01 = PS1). |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Serializes all fields to the underlying stream. Idempotent. |
 
 ### Namespace `FileFormat.QuickLz`
 
@@ -11385,6 +14045,106 @@ Reader and writer for the Microsoft SZDD / COMPRESS.EXE file format. SZDD uses a
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an SZDD-encoded stream and writes the raw data to `output`. |
 | `GetMissingChar` | `static char GetMissingChar(Stream input)` | Returns the "missing character" stored in the SZDD header — the last character of the original filename extension before it was replaced with `'_'`. |
 
+### Namespace `FileFormat.T64`
+
+[`T64BlockMover`](#t64blockmover) · [`T64Entry`](#t64entry) · [`T64FormatDescriptor`](#t64formatdescriptor) · [`T64InPlaceModifier`](#t64inplacemodifier) · [`T64Modifier`](#t64modifier) · [`T64Reader`](#t64reader) · [`T64Writer`](#t64writer)
+
+#### `T64BlockMover`
+
+In-place T64 block mover. Moves data extents within a T64 tape image and patches the directory entry's data-offset field so the file remains reachable.
+
+Implements `IFilesystemBlockMover`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `T64BlockMover` | `T64BlockMover()` |  |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+
+#### `T64Entry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `T64Entry` | `T64Entry()` |  |
+| `DataOffset` | `int DataOffset { get; init; }` |  |
+| `EndAddress` | `ushort EndAddress { get; init; }` |  |
+| `EntryType` | `byte EntryType { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `StartAddress` | `ushort StartAddress { get; init; }` |  |
+
+#### `T64FormatDescriptor`
+
+Commodore 64 T64 tape container — directory of memory-load records. References: Peter Schepers, "C64 File Formats: T64" — the classic reference document`https://vice-emu.sourceforge.io/` — VICE emulator — reference implementation reading/writing T64
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFilesystemBlockMover`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `T64FormatDescriptor` | `T64FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing T64 tape image via `T64InPlaceModifier`. If a directory slot is free the entry drops in directly and the new payload is appended at EOF. If the directory is full the directory grows by one 32-byte slot — the payload region shifts forward by 32 bytes and every existing slot's absolute dataOffset field is patched. No full image rebuild. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments a T64 image. Falls back to rebuild since T64 data offsets are stored in directory entries and recompaction is simplest via rebuild. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the byte layout of a T64 tape image: 64-byte header as MetadataReserved, N×32-byte directory entries as MetadataReserved, and each file's data region as Used. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing T64 tape image via `T64InPlaceModifier`. Later directory slots shift up by 32 bytes, the removed payload bytes are wiped, the remaining payload region shifts to close the gap (each affected slot's absolute dataOffset is patched), and the stream is truncated. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+
+#### `T64InPlaceModifier`
+
+True in-place R/W modifier for Commodore 64 `.t64` tape images. Performs O(touched bytes) byte-level region shifts against the raw stream instead of read-extract-rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, ushort startAddress = 2049)` | Adds (or replaces by name, case-insensitive) a single file inside an existing T64 stream. The image is mutated in-place — no full rebuild. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name)` | Removes a named entry from the T64 stream. Returns true if found and removed. |
+
+#### `T64Modifier`
+
+In-place T64 modifier — performs O(touched bytes) random-access I/O against a T64 tape image. T64 has a 64-byte header followed by a fixed-size directory table of N×32-byte slots, then concatenated file data. AddFile: finds an empty slot (entryType=0) in the directory, appends file data at EOF, and fills in the slot.RemoveFile: sets the slot's entryType to 0 (marks it free). Data is left in place (no compaction).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, ushort startAddress = 2049)` | Adds a file to an existing T64 tape image. Finds the first free slot (entryType=0) in the directory, appends the file data at the end of the image, and writes the directory entry. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name)` | Removes a named file from the T64 image by zeroing its directory entry type. Returns false if not found. |
+
+#### `T64Reader`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `T64Reader` | `T64Reader(Stream stream, bool leaveOpen = false)` |  |
+| `Entries` | `IReadOnlyList<T64Entry> Entries { get; }` |  |
+| `TapeName` | `string TapeName { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(T64Entry entry)` |  |
+
+#### `T64Writer`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `T64Writer` | `T64Writer()` |  |
+| `AddFile` | `void AddFile(string name, byte[] data)` |  |
+| `AddFile` | `void AddFile(string name, ushort startAddress, byte[] data)` |  |
+| `Build` | `byte[] Build(string tapeName = "TAPE")` |  |
+
 ### Namespace `FileFormat.Tar`
 
 [`TarEntry`](#tarentry) · [`TarFormatDescriptor`](#tarformatdescriptor) · [`TarHeaderFormat`](#tarheaderformat) · [`TarLayoutMap`](#tarlayoutmap) · [`TarModifier`](#tarmodifier) · [`TarReader`](#tarreader) · [`TarWriter`](#tarwriter)
@@ -12301,6 +15061,255 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Compress` | `void Compress(Stream input, Stream output)` |  |
 | `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+
+### Namespace `FileFormat.Veeam`
+
+[`OibFileEntry`](#oibfileentry) · [`OibSummary`](#oibsummary) · [`OibSummaryParser`](#oibsummaryparser) · [`VeeamEntry`](#veeamentry) · [`VeeamFileType`](#veeamfiletype) · [`VeeamFormatDescriptor`](#veeamformatdescriptor) · [`VeeamReader`](#veeamreader)
+
+#### `OibFileEntry`
+
+Single `<File>` entry under `<OibFiles>` — the Veeam extract utility's view of one restorable virtual disk file (.vmdk, .vhdx, .vhd, raw image, etc.) inside this Storage file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OibFileEntry` | `OibFileEntry()` |  |
+| `Name` | `string Name { get; init; }` | File name as declared by the writer (typically a path like `vm-name-flat.vmdk`). |
+| `PlatformDetails` | `IReadOnlyDictionary<string, string> PlatformDetails { get; init; }` | Platform/format details surfaced as a flat attribute dictionary (Hyper-V vs. vSphere vs. agent-backup vary materially). |
+| `Size` | `long? Size { get; init; }` | Declared file size in bytes, when present. |
+
+#### `OibSummary`
+
+Structured view of the `<OibSummary>` XML metadata block embedded in the trailer of an unencrypted Veeam Backup & Replication Storage file (`.vbk` / `.vib` / `.vrb`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OibSummary` | `OibSummary()` |  |
+| `BackupTypeCode` | `int? BackupTypeCode { get; init; }` | Backup type code from `<Backup Type="...">`. Synacktiv pinned `0 = Full (.vbk)`, `1 = Increment (.vib)`. |
+| `BackupVersion` | `string BackupVersion { get; init; }` | Backup version field (`<BackupVersion>N</BackupVersion>`). |
+| `CreationTimeUtc` | `string CreationTimeUtc { get; init; }` | Restore-point UTC creation time (`<Point CreationTimeUtc="...">`) — surfaced as raw string. |
+| `CreationTime` | `string CreationTime { get; init; }` | Restore-point local creation time (`<Point CreationTime="...">`) — surfaced as raw string. |
+| `EncryptionCode` | `int? EncryptionCode { get; init; }` | Encryption flag from `<Backup Encryption="...">` (older writer versions) — older Veeam shape; see `EncryptionStateCode` for the canonical `EncryptionState` attribute used by the Velociraptor artifact. Velociraptor's `Windows.Veeam.RestorePoints.BackupFiles` documents `0 = Unencrypted`, `2 = Encrypted`; the OibSummary block is only emitted in plain text when the backup is unencrypted, so a non-null value here is almost always 0. |
+| `EncryptionStateCode` | `int? EncryptionStateCode { get; init; }` | Canonical encryption-state code from `<Backup EncryptionState="...">` — the attribute name used by the Synacktiv Velociraptor artifact `Windows.Veeam.RestorePoints.BackupFiles`. Semantics match `EncryptionCode`: `0 = Unencrypted`, `2 = Encrypted`. Most modern writer versions emit `EncryptionState`; pre-V12 writers emit the legacy `EncryptionCode`. |
+| `JobName` | `string JobName { get; init; }` | Backup job name (from `<Backup JobName="...">`). |
+| `ObjectIdNew` | `string ObjectIdNew { get; init; }` | Backed-up object's canonical `ObjectId` attribute (`<Object ObjectId="...">`) — the attribute name used by the Synacktiv Velociraptor artifact's `AttrObjectId` mapping. |
+| `ObjectId` | `string ObjectId { get; init; }` | Backed-up object's legacy `Id` attribute (`<Object Id="...">`). Modern writers emit `ObjectIdNew` (`ObjectId`) instead; the parser surfaces whichever is present. |
+| `ObjectName` | `string ObjectName { get; init; }` | Backed-up object's `Name` attribute (`<Object Name="...">`). |
+| `ObjectViType` | `string ObjectViType { get; init; }` | Backed-up object's `ViType` attribute (`<Object ViType="...">`) — virtual-infrastructure type tag (e.g. `VMware`, `HyperV`). Maps to Velociraptor's `Metadata.OibSummary.Object.AttrViType`; the VQL falls back to literal "Physical machine" when absent. |
+| `OibAlgorithm` | `string OibAlgorithm { get; init; }` | OIB algorithm attribute (`<OIB Algorithm="...">`) — backup-method identifier (forever-forward, reverse-incremental, etc.). |
+| `OibApproxSize` | `long? OibApproxSize { get; init; }` | OIB approximate backup size (`<OIB ApproxSize="...">`) — declared in bytes by the writer. Surfaced raw so callers can humanize independently (Velociraptor formats with its `humanize()` helper). |
+| `OibAuxDataRaw` | `string OibAuxDataRaw { get; init; }` | Raw OIB AuxData attribute value (`<OIB AuxData="...">`) — an XML-in-attribute blob carrying a `COibAuxData` root with platform-specific guest details (Hyper-V, Desktop, VMware) per Synacktiv's VQL `parse_xml(file=Metadata.OibSummary.OIB.AttrAuxData)`. Surfaced verbatim because the nested schemas vary by platform and writer version and a flat dictionary would lose structure. |
+| `OibCompletionTimeUtc` | `string OibCompletionTimeUtc { get; init; }` | OIB completion time in UTC (`<OIB CompletionTimeUtc="...">`). |
+| `OibCreationTimeUtc` | `string OibCreationTimeUtc { get; init; }` | OIB creation time in UTC (`<OIB CreationTimeUtc="...">`). Distinct from `CreationTimeUtc` which is the Restore-Point creation time on `<Point>`; modern writers emit both. |
+| `OibDisplayName` | `string OibDisplayName { get; init; }` | Object-in-backup display name (`<OIB DisplayName="...">`) — often the VM display name. |
+| `OibEffectiveMemoryMb` | `long? OibEffectiveMemoryMb { get; init; }` | OIB temporary memory size in MiB (`<OIB EffectiveMemoryMb="...">`) — VM-side metric for the snapshotted memory state. |
+| `OibFiles` | `IReadOnlyList<OibFileEntry> OibFiles { get; init; }` | Extractable files declared under `<OibFiles>`. |
+| `OibHasAd` | `string OibHasAd { get; init; }` | OIB `HasAd` (Active Directory) capability flag. |
+| `OibHasExchange` | `string OibHasExchange { get; init; }` | OIB `HasExchange` capability flag. |
+| `OibHasIndex` | `string OibHasIndex { get; init; }` | OIB `HasIndex` capability flag (`"true"`/`"false"` string). |
+| `OibHasOracle` | `string OibHasOracle { get; init; }` | OIB `HasOracle` capability flag. |
+| `OibHasPostgreSql` | `string OibHasPostgreSql { get; init; }` | OIB `HasPostgreSql` capability flag. |
+| `OibHasSharePoint` | `string OibHasSharePoint { get; init; }` | OIB `HasSharePoint` capability flag. |
+| `OibHasSql` | `string OibHasSql { get; init; }` | OIB `HasSql` capability flag. |
+| `OibHasVeeamArchiver` | `string OibHasVeeamArchiver { get; init; }` | OIB `HasVeeamArchiver` capability flag. |
+| `OibHealthStatus` | `string OibHealthStatus { get; init; }` | OIB health-status attribute (`<OIB HealthStatus="...">`). |
+| `OibIsConsistent` | `string OibIsConsistent { get; init; }` | OIB `IsConsistent` health flag. |
+| `OibIsCorrupted` | `string OibIsCorrupted { get; init; }` | OIB `IsCorrupted` health flag. |
+| `OibIsPartialActiveFull` | `string OibIsPartialActiveFull { get; init; }` | OIB `IsPartialActiveFull` flag. |
+| `OibIsRecheckCorrupted` | `string OibIsRecheckCorrupted { get; init; }` | OIB `IsRecheckCorrupted` health flag — set when a re-check pass disagreed with the original CRC. |
+| `OibProductIsRentalLicense` | `string OibProductIsRentalLicense { get; init; }` | OIB `ProductIsRentalLicense` flag. |
+| `OibProductVersionFlags` | `string OibProductVersionFlags { get; init; }` | OIB `ProductVersionFlags` attribute. |
+| `OibProductVersion` | `string OibProductVersion { get; init; }` | OIB `ProductVersion` — Veeam Backup & Replication version string that wrote this restore point. |
+| `OibState` | `string OibState { get; init; }` | OIB state attribute (`<OIB State="...">`) — backup-state enum reported by Veeam. |
+| `OibType` | `string OibType { get; init; }` | OIB type attribute (`<OIB Type="...">`) — sub-classification of the backed-up object. |
+| `OibVmName` | `string OibVmName { get; init; }` | OIB virtual-machine name (`<OIB VmName="...">`) — the inventory VM name as known to the source hypervisor. Distinct from `OibDisplayName` which is the Veeam-managed display name. |
+| `PolicyName` | `string PolicyName { get; init; }` | Backup policy name (`<Backup PolicyName="...">`) — present when the backup job participates in a Veeam SureBackup or SOBR policy (Synacktiv: surfaced as a top-level column in the canonical VQL). |
+| `PrevFileName` | `string PrevFileName { get; init; }` | Previous file in the backup chain (`<PrevFileName>...</PrevFileName>`) — path to the predecessor .vbk/.vib/.vrb when this file is part of an incremental chain. |
+| `RawXml` | `string RawXml { get; init; }` | Raw XML island as recovered from the container — useful for diagnostics and round-tripping. |
+| `RestorePointNumber` | `int? RestorePointNumber { get; init; }` | Restore-point number (from `<Point Num="...">`). |
+| `RestorePointTypeCode` | `int? RestorePointTypeCode { get; init; }` | Restore-point type code (`<Point Type="...">`) — Synacktiv VQL maps `0 = Full`, `1 = Increment`, mirroring `BackupTypeCode`. Distinct attribute, surfaced separately because real writers sometimes set `Point/@Type` but not `Backup/@Type`. |
+| `SourceHostInstanceId` | `string SourceHostInstanceId { get; init; }` | Source-host instance identifier (`<SourceHost HostInstanceId="...">`) — globally unique tag for the source host; Velociraptor's `Metadata.OibSummary.SourceHost.AttrHostInstanceId`. |
+| `SourceHostName` | `string SourceHostName { get; init; }` | Source host name (`<SourceHost Name="...">`) — host that manages the backed-up object. |
+| `StoragePartialPath` | `string StoragePartialPath { get; init; }` | Storage file partial path (`<Storage PartialPath="...">`) — typically the relative path within the backup repository. |
+| `TargetHostName` | `string TargetHostName { get; init; }` | Target host name (`<TargetHost Name="...">`) — host that receives the backed-up object. |
+| `XmlLength` | `int XmlLength { get; init; }` | Length in bytes of the embedded XML island (open tag through close tag inclusive). |
+| `XmlOffset` | `long XmlOffset { get; init; }` | Byte offset in the Storage file where the trailing `<OibSummary>` open tag was found. |
+
+#### `OibSummaryParser`
+
+Locates and parses the embedded `<OibSummary>` XML metadata island that Veeam Backup & Replication writes near the end of an unencrypted Storage file (`.vbk` / `.vib` / `.vrb`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CloseTag` | `static readonly byte[] CloseTag` | UTF-8 bytes for the `</OibSummary>` close tag. |
+| `OpenTag` | `static readonly byte[] OpenTag` | UTF-8 bytes for the `<OibSummary>` open tag. |
+| `TryParse` | `static OibSummary TryParse(ReadOnlySpan<byte> data)` | Attempts to locate and parse the trailing OibSummary XML island inside `data`. Returns `null` when no usable XML is found (encrypted containers, truncated files, or pre-Synacktiv writer versions that did not embed the trailer). |
+
+#### `VeeamEntry`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VeeamEntry` | `VeeamEntry()` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `VeeamFileType`
+
+Veeam Backup & Replication container role within a backup chain.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` | Role unknown — caller did not classify by extension. |
+| `Full` | `1` | Full backup (.vbk — Veeam Backup Key). |
+| `Incremental` | `2` | Forward incremental backup (.vib). |
+| `ReverseIncremental` | `3` | Reverse incremental backup (.vrb). |
+
+#### `VeeamFormatDescriptor`
+
+Stage-1 R/O metadata descriptor for Veeam Backup & Replication container files (`.vbk` full backup, `.vib` incremental backup, `.vrb` reverse incremental backup). Disk content stays Stage 0 — see the blockers list below — but the trailing `<OibSummary>` plaintext XML island is now extracted when present, surfacing the backup-job name, restore-point number, creation time, source/target host, object id, `PrevFileName` chain link and the list of restorable disk files. What the descriptor surfaces.`metadata.ini` — magic offset, image size, file role, and (when available) the parsed OibSummary fields per key. `OibSummary.xml` — the verbatim plaintext XML island recovered from the trailer (omitted for encrypted containers and pre-trailer writer versions). `veeam-{full,incremental,reverse,container}.bin` — the raw container bytes for downstream tools (e.g. Veeam `Extract.exe`). Why disk content remains Stage 0.No published spec for the chunk layer. Veeam has never published the on-disk container format. The only public reverse-engineering surface — Synacktiv's two-part 2024 write-up and the matching `` — covers ONLY the trailing plaintext OibSummary XML island. The chunked compressed block layer (header → metadata bank pairs → CRC-protected compressed data blocks, per the ``) is documented at the "block diagram" level only and not enough to walk safely. CBT chain replay required. Veeam backups are CBT-aware (Changed Block Tracking): a usable restore image is the combination of one `.vbk` full plus a sequence of `.vib` forward incrementals or `.vrb` reverse incrementals, indexed by an external `.vbm` metadata sidecar. A single `.vib`/`.vrb` file carries only the delta against its predecessor; reading it in isolation cannot produce a restorable image. Deduplication store is external. Block bodies are dehydrated against a job-scoped deduplication pool that lives outside the container file. Without that pool, referenced blocks resolve to nothing. Encryption gates every block when configured. Veeam jobs may be AES-256 encrypted with keys wrapped by Enterprise Manager. The key derivation has been reverse-engineered (PBKDF2-HMAC-SHA1, 10000 iterations, 64-byte salt, AES-256-CBC verification block — see ``), but the chain key itself remains gated by the password / Enterprise Manager. Encrypted containers degrade cleanly to Stage 0 detection-only — the OibSummary trailer is only emitted in plain text for unencrypted jobs. Detection uses the ASCII `"VEEAM"` tag (5 bytes) anchored at offset 0 as the registry's fixed-offset magic. Real containers carry the `VEEAM` tag within the first 4 KiB but at a writer-version-dependent offset; `VeeamReader` scans the leading 4 KiB window to surface the discovered offset in `metadata.ini`. The fixed offset-0 magic here is therefore a wrapper convention for registry surfacing only; consumers should treat extension-based detection (`.vbk` / `.vib` / `.vrb`) as primary. References: `https://github.com/synacktiv/veeam-velociraptor` — Synacktiv's 2024 OibSummary-trailer reverse-engineering (Velociraptor artifact pack), the basis of the Stage-1 reader`https://forums.veeam.com/veeam-backup-replication-f2/vdk-file-format-t93873.html` — Veeam R&D forum thread describing the chunk layer at block-diagram level`https://github.com/hashcat/hashcat/issues/3623` — reverse-engineered key derivation for encrypted jobsVeeam Backup & Replication vendor documentation — the container format itself is proprietary and unpublished
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VeeamFormatDescriptor` | `VeeamFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `VeeamReader`
+
+R/O metadata reader for Veeam Backup & Replication container files (`.vbk` full backup, `.vib` incremental backup, `.vrb` reverse incremental backup). Veeam Backup & Replication is an enterprise backup product for VMware / Hyper-V / physical Windows / Linux. Its on-disk container is proprietary, chunked, and CBT-aware (Changed Block Tracking): a backup chain is the combination of one `.vbk` (full image) plus a sequence of `.vib` (forward incrementals) or `.vrb` (reverse incrementals) against an external `.vbm` metadata index. None of the binary chunk-and-block layer is publicly specified, so the reader does NOT attempt to walk it. What this reader DOES extract. Synacktiv's two-part reverse-engineering write-up (``, ``), pinned by their open-source ``, documents an unencrypted plaintext XML island emitted near the trailing edge of each Storage file: `<OibSummary> … </OibSummary>`. That island carries the backup-job name, restore-point number, creation time (local + UTC), source/target host names, the storage's partial path, the OIB display name (typically the VM name), object id, the `PrevFileName` chain link, the backup version field, and a list of restorable disk files with their declared sizes and platform-detail attributes. The reader uses the same "last occurrence" rule as Velociraptor's `StartOffsetRule` YARA — earlier inline copies may appear inside compressed metadata banks, but the authoritative trailer is the LAST match in the file. What this reader CANNOT extract — and why disk content stays Stage 0.CBT chain replay is structural. A single `.vib`/`.vrb` only carries the delta against its predecessor; reconstructing a restorable image requires walking the full chain via the `.vbm` metadata index, which lives in a sibling file.The dedup store is external. Block bodies are dehydrated against a job-scoped block pool that lives outside the container file — referenced blocks resolve to nothing without the pool.AES-256 gates every block when encryption is enabled. Without the Enterprise-Manager-wrapped chain key, the bodies are unrecoverable. The OibSummary XML itself is only emitted in plain text for unencrypted jobs; encrypted backups degrade cleanly to Stage 0 detection-only.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VeeamReader` | `VeeamReader(Stream stream, VeeamFileType fileTypeHint = 0)` |  |
+| `ScanWindow` | `const int ScanWindow` | Size of the leading window scanned for the `VEEAM` tag. |
+| `VeeamTag` | `static readonly byte[] VeeamTag` | ASCII `VEEAM` tag (5 bytes) scanned for within the file's leading window. Veeam does not document the offset; observed values span the first 4 KiB depending on writer version and CBT chain role. |
+| `Entries` | `IReadOnlyList<VeeamEntry> Entries { get; }` |  |
+| `FileType` | `VeeamFileType FileType { get; }` |  |
+| `MagicOffset` | `int MagicOffset { get; }` |  |
+| `OibSummary` | `OibSummary OibSummary { get; }` | Parsed trailing `<OibSummary>` XML metadata island, when present and decodable. `null` for encrypted backups, pre-trailer writer versions, or truncated containers — Stage 0 detection remains the safety net in those cases. |
+| `TrailingWord` | `uint TrailingWord { get; }` |  |
+| `ValidHeader` | `bool ValidHeader { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(VeeamEntry entry)` |  |
+
+### Namespace `FileFormat.Vib`
+
+[`VibEntry`](#vibentry) · [`VibFormatDescriptor`](#vibformatdescriptor) · [`VibReader`](#vibreader) · [`VibWriter`](#vibwriter) · [`VibWriterOptions`](#vibwriteroptions)
+
+#### `VibEntry`
+
+A single file/directory decoded from a VIB payload tar.
+
+Implements `IEquatable<VibEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VibEntry` | `VibEntry(string Path, byte[] Data, bool IsDirectory)` | A single file/directory decoded from a VIB payload tar. |
+| `Data` | `byte[] Data { get; init; }` | Entry contents (empty for directories). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True when the entry is a directory. |
+| `Path` | `string Path { get; init; }` | Entry path as stored in the payload tar. |
+
+#### `VibFormatDescriptor`
+
+VMware vSphere Installation Bundle (`.vib`) — a Unix `ar` archive of `descriptor.xml`, `sig.pkcs7` and a compressed TGZ payload. Listing/extraction surface the descriptor + raw signature and unpack the payload tree under `payload/`. Creation emits an unsigned, standards-shaped `CommunitySupported` VIB with an empty signature member; higher acceptance levels require a VMware-trusted signing identity and are therefore not forged here. References: `https://blogs.vmware.com/cloud-foundation/2011/09/13/whats-in-a-vib/` — VMware: CommunitySupported VIBs may be unsigned but still require an empty signature file`https://knowledge.broadcom.com/external/article/318056` — ESXi 8 requires SHA-256 + gunzip payload verification metadataVMware VIB Author / community VIB 5.0 descriptors — TGZ payload, file-list, SHA-256 compressed digest and SHA-256/SHA-1 gunzip digests
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VibFormatDescriptor` | `VibFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `VibReader`
+
+Reads a VMware vSphere Installation Bundle (`.vib`). A VIB is a Unix `ar` archive holding three members: `descriptor.xml` — bundle metadata (name, version, payloads).`sig.pkcs7` — the detached PKCS#7 signature (empty for an unsigned CommunitySupported VIB).a payload member — a `.vgz`/`tgz` (gzip-compressed tar), an xz-compressed tar, or a bare tar — whose name matches the payload id. The reader surfaces the descriptor XML, the raw signature and the fully decompressed payload tree (tar entries). When the descriptor contains payload size/checksum metadata, extraction verifies those declarations before returning data.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VibReader` | `VibReader(Stream stream)` | Opens a VIB from a seekable stream. |
+| `DescriptorXml` | `byte[] DescriptorXml { get; }` | The `descriptor.xml` bytes, or null when absent. |
+| `PayloadMemberName` | `string PayloadMemberName { get; }` | Name of the payload member (anything that is not descriptor/signature). |
+| `PayloadRaw` | `byte[] PayloadRaw { get; }` | The compressed payload member bytes, or null when absent. |
+| `RawMembers` | `IReadOnlyList<ArEntry> RawMembers { get; }` | Raw `ar` members exactly as stored in the bundle. |
+| `Signature` | `byte[] Signature { get; }` | The `sig.pkcs7` bytes, or null when absent. |
+| `DecompressPayload` | `byte[] DecompressPayload()` | Decompresses the payload member (gzip/xz/stored), verifies any payload size and checksum declarations present in `descriptor.xml`, and returns its bytes. Returns an empty array when there is no payload. |
+| `Dispose` | `void Dispose()` |  |
+| `ReadPayloadEntries` | `IReadOnlyList<VibEntry> ReadPayloadEntries()` | Reads the payload's tar tree. Returns an empty list when the payload is absent or is not a tar (best-effort; never throws solely because the payload is non-tar). Descriptor checksum failures remain hard errors because they occur before TAR parsing. |
+
+#### `VibWriter`
+
+Creates a VMware vSphere Installation Bundle containing a single TGZ payload. The emitted VIB is intentionally `CommunitySupported`: the AR member `sig.pkcs7` is present but empty, as required for unsigned community VIBs.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VibWriter` | `VibWriter(Stream output, VibWriterOptions options = null, bool leaveOpen = false)` | Creates a writer over `output`. |
+| `PayloadName` | `const string PayloadName` | Canonical name of the single payload AR member. |
+| `AddEntry` | `void AddEntry(string path, byte[] data, bool isDirectory = false)` | Adds a payload path and its bytes. |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Finalizes the TGZ payload, descriptor, empty signature, and outer AR archive. |
+
+#### `VibWriterOptions`
+
+Metadata and layout options used when creating a CommunitySupported VMware VIB. Signed acceptance levels are deliberately not exposed: creating those requires a VMware-trusted signing identity rather than merely different descriptor metadata.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VibWriterOptions` | `VibWriterOptions()` |  |
+| `DefaultDescription` | `const string DefaultDescription` | Default package description. |
+| `DefaultName` | `const string DefaultName` | Default VIB package name. |
+| `DefaultSummary` | `const string DefaultSummary` | Default package summary. |
+| `DefaultVendor` | `const string DefaultVendor` | Default vendor string. |
+| `DefaultVersion` | `const string DefaultVersion` | Default package version. |
+| `CompressionLevel` | `DeflateCompressionLevel CompressionLevel { get; init; }` | DEFLATE level used by the TGZ payload. |
+| `Description` | `string Description { get; init; }` | Long package description. |
+| `DirectoryMode` | `int DirectoryMode { get; init; }` | Unix mode used for payload directories. Defaults to 0755. |
+| `FileMode` | `int FileMode { get; init; }` | Unix mode used for regular payload files. Defaults to 0644. |
+| `LiveInstallAllowed` | `bool LiveInstallAllowed { get; init; }` | Whether ESXi may install the VIB without rebooting first. |
+| `LiveRemoveAllowed` | `bool LiveRemoveAllowed { get; init; }` | Whether ESXi may remove the VIB without rebooting first. |
+| `MaintenanceMode` | `bool MaintenanceMode { get; init; }` | Whether installation requires maintenance mode. |
+| `Name` | `string Name { get; init; }` | Package name stored in `descriptor.xml`. |
+| `ReleaseDate` | `DateTimeOffset ReleaseDate { get; init; }` | Release timestamp. Unix epoch is the deterministic default; callers may supply a real release time when reproducibility is not required. |
+| `StatelessReady` | `bool StatelessReady { get; init; }` | Whether the VIB is suitable for stateless ESXi images. |
+| `Summary` | `string Summary { get; init; }` | Short package summary. |
+| `Vendor` | `string Vendor { get; init; }` | Vendor stored in `descriptor.xml`. |
+| `Version` | `string Version { get; init; }` | Package version stored in `descriptor.xml`. |
 
 ### Namespace `FileFormat.VobSub`
 
