@@ -46,7 +46,15 @@ jobs:
           New-Item -ItemType Directory -Force docs/screenshots | Out-Null
 
           dotnet run --project Compression.UI/Compression.UI.csproj --configuration Release --no-build -- --screenshots docs/screenshots
-          if ($LASTEXITCODE -ne 0) { throw "Compression.UI screenshot mode exited with $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+            $diagnostic = "docs/screenshots/screenshot-error.txt"
+            if (Test-Path $diagnostic) {
+              Write-Host "--- screenshot diagnostic ---"
+              Get-Content $diagnostic
+              Write-Host "--- end diagnostic ---"
+            }
+            throw "Compression.UI screenshot mode exited with $LASTEXITCODE"
+          }
 
           $expected = @(
             "archive-browser.png",
