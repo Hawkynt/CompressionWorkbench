@@ -69,6 +69,7 @@ public sealed class SupportedHashSizesContractTests {
       [typeof(Jh)] = static () => Jh.SupportedHashSizes,
       [typeof(Sha3)] = static () => Sha3.SupportedHashSizes,
       [typeof(KnotHash)] = static () => KnotHash.SupportedHashSizes,
+      [typeof(Keccak)] = static () => Keccak.SupportedHashSizes,
       [typeof(Kupyna)] = static () => Kupyna.SupportedHashSizes,
       [typeof(Md2)] = static () => Md2.SupportedHashSizes,
       [typeof(Md4)] = static () => Md4.SupportedHashSizes,

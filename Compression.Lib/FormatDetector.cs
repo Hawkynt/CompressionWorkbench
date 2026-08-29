@@ -247,6 +247,23 @@ public static partial class FormatDetector {
         return cpc;
     }
 
+    // ".pak" is Quake's PACK archive and Unreal's package. Quake's magic is the
+    // leading "PACK"; Unreal's sits in the footer, so a leading-bytes check can
+    // never see it and every Unreal pak was routed to the Quake reader.
+    if (singleExt == ".pak") {
+      var pak = DetectPakByMagic(path);
+      if (pak != Format.Unknown)
+        return pak;
+    }
+
+    // ".vib" is both a VMware installation bundle (an AR archive) and a Veeam
+    // incremental backup. Only one of the two says what it is up front.
+    if (singleExt == ".vib") {
+      var vib = DetectVibByMagic(path);
+      if (vib != Format.Unknown)
+        return vib;
+    }
+
     // The ".arc" extension is shared by the legacy SEA ARC format (every entry
     // header starts with the 0x1A magic byte, the "Arc" descriptor) and FreeArc
     // (magic "ArC\x01", the "FreeArc" descriptor). The first-claim-wins map routes
@@ -305,6 +322,57 @@ public static partial class FormatDetector {
   ///   format by reading the leading bytes. Returns <see cref="Format.Unknown"/>
   ///   when unreadable so the caller falls back to the registry extension map.
   /// </summary>
+  /// <summary>
+  /// Tells Quake's PACK archive from an Unreal package. Quake announces itself in
+  /// the first four bytes; Unreal keeps its magic in the footer, ahead of the
+  /// trailing index offset and length, so the tail is where it has to be read.
+  /// </summary>
+  private static Format DetectPakByMagic(string path) {
+    try {
+      if (!File.Exists(path)) return Format.Unknown;
+      using var fs = File.OpenRead(path);
+      Span<byte> magic = stackalloc byte[4];
+      if (fs.Length >= 4) {
+        fs.ReadExactly(magic);
+        if (magic[0] == 'P' && magic[1] == 'A' && magic[2] == 'C' && magic[3] == 'K')
+          return Format.Pak;
+      }
+
+      // The footer is 44 bytes for the versions that keep the magic at its front;
+      // later revisions prepend fields, so scan the tail rather than fix an offset.
+      var tail = (int)Math.Min(fs.Length, 256);
+      if (tail < 4) return Format.Unknown;
+      var buffer = new byte[tail];
+      fs.Position = fs.Length - tail;
+      fs.ReadExactly(buffer);
+      for (var i = 0; i + 4 <= tail; ++i)
+        if (BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(i, 4)) == 0x5A6F12E1)
+          return Format.UnrealPak;
+    } catch {
+      /* ignore detection failure */
+    }
+    return Format.Unknown;
+  }
+
+  /// <summary>
+  /// Tells a VMware installation bundle from a Veeam incremental backup. The
+  /// bundle is an AR archive and says so in its first eight bytes.
+  /// </summary>
+  private static Format DetectVibByMagic(string path) {
+    try {
+      if (!File.Exists(path)) return Format.Unknown;
+      using var fs = File.OpenRead(path);
+      if (fs.Length < 8) return Format.Unknown;
+      Span<byte> magic = stackalloc byte[8];
+      fs.ReadExactly(magic);
+      if (magic.SequenceEqual("!<arch>\n"u8))
+        return Format.Vib;
+    } catch {
+      /* ignore detection failure */
+    }
+    return Format.Unknown;
+  }
+
   private static Format DetectArcByMagic(string path) {
     try {
       if (!File.Exists(path)) return Format.Unknown;
