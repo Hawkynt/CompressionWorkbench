@@ -1,7 +1,10 @@
 using System.Buffers.Binary;
+using Codec.ALaw;
 using Codec.Mp3;
+using Codec.MuLaw;
 using Codec.WavPack;
 using Compression.Registry;
+using FileFormat.Au;
 
 namespace Compression.Lib;
 
@@ -11,11 +14,13 @@ namespace Compression.Lib;
 /// conversion interfaces directly.
 /// </summary>
 internal static class AudioFormatAdapters {
+  private static readonly AuAdapter Au = new();
   private static readonly Mp3Adapter Mp3 = new();
   private static readonly WavPackAdapter WavPack = new();
 
   public static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
     => descriptor as IAudioPcmSource ?? descriptor.Id switch {
+      "Au" => Au,
       "Mp3" => Mp3,
       "WavPack" => WavPack,
       _ => null,
@@ -23,10 +28,137 @@ internal static class AudioFormatAdapters {
 
   public static IAudioPcmTarget? ResolvePcmTarget(IFormatDescriptor descriptor)
     => descriptor as IAudioPcmTarget ?? descriptor.Id switch {
+      "Au" => Au,
       "Mp3" => Mp3,
       "WavPack" => WavPack,
       _ => null,
     };
+
+  private sealed class AuAdapter : IAudioPcmSource, IAudioPcmTarget {
+    private static readonly string[] Codecs = ["pcm", "mulaw", "alaw"];
+
+    public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
+
+    public AudioPcmBuffer DecodePcm(Stream input) {
+      ArgumentNullException.ThrowIfNull(input);
+      using var materialized = Materialize(input);
+      var parsed = new AuReader().Read(materialized.ToArray());
+      return parsed.Encoding switch {
+        1 => DecodeCompanded(parsed, MuLawCodec.Decode(parsed.SoundData)),
+        2 => new AudioPcmBuffer(
+          new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, 8, AudioPcmEncoding.SignedInteger),
+          (byte[])parsed.SoundData.Clone()),
+        3 => DecodeBigEndianInteger(parsed, 16),
+        4 => DecodeBigEndianInteger(parsed, 24),
+        5 => DecodeBigEndianInteger(parsed, 32),
+        6 => DecodeBigEndianFloat(parsed, 32),
+        7 => DecodeBigEndianFloat(parsed, 64),
+        27 => DecodeCompanded(parsed, ALawCodec.Decode(parsed.SoundData)),
+        _ => throw new NotSupportedException($"AU encoding {parsed.Encoding} is not supported by the canonical PCM pipeline."),
+      };
+    }
+
+    public bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string? reason) {
+      if (!Codecs.Contains(codecId, StringComparer.OrdinalIgnoreCase)) {
+        reason = $"AU does not support codec '{codecId}' in this writer";
+        return false;
+      }
+      if (format.Channels < 1 || format.SampleRate < 1) {
+        reason = "AU requires a positive sample rate and at least one channel";
+        return false;
+      }
+      if (codecId.Equals("mulaw", StringComparison.OrdinalIgnoreCase) ||
+          codecId.Equals("alaw", StringComparison.OrdinalIgnoreCase)) {
+        if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
+          reason = "G.711 AU encoding requires signed PCM16 input";
+          return false;
+        }
+        reason = null;
+        return true;
+      }
+      if (format.Encoding == AudioPcmEncoding.IeeeFloat) {
+        if (format.BitsPerSample is not (32 or 64)) {
+          reason = "AU floating-point PCM supports 32 or 64 bits";
+          return false;
+        }
+        reason = null;
+        return true;
+      }
+      if (format.BitsPerSample is not (8 or 16 or 24 or 32)) {
+        reason = "AU integer PCM supports 8/16/24/32 bits";
+        return false;
+      }
+      reason = null;
+      return true;
+    }
+
+    public void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options) {
+      ArgumentNullException.ThrowIfNull(output);
+      ArgumentNullException.ThrowIfNull(pcm);
+      ArgumentNullException.ThrowIfNull(options);
+      if (!this.CanEncode(pcm.Format, codecId, options, out var reason))
+        throw new NotSupportedException(reason);
+
+      uint encoding;
+      byte[] payload;
+      if (codecId.Equals("mulaw", StringComparison.OrdinalIgnoreCase)) {
+        encoding = 1;
+        payload = MuLawCodec.Encode(ReadPcm16(pcm.InterleavedData));
+      } else if (codecId.Equals("alaw", StringComparison.OrdinalIgnoreCase)) {
+        encoding = 27;
+        payload = ALawCodec.Encode(ReadPcm16(pcm.InterleavedData));
+      } else if (pcm.Format.Encoding == AudioPcmEncoding.IeeeFloat) {
+        encoding = pcm.Format.BitsPerSample == 32 ? 6u : 7u;
+        payload = SwapSampleEndianness(pcm.InterleavedData, pcm.Format.BytesPerSample);
+      } else if (pcm.Format.BitsPerSample == 8) {
+        encoding = 2;
+        payload = (byte[])pcm.InterleavedData.Clone();
+        if (pcm.Format.Encoding == AudioPcmEncoding.UnsignedInteger)
+          for (var i = 0; i < payload.Length; ++i) payload[i] ^= 0x80;
+      } else {
+        encoding = pcm.Format.BitsPerSample switch {
+          16 => 3u,
+          24 => 4u,
+          32 => 5u,
+          _ => throw new UnreachableException(),
+        };
+        payload = SwapSampleEndianness(pcm.InterleavedData, pcm.Format.BytesPerSample);
+      }
+
+      WriteAu(output, encoding, pcm.Format.SampleRate, pcm.Format.Channels, payload);
+    }
+
+    private static AudioPcmBuffer DecodeCompanded(AuReader.ParsedAu parsed, short[] samples) {
+      var bytes = new byte[samples.Length * 2];
+      for (var i = 0; i < samples.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), samples[i]);
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, 16, AudioPcmEncoding.SignedInteger),
+        bytes);
+    }
+
+    private static AudioPcmBuffer DecodeBigEndianInteger(AuReader.ParsedAu parsed, int bitsPerSample)
+      => new(
+        new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, bitsPerSample, AudioPcmEncoding.SignedInteger),
+        SwapSampleEndianness(parsed.SoundData, bitsPerSample / 8));
+
+    private static AudioPcmBuffer DecodeBigEndianFloat(AuReader.ParsedAu parsed, int bitsPerSample)
+      => new(
+        new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, bitsPerSample, AudioPcmEncoding.IeeeFloat),
+        SwapSampleEndianness(parsed.SoundData, bitsPerSample / 8));
+
+    private static void WriteAu(Stream output, uint encoding, int sampleRate, int channels, byte[] payload) {
+      Span<byte> header = stackalloc byte[24];
+      ".snd"u8.CopyTo(header);
+      BinaryPrimitives.WriteUInt32BigEndian(header[4..], 24);
+      BinaryPrimitives.WriteUInt32BigEndian(header[8..], checked((uint)payload.Length));
+      BinaryPrimitives.WriteUInt32BigEndian(header[12..], encoding);
+      BinaryPrimitives.WriteUInt32BigEndian(header[16..], checked((uint)sampleRate));
+      BinaryPrimitives.WriteUInt32BigEndian(header[20..], checked((uint)channels));
+      output.Write(header);
+      output.Write(payload);
+    }
+  }
 
   private sealed class Mp3Adapter : IAudioPcmSource, IAudioPcmTarget {
     private static readonly string[] Codecs = ["mp3", "mpeg-layer3"];
@@ -75,10 +207,7 @@ internal static class AudioFormatAdapters {
       if ((pcm.InterleavedData.Length & 1) != 0)
         throw new InvalidDataException("PCM16 payload has an odd byte length.");
 
-      var samples = new short[pcm.InterleavedData.Length / 2];
-      for (var i = 0; i < samples.Length; ++i)
-        samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm.InterleavedData.AsSpan(i * 2, 2));
-
+      var samples = ReadPcm16(pcm.InterleavedData);
       var bitrate = options.GetOptionInt("bitrate", 128);
       if (bitrate > 1_000) bitrate = (bitrate + 500) / 1_000;
       var quality = options.GetOptionInt("quality", options.Level ?? 5);
@@ -180,6 +309,26 @@ internal static class AudioFormatAdapters {
         pcm.Format.BitsPerSample,
         isFloat: pcm.Format.Encoding == AudioPcmEncoding.IeeeFloat);
     }
+  }
+
+  private static short[] ReadPcm16(ReadOnlySpan<byte> data) {
+    if ((data.Length & 1) != 0)
+      throw new InvalidDataException("PCM16 payload has an odd byte length.");
+    var samples = new short[data.Length / 2];
+    for (var i = 0; i < samples.Length; ++i)
+      samples[i] = BinaryPrimitives.ReadInt16LittleEndian(data.Slice(i * 2, 2));
+    return samples;
+  }
+
+  private static byte[] SwapSampleEndianness(ReadOnlySpan<byte> data, int bytesPerSample) {
+    if (bytesPerSample <= 1) return data.ToArray();
+    if (data.Length % bytesPerSample != 0)
+      throw new InvalidDataException("PCM payload length is not aligned to the sample width.");
+    var result = new byte[data.Length];
+    for (var offset = 0; offset < data.Length; offset += bytesPerSample)
+      for (var i = 0; i < bytesPerSample; ++i)
+        result[offset + i] = data[offset + bytesPerSample - 1 - i];
+    return result;
   }
 
   private static MemoryStream Materialize(Stream input) {
