@@ -87,8 +87,8 @@ public static class AudioConversionOperation {
   }
 
   private static string ResolveCodec(IAudioPcmTarget target, FormatCreateOptions options) {
-    if (!string.IsNullOrWhiteSpace(options.Method)) return options.Method;
-    var explicitCodec = options.GetString("codec");
+    if (!string.IsNullOrWhiteSpace(options.MethodName)) return options.MethodName;
+    var explicitCodec = options.GetOption("codec", string.Empty);
     if (!string.IsNullOrWhiteSpace(explicitCodec)) return explicitCodec;
     if (target.SupportedEncodeCodecs.Count == 0)
       throw new NotSupportedException("The target advertises no audio encoder codecs.");
