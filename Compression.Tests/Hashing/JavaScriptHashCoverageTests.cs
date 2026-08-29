@@ -20,7 +20,7 @@ public sealed class JavaScriptHashCoverageTests {
     new("darkcrypt-keccak.js", "DarkCryptKeccak"),
     new("darkcrypt-md6.js", "DarkCryptMd6"),
     new("darkcrypt-skein.js", "DarkCryptSkein"),
-    new("drygascon-hash.js", "JS-only: DryGASCON source registry implementation has no managed counterpart yet"),
+    new("drygascon-hash.js", "DryGasconHash"),
     new("dstu7564.js", "Kupyna"),
     new("echo.js", "Echo"),
     new("esch256.js", "Esch256"),
@@ -33,9 +33,9 @@ public sealed class JavaScriptHashCoverageTests {
     new("hamsi.js", "HamsiFamily"),
     new("haraka.js", "Haraka256 / Haraka512"),
     new("haval.js", "Haval"),
-    new("highway-hash.js", "JS-only: educational HighwayHash source registry implementation has no managed counterpart yet"),
+    new("highway-hash.js", "HighwayHash (full Google reference algorithm)"),
     new("isap-hash.js", "IsapHash"),
-    new("jh.js", "JS-only: educational JH source registry implementation has no managed counterpart yet"),
+    new("jh.js", "Jh (registry-specific educational variant)"),
     new("kangaroo.js", "KangarooTwelve"),
     new("keccak.js", "Keccak"),
     new("knot-hash.js", "KnotHash"),
@@ -58,7 +58,7 @@ public sealed class JavaScriptHashCoverageTests {
     new("shake.js", "Shake"),
     new("siphash.js", "SipHash24"),
     new("skein.js", "Skein512"),
-    new("skinny-hash.js", "JS-only: educational SKINNY-HASH source registry implementation has no managed counterpart yet"),
+    new("skinny-hash.js", "SkinnyHash"),
     new("sm3.js", "Sm3"),
     new("sparkle-hash.js", "SparkleHash / Esch256"),
     new("streebog.js", "Streebog"),
@@ -79,6 +79,8 @@ public sealed class JavaScriptHashCoverageTests {
       Assert.That(Inventory.Select(static entry => entry.Source).Distinct(StringComparer.Ordinal).Count(), Is.EqualTo(63));
       Assert.That(Inventory.All(static entry => entry.Source.EndsWith(".js", StringComparison.Ordinal)), Is.True);
       Assert.That(Inventory.All(static entry => !string.IsNullOrWhiteSpace(entry.ManagedCounterpart)), Is.True);
+      Assert.That(Inventory.Any(static entry => entry.ManagedCounterpart.StartsWith("JS-only", StringComparison.Ordinal)), Is.False,
+        "63/63 means every JavaScript implementation must have a managed counterpart, not merely a bookkeeping row.");
     });
   }
 }

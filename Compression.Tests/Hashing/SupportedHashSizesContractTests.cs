@@ -22,9 +22,9 @@ public sealed class SupportedHashSizesContractTests {
     typeof(PanamaBEMac)
   ];
 
-  // Each accessor is deliberately written through Type.SupportedHashSizes. Reflection below
-  // discovers the candidate types independently. A future hash therefore fails the test when it
-  // is absent here, while adding it here without exposing the property fails at compile time.
+  // Reflection discovers candidates independently. The accessor table intentionally references
+  // Type.SupportedHashSizes at compile time, so a future hash omitted from the contract fails the
+  // test and a fake table entry without the public metadata fails compilation.
   private static readonly IReadOnlyDictionary<Type, Func<IReadOnlyList<HashSizeRange>>> MetadataAccessors =
     new Dictionary<Type, Func<IReadOnlyList<HashSizeRange>>> {
       [typeof(AsconHash)] = static () => AsconHash.SupportedHashSizes,
@@ -37,6 +37,7 @@ public sealed class SupportedHashSizesContractTests {
       [typeof(CubeHash512)] = static () => CubeHash512.SupportedHashSizes,
       [typeof(DarkCryptMd6)] = static () => DarkCryptMd6.SupportedHashSizes,
       [typeof(DarkCryptSkein)] = static () => DarkCryptSkein.SupportedHashSizes,
+      [typeof(DryGasconHash)] = static () => DryGasconHash.SupportedHashSizes,
       [typeof(Echo)] = static () => Echo.SupportedHashSizes,
       [typeof(Echo224)] = static () => Echo224.SupportedHashSizes,
       [typeof(Echo256)] = static () => Echo256.SupportedHashSizes,
@@ -63,7 +64,9 @@ public sealed class SupportedHashSizesContractTests {
       [typeof(Haraka256)] = static () => Haraka256.SupportedHashSizes,
       [typeof(Haraka512)] = static () => Haraka512.SupportedHashSizes,
       [typeof(Haval)] = static () => Haval.SupportedHashSizes,
+      [typeof(HighwayHash)] = static () => HighwayHash.SupportedHashSizes,
       [typeof(IsapHash)] = static () => IsapHash.SupportedHashSizes,
+      [typeof(Jh)] = static () => Jh.SupportedHashSizes,
       [typeof(Sha3)] = static () => Sha3.SupportedHashSizes,
       [typeof(KnotHash)] = static () => KnotHash.SupportedHashSizes,
       [typeof(Kupyna)] = static () => Kupyna.SupportedHashSizes,
@@ -99,6 +102,7 @@ public sealed class SupportedHashSizesContractTests {
       [typeof(Shabal384)] = static () => Shabal384.SupportedHashSizes,
       [typeof(Shabal512)] = static () => Shabal512.SupportedHashSizes,
       [typeof(Skein512)] = static () => Skein512.SupportedHashSizes,
+      [typeof(SkinnyHash)] = static () => SkinnyHash.SupportedHashSizes,
       [typeof(Streebog)] = static () => Streebog.SupportedHashSizes,
       [typeof(Streebog256)] = static () => Streebog256.SupportedHashSizes,
       [typeof(Streebog512)] = static () => Streebog512.SupportedHashSizes,
@@ -144,10 +148,8 @@ public sealed class SupportedHashSizesContractTests {
   private static bool IsHashApiType(Type type) {
     if (NonFiniteOrNonHashTypes.Contains(type))
       return false;
-
     if (type.Namespace is not ("Hawkynt.Algorithms.Hashing" or "Compression.Core.Checksums"))
       return false;
-
     return type.GetMethods(BindingFlags.Public | BindingFlags.Static)
       .Any(static method => method.Name.StartsWith("Compute", StringComparison.Ordinal));
   }
