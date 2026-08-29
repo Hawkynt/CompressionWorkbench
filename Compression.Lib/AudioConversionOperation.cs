@@ -42,7 +42,9 @@ public static class AudioConversionOperation {
     ArgumentNullException.ThrowIfNull(target);
     options ??= new FormatCreateOptions();
 
-    if (source.Id.Equals(target.Id, StringComparison.OrdinalIgnoreCase)) {
+    var outputCodecExplicitlyRequested =
+      !string.IsNullOrWhiteSpace(options.MethodName) || options.HasOption("codec");
+    if (source.Id.Equals(target.Id, StringComparison.OrdinalIgnoreCase) && !outputCodecExplicitlyRequested) {
       Rewind(input);
       input.CopyTo(output);
       return;
