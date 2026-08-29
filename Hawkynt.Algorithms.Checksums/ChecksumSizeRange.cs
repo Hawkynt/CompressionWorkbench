@@ -6,7 +6,7 @@ namespace Hawkynt.Algorithms.Checksums;
 /// Describes a contiguous arithmetic range of supported checksum-output sizes, in bits.
 /// </summary>
 /// <remarks>
-/// Checksum sizes are not required to be whole bytes; parity is a legitimate 1-bit checksum.
+/// Checksum sizes are not required to be whole bytes; parity and generalized sub-byte families are legitimate.
 /// A range with <c>MinimumBits == MaximumBits</c> represents one exact size. Families with
 /// discontiguous valid sizes expose multiple ranges.
 /// </remarks>
@@ -41,20 +41,32 @@ public readonly record struct ChecksumSizeRange(int MinimumBits, int MaximumBits
   }
 
   public struct Enumerator(ChecksumSizeRange range) : IEnumerator<int> {
-    private int _current = range.MinimumBits - range.StepBits;
+    private readonly ChecksumSizeRange _range = range;
+    private int _current;
+    private bool _started;
 
     public readonly int Current => _current;
     readonly object IEnumerator.Current => Current;
 
     public bool MoveNext() {
-      var next = _current + range.StepBits;
-      if (next > range.MaximumBits)
+      if (!_started) {
+        _current = _range.MinimumBits;
+        _started = true;
+        return true;
+      }
+
+      if (_current >= _range.MaximumBits)
         return false;
-      _current = next;
+
+      _current += _range.StepBits;
       return true;
     }
 
-    public void Reset() => _current = range.MinimumBits - range.StepBits;
+    public void Reset() {
+      _current = default;
+      _started = false;
+    }
+
     public readonly void Dispose() { }
   }
 }
