@@ -9,6 +9,15 @@ on:
   # releases run the exact same test matrix as per-PR CI.
   workflow_call: {}
 
+# One run per pull request at a time. Pushing again while checks are running
+# supersedes them, and without this the old run keeps a runner busy: a handful
+# of quick force-pushes left a dozen doomed runs queued ahead of the one that
+# mattered, and everything behind them starved. Pushes to main are left alone —
+# each commit there deserves its own verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Force JavaScript-based actions to run on Node 24 instead of the deprecated Node 20 ahead of
 # the 2026-06-16 hard cutover, until we bump each action to a Node-24-native major version.
 env:
