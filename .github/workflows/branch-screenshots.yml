@@ -1,0 +1,84 @@
+name: Branch screenshots
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: branch-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+# Match the repository's other workflows while GitHub finishes the Node 24
+# transition for JavaScript actions.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  capture:
+    # The workflow commits refreshed images back to the branch. The actor guard
+    # is a second loop breaker in addition to the [skip ci] commit marker.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Build screenshot host
+        run: dotnet build Compression.UI/Compression.UI.csproj --configuration Release --nologo
+
+      - name: Capture deterministic UI screenshots
+        shell: pwsh
+        run: |
+          Remove-Item docs/screenshots -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force docs/screenshots | Out-Null
+
+          dotnet run --project Compression.UI/Compression.UI.csproj --configuration Release --no-build -- --screenshots docs/screenshots
+          if ($LASTEXITCODE -ne 0) { throw "Compression.UI screenshot mode exited with $LASTEXITCODE" }
+
+          $expected = @(
+            "archive-browser.png",
+            "analysis.png",
+            "maintenance.png"
+          )
+          foreach ($name in $expected) {
+            $path = Join-Path "docs/screenshots" $name
+            if (!(Test-Path $path)) { throw "Missing screenshot: $path" }
+            if ((Get-Item $path).Length -lt 1024) { throw "Screenshot is suspiciously small: $path" }
+          }
+
+      - name: Update README screenshot section
+        run: python .github/workflows/scripts/update-readme-screenshots.py
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-screenshots
+          path: docs/screenshots/*.png
+          retention-days: 14
+
+      - name: Commit refreshed screenshots
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- README.md docs/screenshots)" ]; then
+            echo "Screenshots and README are already current."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/screenshots
+          git commit -m "docs: refresh branch screenshots [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
