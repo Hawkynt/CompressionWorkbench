@@ -37,8 +37,8 @@ public static class AudioConversionInventory {
   public static AudioConversionCapability Describe(IFormatDescriptor descriptor) {
     ArgumentNullException.ThrowIfNull(descriptor);
 
-    var pcmSource = ResolvePcmSource(descriptor);
-    var pcmTarget = ResolvePcmTarget(descriptor);
+    var pcmSource = AudioAdapterResolver.ResolvePcmSource(descriptor);
+    var pcmTarget = AudioAdapterResolver.ResolvePcmTarget(descriptor);
     var demux = descriptor as IAudioDemuxSource;
     var mux = descriptor as IAudioMuxTarget;
     var archive = descriptor as IArchiveFormatOperations;
@@ -60,18 +60,8 @@ public static class AudioConversionInventory {
   private static bool IsAudioCandidate(IFormatDescriptor descriptor)
     => descriptor.Category == FormatCategory.Audio
        || descriptor is IAudioContainerFormat
-       || ResolvePcmSource(descriptor) is not null
-       || ResolvePcmTarget(descriptor) is not null
+       || AudioAdapterResolver.ResolvePcmSource(descriptor) is not null
+       || AudioAdapterResolver.ResolvePcmTarget(descriptor) is not null
        || descriptor is IAudioDemuxSource
        || descriptor is IAudioMuxTarget;
-
-  private static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
-    => descriptor.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)
-      ? new WavAudioAdapter()
-      : AudioFormatAdapters.ResolvePcmSource(descriptor);
-
-  private static IAudioPcmTarget? ResolvePcmTarget(IFormatDescriptor descriptor)
-    => descriptor.Id.Equals("Wav", StringComparison.OrdinalIgnoreCase)
-      ? new WavAudioAdapter()
-      : AudioFormatAdapters.ResolvePcmTarget(descriptor);
 }
