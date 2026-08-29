@@ -1,9 +1,13 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
+using System.Text;
 using Codec.ALaw;
+using Codec.ImaAdpcm;
 using Codec.Mp3;
 using Codec.MuLaw;
 using Codec.WavPack;
 using Compression.Registry;
+using FileFormat.Aiff;
 using FileFormat.Au;
 
 namespace Compression.Lib;
@@ -14,12 +18,14 @@ namespace Compression.Lib;
 /// conversion interfaces directly.
 /// </summary>
 internal static class AudioFormatAdapters {
+  private static readonly AiffAdapter Aiff = new();
   private static readonly AuAdapter Au = new();
   private static readonly Mp3Adapter Mp3 = new();
   private static readonly WavPackAdapter WavPack = new();
 
   public static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
     => descriptor as IAudioPcmSource ?? descriptor.Id switch {
+      "Aiff" => Aiff,
       "Au" => Au,
       "Mp3" => Mp3,
       "WavPack" => WavPack,
@@ -28,11 +34,256 @@ internal static class AudioFormatAdapters {
 
   public static IAudioPcmTarget? ResolvePcmTarget(IFormatDescriptor descriptor)
     => descriptor as IAudioPcmTarget ?? descriptor.Id switch {
+      "Aiff" => Aiff,
       "Au" => Au,
       "Mp3" => Mp3,
       "WavPack" => WavPack,
       _ => null,
     };
+
+  private sealed class AiffAdapter : IAudioPcmSource, IAudioPcmTarget {
+    private static readonly string[] Codecs = ["pcm", "sowt", "mulaw", "alaw", "ima4", "fl32", "fl64"];
+
+    public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
+
+    public AudioPcmBuffer DecodePcm(Stream input) {
+      ArgumentNullException.ThrowIfNull(input);
+      using var materialized = Materialize(input);
+      var parsed = new AiffReader().Read(materialized.ToArray());
+      var compression = parsed.CompressionId;
+      if (!parsed.IsAifc || compression is "NONE" or "twos")
+        return DecodeAiffInteger(parsed, parsed.BitsPerSample, bigEndian: true);
+      return compression switch {
+        "sowt" => DecodeAiffInteger(parsed, parsed.BitsPerSample, bigEndian: false),
+        "ulaw" or "ULAW" => DecodeAiffCompanded(parsed, MuLawCodec.Decode(parsed.SoundData)),
+        "alaw" or "ALAW" => DecodeAiffCompanded(parsed, ALawCodec.Decode(parsed.SoundData)),
+        "ima4" => DecodeIma4(parsed),
+        "fl32" or "FL32" => new AudioPcmBuffer(
+          new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, 32, AudioPcmEncoding.IeeeFloat),
+          SwapSampleEndianness(parsed.SoundData, 4)),
+        "fl64" or "FL64" => new AudioPcmBuffer(
+          new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, 64, AudioPcmEncoding.IeeeFloat),
+          SwapSampleEndianness(parsed.SoundData, 8)),
+        _ => throw new NotSupportedException($"AIFC compression '{compression}' is not supported by the canonical PCM pipeline."),
+      };
+    }
+
+    public bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string? reason) {
+      if (!Codecs.Contains(codecId, StringComparer.OrdinalIgnoreCase)) {
+        reason = $"AIFF/AIFC does not support codec '{codecId}' in this writer";
+        return false;
+      }
+      if (format.Channels < 1 || format.SampleRate < 1) {
+        reason = "AIFF/AIFC requires a positive sample rate and at least one channel";
+        return false;
+      }
+
+      if (codecId.Equals("mulaw", StringComparison.OrdinalIgnoreCase) ||
+          codecId.Equals("alaw", StringComparison.OrdinalIgnoreCase) ||
+          codecId.Equals("ima4", StringComparison.OrdinalIgnoreCase)) {
+        if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
+          reason = $"{codecId} AIFC encoding requires signed PCM16 input";
+          return false;
+        }
+        reason = null;
+        return true;
+      }
+
+      if (codecId.Equals("fl32", StringComparison.OrdinalIgnoreCase)) {
+        reason = format.Encoding == AudioPcmEncoding.IeeeFloat && format.BitsPerSample == 32
+          ? null : "fl32 requires 32-bit IEEE-float PCM";
+        return reason is null;
+      }
+      if (codecId.Equals("fl64", StringComparison.OrdinalIgnoreCase)) {
+        reason = format.Encoding == AudioPcmEncoding.IeeeFloat && format.BitsPerSample == 64
+          ? null : "fl64 requires 64-bit IEEE-float PCM";
+        return reason is null;
+      }
+
+      if (format.Encoding == AudioPcmEncoding.IeeeFloat) {
+        reason = "floating-point PCM must select fl32 or fl64";
+        return false;
+      }
+      if (format.BitsPerSample is not (8 or 16 or 24 or 32)) {
+        reason = "AIFF integer PCM supports 8/16/24/32 bits";
+        return false;
+      }
+      reason = null;
+      return true;
+    }
+
+    public void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options) {
+      ArgumentNullException.ThrowIfNull(output);
+      ArgumentNullException.ThrowIfNull(pcm);
+      ArgumentNullException.ThrowIfNull(options);
+      if (!this.CanEncode(pcm.Format, codecId, options, out var reason))
+        throw new NotSupportedException(reason);
+
+      var normalizedCodec = codecId.ToLowerInvariant();
+      var sampleFrames = checked((uint)pcm.FrameCount);
+      byte[] payload;
+      string compressionId;
+      string compressionName;
+      var bitsPerSample = pcm.Format.BitsPerSample;
+      var aifc = true;
+
+      switch (normalizedCodec) {
+        case "pcm":
+          compressionId = "NONE";
+          compressionName = "not compressed";
+          aifc = false;
+          payload = PrepareSignedEightOrEndianSwap(pcm, bigEndian: true);
+          break;
+        case "sowt":
+          compressionId = "sowt";
+          compressionName = "Little-endian PCM";
+          payload = PrepareSignedEightOrEndianSwap(pcm, bigEndian: false);
+          break;
+        case "mulaw":
+          compressionId = "ulaw";
+          compressionName = "mu-law 2:1";
+          bitsPerSample = 16;
+          payload = MuLawCodec.Encode(ReadPcm16(pcm.InterleavedData));
+          break;
+        case "alaw":
+          compressionId = "alaw";
+          compressionName = "A-law 2:1";
+          bitsPerSample = 16;
+          payload = ALawCodec.Encode(ReadPcm16(pcm.InterleavedData));
+          break;
+        case "ima4":
+          compressionId = "ima4";
+          compressionName = "IMA 4:1";
+          bitsPerSample = 16;
+          payload = ImaAdpcmCodec.EncodeQuickTime(ReadPcm16(pcm.InterleavedData), pcm.Format.Channels);
+          break;
+        case "fl32":
+          compressionId = "fl32";
+          compressionName = "32-bit floating point";
+          bitsPerSample = 32;
+          payload = SwapSampleEndianness(pcm.InterleavedData, 4);
+          break;
+        case "fl64":
+          compressionId = "fl64";
+          compressionName = "64-bit floating point";
+          bitsPerSample = 64;
+          payload = SwapSampleEndianness(pcm.InterleavedData, 8);
+          break;
+        default:
+          throw new UnreachableException();
+      }
+
+      WriteAiff(
+        output,
+        aifc,
+        pcm.Format.Channels,
+        pcm.Format.SampleRate,
+        bitsPerSample,
+        sampleFrames,
+        compressionId,
+        compressionName,
+        payload);
+    }
+
+    private static AudioPcmBuffer DecodeAiffInteger(AiffReader.ParsedAiff parsed, int bitsPerSample, bool bigEndian) {
+      var data = bigEndian && bitsPerSample > 8
+        ? SwapSampleEndianness(parsed.SoundData, bitsPerSample / 8)
+        : (byte[])parsed.SoundData.Clone();
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, bitsPerSample, AudioPcmEncoding.SignedInteger),
+        data);
+    }
+
+    private static AudioPcmBuffer DecodeAiffCompanded(AiffReader.ParsedAiff parsed, short[] samples) {
+      var bytes = new byte[samples.Length * 2];
+      for (var i = 0; i < samples.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), samples[i]);
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, 16, AudioPcmEncoding.SignedInteger),
+        bytes);
+    }
+
+    private static AudioPcmBuffer DecodeIma4(AiffReader.ParsedAiff parsed) {
+      var channels = ImaAdpcmCodec.DecodeQuickTime(parsed.SoundData, parsed.NumChannels);
+      var availableFrames = channels.Length == 0 ? 0 : channels.Min(static channel => channel.Length);
+      var frames = parsed.SampleFrames > 0 ? Math.Min(parsed.SampleFrames, availableFrames) : availableFrames;
+      var bytes = new byte[checked(frames * parsed.NumChannels * 2)];
+      for (var frame = 0; frame < frames; ++frame)
+        for (var channel = 0; channel < parsed.NumChannels; ++channel)
+          BinaryPrimitives.WriteInt16LittleEndian(
+            bytes.AsSpan((frame * parsed.NumChannels + channel) * 2, 2),
+            channels[channel][frame]);
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, 16, AudioPcmEncoding.SignedInteger),
+        bytes);
+    }
+
+    private static byte[] PrepareSignedEightOrEndianSwap(AudioPcmBuffer pcm, bool bigEndian) {
+      var payload = (byte[])pcm.InterleavedData.Clone();
+      if (pcm.Format.BitsPerSample == 8) {
+        if (pcm.Format.Encoding == AudioPcmEncoding.UnsignedInteger)
+          for (var i = 0; i < payload.Length; ++i) payload[i] ^= 0x80;
+        return payload;
+      }
+      return bigEndian ? SwapSampleEndianness(payload, pcm.Format.BytesPerSample) : payload;
+    }
+
+    private static void WriteAiff(
+      Stream output,
+      bool aifc,
+      int channels,
+      int sampleRate,
+      int bitsPerSample,
+      uint sampleFrames,
+      string compressionId,
+      string compressionName,
+      byte[] payload
+    ) {
+      using var commBody = new MemoryStream();
+      Span<byte> fixedComm = stackalloc byte[18];
+      BinaryPrimitives.WriteInt16BigEndian(fixedComm, checked((short)channels));
+      BinaryPrimitives.WriteUInt32BigEndian(fixedComm[2..], sampleFrames);
+      BinaryPrimitives.WriteInt16BigEndian(fixedComm[6..], checked((short)bitsPerSample));
+      AiffWriter.Encode80BitFloat(sampleRate).CopyTo(fixedComm[8..]);
+      commBody.Write(fixedComm);
+
+      if (aifc) {
+        if (compressionId.Length != 4)
+          throw new ArgumentException("AIFC compression IDs must be exactly four characters.", nameof(compressionId));
+        commBody.Write(Encoding.ASCII.GetBytes(compressionId));
+        var nameBytes = Encoding.ASCII.GetBytes(compressionName);
+        var nameLength = Math.Min(byte.MaxValue, nameBytes.Length);
+        commBody.WriteByte((byte)nameLength);
+        commBody.Write(nameBytes, 0, nameLength);
+      }
+
+      var comm = WrapIffChunk("COMM", commBody.ToArray());
+      var ssndBody = new byte[8 + payload.Length];
+      payload.CopyTo(ssndBody.AsSpan(8));
+      var ssnd = WrapIffChunk("SSND", ssndBody);
+      var fver = aifc ? WrapIffChunk("FVER", [0xA2, 0x80, 0x51, 0x40]) : [];
+      var formType = aifc ? "AIFC"u8 : "AIFF"u8;
+      var formSize = checked(4 + fver.Length + comm.Length + ssnd.Length);
+
+      Span<byte> header = stackalloc byte[12];
+      "FORM"u8.CopyTo(header);
+      BinaryPrimitives.WriteUInt32BigEndian(header[4..], checked((uint)formSize));
+      formType.CopyTo(header[8..]);
+      output.Write(header);
+      if (fver.Length != 0) output.Write(fver);
+      output.Write(comm);
+      output.Write(ssnd);
+    }
+
+    private static byte[] WrapIffChunk(string id, byte[] body) {
+      var paddedLength = body.Length + (body.Length & 1);
+      var chunk = new byte[8 + paddedLength];
+      Encoding.ASCII.GetBytes(id).CopyTo(chunk, 0);
+      BinaryPrimitives.WriteUInt32BigEndian(chunk.AsSpan(4), checked((uint)body.Length));
+      body.CopyTo(chunk.AsSpan(8));
+      return chunk;
+    }
+  }
 
   private sealed class AuAdapter : IAudioPcmSource, IAudioPcmTarget {
     private static readonly string[] Codecs = ["pcm", "mulaw", "alaw"];
@@ -44,7 +295,7 @@ internal static class AudioFormatAdapters {
       using var materialized = Materialize(input);
       var parsed = new AuReader().Read(materialized.ToArray());
       return parsed.Encoding switch {
-        1 => DecodeCompanded(parsed, MuLawCodec.Decode(parsed.SoundData)),
+        1 => DecodeAuCompanded(parsed, MuLawCodec.Decode(parsed.SoundData)),
         2 => new AudioPcmBuffer(
           new AudioPcmFormat(parsed.SampleRate, parsed.NumChannels, 8, AudioPcmEncoding.SignedInteger),
           (byte[])parsed.SoundData.Clone()),
@@ -53,7 +304,7 @@ internal static class AudioFormatAdapters {
         5 => DecodeBigEndianInteger(parsed, 32),
         6 => DecodeBigEndianFloat(parsed, 32),
         7 => DecodeBigEndianFloat(parsed, 64),
-        27 => DecodeCompanded(parsed, ALawCodec.Decode(parsed.SoundData)),
+        27 => DecodeAuCompanded(parsed, ALawCodec.Decode(parsed.SoundData)),
         _ => throw new NotSupportedException($"AU encoding {parsed.Encoding} is not supported by the canonical PCM pipeline."),
       };
     }
@@ -128,7 +379,7 @@ internal static class AudioFormatAdapters {
       WriteAu(output, encoding, pcm.Format.SampleRate, pcm.Format.Channels, payload);
     }
 
-    private static AudioPcmBuffer DecodeCompanded(AuReader.ParsedAu parsed, short[] samples) {
+    private static AudioPcmBuffer DecodeAuCompanded(AuReader.ParsedAu parsed, short[] samples) {
       var bytes = new byte[samples.Length * 2];
       for (var i = 0; i < samples.Length; ++i)
         BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), samples[i]);
