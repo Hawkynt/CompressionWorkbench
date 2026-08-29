@@ -37,7 +37,7 @@ on:
         description: "Name of the uploaded artifact folder (zips of the executables)"
         value: ${{ jobs.build.outputs.artifact-name }}
       nuget-artifact-name:
-        description: "Name of the uploaded artifact folder (the four .nupkg files)"
+        description: "Name of the uploaded artifact folder (the five .nupkg files)"
         value: ${{ jobs.build.outputs.nuget-artifact-name }}
 
 # Force JavaScript-based actions to run on Node 24 instead of the deprecated Node 20 ahead of
@@ -248,17 +248,29 @@ jobs:
             CompressionWorkbench-CLI-linux-x64-${{ inputs.version }}.zip
             CompressionWorkbench-UI-win-x64-${{ inputs.version }}.zip
 
-      # NuGet meta-packages. PackageId for each comes from $(MSBuildProjectName)
+      # NuGet packages. PackageId for each comes from $(MSBuildProjectName)
       # which equals the .csproj filename — overriding -p:PackageId at the
       # command line propagates globally and triggers NU1201 on referenced
-      # projects, so don't pass it here. Pack Core first because the metas
-      # declare it as a NuGet `<dependency>`.
+      # projects, so don't pass it here. Pack Hashing first because Core
+      # declares it as a NuGet dependency; then Core because the meta-packages
+      # declare Core as their NuGet dependency.
       # NB: --no-build is intentionally omitted. The meta-package csprojs use a
       # custom `_AddBundledAssembliesToPackage` target with
       # `DependsOnTargets="ResolveReferences"` to bundle member DLLs into lib/.
       # Under --no-build the SDK refuses to invoke ResolveReferences (NETSDK1085
       # "Build target was invoked"), so we let pack re-validate; outputs from
       # the prior `dotnet build` step are up-to-date so the build phase no-ops.
+      - name: Pack Hawkynt.Algorithms.Hashing
+        shell: bash
+        run: |
+          dotnet pack Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj \
+            --configuration Release \
+            --output dist-nuget \
+            -p:Version=${{ inputs.version }} \
+            -p:ContinuousIntegrationBuild=true \
+            -p:IncludeSymbols=true \
+            -p:SymbolPackageFormat=snupkg
+
       - name: Pack Hawkynt.Compression.Core
         shell: bash
         run: |

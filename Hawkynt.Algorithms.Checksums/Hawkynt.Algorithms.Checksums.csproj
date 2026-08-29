@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Hawkynt.Algorithms.Checksums</RootNamespace>
+
+    <IsPackable>true</IsPackable>
+    <Title>Hawkynt Algorithms Checksums</Title>
+    <Description>Pure-managed checksum, CRC, parity, check-digit, and identifier validation algorithms for .NET, extracted from Hawkynt's algorithm collection and used by CompressionWorkbench.</Description>
+    <PackageTags>$(PackageTags);checksum;crc;adler;fletcher;luhn;verhoeff;damm;iban;gtin;integrity;managed</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Compression.Tests" />
+  </ItemGroup>
+
+</Project>

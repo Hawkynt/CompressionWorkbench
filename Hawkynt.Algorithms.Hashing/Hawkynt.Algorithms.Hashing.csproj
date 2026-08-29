@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Hawkynt.Algorithms.Hashing</RootNamespace>
+
+    <IsPackable>true</IsPackable>
+    <Title>Hawkynt Algorithms Hashing</Title>
+    <Description>Zero-dependency, pure-managed cryptographic and non-cryptographic hash algorithms for .NET — MD, SHA-1/2/3, Keccak/XOF constructions, BLAKE, RIPEMD, SM3, xxHash, MurmurHash, FNV, SipHash, and the extended Hawkynt algorithm collection used by CompressionWorkbench.</Description>
+    <PackageTags>$(PackageTags);hashing;hash;cryptographic-hash;sha2;sha3;keccak;blake;xxhash;murmur;fnv;managed;zero-dependency</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Compression.Tests" />
+  </ItemGroup>
+
+</Project>

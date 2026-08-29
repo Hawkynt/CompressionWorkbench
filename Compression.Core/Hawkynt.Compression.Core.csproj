@@ -17,22 +17,23 @@
 
     <IsPackable>true</IsPackable>
     <Title>Hawkynt CompressionWorkbench Core</Title>
-    <Description>Pure-managed compression primitives — bit I/O, dictionary coders (DEFLATE / LZW / LZMA / LZ4 / Snappy / Brotli / ...), entropy coders (Huffman / arithmetic / range / FSE / rANS / PPMd / context-mixing), transforms (BWT / MTF / RLE / Delta / BCJ), hashing (CRC-32C hardware-accelerated, xxHash, MurmurHash3, BLAKE2b / SHA / MD5), SIMD match-finders, and disk-image partition parsers. No native dependency on zlib / liblzma / libarchive.</Description>
-    <PackageTags>$(PackageTags);compression;deflate;lzw;lzma;lz4;snappy;brotli;huffman;arithmetic-coding;crc32c;managed</PackageTags>
+    <Description>Pure-managed compression primitives — bit I/O, dictionary coders (DEFLATE / LZW / LZMA / LZ4 / Snappy / Brotli / ...), entropy coders (Huffman / arithmetic / range / FSE / rANS / PPMd / context-mixing), transforms (BWT / MTF / RLE / Delta / BCJ), SIMD match-finders, and disk-image partition parsers. Hash functions and checksums are supplied by the Hawkynt.Algorithms.Hashing and Hawkynt.Algorithms.Checksums dependencies. No native dependency on zlib / liblzma / libarchive.</Description>
+    <PackageTags>$(PackageTags);compression;deflate;lzw;lzma;lz4;snappy;brotli;huffman;arithmetic-coding;managed</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Bundle Compression.Registry's DLL into lib/ instead of emitting it as
          a NuGet transitive dependency. PrivateAssets="all" on the Registry
-         ProjectReference + this hook keeps Hawkynt.Compression.Core a
-         single-DLL-flavoured package: a consumer (e.g. PNGCrushCS) installs
-         Hawkynt.Compression.Core and gets BitIO / Hashing / Dictionary /
-         Entropy / Transforms / IBuildingBlock in one go.
+         ProjectReference + this hook keeps the registry contract available in
+         the Core package. Hawkynt.Algorithms.Hashing and
+         Hawkynt.Algorithms.Checksums are deliberately excluded from bundling
+         and remain normal NuGet dependencies so either can also be consumed
+         independently.
 
          Other concerns ship as their own single-responsibility packages
          (matching the sibling Hawkynt.FileFormats.Images convention):
          Hawkynt.FileFormats.Audio for PCM / FLAC / etc., Hawkynt.FileFormats.Archives
          for ZIP / TAR / 7Z / RAR, Hawkynt.FileFormats.FileSystems for FAT / ext4 / NTFS.
-         Compression.Core depends on none of them. -->
+         Compression.Core depends on none of those format packages. -->
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddBundledAssembliesToPackage</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
@@ -45,18 +46,23 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Published as regular NuGet dependencies; do not bundle these DLLs into Core. -->
+    <ProjectReference Include="..\Hawkynt.Algorithms.Hashing\Hawkynt.Algorithms.Hashing.csproj" />
+    <ProjectReference Include="..\Hawkynt.Algorithms.Checksums\Hawkynt.Algorithms.Checksums.csproj" />
+
     <!-- PrivateAssets="all" prevents the Registry ProjectReference from being
          emitted as a transitive NuGet `<dependency>` entry. The Registry DLL
-         is still copied into our `lib/` via _AddBundledAssembliesToPackage,
-         keeping the published package self-contained while still letting Core
-         compose against IBuildingBlock at build time. -->
+         is still copied into our `lib/` via _AddBundledAssembliesToPackage. -->
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <Target Name="_AddBundledAssembliesToPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>
       <_BundledRefs Include="@(ReferencePath)"
-                    Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference' and '%(ReferencePath.Extension)' == '.dll'" />
+                    Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference'
+                               and '%(ReferencePath.Extension)' == '.dll'
+                               and !$([System.String]::Copy('%(ReferencePath.MSBuildSourceProjectFile)').EndsWith('Hawkynt.Algorithms.Hashing.csproj'))
+                               and !$([System.String]::Copy('%(ReferencePath.MSBuildSourceProjectFile)').EndsWith('Hawkynt.Algorithms.Checksums.csproj'))" />
       <TfmSpecificPackageFile Include="@(_BundledRefs)" PackagePath="lib/$(TargetFramework)" />
     </ItemGroup>
   </Target>

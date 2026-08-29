@@ -1,0 +1,176 @@
+# Hawkynt.Algorithms.Hashing
+
+[![NuGet](https://img.shields.io/nuget/v/Hawkynt.Algorithms.Hashing.svg)](https://www.nuget.org/packages/Hawkynt.Algorithms.Hashing/)
+[![NuGet downloads](https://img.shields.io/nuget/dt/Hawkynt.Algorithms.Hashing.svg)](https://www.nuget.org/packages/Hawkynt.Algorithms.Hashing/)
+[![License](https://img.shields.io/github/license/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE)
+[![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
+![Target](https://img.shields.io/badge/target-net10.0-blue)
+
+> Pure-managed cryptographic and non-cryptographic hash functions for .NET, including the managed C# counterparts of `Cipher/algorithms/hash` from `Hawkynt/Hawkynt.github.io`.
+
+## Hash or checksum?
+
+A **hash function** deterministically maps arbitrary input to a fixed-size digest or, for XOF constructions, an arbitrary-length output. A good non-cryptographic hash is designed for speed and statistical distribution; examples are xxHash, FNV, CityHash, and MurmurHash. A **cryptographic hash** adds security requirements: finding preimages, second preimages, or collisions should be computationally infeasible at its intended security level.
+
+A **checksum** is primarily an error-detection code. It is usually smaller and cheaper, and its job is to notice accidental corruption, transmission errors, or mistyped identifiers rather than resist an adversary who deliberately chooses colliding input. CRC, Adler, Fletcher, Internet checksums, Luhn, Verhoeff, and Damm therefore live in [`Hawkynt.Algorithms.Checksums`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.Algorithms.Checksums/README.md).
+
+The distinction follows the algorithm's design, not the caller's use of it. SHA-256 used to verify a download is still a cryptographic hash; CRC-32 stored beside a file is still a checksum even when a tool labels the field “hash”. A checksum can be excellent engineering for accidental-error detection and still be completely inappropriate for hostile-input authentication.
+
+## 📦 Installation
+
+```bash
+dotnet add package Hawkynt.Algorithms.Hashing
+```
+
+## ✨ Features
+
+- One-shot and incremental APIs where the underlying construction naturally supports streaming.
+- Cryptographic families including MD, SHA-1/SHA-2/SHA-3, Keccak-derived XOFs, BLAKE, RIPEMD, SM3, and legacy/interoperability hashes.
+- Fast non-cryptographic hashing including xxHash, MurmurHash, FNV, SipHash, HighwayHash, and other source-registry families.
+- Fixed and finite multi-output hash APIs expose valid digest sizes as enumerable `HashSizeRange` records through `SupportedHashSizes`; XOF constructions are excluded because their output length is intentionally arbitrary.
+- Source-specific variants are preserved as distinct algorithms when their parameters or output differ from the published standard; they are not silently substituted with a similarly named digest.
+- All 63 JavaScript hash implementation files in the source registry have managed counterparts; no JavaScript runtime is required by the package.
+
+## 🚀 Quick start
+
+```csharp
+using Compression.Core.Checksums;
+using Hawkynt.Algorithms.Hashing;
+
+ReadOnlySpan<byte> data = "CompressionWorkbench"u8;
+
+byte[] sha256 = Sha256.Compute(data);
+byte[] sha512 = Sha512Family.Compute(data, 512);
+byte[] sha3 = Sha3.Compute256(data);
+byte[] kupyna384 = Kupyna.Compute(data, 384);
+byte[] fugue512 = Fugue.Compute(data, 512);
+byte[] hamsi224 = HamsiFamily.Compute(data, 224);
+byte[] tiger192 = Tiger.Compute(data, 192);
+byte[] knot256 = KnotHash.Compute(data, KnotHashVariant.KnotHash256_384);
+byte[] dryGascon512 = DryGasconHash.Compute(data, 512);
+byte[] skinny = SkinnyHash.Compute(data, SkinnyHashVariant.Tk3);
+uint murmur = MurmurHash3.Compute32(data);
+ulong fnv = Fnv.Compute1A_64(data);
+
+foreach (int bits in Fugue.SupportedHashSizes.EnumerateSizes())
+  Console.WriteLine($"Fugue-{bits}");
+```
+
+The historical `Compression.Core.Checksums` namespace is retained for hash types that already shipped there, so existing callers do not need a namespace migration merely because the implementation moved to its own assembly.
+
+## 🧩 JavaScript source conversion
+
+The source-of-truth inventory is the 63 `.js` implementation files in `Hawkynt/Hawkynt.github.io/Cipher/algorithms/hash`. Conversion is tracked file-for-file rather than by a vague algorithm count because one source file may register several variants and two similarly named variants may be intentionally incompatible.
+
+**63/63 source implementation files now have managed counterparts.** The same 63-entry inventory is asserted by `JavaScriptHashCoverageTests`; the test also rejects any future `JS-only` bookkeeping row, so the number cannot stay green by merely documenting a missing port.
+
+| JavaScript source | Managed counterpart / disposition |
+| --- | --- |
+| `ascon-hash.js` | `AsconHash` / `AsconXof` |
+| `blake.js` | `Blake` |
+| `blake2.js` | `Blake2s` / `Blake2xs` / `Blake2b` |
+| `blake3-enhanced.js` | `Blake3Enhanced` |
+| `blake3.js` | `Blake3` |
+| `chc.js` | `ChcHash` |
+| `cityhash.js` | `CityHash` |
+| `comb4p.js` | `Comb4PMd4Md5` / `Comb4PSha1Ripemd160` |
+| `cshake.js` | `CShake` |
+| `cubehash.js` | `CubeHash256` / `CubeHash512` |
+| `darkcrypt-keccak.js` | `DarkCryptKeccak` |
+| `darkcrypt-md6.js` | `DarkCryptMd6` |
+| `darkcrypt-skein.js` | `DarkCryptSkein` |
+| `drygascon-hash.js` | `DryGasconHash` |
+| `dstu7564.js` | `Kupyna` |
+| `echo.js` | `Echo` |
+| `esch256.js` | `Esch256` |
+| `esch384.js` | `Esch384` |
+| `fnv.js` | `Fnv` |
+| `fugue.js` | `Fugue` |
+| `gimli24-hash.js` | `Gimli24Hash` |
+| `gost3411.js` | `Gost3411_94` |
+| `groestl.js` | `Groestl` |
+| `hamsi.js` | `HamsiFamily` |
+| `haraka.js` | `Haraka256` / `Haraka512` |
+| `haval.js` | `Haval` |
+| `highway-hash.js` | `HighwayHash` — full Google reference algorithm rather than the registry file's malformed educational vectors |
+| `isap-hash.js` | `IsapHash` |
+| `jh.js` | `Jh` — registry-specific educational JH variant, named as such rather than substituted with standard JH |
+| `kangaroo.js` | `KangarooTwelve` |
+| `keccak.js` | `Keccak` |
+| `knot-hash.js` | `KnotHash` with `KnotHashVariant` |
+| `kupyna.js` | `Kupyna` |
+| `lsh.js` | `Lsh256Family` / `Lsh512Family` |
+| `luffa.js` | `Luffa` |
+| `md.js` | `Md2` / `Md4` / `Md5` |
+| `mdc2.js` | `Mdc2` |
+| `murmurhash3.js` | `MurmurHash3` |
+| `panama.js` | `PanamaLE` / `PanamaBE` / MAC variants |
+| `parallelhash.js` | `ParallelHash` |
+| `photon-beetle-hash.js` | `PhotonBeetleHash` |
+| `radiogatun.js` | `RadioGatun32` |
+| `ripemd.js` | `Ripemd` |
+| `sha1.js` | `Sha1` |
+| `sha256.js` | `Sha256` |
+| `sha3.js` | `Sha3` |
+| `sha512.js` | `Sha512Family` |
+| `shabal.js` | `Shabal192` / `Shabal224` / `Shabal256` / `Shabal384` / `Shabal512` |
+| `shake.js` | `Shake` |
+| `siphash.js` | `SipHash24` |
+| `skein.js` | `Skein512` |
+| `skinny-hash.js` | `SkinnyHash` with `SkinnyHashVariant` |
+| `sm3.js` | `Sm3` |
+| `sparkle-hash.js` | `SparkleHash` / `Esch256` |
+| `streebog.js` | `Streebog` |
+| `subterranean-hash.js` | `SubterraneanHash` |
+| `tiger.js` | `Tiger` |
+| `tuplehash.js` | `TupleHash` |
+| `whirlpool.js` | `Whirlpool` |
+| `xoodyak-hash.js` | `XoodyakHash` |
+| `xxhash.js` | `XxHash` / `XxHash32` / `XxHash64` |
+| `xxhash3.js` | `XxHash3` |
+| `xxhash32.js` | `XxHash32` |
+
+Standard algorithms may share a parameterized managed implementation. Source-specific DarkCrypt/lightweight/educational variants receive dedicated managed implementations when their bytes intentionally differ from the standard construction. Where a registry implementation is demonstrably malformed but represents a real published algorithm, such as its HighwayHash placeholder, the managed package implements and tests the published reference algorithm instead. JavaScript wrappers are not used as an implementation shortcut.
+
+## 📚 API reference
+
+<!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
+
+<!-- API:END -->
+
+## 🏗 Architecture
+
+`Hawkynt.Compression.Core` references this project normally, so Core consumers receive the hashing package transitively while callers that only require hashing can reference it directly.
+
+For a standardized family with several digest sizes, the preferred API is a single `Compute(ReadOnlySpan<byte>, int hashSizeBits)` method plus an enumerable `IReadOnlyList<HashSizeRange> SupportedHashSizes`. A range describes valid **digest/output sizes**, not the algorithm's compression-block width. Discontiguous families expose several ranges; for example Hamsi exposes `224..256 step 32` and `384..512 step 128`. When a specification genuinely changes state width or round schedule at a boundary, the family dispatcher selects that internal core without duplicating an implementation for every individual output size.
+
+Kupyna therefore shares one P/Q implementation across 256/384/512, Fugue shares one state machine across 224/256/384/512, and Tiger exposes the exact singleton range 192. KNOT is exposed as one variant-aware family because two standardized KNOT parameter sets both produce 256-bit digests and therefore cannot be selected by digest size alone. SKINNY-HASH similarly uses a variant-aware family because tk2 and tk3 both produce 256-bit output while differing in tweakey state and absorption rate. Compatibility wrappers may remain for other existing callers, but they delegate to shared family/core logic rather than becoming independent algorithm implementations.
+
+Hash functions and checksums are separate packages intentionally. This prevents a convenience namespace from turning two materially different algorithm classes into one conceptual junk drawer.
+
+## 🔌 Dependencies
+
+| Dependency | Packaging behaviour |
+| --- | --- |
+| .NET | Targets `net10.0`, `net9.0`, and `net8.0` |
+| Native hashing libraries | None |
+| JavaScript runtime | None |
+
+## ⚠️ Limitations
+
+- Legacy hashes such as MD2/MD4/MD5/SHA-1 and historical competition candidates are provided for interoperability, research, and format compatibility; presence in this package is not a recommendation for new security designs.
+- The `Jh` type intentionally preserves the educational source-registry construction and is not advertised as the standardized JH SHA-3 finalist.
+- Non-cryptographic hashes such as xxHash, FNV, CityHash, and MurmurHash must not be used as authentication primitives.
+- A bare cryptographic hash does not authenticate data against an active attacker when the expected digest can also be replaced; use a MAC or digital signature for that threat model.
+- Source-specific variants are named explicitly because substituting the closest standard algorithm would produce the wrong bytes while looking deceptively plausible.
+
+## ❤️ Support
+
+If this project saves you time or money, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal)](https://www.paypal.me/hawkynt)
+
+## 📜 License
+
+Licensed under LGPL-3.0-or-later — see the repository [LICENSE](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE).
