@@ -464,6 +464,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.SquashFs\FileSystem.SquashFs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Sqlite\FileFormat.Sqlite.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Sqx\FileFormat.Sqx.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.BinaryII\FileFormat.BinaryII.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Squeeze\FileFormat.Squeeze.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Srec\FileFormat.Srec.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.StuffIt\FileFormat.StuffIt.csproj" />

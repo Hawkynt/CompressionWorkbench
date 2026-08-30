@@ -3229,6 +3229,41 @@ Encodes files into BinHex 4.0 (.hqx) text format.
 | `BinHexWriter` | `BinHexWriter()` |  |
 | `Write` | `static void Write(Stream output, string fileName, byte[] dataFork, byte[] resourceFork = null, string fileType = "TEXT", string fileCreator = "ttxt")` | Writes a BinHex 4.0 encoded file to the output stream. |
 
+### Namespace `FileFormat.BinaryII`
+
+[`BinaryIIFormatDescriptor`](#binaryiiformatdescriptor)
+
+#### `BinaryIIFormatDescriptor`
+
+Apple II Binary II / BLU archive (.bny/.bqy).
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BinaryIIFormatDescriptor` | `BinaryIIFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds new entries or replaces same-name entries by editing the existing 128-byte record stream in place. Existing payloads are not decoded/re-encoded. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries (and descendants of named directory entries) by shifting the following record tail left and truncating the stream. |
+
 ### Namespace `FileFormat.Bkf`
 
 [`BkfEntry`](#bkfentry) · [`BkfFormatDescriptor`](#bkfformatdescriptor) · [`BkfInPlaceModifier`](#bkfinplacemodifier) · [`BkfReader`](#bkfreader) · [`BkfWriter`](#bkfwriter) · [`BkfWriter.Item`](#bkfwriteritem)

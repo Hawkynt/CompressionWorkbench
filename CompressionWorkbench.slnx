@@ -461,6 +461,7 @@
     <Project Path="FileSystems/FileSystem.SquashFs/FileSystem.SquashFs.csproj" />
     <Project Path="FileFormats/FileFormat.Sqlite/FileFormat.Sqlite.csproj" />
     <Project Path="FileFormats/FileFormat.Sqx/FileFormat.Sqx.csproj" />
+    <Project Path="FileFormats/FileFormat.BinaryII/FileFormat.BinaryII.csproj" />
     <Project Path="FileFormats/FileFormat.Squeeze/FileFormat.Squeeze.csproj" />
     <Project Path="FileFormats/FileFormat.Srec/FileFormat.Srec.csproj" />
     <Project Path="FileFormats/FileFormat.StuffIt/FileFormat.StuffIt.csproj" />
