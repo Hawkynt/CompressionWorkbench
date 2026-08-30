@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Compression.NativeUI</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.219" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.62" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.71" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
+    <ProjectReference Include="..\Compression.Mounting\Compression.Mounting.csproj" />
+  </ItemGroup>
+
+</Project>
