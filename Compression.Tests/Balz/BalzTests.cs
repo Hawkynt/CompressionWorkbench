@@ -21,6 +21,25 @@ public class BalzTests {
     Assert.That(decompressed.ToArray(), Is.EqualTo(data));
   }
 
+  /// <summary>
+  /// This payload used to desynchronize the coder: on a small enough range the
+  /// scaled probability truncates to zero and the split point landed one below
+  /// low, so a zero bit set high under low. One literal came back wrong 43020
+  /// symbols in, and the next match pointed at an empty slot.
+  /// </summary>
+  [Test]
+  public void RoundTrip_PayloadThatCollapsedTheRange() {
+    var data = new byte[65536];
+    new Random(3138).NextBytes(data);
+    using var input = new MemoryStream(data);
+    using var compressed = new MemoryStream();
+    BalzStream.Compress(input, compressed);
+    compressed.Position = 0;
+    using var decompressed = new MemoryStream();
+    BalzStream.Decompress(compressed, decompressed);
+    Assert.That(decompressed.ToArray(), Is.EqualTo(data));
+  }
+
   [Test, Category("EdgeCase")]
   public void RoundTrip_Empty() {
     var data = Array.Empty<byte>();

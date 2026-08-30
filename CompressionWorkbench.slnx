@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/Core/">
+    <Project Path="Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj" />
+    <Project Path="Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj" />
     <Project Path="Compression.Core/Hawkynt.Compression.Core.csproj" />
     <Project Path="Compression.Registry/Compression.Registry.csproj" />
     <Project Path="Compression.Registry.Generator/Compression.Registry.Generator.csproj" />

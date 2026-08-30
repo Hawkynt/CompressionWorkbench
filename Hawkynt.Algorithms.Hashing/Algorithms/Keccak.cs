@@ -6,6 +6,12 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Keccak-f[1600] sponge primitives and standard Keccak/SHA-3/SHAKE variants.</summary>
 public static class Keccak {
+  /// <summary>The four standard Keccak digest sizes.</summary>
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
+    new(224, 256, 32),
+    new(384, 512, 128)
+  ];
+
   private static readonly ulong[] RoundConstants = [
     0x0000000000000001UL, 0x0000000000008082UL, 0x800000000000808AUL, 0x8000000080008000UL,
     0x000000000000808BUL, 0x0000000080000001UL, 0x8000000080008081UL, 0x8000000000008009UL,
