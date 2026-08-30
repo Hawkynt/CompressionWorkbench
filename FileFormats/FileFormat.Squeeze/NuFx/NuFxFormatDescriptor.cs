@@ -10,7 +10,7 @@ namespace FileFormat.NuFx;
 
 /// <summary>
 /// NuFX / ShrinkIt archive descriptor for Apple II and Apple IIgs archives.
-/// Supports plain SHK/SDK archives, native Stored/Squeeze/NuLZW1/NuLZW2 creation,
+/// Supports plain SHK/SDK archives, native Stored/Squeeze/NuLZW1/NuLZW2/LZC creation,
 /// record-preserving direct add/replace/remove, and slack-compacting rebuilds.
 /// </summary>
 public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
@@ -32,6 +32,8 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("nulzw2", "ShrinkIt LZW/2"),
     new("nulzw1", "ShrinkIt LZW/1"),
+    new("lzc12", "Unix compress LZC-12"),
+    new("lzc16", "Unix compress LZC-16"),
     new("squeeze", "Squeeze"),
     new("stored", "Stored"),
     new("auto", "Auto (smallest)"),
@@ -39,7 +41,7 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Apple II/IIgs NuFX (ShrinkIt) archive — SHK/SDK read/write with Stored, Squeeze, LZW/1 and LZW/2 threads.";
+    "Apple II/IIgs NuFX (ShrinkIt) archive — SHK/SDK read/write with Stored, Squeeze, LZW/1, LZW/2, LZC-12 and LZC-16 threads.";
 
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("Mode", "Archive mode", FormatOptionKind.Enum, "Files", ["Files", "DiskImage"],
@@ -302,7 +304,7 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       var validEntries = 0;
       foreach (var record in parsed.Records) {
         var format = record.DataThread?.Format ?? (ushort)0;
-        if (format > 3) {
+        if (format > 5) {
           issues.Add(new ValidationIssue(ValidationLevel.Integrity, IssueSeverity.Warning,
             "NUFX_UNCHECKED_METHOD", $"'{record.Name}' uses compression format {format}, which is structurally preserved but not decoded by this implementation.",
             record.StartOffset));
@@ -370,6 +372,8 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       "squeeze" or "sq" => "squeeze",
       "nulzw1" or "lzw1" => "nulzw1",
       "nulzw2" or "lzw2" => "nulzw2",
+      "lzc12" or "lzc-12" => "lzc12",
+      "lzc16" or "lzc-16" => "lzc16",
       "auto" => "auto",
       _ => throw new NotSupportedException($"NuFX creation method '{method}' is not supported."),
     };
@@ -543,6 +547,8 @@ internal static class NuFxArchive {
       1 => DecompressSqueeze(compressed),
       2 => NuLzwCodec.Decompress(compressed, NuLzwVariant.Lzw1, logicalLength),
       3 => NuLzwCodec.Decompress(compressed, NuLzwVariant.Lzw2, logicalLength),
+      4 => NuFxLzcCodec.Decompress(compressed, 12, logicalLength),
+      5 => NuFxLzcCodec.Decompress(compressed, 16, logicalLength),
       _ => throw new NotSupportedException($"NuFX thread compression format {thread.Format} is not supported for extraction."),
     };
 
@@ -573,6 +579,8 @@ internal static class NuFxArchive {
       1 => "squeeze",
       2 => "nulzw1",
       3 => "nulzw2",
+      4 => "lzc12",
+      5 => "lzc16",
       _ => "stored",
     };
     var selected = CompressBest(newData, method);
@@ -897,6 +905,10 @@ internal static class NuFxArchive {
       return (2, NuLzwCodec.Compress(data, NuLzwVariant.Lzw1));
     if (method == "nulzw2")
       return (3, NuLzwCodec.Compress(data, NuLzwVariant.Lzw2));
+    if (method == "lzc12")
+      return (4, NuFxLzcCodec.Compress(data, 12));
+    if (method == "lzc16")
+      return (5, NuFxLzcCodec.Compress(data, 16));
     if (method != "auto")
       throw new NotSupportedException($"Unsupported NuFX method '{method}'.");
 
@@ -905,6 +917,8 @@ internal static class NuFxArchive {
       (1, CompressSqueeze(data)),
       (2, NuLzwCodec.Compress(data, NuLzwVariant.Lzw1)),
       (3, NuLzwCodec.Compress(data, NuLzwVariant.Lzw2)),
+      (4, NuFxLzcCodec.Compress(data, 12)),
+      (5, NuFxLzcCodec.Compress(data, 16)),
     };
     return candidates.OrderBy(c => c.Bytes.Length).ThenBy(c => c.Format).First();
   }
