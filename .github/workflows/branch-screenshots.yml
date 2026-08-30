@@ -40,7 +40,9 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Build screenshot host
-        run: dotnet build Compression.UI/Compression.UI.csproj --configuration Release --nologo
+        # Documentation capture needs the normal build output, not the Release
+        # single-file packaging target which rewrites/removes that output tree.
+        run: dotnet build Compression.UI/Compression.UI.csproj --configuration Release --nologo -p:EnableSingleFileBundle=false
 
       - name: Capture deterministic UI screenshots
         shell: pwsh
@@ -48,7 +50,7 @@ jobs:
           Remove-Item docs/screenshots -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force docs/screenshots | Out-Null
 
-          dotnet run --project Compression.UI/Compression.UI.csproj --configuration Release --no-build -- --screenshots docs/screenshots
+          dotnet run --project Compression.UI/Compression.UI.csproj --configuration Release --no-build -p:EnableSingleFileBundle=false -- --screenshots docs/screenshots
           if ($LASTEXITCODE -ne 0) {
             $diagnostic = "docs/screenshots/screenshot-error.txt"
             if (Test-Path $diagnostic) {
