@@ -24,6 +24,13 @@ public sealed class MountBackendRegistry {
 
   public IReadOnlyList<IFilesystemMountBackend> Backends => this._backends;
 
+  public IFilesystemMountBackend GetBackend(string backendId) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(backendId);
+    return this._backendsById.TryGetValue(backendId, out var backend)
+      ? backend
+      : throw new KeyNotFoundException($"Unknown mount backend '{backendId}'.");
+  }
+
   public MountAccessOptions ResolveFilesystem(FilesystemDriverProfile driverProfile, bool sourceCanWrite) {
     ArgumentNullException.ThrowIfNull(driverProfile);
 
@@ -47,9 +54,7 @@ public sealed class MountBackendRegistry {
     ArgumentException.ThrowIfNullOrWhiteSpace(backendId);
     ArgumentNullException.ThrowIfNull(driverProfile);
 
-    if (!this._backendsById.TryGetValue(backendId, out var backend))
-      throw new KeyNotFoundException($"Unknown mount backend '{backendId}'.");
-
+    var backend = this.GetBackend(backendId);
     return FilesystemMountCapabilityResolver.Resolve(driverProfile, backend.GetProfile(), accessMode, sourceCanWrite);
   }
 }
