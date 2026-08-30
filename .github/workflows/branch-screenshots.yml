@@ -5,6 +5,9 @@ on:
     branches-ignore:
       - main
       - master
+    paths-ignore:
+      - README.md
+      - docs/screenshots/**
   workflow_dispatch:
 
 permissions:
