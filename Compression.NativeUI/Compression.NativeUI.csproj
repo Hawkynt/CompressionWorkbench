@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
     <ProjectReference Include="..\Compression.Mounting\Compression.Mounting.csproj" />
+    <ProjectReference Include="..\Compression.Mounting.Dokan\Compression.Mounting.Dokan.csproj" />
   </ItemGroup>
 
 </Project>
