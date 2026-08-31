@@ -4044,7 +4044,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 #### `CompressStream`
 
-Stream for reading and writing Unix compress (.Z) format data. Uses LZW compression with variable-width codes (9-16 bits) in LSB-first order.
+Stream for reading and writing Unix compress (.Z) format data. Uses LZC/LZW compression with variable-width codes (9-16 bits) and the format's required eight-code packing/alignment rules.
 
 Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -10623,7 +10623,7 @@ Writes a minimal NSIS-formatted file. No PE stub is emitted — the reader's `Sc
 
 #### `NuFxFormatDescriptor`
 
-NuFX / ShrinkIt archive descriptor for Apple II and Apple IIgs archives. Supports plain SHK/SDK archives, native Stored/Squeeze/NuLZW1/NuLZW2 creation, record-preserving direct add/replace/remove, and slack-compacting rebuilds.
+NuFX / ShrinkIt archive descriptor for Apple II and Apple IIgs archives. Supports plain SHK/SDK archives, native Stored/Squeeze/NuLZW1/NuLZW2/LZC-12/LZC-16 creation, record-preserving direct add/replace/remove, and slack-compacting rebuilds.
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`.
 
