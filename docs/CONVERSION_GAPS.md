@@ -27,8 +27,8 @@ Measured on the full grid (8 representative sources x all creatable targets):
 | Bucket | Failing targets | Failing pairs |
 |---|---:|---:|
 | single-payload/whole-image target | 18 | 144 |
-| name/charset/size constraint | 7 | 56 |
-| other | 27 | 216 |
+| name/charset/size constraint | 8 | 64 |
+| other | 26 | 208 |
 | **Total** | **52** | **416** |
 
 > Fixed and flipped to enforced-pass: `Svx8` (descriptor class renamed so the
@@ -58,6 +58,10 @@ Measured on the full grid (8 representative sources x all creatable targets):
 > FAT, so the re-list ran the wrong reader; and `Rpm`, whose `List` returned a
 > hardcoded `payload.cpio` placeholder while `Extract` fed the still-compressed
 > payload to the cpio parser.
+>
+> `CramFs` is also enforced-pass again. Its reader now performs real block-by-block
+> zlib/deflate decompression and existing-image add/remove is rebuild-backed R/W;
+> the old "0-byte decompression stub" quarantine described code that no longer exists.
 
 > Most gaps are **target-wide** (the target fails from every one of the 8 sources, so
 > the failing-pair count is `targets x 8`). Pair-specific gaps are listed in their own
@@ -98,6 +102,7 @@ Retro/constrained filesystems that mangle or synthesize entry names, or pad file
 | `Cpm` | CP/M disk; 8.3-folding name-synth FS, payload not found by content |
 | `Lif` | HP-71 LIF disk pads file content to a 256-byte record so bytes differ |
 | `Ods1` | ODS-1 (Files-11) disk pads content to a 512-byte block so bytes differ |
+| `Ps1MemoryCard` | PlayStation memory-card saves allocate whole 8 KiB blocks and the directory records block-granular stored size, so arbitrary conversion payloads are zero-padded by design |
 | `Rt11` | RT-11 disk pads content to a 512-byte block so bytes differ |
 | `TrDos` | TR-DOS disk; name-synthesizing FS, payload not found by content |
 | `Wad` | Doom WAD lump names are 8-char-truncated (HELLO.TX) so verbatim-name match fails |
@@ -110,7 +115,6 @@ Archive/format writers where the payload survives but entries are renamed (e.g. 
 | Target | Reason |
 |---|---|
 | `Akb` | Koei AKB audio bank; entries renamed to entry_NNN.bin so verbatim-name match fails |
-| `CramFs` | CramFs read-back returns 0-byte content for HELLO.TXT (decompression stub) |
 | `Cso` | CSO compressed ISO; payload exposed as FULL.cso+block_* not original names |
 | `Dcs` | DCS Amiga disk; exposed as track_NNN.raw not original names |
 | `Dmg` | DMG read-back returns 512-byte padded content (block padding, content mismatch) |
