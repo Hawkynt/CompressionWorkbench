@@ -13,6 +13,10 @@ def replace_once(path: Path, old: str, new: str) -> None:
 
 
 def materialize_range_properties(path: Path, type_name: str, noun: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    if "public int MinimumBits { get; init; } = MinimumBits;" in text:
+        return
+
     marker = f"public readonly record struct {type_name}(int MinimumBits, int MaximumBits, int StepBits = 1) : IEnumerable<int> {{\n"
     insertion = marker + f'''  /// <summary>\n  /// Gets the smallest supported {noun} output size, in bits.\n  /// </summary>\n  public int MinimumBits {{ get; init; }} = MinimumBits;\n\n  /// <summary>\n  /// Gets the largest supported {noun} output size, in bits.\n  /// </summary>\n  public int MaximumBits {{ get; init; }} = MaximumBits;\n\n  /// <summary>\n  /// Gets the increment, in bits, between supported sizes in the range.\n  /// </summary>\n  public int StepBits {{ get; init; }} = StepBits;\n\n'''
     replace_once(path, marker, insertion)
@@ -31,22 +35,21 @@ def materialize_crc_parameters(path: Path) -> None:
 def expand_hash_wrappers(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     pattern = re.compile(
-        r"public static class (?P<name>(?:Echo|Groestl|Luffa|Ripemd|Shabal)(?P<bits>\\d+)) \\{ public static byte\\[\\] Compute\\(ReadOnlySpan<byte> data\\) => (?P<body>[^;]+); \\}"
+        r"public static class (?P<name>(?:Echo|Groestl|Luffa|Ripemd|Shabal)(?P<bits>\d+)) \{ public static byte\[\] Compute\(ReadOnlySpan<byte> data\) => (?P<body>[^;]+); \}"
     )
 
     def replacement(match: re.Match[str]) -> str:
         name = match.group("name")
         bits = match.group("bits")
-        family = re.sub(r"\\d+$", "", name)
+        family = re.sub(r"\d+$", "", name)
         display_family = "RIPEMD" if family == "Ripemd" else family
         return f'''public static class {name} {{\n  /// <summary>\n  /// Computes the {display_family}-{bits} hash of the supplied data.\n  /// </summary>\n  public static byte[] Compute(ReadOnlySpan<byte> data) => {match.group("body")};\n}}'''
 
     updated, count = pattern.subn(replacement, text)
     if count == 0:
-        # Idempotent reruns are expected after the first bot commit.
-        if "/// Computes the " not in text:
-            raise SystemExit(f"No compact hash wrappers found in {path}")
-        return
+        if re.search(r"/// Computes the (?:Echo|Groestl|Luffa|RIPEMD|Shabal)-\d+ hash", text):
+            return
+        raise SystemExit(f"No compact hash wrappers found in {path}")
     path.write_text(updated, encoding="utf-8")
 
 
