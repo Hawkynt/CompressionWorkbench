@@ -39,7 +39,9 @@ public sealed record MountPlan(
   FilesystemDriverCapabilities MissingCapabilities,
   IReadOnlyList<MountSupportReason> Reasons,
   IReadOnlyList<string> Limitations
-);
+) {
+  public string BackendId => this.Backend.Id;
+}
 
 public sealed record MountAccessOptions(
   IReadOnlyList<MountPlan> ReadOnly,
