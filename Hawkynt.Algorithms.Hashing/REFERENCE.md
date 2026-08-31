@@ -31,7 +31,7 @@ Provides supported hash-output size metadata for `Blake2b`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Md5`
 
@@ -47,7 +47,7 @@ Provides supported hash-output size metadata for `Md5`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Sha1`
 
@@ -70,7 +70,7 @@ Provides supported hash-output size metadata for `Sha1`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Sha256`
 
@@ -92,7 +92,7 @@ Provides supported hash-output size metadata for `Sha256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `XxHash32`
 
@@ -112,7 +112,7 @@ Provides supported hash-output size metadata for `XxHash32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `XxHash64`
 
@@ -132,7 +132,7 @@ Provides supported hash-output size metadata for `XxHash64`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 ### Namespace `Hawkynt.Algorithms.Hashing`
 
@@ -152,7 +152,7 @@ Provides supported hash-output size metadata for `AsconHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `AsconXof`
 
@@ -187,7 +187,7 @@ Provides supported hash-output size metadata for `Blake2s`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Blake2xs`
 
@@ -219,7 +219,7 @@ Provides supported hash-output size metadata for `Blake`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `CShake`
 
@@ -244,7 +244,7 @@ Provides supported hash-output size metadata for `ChcHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `CityHash`
 
@@ -261,7 +261,7 @@ Provides supported hash-output size metadata for `CityHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Comb4PMd4Md5`
 
@@ -277,7 +277,7 @@ Provides supported hash-output size metadata for `Comb4PMd4Md5`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Comb4PSha1Ripemd160`
 
@@ -293,7 +293,7 @@ Provides supported hash-output size metadata for `Comb4PSha1Ripemd160`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `CubeHash256`
 
@@ -309,7 +309,7 @@ Provides supported hash-output size metadata for `CubeHash256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `CubeHash512`
 
@@ -325,7 +325,7 @@ Provides supported hash-output size metadata for `CubeHash512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `DarkCryptKeccak`
 
@@ -341,7 +341,7 @@ Provides supported hash-output size metadata for `DarkCryptKeccak`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `DarkCryptMd6`
 
@@ -357,7 +357,7 @@ Provides supported hash-output size metadata for `DarkCryptMd6`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `DarkCryptSkein`
 
@@ -373,7 +373,7 @@ Provides supported hash-output size metadata for `DarkCryptSkein`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `DryGasconHash`
 
@@ -399,7 +399,7 @@ Provides the Echo-224 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-224 hash of the supplied data. |
 
 #### `Echo224HashSizeExtensions`
 
@@ -407,7 +407,7 @@ Provides supported hash-output size metadata for `Echo224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Echo256`
 
@@ -415,7 +415,7 @@ Provides the Echo-256 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-256 hash of the supplied data. |
 
 #### `Echo256HashSizeExtensions`
 
@@ -423,7 +423,7 @@ Provides supported hash-output size metadata for `Echo256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Echo384`
 
@@ -431,7 +431,7 @@ Provides the Echo-384 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-384 hash of the supplied data. |
 
 #### `Echo384HashSizeExtensions`
 
@@ -439,7 +439,7 @@ Provides supported hash-output size metadata for `Echo384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Echo512`
 
@@ -447,7 +447,7 @@ Provides the Echo-512 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-512 hash of the supplied data. |
 
 #### `Echo512HashSizeExtensions`
 
@@ -455,7 +455,7 @@ Provides supported hash-output size metadata for `Echo512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Esch256`
 
@@ -471,7 +471,7 @@ Provides supported hash-output size metadata for `Esch256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Esch384`
 
@@ -487,7 +487,7 @@ Provides supported hash-output size metadata for `Esch384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Fnv`
 
@@ -506,7 +506,7 @@ Provides supported hash-output size metadata for `Fnv`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Fugue`
 
@@ -531,7 +531,7 @@ Provides supported hash-output size metadata for `Gimli24Hash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Gost3411HashSizeExtensions`
 
@@ -539,7 +539,7 @@ Provides supported hash-output size metadata for `Gost3411_94`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Gost3411_94`
 
@@ -564,7 +564,7 @@ Provides the Groestl-224 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-224 hash of the supplied data. |
 
 #### `Groestl224HashSizeExtensions`
 
@@ -572,7 +572,7 @@ Provides supported hash-output size metadata for `Groestl224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Groestl256`
 
@@ -580,7 +580,7 @@ Provides the Groestl-256 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-256 hash of the supplied data. |
 
 #### `Groestl256HashSizeExtensions`
 
@@ -588,7 +588,7 @@ Provides supported hash-output size metadata for `Groestl256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Groestl384`
 
@@ -596,7 +596,7 @@ Provides the Groestl-384 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-384 hash of the supplied data. |
 
 #### `Groestl384HashSizeExtensions`
 
@@ -604,7 +604,7 @@ Provides supported hash-output size metadata for `Groestl384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Groestl512`
 
@@ -612,7 +612,7 @@ Provides the Groestl-512 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-512 hash of the supplied data. |
 
 #### `Groestl512HashSizeExtensions`
 
@@ -620,7 +620,7 @@ Provides supported hash-output size metadata for `Groestl512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Hamsi`
 
@@ -654,7 +654,7 @@ Provides supported hash-output size metadata for `Haraka256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Haraka512`
 
@@ -670,7 +670,7 @@ Provides supported hash-output size metadata for `Haraka512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `HashSizeRange`
 
@@ -681,9 +681,9 @@ Implements `IEnumerable`, `IEnumerable<int>`, `IEquatable<HashSizeRange>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HashSizeRange` | `HashSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1)` | Describes a contiguous arithmetic range of supported hash-output sizes, in bits. |
-| `MaximumBits` | `int MaximumBits { get; init; }` |  |
-| `MinimumBits` | `int MinimumBits { get; init; }` |  |
-| `StepBits` | `int StepBits { get; init; }` |  |
+| `MaximumBits` | `int MaximumBits { get; init; }` | Gets the largest supported hash output size, in bits. |
+| `MinimumBits` | `int MinimumBits { get; init; }` | Gets the smallest supported hash output size, in bits. |
+| `StepBits` | `int StepBits { get; init; }` | Gets the increment, in bits, between supported sizes in the range. |
 | `Contains` | `bool Contains(int bits)` | Determines whether the range contains the specified bit size. |
 | `Exact` | `static HashSizeRange Exact(int bits)` | Creates a `HashSizeRange` containing exactly one bit size. |
 | `GetEnumerator` | `Enumerator GetEnumerator()` | Returns an enumerator over the bit sizes represented by the range. |
@@ -730,7 +730,7 @@ Provides supported hash-output size metadata for `Haval`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `HighwayHash`
 
@@ -755,7 +755,7 @@ Provides supported hash-output size metadata for `IsapHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Jh`
 
@@ -829,7 +829,7 @@ Provides supported hash-output size metadata for `Lsh224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Lsh256`
 
@@ -854,7 +854,7 @@ Provides supported hash-output size metadata for `Lsh256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Lsh384`
 
@@ -870,7 +870,7 @@ Provides supported hash-output size metadata for `Lsh384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Lsh512`
 
@@ -895,7 +895,7 @@ Provides supported hash-output size metadata for `Lsh512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Lsh512_256`
 
@@ -911,7 +911,7 @@ Provides supported hash-output size metadata for `Lsh512_256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Luffa`
 
@@ -928,7 +928,7 @@ Provides the Luffa-224 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-224 hash of the supplied data. |
 
 #### `Luffa224HashSizeExtensions`
 
@@ -936,7 +936,7 @@ Provides supported hash-output size metadata for `Luffa224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Luffa256`
 
@@ -944,7 +944,7 @@ Provides the Luffa-256 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-256 hash of the supplied data. |
 
 #### `Luffa256HashSizeExtensions`
 
@@ -952,7 +952,7 @@ Provides supported hash-output size metadata for `Luffa256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Luffa384`
 
@@ -960,7 +960,7 @@ Provides the Luffa-384 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-384 hash of the supplied data. |
 
 #### `Luffa384HashSizeExtensions`
 
@@ -968,7 +968,7 @@ Provides supported hash-output size metadata for `Luffa384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Luffa512`
 
@@ -976,7 +976,7 @@ Provides the Luffa-512 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-512 hash of the supplied data. |
 
 #### `Luffa512HashSizeExtensions`
 
@@ -984,7 +984,7 @@ Provides supported hash-output size metadata for `Luffa512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Md2`
 
@@ -1000,7 +1000,7 @@ Provides supported hash-output size metadata for `Md2`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Md4`
 
@@ -1016,7 +1016,7 @@ Provides supported hash-output size metadata for `Md4`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Mdc2`
 
@@ -1032,7 +1032,7 @@ Provides supported hash-output size metadata for `Mdc2`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `MurmurHash3`
 
@@ -1050,7 +1050,7 @@ Provides supported hash-output size metadata for `MurmurHash3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `PanamaBE`
 
@@ -1066,7 +1066,7 @@ Provides supported hash-output size metadata for `PanamaBE`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `PanamaBEMac`
 
@@ -1090,7 +1090,7 @@ Provides supported hash-output size metadata for `PanamaLE`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `PanamaLEMac`
 
@@ -1123,7 +1123,7 @@ Provides supported hash-output size metadata for `PhotonBeetleHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `RadioGatun32`
 
@@ -1148,7 +1148,7 @@ Provides the RIPEMD-128 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-128 hash of the supplied data. |
 
 #### `Ripemd128HashSizeExtensions`
 
@@ -1156,7 +1156,7 @@ Provides supported hash-output size metadata for `Ripemd128`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Ripemd160`
 
@@ -1164,7 +1164,7 @@ Provides the RIPEMD-160 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-160 hash of the supplied data. |
 
 #### `Ripemd160HashSizeExtensions`
 
@@ -1172,7 +1172,7 @@ Provides supported hash-output size metadata for `Ripemd160`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Ripemd256`
 
@@ -1180,7 +1180,7 @@ Provides the RIPEMD-256 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-256 hash of the supplied data. |
 
 #### `Ripemd256HashSizeExtensions`
 
@@ -1188,7 +1188,7 @@ Provides supported hash-output size metadata for `Ripemd256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Ripemd320`
 
@@ -1196,7 +1196,7 @@ Provides the RIPEMD-320 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-320 hash of the supplied data. |
 
 #### `Ripemd320HashSizeExtensions`
 
@@ -1204,7 +1204,7 @@ Provides supported hash-output size metadata for `Ripemd320`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Sha3`
 
@@ -1223,7 +1223,7 @@ Provides supported hash-output size metadata for `Sha3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Sha512Family`
 
@@ -1244,7 +1244,7 @@ Provides the Shabal-192 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-192 hash of the supplied data. |
 
 #### `Shabal192HashSizeExtensions`
 
@@ -1252,7 +1252,7 @@ Provides supported hash-output size metadata for `Shabal192`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Shabal224`
 
@@ -1260,7 +1260,7 @@ Provides the Shabal-224 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-224 hash of the supplied data. |
 
 #### `Shabal224HashSizeExtensions`
 
@@ -1268,7 +1268,7 @@ Provides supported hash-output size metadata for `Shabal224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Shabal256`
 
@@ -1276,7 +1276,7 @@ Provides the Shabal-256 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-256 hash of the supplied data. |
 
 #### `Shabal256HashSizeExtensions`
 
@@ -1284,7 +1284,7 @@ Provides supported hash-output size metadata for `Shabal256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Shabal384`
 
@@ -1292,7 +1292,7 @@ Provides the Shabal-384 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-384 hash of the supplied data. |
 
 #### `Shabal384HashSizeExtensions`
 
@@ -1300,7 +1300,7 @@ Provides supported hash-output size metadata for `Shabal384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Shabal512`
 
@@ -1308,7 +1308,7 @@ Provides the Shabal-512 hash implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-512 hash of the supplied data. |
 
 #### `Shabal512HashSizeExtensions`
 
@@ -1316,7 +1316,7 @@ Provides supported hash-output size metadata for `Shabal512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Shake`
 
@@ -1341,7 +1341,7 @@ Provides supported hash-output size metadata for `SipHash24`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Skein512`
 
@@ -1357,7 +1357,7 @@ Provides supported hash-output size metadata for `Skein512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `SkinnyHash`
 
@@ -1391,7 +1391,7 @@ Provides supported hash-output size metadata for `Sm3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `SparkleHash`
 
@@ -1407,7 +1407,7 @@ Provides supported hash-output size metadata for `SparkleHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Streebog`
 
@@ -1432,7 +1432,7 @@ Provides supported hash-output size metadata for `Streebog256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Streebog512`
 
@@ -1448,7 +1448,7 @@ Provides supported hash-output size metadata for `Streebog512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `SubterraneanHash`
 
@@ -1464,7 +1464,7 @@ Provides supported hash-output size metadata for `SubterraneanHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `Tiger`
 
@@ -1498,7 +1498,7 @@ Provides supported hash-output size metadata for `Whirlpool`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `XoodyakHash`
 
@@ -1514,7 +1514,7 @@ Provides supported hash-output size metadata for `XoodyakHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `XxHash`
 
@@ -1541,7 +1541,7 @@ Provides supported hash-output size metadata for `XxHash3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
 
 #### `XxHashHashSizeExtensions`
 
@@ -1549,4 +1549,4 @@ Provides supported hash-output size metadata for `XxHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |

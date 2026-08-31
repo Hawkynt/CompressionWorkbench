@@ -12,6 +12,21 @@ namespace Hawkynt.Algorithms.Checksums;
 /// </remarks>
 public readonly record struct ChecksumSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1) : IEnumerable<int> {
   /// <summary>
+  /// Gets the smallest supported checksum output size, in bits.
+  /// </summary>
+  public int MinimumBits { get; init; } = MinimumBits;
+
+  /// <summary>
+  /// Gets the largest supported checksum output size, in bits.
+  /// </summary>
+  public int MaximumBits { get; init; } = MaximumBits;
+
+  /// <summary>
+  /// Gets the increment, in bits, between supported sizes in the range.
+  /// </summary>
+  public int StepBits { get; init; } = StepBits;
+
+  /// <summary>
   /// Creates a <see cref="ChecksumSizeRange"/> containing exactly one bit size.
   /// </summary>
   public static ChecksumSizeRange Exact(int bits) => new(bits, bits);

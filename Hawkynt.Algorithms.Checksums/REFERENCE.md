@@ -32,7 +32,7 @@ Provides supported checksum-output size metadata for `Adler32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Crc16`
 
@@ -72,7 +72,7 @@ Provides supported checksum-output size metadata for `Crc16Ccitt`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Crc16ChecksumSizeExtensions`
 
@@ -80,7 +80,7 @@ Provides supported checksum-output size metadata for `Crc16`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Crc32`
 
@@ -106,7 +106,7 @@ Provides supported checksum-output size metadata for `Crc32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Crc64`
 
@@ -130,7 +130,7 @@ Provides supported checksum-output size metadata for `Crc64`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `IChecksum`
 
@@ -182,7 +182,7 @@ Provides supported checksum-output size metadata for `Adler`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `AdlerGeneralizedChecksumExtensions`
 
@@ -190,7 +190,7 @@ Arbitrary-width Adler checksum entry point.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` | Computes a generalized Adler checksum. The result width may be any power of two (except one bit, because Adler stores two equal-width accumulators) or any whole-byte width. |
 
 #### `BsdChecksum`
 
@@ -206,7 +206,7 @@ Provides supported checksum-output size metadata for `BsdChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `ChecksumSizeRange`
 
@@ -217,9 +217,9 @@ Implements `IEnumerable`, `IEnumerable<int>`, `IEquatable<ChecksumSizeRange>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChecksumSizeRange` | `ChecksumSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1)` | Describes a contiguous arithmetic range of supported checksum-output sizes, in bits. |
-| `MaximumBits` | `int MaximumBits { get; init; }` |  |
-| `MinimumBits` | `int MinimumBits { get; init; }` |  |
-| `StepBits` | `int StepBits { get; init; }` |  |
+| `MaximumBits` | `int MaximumBits { get; init; }` | Gets the largest supported checksum output size, in bits. |
+| `MinimumBits` | `int MinimumBits { get; init; }` | Gets the smallest supported checksum output size, in bits. |
+| `StepBits` | `int StepBits { get; init; }` | Gets the increment, in bits, between supported sizes in the range. |
 | `Contains` | `bool Contains(int bits)` | Determines whether the range contains the specified bit size. |
 | `Exact` | `static ChecksumSizeRange Exact(int bits)` | Creates a `ChecksumSizeRange` containing exactly one bit size. |
 | `GetEnumerator` | `Enumerator GetEnumerator()` | Returns an enumerator over the bit sizes represented by the range. |
@@ -263,7 +263,7 @@ Provides supported checksum-output size metadata for `ComplementChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `ComplementGeneralizedChecksumExtensions`
 
@@ -271,7 +271,7 @@ Arbitrary-width complement checksum entry point.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits, ComplementKind kind = 1)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits, ComplementKind kind = 1)` | Computes an arbitrary-width one's- or two's-complement checksum. The width may be any power of two or any whole-byte width. The returned bytes are big-endian; unused high bits in a sub-byte result are zero. |
 
 #### `ComplementKind`
 
@@ -317,7 +317,7 @@ Provides supported checksum-output size metadata for `Crc128`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Crc128Parameters`
 
@@ -328,11 +328,11 @@ Implements `IEquatable<Crc128Parameters>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Crc128Parameters` | `Crc128Parameters(UInt128 Polynomial, UInt128 InitialValue, bool ReflectInput, bool ReflectOutput, UInt128 FinalXor)` | Parameters for the educational 128-bit CRC variants in the source registry. |
-| `FinalXor` | `UInt128 FinalXor { get; init; }` |  |
-| `InitialValue` | `UInt128 InitialValue { get; init; }` |  |
-| `Polynomial` | `UInt128 Polynomial { get; init; }` |  |
-| `ReflectInput` | `bool ReflectInput { get; init; }` |  |
-| `ReflectOutput` | `bool ReflectOutput { get; init; }` |  |
+| `FinalXor` | `UInt128 FinalXor { get; init; }` | Gets the value XORed with the CRC register to produce the final checksum. |
+| `InitialValue` | `UInt128 InitialValue { get; init; }` | Gets the initial 128-bit CRC register value. |
+| `Polynomial` | `UInt128 Polynomial { get; init; }` | Gets the normal-form 128-bit CRC polynomial. |
+| `ReflectInput` | `bool ReflectInput { get; init; }` | Gets whether each input byte is reflected before processing. |
+| `ReflectOutput` | `bool ReflectOutput { get; init; }` | Gets whether the CRC register is reflected before the final XOR. |
 
 #### `Crc128Presets`
 
@@ -350,7 +350,7 @@ Provides supported checksum-output size metadata for `Crc`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `CrcParameters`
 
@@ -361,12 +361,12 @@ Implements `IEquatable<CrcParameters>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CrcParameters` | `CrcParameters(int Width, ulong Polynomial, ulong InitialValue, bool ReflectInput, bool ReflectOutput, ulong FinalXor)` | Parameters for CRC widths from 8 through 64 bits. |
-| `FinalXor` | `ulong FinalXor { get; init; }` |  |
-| `InitialValue` | `ulong InitialValue { get; init; }` |  |
-| `Polynomial` | `ulong Polynomial { get; init; }` |  |
-| `ReflectInput` | `bool ReflectInput { get; init; }` |  |
-| `ReflectOutput` | `bool ReflectOutput { get; init; }` |  |
-| `Width` | `int Width { get; init; }` |  |
+| `FinalXor` | `ulong FinalXor { get; init; }` | Gets the value XORed with the CRC register to produce the final checksum. |
+| `InitialValue` | `ulong InitialValue { get; init; }` | Gets the initial CRC register value. |
+| `Polynomial` | `ulong Polynomial { get; init; }` | Gets the normal-form CRC polynomial. |
+| `ReflectInput` | `bool ReflectInput { get; init; }` | Gets whether each input byte is reflected before processing. |
+| `ReflectOutput` | `bool ReflectOutput { get; init; }` | Gets whether the CRC register is reflected before the final XOR. |
+| `Width` | `int Width { get; init; }` | Gets the CRC width, in bits. |
 
 #### `CrcPresets`
 
@@ -429,7 +429,7 @@ Provides supported checksum-output size metadata for `Fletcher`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `FletcherGeneralizedChecksumExtensions`
 
@@ -437,7 +437,7 @@ Arbitrary-width Fletcher checksum entry point.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` | Computes a generalized Fletcher checksum. The result width may be any power of two (except one bit, because Fletcher stores two equal-width accumulators) or any whole-byte width. |
 
 #### `Gtin`
 
@@ -492,7 +492,7 @@ Provides supported checksum-output size metadata for `InternetChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Isbn`
 
@@ -537,7 +537,7 @@ Provides supported checksum-output size metadata for `Lrc`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Luhn`
 
@@ -570,7 +570,7 @@ Provides supported checksum-output size metadata for `Nmea0183`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Npi`
 
@@ -598,7 +598,7 @@ Provides supported checksum-output size metadata for `Parity`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `ParityGeneralizedChecksumExtensions`
 
@@ -606,7 +606,7 @@ Arbitrary-width longitudinal parity entry point.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` | Computes longitudinal parity at any power-of-two width or any whole-byte width. |
 
 #### `PostalBarcode`
 
@@ -642,7 +642,7 @@ Provides supported checksum-output size metadata for `SumChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `SumGeneralizedChecksumExtensions`
 
@@ -650,7 +650,7 @@ Arbitrary-width additive checksum entry point.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int checksumSizeBits)` | Computes the byte sum modulo `2^checksumSizeBits`. The width may be any power of two or any whole-byte width. The returned bytes are big-endian; unused high bits in a sub-byte result are zero. |
 
 #### `SysVChecksum`
 
@@ -666,7 +666,7 @@ Provides supported checksum-output size metadata for `SysVChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |
 
 #### `Verhoeff`
 
@@ -700,4 +700,4 @@ Provides supported checksum-output size metadata for `XorChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` | Gets the supported checksum-output sizes, in bits. |

@@ -303,7 +303,25 @@ public readonly record struct CrcParameters(
   bool ReflectInput,
   bool ReflectOutput,
   ulong FinalXor
-);
+) {
+  /// <summary>Gets the CRC width, in bits.</summary>
+  public int Width { get; init; } = Width;
+
+  /// <summary>Gets the normal-form CRC polynomial.</summary>
+  public ulong Polynomial { get; init; } = Polynomial;
+
+  /// <summary>Gets the initial CRC register value.</summary>
+  public ulong InitialValue { get; init; } = InitialValue;
+
+  /// <summary>Gets whether each input byte is reflected before processing.</summary>
+  public bool ReflectInput { get; init; } = ReflectInput;
+
+  /// <summary>Gets whether the CRC register is reflected before the final XOR.</summary>
+  public bool ReflectOutput { get; init; } = ReflectOutput;
+
+  /// <summary>Gets the value XORed with the CRC register to produce the final checksum.</summary>
+  public ulong FinalXor { get; init; } = FinalXor;
+}
 
 /// <summary>Bit-accurate generic CRC implementation using normal-form polynomials.</summary>
 public static class Crc {
@@ -455,7 +473,22 @@ public readonly record struct Crc128Parameters(
   bool ReflectInput,
   bool ReflectOutput,
   UInt128 FinalXor
-);
+) {
+  /// <summary>Gets the normal-form 128-bit CRC polynomial.</summary>
+  public UInt128 Polynomial { get; init; } = Polynomial;
+
+  /// <summary>Gets the initial 128-bit CRC register value.</summary>
+  public UInt128 InitialValue { get; init; } = InitialValue;
+
+  /// <summary>Gets whether each input byte is reflected before processing.</summary>
+  public bool ReflectInput { get; init; } = ReflectInput;
+
+  /// <summary>Gets whether the CRC register is reflected before the final XOR.</summary>
+  public bool ReflectOutput { get; init; } = ReflectOutput;
+
+  /// <summary>Gets the value XORed with the CRC register to produce the final checksum.</summary>
+  public UInt128 FinalXor { get; init; } = FinalXor;
+}
 
 /// <summary>Generic 128-bit CRC using normal-form polynomials.</summary>
 public static class Crc128 {

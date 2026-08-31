@@ -6,19 +6,39 @@ namespace Hawkynt.Algorithms.Hashing;
 /// <summary>
 /// Provides the RIPEMD-128 hash implementation.
 /// </summary>
-public static class Ripemd128 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 128); }
+public static class Ripemd128 {
+  /// <summary>
+  /// Computes the RIPEMD-128 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 128);
+}
 /// <summary>
 /// Provides the RIPEMD-160 hash implementation.
 /// </summary>
-public static class Ripemd160 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 160); }
+public static class Ripemd160 {
+  /// <summary>
+  /// Computes the RIPEMD-160 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 160);
+}
 /// <summary>
 /// Provides the RIPEMD-256 hash implementation.
 /// </summary>
-public static class Ripemd256 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 256); }
+public static class Ripemd256 {
+  /// <summary>
+  /// Computes the RIPEMD-256 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 256);
+}
 /// <summary>
 /// Provides the RIPEMD-320 hash implementation.
 /// </summary>
-public static class Ripemd320 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 320); }
+public static class Ripemd320 {
+  /// <summary>
+  /// Computes the RIPEMD-320 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 320);
+}
 
 internal static class RipemdCore {
   private static readonly byte[] Rl = [

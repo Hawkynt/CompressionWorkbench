@@ -12,6 +12,21 @@ namespace Hawkynt.Algorithms.Hashing;
 /// </remarks>
 public readonly record struct HashSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1) : IEnumerable<int> {
   /// <summary>
+  /// Gets the smallest supported hash output size, in bits.
+  /// </summary>
+  public int MinimumBits { get; init; } = MinimumBits;
+
+  /// <summary>
+  /// Gets the largest supported hash output size, in bits.
+  /// </summary>
+  public int MaximumBits { get; init; } = MaximumBits;
+
+  /// <summary>
+  /// Gets the increment, in bits, between supported sizes in the range.
+  /// </summary>
+  public int StepBits { get; init; } = StepBits;
+
+  /// <summary>
   /// Creates a <see cref="HashSizeRange"/> containing exactly one bit size.
   /// </summary>
   public static HashSizeRange Exact(int bits) => new(bits, bits);
