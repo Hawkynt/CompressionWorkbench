@@ -7,6 +7,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   fill:
     if: github.actor != 'github-actions[bot]'
@@ -19,22 +22,28 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
 
-      - name: Fill missing source summaries
+      - name: Complete XML documentation in C# sources
         run: |
           python3 .github/scripts/fill-api-summaries.py
           python3 .github/scripts/fix-residual-api-summaries.py
-          python3 .github/scripts/patch-api-summary-ci.py
+          python3 .github/scripts/materialize-size-metadata.py
 
-      - name: Build checksum package
+      - name: Build checksum package with documentation warnings as errors
         run: dotnet build Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj --configuration Release --nologo /warnaserror:CS1591
 
-      - name: Build hashing package
+      - name: Build hashing package with documentation warnings as errors
         run: dotnet build Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj --configuration Release --nologo /warnaserror:CS1591
 
-      - name: Regenerate package API references
-        uses: Hawkynt/RepositoryTemplate/package-readme@b64e9f64cb808f7d0141eadff41c97e82925c14d
+      - name: Validate output-size contracts
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release
+          --filter "FullyQualifiedName~SupportedHashSizesContractTests|FullyQualifiedName~SupportedChecksumSizesContractTests"
+          --nologo
+
+      - name: Regenerate package API references with stock generator
+        uses: Hawkynt/RepositoryTemplate/package-readme@v1
         with:
           mode: write
           project: |
@@ -59,16 +68,16 @@ jobs:
           test "$failed" -eq 0
           git diff --check
 
-      - name: Commit generated documentation fixes
+      - name: Commit source and generated references
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/ci.yml Hawkynt.Algorithms.Checksums Hawkynt.Algorithms.Hashing
+          git add Hawkynt.Algorithms.Checksums Hawkynt.Algorithms.Hashing
           if git diff --cached --quiet; then
             echo 'No changes to commit.'
             exit 0
           fi
-          git commit -m '# require complete public API summaries'
+          git commit -m '# complete public API XML summaries'
           git push
