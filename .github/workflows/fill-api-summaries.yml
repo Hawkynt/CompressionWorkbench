@@ -1,0 +1,63 @@
+name: Fill API summaries
+
+on:
+  push:
+    branches: [docs/complete-api-summaries]
+
+permissions:
+  contents: write
+
+jobs:
+  fill:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Fill missing source summaries
+        run: python3 .github/scripts/fill-api-summaries.py
+
+      - name: Build checksum package
+        run: dotnet build Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj --configuration Release --nologo
+
+      - name: Build hashing package
+        run: dotnet build Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj --configuration Release --nologo
+
+      - name: Regenerate package API references
+        uses: Hawkynt/RepositoryTemplate/package-readme@v1
+        with:
+          mode: write
+          project: |
+            Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj
+            Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj
+
+      - name: Report remaining blank summaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in Hawkynt.Algorithms.Checksums/REFERENCE.md Hawkynt.Algorithms.Hashing/REFERENCE.md; do
+            count=$(grep -Ec '\|[[:space:]]*\|$' "$file" || true)
+            echo "$file: $count blank summary rows"
+          done
+          git diff --check
+
+      - name: Commit generated documentation fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Hawkynt.Algorithms.Checksums Hawkynt.Algorithms.Hashing
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Document algorithms public API'
+          git push
