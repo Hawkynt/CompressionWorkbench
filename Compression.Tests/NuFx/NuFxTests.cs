@@ -18,7 +18,7 @@ public sealed class NuFxTests {
     Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
     Assert.That(descriptor.Methods.Select(m => m.Name),
-      Is.EquivalentTo(new[] { "stored", "squeeze", "nulzw1", "nulzw2", "auto" }));
+      Is.EquivalentTo(new[] { "stored", "squeeze", "nulzw1", "nulzw2", "lzc12", "lzc16", "auto" }));
     Assert.That(descriptor.Extensions, Does.Contain(".shk"));
     Assert.That(descriptor.Extensions, Does.Contain(".sdk"));
   }
@@ -27,6 +27,8 @@ public sealed class NuFxTests {
   [TestCase("squeeze")]
   [TestCase("nulzw1")]
   [TestCase("nulzw2")]
+  [TestCase("lzc12")]
+  [TestCase("lzc16")]
   [TestCase("auto")]
   public void Create_RoundTripsEveryWritableCompressionMethod(string method) {
     var descriptor = new NuFxFormatDescriptor();
@@ -49,6 +51,45 @@ public sealed class NuFxTests {
     var integrity = descriptor.ValidateIntegrity(archive);
     Assert.That(integrity.IsValid, Is.True);
     Assert.That(integrity.ValidEntries, Is.EqualTo(2));
+  }
+
+  [TestCase("lzc12", 4, 0x8C)]
+  [TestCase("lzc16", 5, 0x90)]
+  public void Create_LzcThreadCarriesNativeCompressHeader(string method, int expectedFormat, byte expectedFlags) {
+    var descriptor = new NuFxFormatDescriptor();
+    using var archive = new MemoryStream();
+    descriptor.Create(archive, [ArchiveInputInfo.InMemory("TOBE", "TOBEORNOTTOBEORTOBEORNOT"u8)],
+      new FormatCreateOptions { MethodName = method });
+
+    var bytes = archive.ToArray();
+    const int recordStart = 48;
+    var attribCount = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(recordStart + 6, 2));
+    var deprecatedNameLength = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(recordStart + attribCount - 2, 2));
+    var threadHeadersStart = checked(recordStart + attribCount + deprecatedNameLength);
+    var firstThread = bytes.AsSpan(threadHeadersStart, 16);
+    var secondThread = bytes.AsSpan(threadHeadersStart + 16, 16);
+    var filenameStorageLength = BinaryPrimitives.ReadUInt32LittleEndian(firstThread.Slice(12, 4));
+    var dataStart = checked(threadHeadersStart + 32 + (int)filenameStorageLength);
+
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(secondThread.Slice(2, 2)), Is.EqualTo((ushort)expectedFormat));
+    Assert.That(bytes.AsSpan(dataStart, 3).ToArray(), Is.EqualTo(new byte[] { 0x1F, 0x9D, expectedFlags }));
+  }
+
+  [TestCase("lzc12", "LZC-12")]
+  [TestCase("lzc16", "LZC-16")]
+  public void DirectReplace_PreservesLzcCompressionMethod(string method, string listedMethod) {
+    var descriptor = new NuFxFormatDescriptor();
+    using var archive = new MemoryStream();
+    descriptor.Create(archive, [ArchiveInputInfo.InMemory("ONE", SampleB)],
+      new FormatCreateOptions { MethodName = method });
+
+    var replacement = Enumerable.Range(0, 15_000).Select(i => (byte)((i * 19 + i / 7) & 0xFF)).ToArray();
+    descriptor.Add(archive, [ArchiveInputInfo.InMemory("ONE", replacement)]);
+
+    archive.Position = 0;
+    Assert.That(descriptor.List(archive, null).Single().Method, Is.EqualTo(listedMethod));
+    archive.Position = 0;
+    Assert.That(descriptor.ExtractEntryToMemory(archive, "ONE", null), Is.EqualTo(replacement));
   }
 
   [Test]

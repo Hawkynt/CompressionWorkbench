@@ -2100,7 +2100,34 @@ Decompresses data produced by `LzvnCompressor`.
 
 ### Namespace `Compression.Core.Dictionary.Lzw`
 
-[`LzwBuildingBlock`](#lzwbuildingblock) · [`LzwCompressionLevel`](#lzwcompressionlevel) · [`LzwDecoder`](#lzwdecoder) · [`LzwEncoder`](#lzwencoder) · [`NuLzwBuildingBlock`](#nulzwbuildingblock) · [`NuLzwCodec`](#nulzwcodec) · [`NuLzwVariant`](#nulzwvariant)
+[`LzcBuildingBlock`](#lzcbuildingblock) · [`LzcCodec`](#lzccodec) · [`LzwBuildingBlock`](#lzwbuildingblock) · [`LzwCompressionLevel`](#lzwcompressionlevel) · [`LzwDecoder`](#lzwdecoder) · [`LzwEncoder`](#lzwencoder) · [`NuLzwBuildingBlock`](#nulzwbuildingblock) · [`NuLzwCodec`](#nulzwcodec) · [`NuLzwVariant`](#nulzwvariant)
+
+#### `LzcBuildingBlock`
+
+Benchmarkable UNIX `compress` / LZC building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzcBuildingBlock` | `LzcBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `LzcCodec`
+
+UNIX `compress` / LZC codec for native `.Z` streams.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int maxBits = 16, bool blockMode = true)` | Compresses data to a native UNIX `compress` (`.Z`) stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a complete native UNIX `compress` (`.Z`) stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int expandedLength)` | Decompresses a native `.Z` stream and requires an exact expanded length. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int expandedLength, int expectedMaxBits)` | Decompresses a native `.Z` stream and requires both an exact expanded length and the expected maximum code width from an enclosing format. |
 
 #### `LzwBuildingBlock`
 

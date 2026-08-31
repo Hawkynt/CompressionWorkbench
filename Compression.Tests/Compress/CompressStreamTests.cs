@@ -83,6 +83,14 @@ public class CompressStreamTests {
     Assert.That(flags & 0x80, Is.EqualTo(0x80)); // block mode flag
   }
 
+  [Category("ThemVsUs")]
+  [Test]
+  public void Decompress_GzipValidatedClearAlignmentVector() {
+    var compressed = Convert.FromHexString("1F9D8C418400040000000000438800");
+
+    Assert.That(DecompressData(compressed), Is.EqualTo("ABCD"u8.ToArray()));
+  }
+
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
@@ -91,6 +99,22 @@ public class CompressStreamTests {
     var compressed = CompressData(data, blockMode: false);
     var result = DecompressData(compressed);
     Assert.That(result, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RoundTrip_CrossesMultipleCodeWidths() {
+    var data = new byte[20_000];
+    var state = 0xCAFEBABEu;
+    for (var index = 0; index < data.Length; ++index) {
+      state = state * 1103515245u + 12345u;
+      data[index] = (byte)(state >> 24);
+    }
+
+    var compressed = CompressData(data, maxBits: 12);
+
+    Assert.That(DecompressData(compressed), Is.EqualTo(data));
   }
 
   [Category("HappyPath")]
