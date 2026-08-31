@@ -15,7 +15,7 @@ namespace FileFormat.Vhd;
 ///   <item><description><c>https://en.wikipedia.org/wiki/VHD_(file_format)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable, IRandomAccessBlockDeviceProvider {
   public string Id => "Vhd";
   public string DisplayName => "VHD";
   public FormatCategory Category => FormatCategory.Archive;
@@ -219,6 +219,30 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     DefragRebuilder.Rebuild(archive, options, ReadDiskEntries, BuildImage);
+  }
+
+  // ── IRandomAccessBlockDeviceProvider ────────────────────────────────
+
+  /// <summary>
+  /// Exposes the VHD guest disk as 512-byte logical blocks. The VHD parser,
+  /// BAT translation and dynamic-block allocation stay inside CompressionWorkbench;
+  /// callers never need a loop device or host OS VHD mount.
+  /// </summary>
+  public IRandomAccessBlockDevice OpenBlockDevice(
+      Stream image,
+      bool writable,
+      bool leaveOpen = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (writable && !image.CanWrite)
+      throw new NotSupportedException("Writable VHD block access requires a writable container stream.");
+
+    var guest = new VhdStream(image, leaveOpen: leaveOpen);
+    try {
+      return new StreamBlockDevice(guest, 512, writable, leaveOpen: false);
+    } catch {
+      guest.Dispose();
+      throw;
+    }
   }
 
   // ── IPartitionEditable ─────────────────────────────────────────────

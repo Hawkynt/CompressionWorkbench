@@ -13,8 +13,8 @@ internal sealed class MainForm : Form {
   private readonly FilePicker _imagePicker = new() {
     Bounds = new(132, 24, 544, 28),
     Filter = "All files|*.*",
-    PlaceholderText = "Filesystem image",
-    Title = "Select an image to mount",
+    PlaceholderText = "Archive, filesystem or disk image",
+    Title = "Select a source to mount",
   };
 
   private readonly ComboBox _accessPicker = new() { Bounds = new(132, 68, 190, 28) };
@@ -29,10 +29,11 @@ internal sealed class MainForm : Form {
   private readonly TextBox _detailsBox = new() { Bounds = new(24, 224, 652, 280), Multiline = true, ReadOnly = true };
   private readonly Label _statusLabel = new() {
     Bounds = new(24, 520, 652, 28),
-    Text = "Select an image and probe its mount capabilities.",
+    Text = "Select a source and probe its mount capabilities.",
   };
 
   private FilesystemDriverProfile? _driverProfile;
+  private IReadOnlyList<string> _mountLayers = [];
   private string? _formatId;
   private bool _sourceCanWrite;
   private IMountSession? _mountSession;
@@ -50,7 +51,7 @@ internal sealed class MainForm : Form {
     this.MinimumSize = new(720, 600);
 
     this.Controls.AddRange(
-      new Label { Bounds = new(24, 28, 96, 24), Text = "Image" }, this._imagePicker,
+      new Label { Bounds = new(24, 28, 96, 24), Text = "Source" }, this._imagePicker,
       new Label { Bounds = new(24, 72, 96, 24), Text = "Access" }, this._accessPicker,
       new Label { Bounds = new(338, 72, 64, 24), Text = "Backend" }, this._backendPicker,
       new Label { Bounds = new(24, 116, 96, 24), Text = "Target" }, this._targetBox,
@@ -104,10 +105,11 @@ internal sealed class MainForm : Form {
   private void ResetProbe() {
     if (this._mountSession is not null) return;
     this._driverProfile = null;
+    this._mountLayers = [];
     this._formatId = null;
     this._sourceCanWrite = false;
     this._detailsBox.Text = string.Empty;
-    this._statusLabel.Text = "Image changed; probe again.";
+    this._statusLabel.Text = "Source changed; probe again.";
     this.RefreshMountButton();
   }
 
@@ -115,7 +117,7 @@ internal sealed class MainForm : Form {
     if (this._mountSession is not null || this._busy) return;
     var path = this.ImagePath;
     if (!File.Exists(path)) {
-      this.ShowProbeFailure("The selected image does not exist.");
+      this.ShowProbeFailure("The selected source does not exist.");
       return;
     }
 
@@ -134,20 +136,13 @@ internal sealed class MainForm : Form {
         return;
       }
 
-      if (!FormatRegistry.FilesystemFormatIds.Contains(formatId, StringComparer.OrdinalIgnoreCase)) {
-        this.ShowProbeFailure(
-          $"'{descriptor.DisplayName}' is not registered as a filesystem image. " +
-          "Archive mounting belongs behind the synthetic archive namespace adapter; it is not filesystem writability."
-        );
-        return;
-      }
-
       using var probeSource = OpenProbeSource(path, out var sourceCanWrite);
-      var profile = FormatRegistry.ProbeFilesystem(formatId, probeSource);
+      var probe = MountNamespaceResolver.Probe(formatId, probeSource);
       this._formatId = formatId;
-      this._driverProfile = profile;
+      this._driverProfile = probe.Profile;
+      this._mountLayers = probe.Layers;
       this._sourceCanWrite = sourceCanWrite;
-      this._statusLabel.Text = $"Detected {descriptor.DisplayName}: {profile.ProfileName}.";
+      this._statusLabel.Text = $"Detected {descriptor.DisplayName}: {probe.Profile.ProfileName}.";
       this.RefreshPlan();
     } catch (Exception ex) {
       this.ShowProbeFailure($"Probe failed: {ex.GetType().Name}: {ex.Message}");
@@ -161,8 +156,8 @@ internal sealed class MainForm : Form {
     }
 
     var lines = new List<string> {
-      $"Format: {profile.FormatId}",
-      $"Profile: {profile.ProfileName}",
+      $"Format: {this._formatId}",
+      $"Resolved profile: {profile.FormatId} / {profile.ProfileName}",
       $"Mutation model: {profile.MutationModel}",
       $"Backing source writable: {this._sourceCanWrite}",
       $"Can mount: {profile.CanMount}",
@@ -170,9 +165,15 @@ internal sealed class MainForm : Form {
       $"Driver capabilities: {profile.Capabilities}",
     };
 
+    if (this._mountLayers.Count > 0) {
+      lines.Add(string.Empty);
+      lines.Add("Userspace resolution chain:");
+      lines.AddRange(this._mountLayers.Select(static layer => $"- {layer}"));
+    }
+
     if (profile.Limitations.Count > 0) {
       lines.Add(string.Empty);
-      lines.Add("Filesystem limitations:");
+      lines.Add("Namespace limitations:");
       lines.AddRange(profile.Limitations.Select(static limitation => $"- {limitation}"));
     }
 
@@ -280,6 +281,7 @@ internal sealed class MainForm : Form {
 
   private void ShowProbeFailure(string message) {
     this._driverProfile = null;
+    this._mountLayers = [];
     this._formatId = null;
     this._sourceCanWrite = false;
     this._detailsBox.Text = message;

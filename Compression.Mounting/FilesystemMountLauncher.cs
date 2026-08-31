@@ -3,9 +3,10 @@ using Compression.Registry;
 namespace Compression.Mounting;
 
 /// <summary>
-/// Opens a backing image and filesystem session for one already-selected mount
-/// request. Capability policy is re-evaluated against the exact stream and the
-/// opened session immediately before the backend receives ownership.
+/// Opens one arbitrary registered source as a mount-neutral namespace. Archives,
+/// filesystems and nested disk/container images are resolved by
+/// <see cref="MountNamespaceResolver"/> before the host backend receives the
+/// resulting <see cref="IFilesystemSession"/>.
 /// </summary>
 public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
   private readonly MountBackendRegistry _backends = backends ?? throw new ArgumentNullException(nameof(backends));
@@ -23,8 +24,9 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
     ArgumentException.ThrowIfNullOrWhiteSpace(target);
     cancellationToken.ThrowIfCancellationRequested();
 
-    if (!FormatRegistry.FilesystemFormatIds.Contains(formatId, StringComparer.OrdinalIgnoreCase))
-      throw new ArgumentException($"Format '{formatId}' is not registered as a filesystem.", nameof(formatId));
+    var descriptor = FormatRegistry.GetById(formatId)
+      ?? throw new ArgumentException($"Format '{formatId}' is not registered.", nameof(formatId));
+    _ = descriptor;
 
     var backend = this._backends.GetBackend(requestedPlan.BackendId);
     FileStream? source = null;
@@ -34,24 +36,16 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
     try {
       source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
 
-      var probePosition = source.CanSeek ? source.Position : 0;
-      FilesystemDriverProfile probedProfile;
-      try {
-        probedProfile = FormatRegistry.ProbeFilesystem(formatId, source);
-      } finally {
-        if (source.CanSeek)
-          source.Position = probePosition;
-      }
-
+      var probe = MountNamespaceResolver.Probe(formatId, source);
       var resolvedPlan = this._backends.ResolveFilesystem(
         requestedPlan.BackendId,
-        probedProfile,
+        probe.Profile,
         requestedPlan.AccessMode,
         source.CanWrite
       );
       EnsureSupported(resolvedPlan);
 
-      filesystem = FormatRegistry.OpenFilesystem(
+      filesystem = MountNamespaceResolver.Open(
         formatId,
         source,
         new FilesystemOpenOptions(
@@ -60,9 +54,10 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
         )
       );
 
-      // OpenFilesystem is allowed to specialize the profile further than Probe.
-      // Re-resolve once more so the backend never receives a session whose exact
-      // opened profile is weaker than the plan shown by the probe.
+      // The opened namespace can be more specific than the probe (for example a
+      // container can resolve to FAT/NTFS after opening its logical block view).
+      // Re-resolve so the backend never receives a weaker exact session than the
+      // plan shown before mount.
       resolvedPlan = this._backends.ResolveFilesystem(
         requestedPlan.BackendId,
         filesystem.Profile,
@@ -79,7 +74,7 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
 
       ownershipTransferred = true;
       filesystem = null;
-      source = null;
+      source = null; // namespace session owns it through MountNamespaceResolver
       return mounted;
     } finally {
       if (!ownershipTransferred) {
