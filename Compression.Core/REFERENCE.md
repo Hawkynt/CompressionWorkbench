@@ -5453,7 +5453,7 @@ Shared execution loop for planner-driven defragmentation. Runs an ordered list o
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Execute` | `static void Execute(Stream archive, DefragOptions options, IFilesystemBlockMover mover, IReadOnlyList<ClusterMove> moves, long imageSize, Action reinitAfterMove = null, IFilesystemMetadataMover metadataMover = null)` | Executes the supplied `moves` against `archive`, calling `MoveExtent` and `UpdateAllocationAfterMove` for each move. Emits a `DefragProgressEvent` per move so the UI can animate read/write head positions in real time. |
+| `Execute` | `static void Execute(Stream archive, DefragOptions options, IFilesystemBlockMover mover, IReadOnlyList<ClusterMove> moves, long imageSize, Action reinitAfterMove = null, IFilesystemMetadataMover metadataMover = null)` | Executes the supplied `moves` against `archive`, calling `MoveExtent` and `UpdateAllocationAfterMove` for each move. Emits a `DefragProgressEvent` per move so the UI can animate read/write head positions in real time. Cancellation is checked between safe move units; already-completed in-place moves are intentionally not rolled back. |
 
 #### `DefragStaging`
 
@@ -6130,7 +6130,7 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IStreamFormatOperations`](#istreamformatoperations) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PlacementZone`](#placementzone) · [`RebuildVerb`](#rebuildverb) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
+[`AlgorithmFamily`](#algorithmfamily) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementZone`](#placementzone) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildVerb`](#rebuildverb) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
 
 #### `AlgorithmFamily`
 
@@ -6222,6 +6222,46 @@ One surfaced pseudo-archive entry with its display `Kind` and codec `Method`. Th
 | `Lazy` | `static Entry Lazy(string name, string kind, Func<byte[]> factory, long declaredSize, string method = "stored")` | Builds a lazy entry: `factory` produces the payload only when the entry is extracted, and `declaredSize` is the exact byte count the factory will yield (used for listing without invoking the factory). The produced bytes are cached on first materialisation so a second extraction reuses them. |
 | `Materialize` | `byte[] Materialize()` | Returns the payload, invoking and caching the factory on first access for a lazy entry. |
 
+#### `BlockDeviceGeometry`
+
+Geometry of a sector/block-addressable device exposed beneath a filesystem. Container formats such as VHD/QCOW2/EWF should eventually implement this layer; FAT/ext/ReFS drivers then consume block devices rather than knowing how their outer container stores bytes.
+
+Implements `IEquatable<BlockDeviceGeometry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockDeviceGeometry` | `BlockDeviceGeometry(int LogicalBlockSize, long BlockCount, int PhysicalBlockSize = 0, bool SupportsTrim = false)` | Geometry of a sector/block-addressable device exposed beneath a filesystem. Container formats such as VHD/QCOW2/EWF should eventually implement this layer; FAT/ext/ReFS drivers then consume block devices rather than knowing how their outer container stores bytes. |
+| `BlockCount` | `long BlockCount { get; init; }` |  |
+| `Length` | `long Length { get; }` |  |
+| `LogicalBlockSize` | `int LogicalBlockSize { get; init; }` |  |
+| `PhysicalBlockSize` | `int PhysicalBlockSize { get; init; }` |  |
+| `SupportsTrim` | `bool SupportsTrim { get; init; }` |  |
+
+#### `BlockDeviceStream`
+
+Seekable byte-stream view over a block device. Legacy filesystem parsers can therefore run on VHD/QCOW2/GCR-backed logical disks before they are rewritten to issue block requests directly. Unaligned writes use read-modify-write of only the touched edge blocks; unrelated blocks are never rewritten.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockDeviceStream` | `BlockDeviceStream(IRandomAccessBlockDevice device, bool leaveOpen = true)` |  |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `ReadByte` | `override int ReadByte()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `WriteByte` | `override void WriteByte(byte value)` |  |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
 #### `BuildingBlockRegistry`
 
 Central registry for compression building blocks (algorithm primitives). Populated at startup via source-generated code, similar to `FormatRegistry`.
@@ -6260,25 +6300,25 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`,
 
 #### `DefragBlockClass`
 
-Heuristic classification of a file's "thermal" zone based on its modification time. Drives layout placement: hot at start, normal in the middle, frozen near the end. Used by the live-progress block map for tile coloring.
+Heuristic classification used for the maintenance block-map colors. Filesystem defraggers commonly map this to hot/cold placement; archive rebuilds may map it to storage/compression classes so a staged target remains visually informative.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Hot` | `0` | File modified recently (top quartile) — placed near start. |
-| `Normal` | `1` | File modified normally — placed in the middle. |
-| `Cold` | `2` | File modified a while ago — placed near end. |
-| `Frozen` | `3` | File hasn't been touched in a long time (bottom quartile) — placed at end. |
-| `Directory` | `4` | Directory metadata (folder contents, B-tree dir node, etc.) — rendered gold to make placement visible. |
+| `Hot` | `0` | Hot / heavy-processing class. |
+| `Normal` | `1` | Normal class. |
+| `Cold` | `2` | Cold / alternative-processing class. |
+| `Frozen` | `3` | Frozen / stored-verbatim class. |
+| `Directory` | `4` | Directory or structural metadata class. |
 
 #### `DefragBlockInfo`
 
-One contiguous region of an image's address space, as seen by the live-progress block map.
+One contiguous region in the address-space currently visualized by the maintenance block map.
 
 Implements `IEquatable<DefragBlockInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DefragBlockInfo` | `DefragBlockInfo(long Offset, long Length, DefragBlockKind Kind, string FileName = null, DefragBlockClass? Classification = null)` | One contiguous region of an image's address space, as seen by the live-progress block map. |
+| `DefragBlockInfo` | `DefragBlockInfo(long Offset, long Length, DefragBlockKind Kind, string FileName = null, DefragBlockClass? Classification = null)` | One contiguous region in the address-space currently visualized by the maintenance block map. |
 | `Classification` | `DefragBlockClass? Classification { get; init; }` |  |
 | `FileName` | `string FileName { get; init; }` |  |
 | `Kind` | `DefragBlockKind Kind { get; init; }` |  |
@@ -6287,15 +6327,15 @@ Implements `IEquatable<DefragBlockInfo>`.
 
 #### `DefragBlockKind`
 
-What kind of bytes a contiguous region holds. Used by the live-progress block map to color-code regions as defrag proceeds.
+What kind of bytes a contiguous region holds. Used by the live-progress block map to color-code regions as maintenance proceeds.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
 | `Free` | `0` | Free space — not allocated to any file. |
 | `Used` | `1` | Allocated to a file (see `FileName`). |
 | `Bad` | `2` | Marked bad / quarantined (FAT-style "BAD" cluster, or post-fsck flag). |
-| `MetadataReserved` | `3` | Reserved for filesystem metadata (boot sectors, superblock, MFT, FAT, bitmap, root directory). |
-| `InProgress` | `4` | Currently being read or written by the in-progress defrag operation. |
+| `MetadataReserved` | `3` | Reserved for filesystem/container metadata. |
+| `InProgress` | `4` | Currently being read, moved, compressed, grouped, or written. |
 
 #### `DefragContentGuard`
 
@@ -6326,6 +6366,7 @@ Implements `IEquatable<DefragOptions>`.
 | --- | --- | --- |
 | `DefragOptions` | `DefragOptions()` |  |
 | `Alignment` | `long Alignment { get; init; }` | Round each target offset up to this byte alignment (1 for byte-tight, 2048 for ISO 9660 sectors, 512 for FAT12/16, …). Default: 1. |
+| `CancellationToken` | `CancellationToken CancellationToken { get; init; }` | Cooperative cancellation for long maintenance operations. Generic staged rebuilds honour it while reading and writing and never commit a cancelled target. Native in-place movers may honour it at their next safe move boundary. |
 | `HoleAt` | `long HoleAt { get; init; }` | Byte offset where the carved hole should start. -1 (default) = auto-pick (carve at the end, immediately after the last live extent). Ignored except in `CarveHole`. |
 | `HoleSize` | `long HoleSize { get; init; }` | Size in bytes of the hole to carve. Required for `CarveHole`; ignored otherwise. |
 | `ImageEnd` | `long ImageEnd { get; init; }` | Byte offset just past the last sector available for live data. -1 = auto-detect from the image's physical size. Required for `ConsolidateAtEnd` — must be set explicitly or auto-detected. |
@@ -6334,27 +6375,27 @@ Implements `IEquatable<DefragOptions>`.
 | `MetadataPlacement` | `MetadataPlacementProfile MetadataPlacement { get; init; }` | Optional metadata placement profile for file-internal optimizers. When non-null, optimizers that support `IFileInternalChunkMover` use these rules to decide where metadata chunks land relative to the primary data payload. When null, each optimizer uses its format-specific default placement. |
 | `MetadataZonePlacement` | `MetadataZone MetadataZonePlacement { get; init; }` | Controls where filesystem metadata and directory extents are placed during defragmentation. Default: `Unchanged` (metadata stays where it is). Only affects planner-driven defragmentation of filesystem images; ignored for archive optimization and file-internal layout. |
 | `Mode` | `DefragMode Mode { get; init; }` | Defragmentation strategy. Default: `ConsolidateAtStart`. |
-| `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback. When non-null, the defragmenter emits at least three events: a "scanning" event with the pre-defrag block map, periodic "writing" events with read/write offsets during the rebuild, and a "complete" event with the post-defrag block map. UI consumers can render a live tile chart from these events. |
+| `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback. When non-null, the defragmenter emits snapshots and incremental read/write-head updates that can drive the maintenance block map. Staged archive rebuilds use the same contract as native block movers. |
 | `Origin` | `long Origin { get; init; }` | Byte offset of the first sector available for live data (e.g. 16 * 2048 for ISO 9660 to leave the volume descriptor space alone, 0 for raw FAT). Default: 0. |
 | `Profile` | `LayoutProfile Profile { get; init; }` | Layout profile for planner-driven defragmentation. Controls whether the defragmenter performs full zone-based rearrangement (`Performance`) or per-file consolidation only (`Quick`). Default: `Performance`. |
 | `StagingMemoryBudgetBytes` | `long StagingMemoryBudgetBytes { get; set; }` | Bytes a defragmentation may hold in memory while rearranging a volume that has nowhere of its own to park a run. |
 
 #### `DefragProgressEvent`
 
-Snapshot of an image's block layout at a moment in time. Emitted by `Defragment` implementations through DefragOptions.OnProgress at scan start, periodically during writes, and at completion.
+Snapshot emitted by defrag/re-layout/rebuild maintenance operations. Native in-place movers normally report one physical image address-space. Transactional WORM/archive rebuilds may report the source read head and staged target write head in their respective byte-spaces, projected onto the same chart. In that mode the two head offsets are progress visualization and do not assert that identical numerical offsets refer to the same physical bytes.
 
 Implements `IEquatable<DefragProgressEvent>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DefragProgressEvent` | `DefragProgressEvent(string Phase, double Fraction, long CurrentReadOffset, long CurrentWriteOffset, long ImageSize, IReadOnlyList<DefragBlockInfo> BlockMap, string Status = null)` | Snapshot of an image's block layout at a moment in time. Emitted by `Defragment` implementations through DefragOptions.OnProgress at scan start, periodically during writes, and at completion. |
-| `BlockMap` | `IReadOnlyList<DefragBlockInfo> BlockMap { get; init; }` | Block-map snapshot, present at scan start + completion. Null during incremental updates. |
-| `CurrentReadOffset` | `long CurrentReadOffset { get; init; }` | Byte offset currently being read; -1 if not reading. |
-| `CurrentWriteOffset` | `long CurrentWriteOffset { get; init; }` | Byte offset currently being written; -1 if not writing. |
+| `DefragProgressEvent` | `DefragProgressEvent(string Phase, double Fraction, long CurrentReadOffset, long CurrentWriteOffset, long ImageSize, IReadOnlyList<DefragBlockInfo> BlockMap, string Status = null)` | Snapshot emitted by defrag/re-layout/rebuild maintenance operations. Native in-place movers normally report one physical image address-space. Transactional WORM/archive rebuilds may report the source read head and staged target write head in their respective byte-spaces, projected onto the same chart. In that mode the two head offsets are progress visualization and do not assert that identical numerical offsets refer to the same physical bytes. |
+| `BlockMap` | `IReadOnlyList<DefragBlockInfo> BlockMap { get; init; }` | Optional block-map snapshot. Null incremental events retain the previous map and only move heads/progress, keeping redraw cost low on large archives. |
+| `CurrentReadOffset` | `long CurrentReadOffset { get; init; }` | Current source/read offset; -1 when not reading. |
+| `CurrentWriteOffset` | `long CurrentWriteOffset { get; init; }` | Current destination/write offset; -1 when not writing. |
 | `Fraction` | `double Fraction { get; init; }` | 0..1 fraction of work done. -1 = indeterminate. |
-| `ImageSize` | `long ImageSize { get; init; }` | Total image size in bytes (helpful for tile binning). |
-| `Phase` | `string Phase { get; init; }` | Progress phase identifier ("scanning" / "writing" / "complete" / "error"). |
-| `Status` | `string Status { get; init; }` | Optional human-readable status (e.g. "moving extent 23 of 87"). |
+| `ImageSize` | `long ImageSize { get; init; }` | Address-space size used for visualization/binning. For staged rebuilds this is a display scale large enough to project the source and target progress. |
+| `Phase` | `string Phase { get; init; }` | Progress phase identifier. Common values are `scanning`, `reading`, `writing`, `verifying`, `staged`, `committing`, `complete`, and `error`. |
+| `Status` | `string Status { get; init; }` | Optional human-readable phase/status text. |
 
 #### `DefragRebuilder`
 
@@ -6384,6 +6425,226 @@ Small helpers for writing FAT directory metadata (creation/modification timestam
 | `Parse` | `static DateTime Parse(string iso)` | Parses an ISO-8601 date/time string for a create-option; returns `default(DateTime)` (treated as "unset") when blank or unparsable. |
 | `WriteVolumeLabel` | `static void WriteVolumeLabel(byte[] img, int entryOffset, string label)` | Writes an 11-byte volume-label directory entry (attribute 0x08, no cluster, zero size) at `entryOffset`. The label is upper-cased and space-padded/truncated to 11 bytes, matching the FAT short-name field. |
 
+#### `FilesystemDirectoryEntry`
+
+Implements `IEquatable<FilesystemDirectoryEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDirectoryEntry` | `FilesystemDirectoryEntry(string Name, FilesystemNodeId NodeId, FilesystemNodeKind Kind)` |  |
+| `Kind` | `FilesystemNodeKind Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+
+#### `FilesystemDriverBindingKind`
+
+Structural binding used to reach the common filesystem-driver contract. This deliberately says nothing about the exact image profile: probing an image can still refuse a damaged/unsupported feature set.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `ArchiveProjection` | `1` |  |
+| `SidecarNative` | `2` |  |
+| `DescriptorNative` | `3` |  |
+
+#### `FilesystemDriverCapabilities`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `EnumerateDirectories` | `1` |  |
+| `ReadData` | `2` |  |
+| `RandomAccess` | `4` |  |
+| `StableNodeIds` | `8` |  |
+| `WriteData` | `16` |  |
+| `Truncate` | `32` |  |
+| `CreateFile` | `64` |  |
+| `DeleteFile` | `128` |  |
+| `CreateDirectory` | `256` |  |
+| `RemoveDirectory` | `512` |  |
+| `Rename` | `1024` |  |
+| `HardLinks` | `2048` |  |
+| `SymbolicLinks` | `4096` |  |
+| `SetMetadata` | `8192` |  |
+| `SparseFiles` | `16384` |  |
+| `Flush` | `32768` |  |
+| `Transactions` | `65536` |  |
+| `CaseSensitiveNames` | `131072` |  |
+| `CasePreservingNames` | `262144` |  |
+
+#### `FilesystemDriverCoverage`
+
+Machine-readable repository coverage for one FileSystem.* descriptor. It answers whether the implementation has a path to an IFilesystemSession and which lower-level primitives are already available for finishing a native read/write driver.
+
+Implements `IEquatable<FilesystemDriverCoverage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDriverCoverage` | `FilesystemDriverCoverage(string FormatId, string DisplayName, FilesystemDriverBindingKind Binding, bool HasArchiveProjection, bool HasArchiveMutation, bool HasExtentMap, bool HasBlockMover, bool HasBlockDeviceProvider, bool HasNativeReadinessProvider)` | Machine-readable repository coverage for one FileSystem.* descriptor. It answers whether the implementation has a path to an IFilesystemSession and which lower-level primitives are already available for finishing a native read/write driver. |
+| `Binding` | `FilesystemDriverBindingKind Binding { get; init; }` |  |
+| `DisplayName` | `string DisplayName { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `HasArchiveMutation` | `bool HasArchiveMutation { get; init; }` |  |
+| `HasArchiveProjection` | `bool HasArchiveProjection { get; init; }` |  |
+| `HasBlockDeviceProvider` | `bool HasBlockDeviceProvider { get; init; }` |  |
+| `HasBlockMover` | `bool HasBlockMover { get; init; }` |  |
+| `HasDriverPath` | `bool HasDriverPath { get; }` |  |
+| `HasExtentMap` | `bool HasExtentMap { get; init; }` |  |
+| `HasNativeReadinessProvider` | `bool HasNativeReadinessProvider { get; init; }` |  |
+| `IsNative` | `bool IsNative { get; }` |  |
+
+#### `FilesystemDriverDerivation`
+
+Common entry point for filesystem frontends. Native filesystem providers are always preferred. A descriptor that only exposes the normalized archive listing/open-entry surface still gets a real read-only filesystem session: hierarchy is reconstructed, node ids remain stable for the lifetime of the mount, symlinks are represented, and file handles use positional reads. The fallback is deliberately read-only. It never turns archive-level rebuild/Add/Remove support into mounted write support. This makes every filesystem parser usable by FUSE/Dokany/WinFsp-style frontends immediately, while leaving a precise upgrade path to native allocation and mutation code.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Assess` | `static FilesystemDriverReadinessReport Assess(IFormatDescriptor descriptor, Stream image, FilesystemDriverTarget target, string password = null)` |  |
+| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null)` |  |
+| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null)` |  |
+
+#### `FilesystemDriverProfile`
+
+Per-image probe result. Capabilities are not assumed from the format name: an EROFS flat profile, a compressed EROFS profile, a damaged FAT image, or a ReFS version with an unsupported metadata feature can have different safe operations even though they share one descriptor.
+
+Implements `IEquatable<FilesystemDriverProfile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDriverProfile` | `FilesystemDriverProfile(string FormatId, string ProfileName, FilesystemDriverCapabilities Capabilities, FilesystemMutationModel MutationModel, bool CanMount, bool CanMountWritable, IReadOnlyList<string> Limitations)` | Per-image probe result. Capabilities are not assumed from the format name: an EROFS flat profile, a compressed EROFS profile, a damaged FAT image, or a ReFS version with an unsupported metadata feature can have different safe operations even though they share one descriptor. |
+| `CanMountWritable` | `bool CanMountWritable { get; init; }` |  |
+| `CanMount` | `bool CanMount { get; init; }` |  |
+| `Capabilities` | `FilesystemDriverCapabilities Capabilities { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `Limitations` | `IReadOnlyList<string> Limitations { get; init; }` |  |
+| `MutationModel` | `FilesystemMutationModel MutationModel { get; init; }` |  |
+| `ProfileName` | `string ProfileName { get; init; }` |  |
+
+#### `FilesystemDriverReadinessLayer`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `ImageValidation` | `1` |  |
+| `Namespace` | `2` |  |
+| `SessionStableNodeIds` | `4` |  |
+| `NativeStableNodeIds` | `8` |  |
+| `ReadData` | `16` |  |
+| `RandomAccessRead` | `32` |  |
+| `AllocationMap` | `64` |  |
+| `WriteData` | `128` |  |
+| `Truncate` | `256` |  |
+| `NamespaceMutation` | `512` |  |
+| `MetadataMutation` | `1024` |  |
+| `Links` | `2048` |  |
+| `Flush` | `4096` |  |
+| `DurabilityModel` | `8192` |  |
+| `Recovery` | `16384` |  |
+| `Concurrency` | `32768` |  |
+| `ValidationCorpus` | `65536` |  |
+
+#### `FilesystemDriverReadinessReport`
+
+Implements `IEquatable<FilesystemDriverReadinessReport>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDriverReadinessReport` | `FilesystemDriverReadinessReport(string FormatId, FilesystemDriverTarget Target, FilesystemDriverReadinessLayer AvailableLayers, FilesystemDriverReadinessLayer RequiredLayers, bool Derivable, bool UsesNativeProvider, IReadOnlyList<string> Blockers)` |  |
+| `AvailableLayers` | `FilesystemDriverReadinessLayer AvailableLayers { get; init; }` |  |
+| `Blockers` | `IReadOnlyList<string> Blockers { get; init; }` |  |
+| `Derivable` | `bool Derivable { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `RequiredLayers` | `FilesystemDriverReadinessLayer RequiredLayers { get; init; }` |  |
+| `Target` | `FilesystemDriverTarget Target { get; init; }` |  |
+| `UsesNativeProvider` | `bool UsesNativeProvider { get; init; }` |  |
+
+#### `FilesystemDriverTarget`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `ReadOnly` | `0` |  |
+| `ReadWrite` | `1` |  |
+
+#### `FilesystemMetadataPatch`
+
+Optional metadata changes; null means leave the field unchanged.
+
+Implements `IEquatable<FilesystemMetadataPatch>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemMetadataPatch` | `FilesystemMetadataPatch(DateTimeOffset? Created = null, DateTimeOffset? Modified = null, DateTimeOffset? Accessed = null, ulong? NativeAttributes = null)` | Optional metadata changes; null means leave the field unchanged. |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
+| `NativeAttributes` | `ulong? NativeAttributes { get; init; }` |  |
+
+#### `FilesystemMutationModel`
+
+Describes how namespace/data writes become durable on this exact on-disk profile. This is intentionally separate from `CanModify`: archive-level Add/Remove may legitimately rebuild a whole image, while a writable mounted filesystem driver needs bounded, handle-safe mutations.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `Direct` | `1` |  |
+| `Journaled` | `2` |  |
+| `CopyOnWrite` | `3` |  |
+| `LogStructured` | `4` |  |
+| `WholeImageRebuild` | `5` |  |
+
+#### `FilesystemNodeId`
+
+Stable, path-independent identity of a filesystem object. A real driver must not use a pathname as identity: rename/unlink can change names while open handles keep referring to the same inode/object. Providers map their native inode, file-reference, object-id or directory-slot identity into these two opaque 64-bit words.
+
+Implements `IEquatable<FilesystemNodeId>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemNodeId` | `FilesystemNodeId(ulong Value, ulong Generation = 0)` | Stable, path-independent identity of a filesystem object. A real driver must not use a pathname as identity: rename/unlink can change names while open handles keep referring to the same inode/object. Providers map their native inode, file-reference, object-id or directory-slot identity into these two opaque 64-bit words. |
+| `Generation` | `ulong Generation { get; init; }` |  |
+| `Value` | `ulong Value { get; init; }` |  |
+
+#### `FilesystemNodeInfo`
+
+Implements `IEquatable<FilesystemNodeInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemNodeInfo` | `FilesystemNodeInfo(FilesystemNodeId NodeId, FilesystemNodeKind Kind, long Size, long AllocatedSize, uint LinkCount = 1, ulong NativeAttributes = 0, DateTimeOffset? Created = null, DateTimeOffset? Modified = null, DateTimeOffset? Accessed = null, DateTimeOffset? Changed = null)` |  |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `AllocatedSize` | `long AllocatedSize { get; init; }` |  |
+| `Changed` | `DateTimeOffset? Changed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `Kind` | `FilesystemNodeKind Kind { get; init; }` |  |
+| `LinkCount` | `uint LinkCount { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
+| `NativeAttributes` | `ulong NativeAttributes { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `FilesystemNodeKind`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` |  |
+| `RegularFile` | `1` |  |
+| `Directory` | `2` |  |
+| `SymbolicLink` | `3` |  |
+| `BlockDevice` | `4` |  |
+| `CharacterDevice` | `5` |  |
+| `Fifo` | `6` |  |
+| `Socket` | `7` |  |
+
+#### `FilesystemOpenOptions`
+
+Implements `IEquatable<FilesystemOpenOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemOpenOptions` | `FilesystemOpenOptions(bool ReadOnly = true, bool LeaveOpen = true)` |  |
+| `LeaveOpen` | `bool LeaveOpen { get; init; }` |  |
+| `ReadOnly` | `bool ReadOnly { get; init; }` |  |
+
 #### `FilesystemSchemaPresets`
 
 Reusable `FormatOptionDescriptor` building blocks shared by every filesystem that exposes tunable layout parameters through `IFormatOptionsSchema`. Cluster/block size and volume size are near-universal across cluster-based filesystems, so they live here rather than being re-declared in each descriptor. Filesystem-specific knobs (MFT record size, inode size, FAT type, …) are declared by the individual descriptor.
@@ -6397,23 +6658,58 @@ Reusable `FormatOptionDescriptor` building blocks shared by every filesystem tha
 | `PowerOfTwoSize` | `static FormatOptionDescriptor PowerOfTwoSize(string key, string displayName, int min, int max, string defaultLabel, string description)` | Generic power-of-two size dropdown for any byte-valued knob (inode size, MFT record, …). |
 | `VolumeLabel` | `static FormatOptionDescriptor VolumeLabel(int maxChars = 11)` | Standard volume-label text field. |
 
+#### `FilesystemSnapshotDirectoryEntry`
+
+Implements `IEquatable<FilesystemSnapshotDirectoryEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemSnapshotDirectoryEntry` | `FilesystemSnapshotDirectoryEntry(FilesystemNodeId ParentNodeId, string Name, FilesystemNodeId NodeId)` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+| `ParentNodeId` | `FilesystemNodeId ParentNodeId { get; init; }` |  |
+
+#### `FilesystemSnapshotNode`
+
+Native filesystem object projected into the common driver contract. Name and parent are a convenient primary-link description for simple filesystems; use explicit `FilesystemSnapshotDirectoryEntry` values when one node has multiple directory entries (hard links).
+
+Implements `IEquatable<FilesystemSnapshotNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemSnapshotNode` | `FilesystemSnapshotNode(FilesystemNodeId NodeId, FilesystemNodeId ParentNodeId, string Name, FilesystemNodeKind Kind, long Size, long AllocatedSize, uint LinkCount = 1, ulong NativeAttributes = 0, DateTimeOffset? Created = null, DateTimeOffset? Modified = null, DateTimeOffset? Accessed = null, DateTimeOffset? Changed = null, string SymbolicLinkTarget = null, Func<IFilesystemFileHandle> OpenReadHandle = null)` | Native filesystem object projected into the common driver contract. Name and parent are a convenient primary-link description for simple filesystems; use explicit `FilesystemSnapshotDirectoryEntry` values when one node has multiple directory entries (hard links). |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `AllocatedSize` | `long AllocatedSize { get; init; }` |  |
+| `Changed` | `DateTimeOffset? Changed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `Kind` | `FilesystemNodeKind Kind { get; init; }` |  |
+| `LinkCount` | `uint LinkCount { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `NativeAttributes` | `ulong NativeAttributes { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+| `OpenReadHandle` | `Func<IFilesystemFileHandle> OpenReadHandle { get; init; }` |  |
+| `ParentNodeId` | `FilesystemNodeId ParentNodeId { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `SymbolicLinkTarget` | `string SymbolicLinkTarget { get; init; }` |  |
+
 #### `FormatCapabilities`
 
-Flags describing what operations a format supports. Write capability is a four-level scale: Unsupported — no descriptor exists.Read-Only — `CanList` and/or `CanExtract` only.WORM (Write-Once-Read-Many) — adds `CanCreate`: a fresh archive can be produced from inputs, but existing archives cannot be modified in place.R/W (Modify) — adds `CanModify`: entries can be added, replaced, or removed in an existing archive without full rewrite. Most archive formats stop at WORM; true in-place modification is rare because compressed archive containers don't generally support entry mutation without a full rebuild. Honesty rule — rebuild-backed modification is WORM, not R/W. A format may implement `IArchiveModifiable` purely to make the add / remove / purge verbs work, backing them with the verified extract → re-create rebuild (the default `IArchiveModifiable` members, or `ModifyRebuilder` / `RebuildVerb`). That is a full rewrite of the container, so such a format advertises `CanCreate` only and must not set `CanModify` — the verb still runs, but no in-place R/W is claimed. `CanModify` is reserved for formats with a genuine in-place writer that edits the existing container (e.g. ZIP/TAR central-directory edits, FAT/NTFS/ext block writes, byte-identity append). `Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces this for every claimant.
+Flags describing what operations a format supports. Write capability is a four-level scale: Unsupported — no descriptor exists.Read-Only — `CanList` and/or `CanExtract` only.WORM (Write-Once-Read-Many) — adds `CanCreate`: a fresh archive/image can be produced, but the library has no supported edit of an existing instance.R/W (Modify) — adds `CanModify`: an existing instance supports add/replace/remove and remains valid after the edit.R/W describes the public operation, not the physical write strategy. A format may update allocation metadata in place, append a new index, relayout members, or rebuild the complete image. Those are implementation choices. If callers can open an existing instance, apply add/replace/remove through `IArchiveModifiable`, and obtain a valid instance preserving the semantics the implementation claims to support, the format is R/W at this API surface. Conversely, merely having a writer for fresh images is WORM and must not set `CanModify`. This distinction is especially important for read-only-on-mount filesystem formats such as SquashFS, CramFS and EROFS: the native filesystem driver may intentionally forbid mounted writes while an offline image editor can still support complete, deterministic mutation by relayout/rebuild. `CanModify` reports the latter capability.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
 | `None` | `0` |  |
 | `CanList` | `1` |  |
 | `CanExtract` | `2` |  |
-| `CanCreate` | `4` | WORM: can produce a fresh archive from inputs (no in-place modification). |
+| `CanCreate` | `4` | WORM: can produce a fresh archive/image, but has no supported existing-instance edit. |
 | `CanTest` | `8` |  |
 | `SupportsPassword` | `16` |  |
 | `SupportsMultipleEntries` | `32` |  |
 | `SupportsDirectories` | `64` |  |
 | `SupportsOptimize` | `256` |  |
 | `CanCompoundWithTar` | `512` |  |
-| `CanModify` | `1024` | R/W: can modify an existing archive (add/replace/remove entries) without full rewrite. Implies `CanCreate`. |
+| `CanModify` | `1024` | R/W: can add/replace/remove entries in an existing archive/image. The implementation may edit in place or relayout/rebuild. Implies `CanCreate` for normal writable formats. |
 
 #### `FormatCategory`
 
@@ -6523,19 +6819,27 @@ How a `FormatOptionDescriptor` renders + parses.
 
 #### `FormatRegistry`
 
-Central registry of all format descriptors. Populated at startup via `Register` calls (typically from source-generated code), then finalized with `Initialize`.
+Central registry of all format descriptors and their optional driver sidecars. Populated at startup by generated registration code, then finalized with `Initialize`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `All` | `static IReadOnlyList<IFormatDescriptor> All { get; }` | All registered descriptors. |
-| `GetArchiveOps` | `static IArchiveFormatOperations GetArchiveOps(string id)` | Get archive operations for a format ID, or null if not an archive format. |
-| `GetAsyncArchiveOps` | `static IAsyncArchiveOperations GetAsyncArchiveOps(string id)` | Get async archive operations for a format ID, or null if the format doesn't support async listing. |
-| `GetByCategory` | `static IEnumerable<IFormatDescriptor> GetByCategory(FormatCategory category)` | Get all descriptors in a given category. |
-| `GetByExtension` | `static IFormatDescriptor GetByExtension(string path)` | Look up a descriptor by file path/extension. Checks compound extensions first (longest match). |
-| `GetById` | `static IFormatDescriptor GetById(string id)` | Look up a descriptor by its unique ID. |
-| `GetStreamOps` | `static IStreamFormatOperations GetStreamOps(string id)` | Get stream operations for a format ID, or null if not a stream format. |
-| `Initialize` | `static void Initialize()` | Finalize the registry by building lookup tables. Safe to call multiple times. Call this after all `Register` calls are complete. |
-| `Register` | `static void Register(IFormatDescriptor descriptor)` | Register a format descriptor. Called by generated code and for compound tar auto-generation. Must be called before `Initialize`. |
+| `All` | `static IReadOnlyList<IFormatDescriptor> All { get; }` |  |
+| `FilesystemFormatIds` | `static IReadOnlyList<string> FilesystemFormatIds { get; }` | All descriptor IDs originating from FileSystem.* projects. |
+| `AssessFilesystemDriver` | `static FilesystemDriverReadinessReport AssessFilesystemDriver(string id, Stream image, FilesystemDriverTarget target, string password = null)` |  |
+| `GetArchiveOps` | `static IArchiveFormatOperations GetArchiveOps(string id)` |  |
+| `GetAsyncArchiveOps` | `static IAsyncArchiveOperations GetAsyncArchiveOps(string id)` |  |
+| `GetByCategory` | `static IEnumerable<IFormatDescriptor> GetByCategory(FormatCategory category)` |  |
+| `GetByExtension` | `static IFormatDescriptor GetByExtension(string path)` |  |
+| `GetById` | `static IFormatDescriptor GetById(string id)` |  |
+| `GetFilesystemDriverCoverage` | `static FilesystemDriverCoverage GetFilesystemDriverCoverage(string id)` |  |
+| `GetFilesystemDriverCoverage` | `static IReadOnlyList<FilesystemDriverCoverage> GetFilesystemDriverCoverage()` | Structural driver coverage for all FileSystem.* descriptors. This is safe to inspect without an image and is intended for CI/readiness dashboards. Use `AssessFilesystemDriver` for exact per-image semantics. |
+| `GetFilesystemDriver` | `static IFilesystemDriverAdapter GetFilesystemDriver(string id)` | Returns a generated native driver sidecar for the format, when one exists. |
+| `GetStreamOps` | `static IStreamFormatOperations GetStreamOps(string id)` |  |
+| `Initialize` | `static void Initialize()` |  |
+| `OpenFilesystem` | `static IFilesystemSession OpenFilesystem(string id, Stream image, FilesystemOpenOptions options, string password = null)` |  |
+| `ProbeFilesystem` | `static FilesystemDriverProfile ProbeFilesystem(string id, Stream image, string password = null)` |  |
+| `RegisterFilesystemDriver` | `static void RegisterFilesystemDriver(IFilesystemDriverAdapter driver)` | Registers one source-generated native filesystem-driver sidecar. Duplicate adapters for the same format ID are a build/runtime contract error rather than whichever registration happened to win. |
+| `Register` | `static void Register(IFormatDescriptor descriptor, bool isFilesystem = false)` | Register a format descriptor. Source-generated calls set `isFilesystem` for descriptors declared under a `FileSystem.*` namespace so filesystem coverage is explicit rather than inferred from extensions or display names. |
 
 #### `IArchiveCreatable`
 
@@ -6548,12 +6852,12 @@ Opt-in capability: the descriptor can produce a fresh archive from a list of inp
 
 #### `IArchiveDefragmentable`
 
-Opt-in capability: the descriptor can rewrite an archive in place so that every file occupies a contiguous cluster run, optionally with a chosen layout strategy (consolidate at start / end, lazy hole-fill, carve a free region). Complements the allocator's automatic fast-defrag (which fires only when a pending allocation can't find a contiguous hole); this is the user-initiated full pass.
+Opt-in capability for physical or logical re-layout. Native mutable filesystems may move extents in place; WORM/archive containers can satisfy the same verb by building a verified staged target and committing it after completion.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuilds the archive content in place so every file is contiguous. Outer byte size is preserved. Free space is consolidated at the end. Default implementation: any descriptor that also implements `IArchiveFormatOperations` + `IArchiveCreatable` gets defragmentation for free — a verified in-place extract → re-create rebuild via `RebuildInPlace` (the rebuild-via-WORM pattern inherently lays every file out contiguously) that refuses to commit a lossy result. Formats with a true in-place block mover override this for efficiency and full mode support. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rewrites the archive content according to `options`. Default implementation forwards to `Defragment` for `ConsolidateAtStart` and throws for every other mode — implementers should override to support all modes their on-disk format permits. |
+| `Defragment` | `void Defragment(Stream archive)` | Defragments using the format's default consolidate-at-start strategy. Generic list/extract/create descriptors use the verified staged rebuild. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rewrites according to `options`. Descriptors with their own native parameterless mover retain it. Descriptors relying on the interface default are routed through the progress-reporting, cancellable staged rebuild, so archive repacks and WORM re-layouts drive the same block-map UI as physical filesystem extent moves. |
 
 #### `IArchiveFormatOperations`
 
@@ -6561,10 +6865,10 @@ The base capability every archive descriptor implements: list entries and extrac
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Extracts a single entry to a byte array without writing to disk. The default implementation now routes through `OpenEntry` so the bounded streaming contract is enforced even when callers ask for a buffered result. Descriptors that have a more efficient native byte-array path (e.g. a reader that already materialises the whole entry) can still override. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Extracts a single entry to a byte array. This is the explicitly buffered convenience API; callers working with large entries should use `OpenEntry` instead. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extract entries from the archive to an output directory. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | List all entries in the archive. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a read-only `Stream` bounded to that entry's logical bytes — physically incapable of reading slack space, adjacent entries, padding/alignment fillers, or header/metadata regions. This is the canonical per-entry isolation primitive used by streaming conversion pipelines. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a read-only `Stream` bounded to that entry's logical bytes — physically incapable of reading slack space, adjacent entries, padding/alignment fillers, or header/metadata regions. This is the canonical per-entry isolation primitive used by streaming conversion and derived-filesystem pipelines. |
 
 #### `IArchiveInMemoryExtract`
 
@@ -6576,20 +6880,32 @@ Opt-in capability: the descriptor can extract a single named entry straight to a
 
 #### `IArchiveLayoutMap`
 
-Opt-in capability: the descriptor can enumerate the real byte-level layout of an archive — every entry's header, compressed payload, and inter-entry gaps at their actual offsets. Parallel to `IFilesystemExtentMap` but for archive formats (ZIP, 7z, TAR, LZH, ARJ, etc.). Drives the Defragment/Optimize window block-map preview so the user sees the real archive layout before pressing "Optimize".
+Opt-in capability: the descriptor can enumerate the real byte-level layout of an archive — every entry's header, compressed payload, and inter-entry gaps at their actual offsets. Parallel to `IFilesystemExtentMap` but for archive formats (ZIP, 7z, TAR, LZH, ARJ, etc.). Fail-closed contract: omitted bytes are interpreted as unused by maintenance consumers. Any live, structural, ambiguous or undecoded region must therefore be emitted as `MetadataReserved` (or `Used`), never silently omitted. If a layout cannot be proven safe, return no extents and the inherited generic wipe is a no-op.That exact preservation map also makes every implementation an `IWipeEmpty` capability. The generic implementation zeros proven dead gaps while format-specific overrides may additionally scrub tombstones, reserved growth records, stale indexes, or other recoverable metadata.Drives the Defragment/Optimize window block-map preview so the user sees the real archive layout before pressing "Optimize".
+
+Implements `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the actual byte layout of `archive`. Coverage may be sparse; callers fill the gaps with `Free`. The stream's position may be modified during enumeration but the caller owns the lifetime — implementations must not dispose `archive`. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the actual byte layout of `archive`. Coverage may be sparse only where omitted bytes are proven unused; callers fill those gaps with `Free`. The stream's position may be modified during enumeration but the caller owns the lifetime — implementations must not dispose `archive`. |
 
 #### `IArchiveModifiable`
 
-Opt-in capability: the descriptor exposes add / remove (and thereby the purge verb). Implementing this interface makes the verbs work; it does not by itself entitle the format to advertise `CanModify` (R/W). The default `Add` / `Remove` below — and any override that delegates to `ModifyRebuilder` / `RebuildVerb` — are a verified extract → re-create rebuild, i.e. a full rewrite of the container. A format whose modification is only rebuild-backed is WORM: it advertises `CanCreate` and must NOT advertise `CanModify` (see `FormatCapabilities`). Reserve `CanModify` for a genuine in-place writer that edits the existing bytes (R/W filesystems; central-directory / member edits; byte-identity append).
+Opt-in capability for editing an existing archive/image through add/replace/remove. The physical strategy is format-specific: implementations may patch blocks in place, append replacement metadata, relayout members, or perform a verified extract → edit → re-create rebuild. All are valid implementations of the same public mutation contract when the resulting instance preserves the semantics the descriptor claims to support. A descriptor advertising `CanModify` must expose this interface and its supported-profile edit path must actually round-trip. Merely being able to create a fresh instance is not enough. A fully modifiable container is also purgeable: removing all live entries is a required subset of the remove contract.
+
+Implements `IArchivePurgeable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends or replaces files inside `archive`. On replacement the previous bytes are wiped the same way `Remove` wipes them. Default implementation: any descriptor that also implements `IArchiveFormatOperations` + `IArchiveCreatable` gets add for free — a verified extract → splat-new-files → re-create rebuild via `EditViaRebuild` (the same WORM rebuild that backs the other verbs). Formats with a true in-place writer override for efficiency. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from `archive` and wipes all on-disk traces. Default implementation: a verified extract → drop-named-files → re-create rebuild via `EditViaRebuild`. Passing every entry name (or all files) yields an empty container — i.e. the purge verb. Formats with a true in-place writer override for efficiency and forensic wiping. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds files to an existing instance, replacing entries with the same logical path/name. Default implementation: descriptors that also implement `IArchiveFormatOperations` and `IArchiveCreatable` get a verified extract → edit → re-create implementation through `EditViaRebuild`. Formats with a cheaper native editor override it. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing instance. Passing every entry name yields an empty container/image where the format permits one. Default implementation: a verified extract → drop-named-files → re-create edit through `EditViaRebuild`. Native implementations may instead unlink/free in place and optionally wipe released storage. |
+
+#### `IArchivePurgeable`
+
+Opt-in capability: all user/live entries can be removed from an existing container while leaving a valid, listable empty instance. This is distinct from `IWipeEmpty`, which preserves live entries and overwrites only unused/dead bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Purge` | `void Purge(Stream archive)` | Removes every live non-directory entry from `archive`. Default implementation: descriptors that also implement `IArchiveFormatOperations` and `IArchiveModifiable` get a transactional staged purge through `PurgeViaModifier`. Native implementations may override this when they can empty the container more efficiently. |
 
 #### `IArchiveShrinkable`
 
@@ -6619,6 +6935,23 @@ Optional interface for archive formats that support lazy, asynchronous entry enu
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ListEntriesAsync` | `IAsyncEnumerable<ArchiveEntryInfo> ListEntriesAsync(Stream stream, string password, CancellationToken ct = null)` | Lazily enumerates archive entries as an async stream. Each entry is yielded as it is discovered, without requiring the full archive to be scanned first. |
+
+#### `IBlockDeviceFilesystemDriverProvider`
+
+Optional filesystem-core capability for implementations whose native parser already works directly on a block device. This is the long-term driver core: the same filesystem implementation can mount raw disks, virtual disks, forensic images, or decoded track media without container-specific code.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
+
+#### `IBlockDeviceProvider`
+
+Compatibility alias for the original block-device provider name. New code uses `IRandomAccessBlockDeviceProvider` so containers, decoded track media and raw images expose exactly one logical-block abstraction.
+
+Implements `IRandomAccessBlockDeviceProvider`.
+
+_No public or protected members._
 
 #### `IBuildingBlock`
 
@@ -6665,13 +6998,57 @@ Opt-in capability for filesystems that support true in-place defragmentation via
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Repoints a run the way `UpdateAllocationAfterMove` does, but says whether the space it came from should be released. |
 | `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets, IReadOnlySet<long> blocksLiveElsewhere)` | Rewrites `fileName`'s allocation so that it occupies `newBlockOffsets` in that order, having previously occupied `oldBlockOffsets`. Both lists are one entry per allocation block, in the file's own order. |
 
-#### `IFilesystemExtentMap`
+#### `IFilesystemDriverAdapter`
 
-Opt-in capability: the descriptor (or a partner type) can enumerate the actual on-disk byte layout of a filesystem image — every used cluster chain per file (one `DefragBlockInfo` per contiguous run), every metadata-reserved region (boot sector, FAT, bitmap, superblock, MFT, root directory, inode table, BAM, group descriptor table, etc.), and optionally every free region. Coverage may be sparse — gaps in the returned set are interpreted by the caller as `Free`. The yielded extents don't need to be sorted; the caller is responsible for sorting + gap filling. Implementations must not throw for malformed or partially-walked images — they should yield whatever they can identify and return.Drives the Defragment-window block-map preview so the user sees the real fragmented layout before pressing "Defragment" rather than the post-defrag approximation.
+Sidecar binding from an existing format descriptor ID to a native filesystem driver core. This lets large/legacy descriptors acquire driver semantics without mixing mount state, locking and block-device code into their archive surface. The source generator discovers public parameterless implementations and registers them by `FormatId`.
+
+Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the actual on-disk layout of `image`. Coverage may be sparse; callers fill the gaps with `Free`. The stream's position may be modified during enumeration but the caller owns the lifetime — implementations must not dispose `image`. |
+| `FormatId` | `string FormatId { get; }` |  |
+
+#### `IFilesystemDriverProvider`
+
+Descriptor-side entry point for a mount-grade filesystem implementation. Probe must be non-destructive and fail closed. Open must reject writable mode unless the returned profile has `CanMountWritable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
+
+#### `IFilesystemDriverReadinessProvider`
+
+Optional filesystem-specific readiness description. The generic derivation layer supplies a conservative report when a descriptor does not implement this interface; native implementations can use it to explain exactly which on-disk semantics still block a complete mounted driver.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+
+#### `IFilesystemExtentMap`
+
+Opt-in capability: the descriptor (or a partner type) can enumerate the actual on-disk byte layout of a filesystem image — every used cluster chain per file (one `DefragBlockInfo` per contiguous run), every metadata-reserved region (boot sector, FAT, bitmap, superblock, MFT, root directory, inode table, BAM, group descriptor table, etc.), and optionally every free region. Fail-closed contract: gaps in the returned set are interpreted as free space by maintenance consumers. Therefore an implementation that encounters an allocated-but-undecoded, damaged, ambiguous, or otherwise unproven region MUST emit that region as `MetadataReserved` rather than silently omit it. If the image cannot be walked safely at all, yield no extents; the inherited generic `IWipeEmpty` implementation then wipes nothing.Because this contract identifies all bytes that must be preserved, every extent map is also an `IWipeEmpty` implementation: the default wiper zeros only proven gaps (and cluster tips when a trustworthy logical-size lookup exists). Formats that know about deleted directory records or other hidden remnants may override the wipe for deeper cleaning.Drives the Defragment-window block-map preview so the user sees the real fragmented layout before pressing "Defragment" rather than the post-defrag approximation.
+
+Implements `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the actual on-disk layout of `image`. Coverage may be sparse only where the omitted bytes are proven free; callers fill those gaps with `Free`. Unknown allocated bytes must be returned as `MetadataReserved`. The stream's position may be modified during enumeration but the caller owns its lifetime — implementations must not dispose `image`. |
+
+#### `IFilesystemFileHandle`
+
+Positional file handle. It deliberately has no shared Stream.Position so two concurrent kernel requests cannot race a mutable cursor. Reads/writes operate at explicit logical offsets and therefore map naturally to filesystem extents.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Length` | `long Length { get; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; }` |  |
+| `Flush` | `void Flush()` |  |
+| `Read` | `int Read(long offset, Span<byte> destination)` |  |
+| `SetLength` | `void SetLength(long length)` |  |
+| `Write` | `void Write(long offset, ReadOnlySpan<byte> source)` |  |
 
 #### `IFilesystemMetadataMover`
 
@@ -6682,6 +7059,42 @@ Opt-in capability for filesystems whose own structures — the MFT, an allocatio
 | `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | The metadata regions this filesystem can relocate, named as its extent map reports them. Everything not listed stays where it is. |
 | `PrepareMetadataMove` | `void PrepareMetadataMove(Stream image, string metadataName, long oldOffset, long newOffset, long length)` | Gives the filesystem a chance to make the destination safe before the raw bytes are copied there. |
 | `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Repoints whatever locates `metadataName` after its bytes have been copied from `oldOffset` to `newOffset`, and moves the allocation with it. |
+
+#### `IFilesystemSession`
+
+Open filesystem namespace. Operations use stable node ids rather than paths, mirroring the semantics required by FUSE/Dokany/WinFsp-style adapters: a caller may keep a file handle open across rename or unlink.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
+| `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
+| `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` | Begins one durability transaction for this session. Until Commit/Rollback, namespace operations and writes through handles opened by the session belong to that transaction. Providers that do not advertise Transactions throw. |
+| `CreateDirectory` | `FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateFile` | `FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateHardLink` | `void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName)` |  |
+| `CreateSymbolicLink` | `FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target)` |  |
+| `DeleteFile` | `void DeleteFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `Enumerate` | `IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory)` |  |
+| `Flush` | `void Flush()` | Flushes all dirty data and metadata that are not inside an active transaction. |
+| `Lookup` | `FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name)` |  |
+| `OpenFile` | `IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access)` |  |
+| `ReadSymbolicLink` | `string ReadSymbolicLink(FilesystemNodeId nodeId)` |  |
+| `RemoveDirectory` | `void RemoveDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `Rename` | `void Rename(FilesystemNodeId oldParent, string oldName, FilesystemNodeId newParent, string newName, bool replace)` |  |
+| `SetMetadata` | `void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch)` |  |
+| `Stat` | `FilesystemNodeInfo Stat(FilesystemNodeId nodeId)` |  |
+
+#### `IFilesystemTransaction`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsCompleted` | `bool IsCompleted { get; }` |  |
+| `Commit` | `void Commit()` |  |
+| `Rollback` | `void Rollback()` |  |
 
 #### `IFormatDescriptor`
 
@@ -6739,6 +7152,49 @@ Capability marker for archive/disk-container formats whose payload is a raw bloc
 | --- | --- | --- |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Opens the inner (guest) disk image as a `Stream` suitable for partition-table editing. The returned stream must support reading, writing, and seeking. The caller owns the returned stream and must dispose it; disposing it must not dispose the outer `image` stream. |
 
+#### `IRandomAccessBlockDevice`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
+
+#### `IRandomAccessBlockDeviceProvider`
+
+Optional descriptor capability for exposing the sector/block device that sits below a filesystem namespace. Container descriptors can implement this without pretending the container itself is a filesystem.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)` | Opens a random-access block device over `image`. Implementations must fail closed when the exact on-disk profile cannot be projected losslessly/safely at block granularity. |
+
+#### `IRawTrackDevice`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `TrackCount` | `int TrackCount { get; }` |  |
+| `ClearTrack` | `void ClearTrack(int index)` |  |
+| `EnumerateTracks` | `IReadOnlyList<RawTrackInfo> EnumerateTracks()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadTrack` | `int ReadTrack(int index, Span<byte> destination)` |  |
+| `WriteTrack` | `void WriteTrack(int index, ReadOnlySpan<byte> source, uint? encodingParameter = null)` |  |
+
+#### `IRawTrackDeviceProvider`
+
+Optional descriptor capability for opening the raw-track layer directly. This keeps track-container mutation separate from filesystem namespace CRUD.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenRawTrackDevice` | `IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)` |  |
+
 #### `IStreamFormatOperations`
 
 Operations for single-stream compression formats.
@@ -6754,7 +7210,7 @@ Operations for single-stream compression formats.
 
 #### `IWipeEmpty`
 
-Opt-in capability: the descriptor can zero-fill all unused bytes in an image or archive — free clusters/sectors, cluster-tip slack, deleted directory entries, padding regions, and dead archive bytes. This is a forensic-cleanliness tool ensuring no deleted file remnants survive. Implementations that don't need format-specific logic can delegate to `Wipe` which works generically with any `IFilesystemExtentMap` or `IArchiveLayoutMap`.
+Opt-in capability: the descriptor can zero-fill all unused bytes in an image or archive — free clusters/sectors, cluster-tip slack, deleted directory entries, padding regions, and dead archive bytes. This is a forensic-cleanliness tool ensuring no deleted file remnants survive. The default implementation is deliberately conservative. It is available only when the same descriptor exposes an exact filesystem extent map or archive layout map; unknown/undecoded regions must therefore be emitted as `MetadataReserved` by those maps rather than omitted. An empty map is treated as "cannot prove anything is free" and wipes nothing.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6938,6 +7394,23 @@ Generic rebuild-based `IArchiveModifiable` dispatch for filesystems whose writer
 | `RemoveStreaming` | `static void RemoveStreaming(Stream archive, string[] entryNames, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Action<Stream, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>>> rebuild, StringComparer nameComparer = null)` | Streaming counterpart to `Remove`, for the same reason as `AddStreaming`: the kept entries are streamed into a fresh image rather than assembled into one array. |
 | `Remove` | `static void Remove(Stream archive, string[] entryNames, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Func<IReadOnlyList<ValueTuple<string, byte[]>>, byte[]> buildImage, StringComparer nameComparer = null, IArchiveCreatable largeVolumeCreator = null)` | Removes the named entries from `archive`. The image is rebuilt from scratch with every entry whose name does NOT match one of `entryNames`. Old file bytes are wiped because the new layout starts fresh — no forensic recovery should be possible. |
 
+#### `PartitionBlockDevice`
+
+Bounded view of a contiguous range of another random-access block device. The wrapper never changes the parent's geometry and never copies partition contents; block requests are translated by adding the constructor's `firstBlock`.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PartitionBlockDevice` | `PartitionBlockDevice(IRandomAccessBlockDevice inner, long firstBlock, long blockCount, bool leaveOpen = true)` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
+
 #### `PlacementZone`
 
 Which zone a metadata chunk should be placed in relative to the primary data payload during file-internal optimization.
@@ -6948,15 +7421,92 @@ Which zone a metadata chunk should be placed in relative to the primary data pay
 | `AfterData` | `1` | Place the chunk after the primary data payload. |
 | `Remove` | `2` | Remove the chunk entirely during optimization. |
 
-#### `RebuildVerb`
+#### `RawTrackInfo`
 
-Generic, round-trip-verified "extract → re-create" engine shared by the default implementations of the maintenance verbs (shrink, defragment) for any descriptor that can both enumerate/extract (`IArchiveFormatOperations`) and create (`IArchiveCreatable`) its format. Every rebuild is verified: the freshly created image is listed back and its live-file count compared against the source. If the rebuild would drop files, the operation throws `InvalidOperationException` instead of producing a lossy result — so enabling a verb on a format whose create path doesn't faithfully round-trip fails loudly rather than silently corrupting data. This is what makes broad, default-implementation rollout across filesystems safe.
+Raw variable-length track device for flux/GCR/MFM-style containers that are not yet sector-addressable. G64 belongs here; a decoder can later project it as `IRandomAccessBlockDevice` for a Commodore filesystem driver.
+
+Implements `IEquatable<RawTrackInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EditViaRebuild` | `static void EditViaRebuild(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, Action<string> mutate)` | Rebuild-based in-place edit shared by the default `IArchiveModifiable`: extract the archive, apply `mutate` to the extracted file tree (add/overwrite/delete real files on disk), re-create the image, and overwrite the stream. The original bytes are left untouched on any failure. |
-| `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null)` | In-place rebuild: re-creates `archive` from its own contents (consolidating live data — the defragmentation side effect of the rebuild-via-WORM pattern) and overwrites the stream only when the rebuild is verified to round-trip. On any failure the original bytes are left untouched. |
-| `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null)` | Extracts every entry of `input` and re-creates the image into `output` via `creator`. Returns the source live-file count. Throws if the rebuilt image lists fewer live files than the source (lossy round-trip) — the caller's `output` should be discarded in that case. |
+| `RawTrackInfo` | `RawTrackInfo(int Index, long Length, uint EncodingParameter = 0, bool IsPresent = true)` | Raw variable-length track device for flux/GCR/MFM-style containers that are not yet sector-addressable. G64 belongs here; a decoder can later project it as `IRandomAccessBlockDevice` for a Commodore filesystem driver. |
+| `EncodingParameter` | `uint EncodingParameter { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `IsPresent` | `bool IsPresent { get; init; }` |  |
+| `Length` | `long Length { get; init; }` |  |
+
+#### `ReadOnlyFilesystemSnapshotSession`
+
+Implements `IDisposable`, `IFilesystemSession`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadOnlyFilesystemSnapshotSession` | `ReadOnlyFilesystemSnapshotSession(FilesystemDriverProfile profile, FilesystemNodeId rootNodeId, IEnumerable<FilesystemSnapshotNode> nodes)` |  |
+| `ReadOnlyFilesystemSnapshotSession` | `ReadOnlyFilesystemSnapshotSession(FilesystemDriverProfile profile, FilesystemNodeId rootNodeId, IEnumerable<FilesystemSnapshotNode> nodes, IEnumerable<FilesystemSnapshotDirectoryEntry> directoryEntries)` | Full constructor with independent object and directory-entry sets. Multiple entries may target the same node ID; that is how hard links are represented. |
+| `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
+| `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
+| `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
+| `CreateDirectory` | `FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateFile` | `FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateHardLink` | `void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName)` |  |
+| `CreateSymbolicLink` | `FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target)` |  |
+| `DeleteFile` | `void DeleteFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Enumerate` | `IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory)` |  |
+| `Flush` | `void Flush()` |  |
+| `Lookup` | `FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name)` |  |
+| `OpenFile` | `IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access)` |  |
+| `ReadSymbolicLink` | `string ReadSymbolicLink(FilesystemNodeId nodeId)` |  |
+| `RemoveDirectory` | `void RemoveDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `Rename` | `void Rename(FilesystemNodeId oldParent, string oldName, FilesystemNodeId newParent, string newName, bool replace)` |  |
+| `SetMetadata` | `void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch)` |  |
+| `Stat` | `FilesystemNodeInfo Stat(FilesystemNodeId nodeId)` |  |
+
+#### `RebuildVerb`
+
+Generic, round-trip-verified extract → re-create engine shared by maintenance verbs. Rebuilds are staged, verified, progress-reporting, and cancellable; the caller's original stream is not touched until the staged target has been built successfully and cancellation is no longer accepted.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EditViaRebuild` | `static void EditViaRebuild(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, Action<string> mutate)` | Rebuild-based edit used by the generic modifier. Mutation and validation happen off to the side; the original is overwritten only after a valid staged result exists. |
+| `PurgeViaModifier` | `static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier)` | Transactional purge for a mutable container. The modifier operates on a staged copy and the caller's stream is replaced only after the result lists successfully with every original live entry gone. |
+| `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
+| `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
+
+#### `SpoolingReadOnlyFileHandle`
+
+Transitional positional handle for native filesystem readers that can stream a file correctly but do not yet expose a seekable block/extent map. Small files stay in memory; large files are spooled to a delete-on-close temporary file. This preserves driver-style positional reads without imposing a whole- file RAM ceiling while the filesystem's direct block mapping is implemented.
+
+Implements `IDisposable`, `IFilesystemFileHandle`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultMemoryThreshold` | `const long DefaultMemoryThreshold` |  |
+| `Length` | `long Length { get; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; }` |  |
+| `Create` | `static SpoolingReadOnlyFileHandle Create(FilesystemNodeId nodeId, long expectedLength, Action<Stream> writeContent, long memoryThreshold = 8388608)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `Read` | `int Read(long offset, Span<byte> destination)` |  |
+| `SetLength` | `void SetLength(long length)` |  |
+| `Write` | `void Write(long offset, ReadOnlySpan<byte> source)` |  |
+
+#### `StreamBlockDevice`
+
+Fixed-size random-access block device over an ordinary seekable stream. This is the bridge for raw filesystem images while parsers migrate away from direct Stream.Position access.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamBlockDevice` | `StreamBlockDevice(Stream stream, int logicalBlockSize, bool writable, bool leaveOpen = true, int? physicalBlockSize = null)` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
 
 #### `SymlinkResolver`
 

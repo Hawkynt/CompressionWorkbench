@@ -5,7 +5,7 @@ namespace Compression.Registry;
 /// <summary>
 /// Bounded view of a contiguous range of another random-access block device.
 /// The wrapper never changes the parent's geometry and never copies partition
-/// contents; block requests are translated by adding <paramref name="firstBlock"/>.
+/// contents; block requests are translated by adding the constructor's <c>firstBlock</c>.
 /// </summary>
 public sealed class PartitionBlockDevice : IRandomAccessBlockDevice {
   private readonly IRandomAccessBlockDevice _inner;

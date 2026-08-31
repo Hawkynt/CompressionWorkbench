@@ -124,7 +124,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Pseudo-archive descriptor for Windows ICO/CUR icon bundles. Each embedded image (PNG or DIB) is exposed as its own archive entry; creating a bundle from PNG/BMP inputs is supported. References: `https://en.wikipedia.org/wiki/ICO_(file_format)` — Wikipedia — documents the ICONDIR / ICONDIRENTRY directory and PNG/DIB payloads"The evolution of the ICO file format" — Raymond Chen, The Old New Thing (Microsoft DevBlogs) series
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -247,7 +247,7 @@ Represents a file entry in an ACE archive.
 
 ACE archive (Marcel Lemke / WinAce) — proprietary high-ratio DOS/Windows compressor of the late 1990s. References: `https://github.com/droe/acefile` — acefile — open-source ACE 1.0/2.0 reader/extractor, the de-facto format reference`https://en.wikipedia.org/wiki/ACE_(compressed_file_format)` — format overview and historyWinAce / unacev2.dll (Marcel Lemke) — the original closed-source implementation; no official spec was ever published
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -429,7 +429,7 @@ Decoder for inflated FileMeta record bodies (record types 102, 1, 2, 5).
 
 Format descriptor for Acronis True Image classic .tib backups. References: `https://github.com/dennisss/acronis-tib` — community reverse-engineering of the .tib record stream (the upstream spec this reader is built on)Acronis True Image / Cyber Protect Home Office vendor documentation — the format itself is proprietary and unpublished
 
-Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1076,7 +1076,7 @@ Represents a single file entry in a Sega AFS archive.
 
 Sega AFS archive ("AFS\0" magic) — audio/data container used by Dreamcast, PS2 and GameCube era titles. References: `https://github.com/MaikelChan/AFSPacker` — AFSPacker — open-source AFS extractor/creator, the de-facto format referenceThe container was never documented by Sega/CRI; the offset-table layout was recovered by the game-modding community
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1147,7 +1147,7 @@ Represents a single audio entry within a Square Enix AKB audio bank.
 
 Square Enix AKB audio bank descriptor — surfaces per-entry raw audio payloads plus a synthetic `metadata.ini` entry containing bank-wide header fields (sample rate, channel mode, loop points). References: `https://github.com/vgmstream/vgmstream` — vgmstream — implements AKB parsing; the de-facto referenceSquare Enix never published the AKB layout; header fields were recovered by the VGM ripping community
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1235,7 +1235,7 @@ Represents a single file entry in an ALZip (.alz) archive.
 
 ALZ archive — the proprietary container of ESTsoft's ALZip (Korean shareware archiver). References: `http://kippler.com/win/unalz/` — unalz — open-source ALZ extractor, the de-facto format reference`https://en.wikipedia.org/wiki/ALZip` — application backgroundThe format is proprietary (ESTsoft); no official specification was published
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1315,7 +1315,7 @@ Implements `IDisposable`.
 
 AMPK (Amiga Pack) archive with LZHUF-compressed members. References: Haruhiko Okumura's `lzhuf.c` (1988/89) — the LZSS + adaptive-Huffman codec AMPK members use`https://aminet.net` — Aminet — the Amiga software archive distributing the original packer; the container layout itself is undocumented
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1371,7 +1371,7 @@ Creates AMPK archives with stored (uncompressed) files.
 
 Archive view of an Android App Bundle (`.aab`) or split-APK set (`.apks`). The underlying container is a ZIP; this descriptor re-exposes its entries with the split-APK semantics surfaced in the path: `base/` sub-tree → `base/...` (verbatim).`splits/*.apk` top-level APKs → kept at `splits/*.apk`.`BundleConfig.pb` → kept at root. The actual content is a ZIP, so detection is extension-based; at the raw-magic level this still looks like any other PK-signed ZIP and the Zip / Apk descriptors would also match if routed by magic. This descriptor intentionally declares a lower detection confidence for the ZIP local-file header so Zip/Apk win on ambiguous inputs. References: `https://developer.android.com/guide/app-bundle` — official Android App Bundle documentation`https://github.com/google/bundletool` — bundletool — the canonical .aab / .apks tool`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1523,7 +1523,7 @@ Wire-format constants for the AOMEI Backupper image format, recovered from rever
 
 Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation ported from the reverse-engineered format spec at `docs/AOMEI_FORMAT_SPEC.md`: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is TODO in the recovered spec. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublished`docs/AOMEI_FORMAT_SPEC.md` (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk spec
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1797,7 +1797,7 @@ Provides static methods for compressing and decompressing data using the aPLib a
 
 Android application package (.apk) — a ZIP container holding the manifest, DEX bytecode, resources and native libraries. References: `https://developer.android.com/guide/components/fundamentals` — Android application fundamentals (APK packaging)`https://en.wikipedia.org/wiki/Apk_(file_format)` — format overview`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1833,7 +1833,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Alternative view over an Android APK that surfaces only its packaged native libraries (`lib/<abi>/*.so`) as archive entries under `native_libs/<abi>/*.so`. Intentionally not registered for magic detection (all magic signatures are zero-confidence); the caller must route here explicitly, e.g. `cwb list --format ApkNativeLibs foo.apk`. References: `https://developer.android.com/ndk/guides/abis` — Android ABI management — defines the per-ABI native-library directory layout inside an APK`https://en.wikipedia.org/wiki/Apk_(file_format)` — APK container overview
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1934,7 +1934,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 Pseudo-archive descriptor for AppleSingle (RFC 1740) container files. Each entry id (data fork, resource fork, Finder info, dates, real name, …) is surfaced as a separate archive entry plus a metadata.ini summary. References: `https://www.rfc-editor.org/rfc/rfc1740` — RFC 1740 — carries the AppleSingle/AppleDouble format description as an appendixApple "AppleSingle/AppleDouble Formats for Foreign Files Developer's Note" (1990) — the defining vendor document`https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2083,7 +2083,7 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 Apple `sparseimage` — a single-file expanding disk image produced by `hdiutil create -type SPARSE` and used by Time Machine, FileVault and HDIUTIL workflows. The on-disk format is a 4096-byte `sprs` header plus a Band Allocation Table (BAT) mapping virtual bands (typically 1 MB each) to physical bands stored sequentially in the file; unallocated virtual bands read as zeros. References: Apple `hdiutil(1)` man page — the creating tool; the 'sprs' header + band allocation table are undocumented by Apple and community-reverse-engineered`https://en.wikipedia.org/wiki/Sparse_image` — background on Apple sparse images
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2197,7 +2197,7 @@ Synthetic sparseimage writer used for round-trip testing and the `SparseimageFor
 
 Windows app package (.appx/.msix) — ZIP-based container with AppxManifest.xml, block map and package signature. References: `https://learn.microsoft.com/en-us/windows/msix/` — MSIX/APPX packaging documentation`https://en.wikipedia.org/wiki/APPX` — format overview`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2265,7 +2265,7 @@ Represents a single file entry in a Unix ar archive.
 
 Unix ar archive — the static-library (.a) and .deb outer container with 60-byte ASCII member headers. References: `ar(5)` man page (4.4BSD / FreeBSD) — the de-facto format definition (ar was never standardized by POSIX)`https://en.wikipedia.org/wiki/Ar_(Unix)` — format overview incl. the GNU and BSD long-name extensions
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2409,7 +2409,7 @@ Represents the metadata for a single entry in an ARC archive.
 
 ARC archive (System Enhancement Associates, 1985) — one of the first PC compression container formats. References: `https://github.com/hyc/arc` — SEA ARC source (GPL continuation maintained by Howard Chu) — the reference implementation`https://en.wikipedia.org/wiki/ARC_(file_format)` — format history
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2535,7 +2535,7 @@ Represents a single entry (file or directory) within an ARJ archive.
 
 ARJ archive (Robert K. Jung, 1991) — DOS-era compressor known for solid multi-volume support. References: ARJ `TECHNOTE.TXT` — the official format description shipped with the ARJ distribution`https://arj.sourceforge.net` — ARJ for Unix — open-source continuation`https://en.wikipedia.org/wiki/ARJ` — format history
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2897,7 +2897,7 @@ Represents a single audio entry inside a CRI Audio Wave Bank (AFS2). The wave ba
 
 CRI Audio Wave Bank (AFS2) — used by Capcom (Resident Evil, Monster Hunter), Sega (Yakuza, Persona 5), and other CRI Middleware titles. Contains raw codec payloads (HCA, ADX, etc.) which are surfaced verbatim — we do not decode the inner audio. References: `https://github.com/vgmstream/vgmstream` — vgmstream — implements AFS2/AWB parsing; the de-facto referenceCRI Middleware never published the AFS2 layout; it was recovered by the VGM ripping community
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2981,7 +2981,7 @@ One file record inside a BA2 GNRL archive.
 
 Bethesda Archive v2 (BA2, "BTDX" magic) — asset archive introduced with Fallout 4 (GNRL general and DX10 texture variants). References: `https://github.com/Guekka/bsa` — bsa — maintained open-source C++ library reading/writing BSA and BA2BA2 layout documented by the xEdit/BSArch project and the Fallout 4 modding community — Bethesda never published a spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3132,7 +3132,7 @@ Represents a single file entry in a BIG archive.
 
 EA BIG/BIGF archive — resource container used across Electronic Arts titles (Command & Conquer generation and later). References: `https://wiki.multimedia.cx/index.php/Electronic_Arts_Formats` — MultimediaWiki — community documentation of EA container formatsFinalBIG and the EA modding community's unpackers — de-facto references; EA never published a spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3237,7 +3237,7 @@ Encodes files into BinHex 4.0 (.hqx) text format.
 
 Apple II Binary II / BLU archive (.bny/.bqy).
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3283,7 +3283,7 @@ A single entry surfaced from a Microsoft NTBackup (.bkf) Microsoft Tape Format (
 
 Microsoft NTBackup (`.bkf`) — Microsoft Tape Format (MTF) v1.0 container. Surfaces FILE/DIRB entries via the `STAN` (Standard) data streams. Compressed streams are surfaced as "compressed" in the listing; the MTF spec does not name a compression algorithm and most ntbackup.exe writes are uncompressed. In-place R/W tier: `Add` appends one FILE DBLK per input at the position of the existing EOTM block (or at EOF when absent) and re-emits a fresh EOTM at the new end, leaving every pre-existing DBLK byte-identical at its original offset. `Remove` tombstones the matching FILE DBLK by overwriting its 4-byte type field with the `XXXX` sentinel and zero-wiping the rest of that FLB block; the reader's parse loop hits an unknown DBLK type and skips it. References: "Microsoft Tape Format Specification" v1.00a (Seagate Software, 1998) — the defining MTF document`https://en.wikipedia.org/wiki/NTBackup` — background on the creating tool
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3459,7 +3459,7 @@ Entry in a BSA/BA2 archive.
 
 Bethesda Softworks Archive (BSA) — asset archive used by The Elder Scrolls (Morrowind through Skyrim) and Fallout 3 / New Vegas. References: `https://en.uesp.net/wiki/Oblivion_Mod:BSA_File_Format` — UESP — BSA v103/v104 format documentation`https://en.uesp.net/wiki/Skyrim_Mod:Archive_File_Format` — UESP — Skyrim-era v104/v105 archive documentation`https://en.uesp.net/wiki/Morrowind_Mod:BSA_File_Format` — UESP — Morrowind v100 variant
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3671,7 +3671,7 @@ Represents a file entry stored inside a Microsoft Cabinet (CAB) archive.
 
 Microsoft Cabinet (CAB) archive — CFHEADER/CFFOLDER/CFFILE structures with MSZIP/Quantum/LZX-compressed folders. References: [MS-CAB]: Cabinet File Format — Microsoft Open Specifications`https://www.cabextract.org.uk/libmspack/` — libmspack — maintained open-source CAB implementation`https://en.wikipedia.org/wiki/Cabinet_(file_format)` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3739,7 +3739,7 @@ Creates Microsoft Cabinet (CAB) archives.
 
 Comic book archive — a RAR container of sequentially named page images, conventionally suffixed .cbr. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cbr/.cbz naming convention`https://www.rarlab.com/technote.htm` — RAR 5.x technote — the underlying container format
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3774,7 +3774,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Comic book archive — a ZIP container of sequentially named page images, conventionally suffixed .cbz. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cbr/.cbz naming convention`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3822,7 +3822,7 @@ Represents a single entry (file) within a CHM archive.
 
 Microsoft Compiled HTML Help (CHM) — ITSF/ITSP container with LZX-compressed content sections. References: Matthew Russotto's "Microsoft's HTML Help (.chm) format" — the classic unofficial specification (russotto.net)`https://www.cabextract.org.uk/libmspack/` — libmspack — maintained open-source CHM decoder`https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3960,7 +3960,7 @@ Represents a single entry in a Compact Pro (.cpt) archive.
 
 Compact Pro archive (Bill Goodman / Cyclos) — classic-Mac compressor that rivaled StuffIt in the early 1990s. References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADMaster — open-source Compact Pro reader`https://en.wikipedia.org/wiki/Compact_Pro` — format history
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4087,7 +4087,7 @@ Represents a single entry in a cpio archive.
 
 cpio archive — Unix copy-in/copy-out container (binary, portable-ASCII odc and newc variants). References: `https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html` — POSIX pax — defines the cpio interchange headers`cpio(5)` man page (libarchive / FreeBSD) — documents the binary, odc, newc and crc variants`https://en.wikipedia.org/wiki/Cpio` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4245,7 +4245,7 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 Chrome extension package (CRX3) — "Cr24" magic + version + protobuf SignedData header followed by the ZIP payload. References: `https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/` — Chromium crx_file component — `crx3.proto` defines the header`https://developer.chrome.com/docs/extensions` — Chrome extensions documentation portal
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4377,7 +4377,7 @@ Implements `IEquatable<DebEntry>`.
 
 Debian binary package (.deb) — an ar archive holding debian-binary, control.tar.* and data.tar.*. References: `deb(5)` man page (dpkg) — the authoritative format description`https://www.debian.org/doc/debian-policy/` — Debian Policy Manual — binary package requirements`https://en.wikipedia.org/wiki/Deb_(file_format)` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4549,7 +4549,7 @@ Represents a single compressed file stored in a DiskDoubler file.
 
 DiskDoubler compressed file (Salient Software, 1989-1993) — classic-Mac per-file compressor. References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADMaster — open-source DiskDoubler decoder`https://en.wikipedia.org/wiki/DiskDoubler` — format history
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4708,7 +4708,7 @@ Implements `IDisposable`.
 
 Office Open XML word-processing document (.docx) — an OPC/ZIP package per ECMA-376 / ISO/IEC 29500. References: `https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 — Office Open XML file formats`https://en.wikipedia.org/wiki/Office_Open_XML` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4786,7 +4786,7 @@ Represents a single entry in a Bloodlines DZIP archive.
 
 DZIP v2 archive ("DZIP" magic) used by Vampire: The Masquerade — Bloodlines; stored and LZSS-compressed entries. References: Undocumented Troika Games format; the header/TOC layout was recovered by the Bloodlines modding community's unpacking tools`https://en.wikipedia.org/wiki/Vampire:_The_Masquerade_%E2%80%93_Bloodlines` — background on the game
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4852,7 +4852,7 @@ Implements `IDisposable`.
 
 Java EE / Jakarta EE Enterprise Application aRchive (.ear) — ZIP container with META-INF/application.xml and bundled WAR/JAR modules. References: `https://jakarta.ee/specifications/platform/` — Jakarta EE Platform specification — defines EAR packaging`https://en.wikipedia.org/wiki/EAR_(file_format)` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5066,7 +5066,7 @@ Linear scanner that locates zlib substreams inside an EaseUS Todo Backup `.pbd` 
 
 EPUB e-book — ZIP-based OCF container with a mimetype entry, META-INF/container.xml and the OPF package document. References: `https://www.w3.org/TR/epub-33/` — EPUB 3.3 — W3C Recommendation (incl. the OCF container)`https://en.wikipedia.org/wiki/EPUB` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5102,7 +5102,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Descriptor for the Microsoft ESD (Electronic Software Download) format — the encrypted-CAB / install-image variant of WIM that the Windows Update service streams down for OS provisioning. References: `https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview` — Microsoft's WIM/ESD overviewMicrosoft "Windows Imaging File Format (WIM)" whitepaper — the on-disk header / resource-table spec ESD shares`https://wimlib.net` — open-source WIM/ESD implementation (LZMS, solid resources)
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6686,7 +6686,7 @@ Represents a single file entry within a FreeArc archive.
 
 Format descriptor for FreeArc compressed archives (.arc). References: `https://github.com/Bulat-Ziganshin/FA` — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)`https://en.wikipedia.org/wiki/FreeArc` — Wikipedia overviewNo formal specification — the archive layout is defined by the original FreeArc sources
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6789,7 +6789,7 @@ Represents a single file entry in a Nintendo 3DS GAR archive.
 
 Nintendo 3DS GAR (Generic Asset Resource) archive as used in Tomodachi Life / Animal Crossing-era titles. References: No official specification — proprietary Nintendo-era container, reverse-engineered by the 3DS modding community`https://github.com/FanTranslatorsInternational/Kuriimu2` — Kuriimu2 — fan-translation toolkit covering many 3DS archive containers
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7055,7 +7055,7 @@ Ghost Fast LZ (Z1) codec — a custom LZ77 variant with a 4096-entry hash table 
 
 Symantec / Norton Ghost backup-image descriptor — R/W for the FE EF record container shared across the entire Binary Research → Symantec → Norton lineage (v4 DOS-era through Ghost 11.x / 12.x). References: No public specification — proprietary Symantec format; record layout reverse-engineered across Ghost 3.0 through 12.x images`https://en.wikipedia.org/wiki/Ghost_(disk_utility)` — Wikipedia on the Binary Research / Symantec / Norton lineage
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7203,7 +7203,7 @@ Represents a single entry in a Lucasarts GOB archive.
 
 LucasArts GOB resource archive used by Star Wars: Jedi Knight (Dark Forces II) and Outlaws. References: `https://github.com/luciusDXL/TheForceEngine` — The Force Engine — maintained open reimplementation of the Jedi engine, reads GOB containersNo official specification — community-reverse-engineered LucasArts container
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7262,7 +7262,7 @@ Implements `IDisposable`.
 
 Godot Engine resource pack (.pck, GDPC container). References: `https://github.com/godotengine/godot` — canonical implementation — the format is defined by core/io/file_access_pack.cpp`https://docs.godotengine.org` — Godot Engine documentation (PCK export and loading)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7346,7 +7346,7 @@ Entry in a BUILD Engine GRP archive.
 
 BUILD engine GRP game resource archive ('KenSilverman' signature + file table), used by Duke Nukem 3D and other BUILD titles. References: `https://moddingwiki.shikadi.net/wiki/GRP_Format` — DOS Game Modding Wiki — GRP format layout`https://advsys.net/ken/build.htm` — Ken Silverman's BUILD engine page (format author)`https://voidpoint.io/terminx/eduke32` — EDuke32 — maintained BUILD engine implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7518,7 +7518,7 @@ Represents a single entry in an Ha archive.
 
 HA archive (Harri Hirvola) with ASC (sliding-window LZ + arithmetic coding) and HSC (context modelling + arithmetic coding) methods. References: HA.DOC shipped with the HA 0.999 archiver (Harri Hirvola) — the canonical format and method descriptionNo online specification — the format is known from the archiver's released source code
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7708,7 +7708,7 @@ Represents a single file entry in a HOG archive.
 
 Descent / Descent II HOG game-data archive ('DHF' signature + 13-byte-name records). References: `https://github.com/dxx-rebirth/dxx-rebirth` — DXX-Rebirth — maintained open-source Descent engine and de-facto format referenceNo official specification — documented by the community from the released Descent source code
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7811,7 +7811,7 @@ Represents a single entry (file or directory) in a Total Annihilation HPI archiv
 
 Total Annihilation HPI (HAPI) game resource archive with chunked, zlib-subset-compressed entries. References: Total Annihilation modding-community HPI format documentation (HPIUtil and successors) — no official Cavedog specification exists`https://en.wikipedia.org/wiki/Total_Annihilation` — Wikipedia on the game
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7914,7 +7914,7 @@ Compressor and decompressor for the Atari ST ICE Packer format (Axe of Delight, 
 
 Amiga IFF CDAF (Compact Disk Archive Format) — an EA-IFF-85 FORM container carrying FNAM/FDAT chunk pairs per archived file. References: "EA IFF 85: Standard for Interchange Format Files" (Jerry Morrison, Electronic Arts, 1985) — the underlying container standard`https://en.wikipedia.org/wiki/Interchange_File_Format` — Wikipedia on IFF`https://aminet.net` — Aminet — distribution home of the Amiga CDAF tooling
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8048,7 +8048,7 @@ Writes a minimal Inno Setup header. No PE stub is emitted; the reader scans from
 
 Apple iOS application package (.ipa) — a ZIP archive laid out as Payload/AppName.app plus metadata. References: `https://en.wikipedia.org/wiki/.ipa` — Wikipedia on the .ipa bundle layout`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE ZIP APPNOTE — the underlying container format
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8084,7 +8084,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Java Archive (JAR) — a ZIP container with a META-INF/MANIFEST.MF manifest. References: `https://docs.oracle.com/javase/8/docs/technotes/guides/jar/jar.html` — Oracle JAR File Specification`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE ZIP APPNOTE — the underlying container format`https://en.wikipedia.org/wiki/JAR_(file_format)` — Wikipedia
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8120,7 +8120,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Google Earth KMZ — a ZIP archive bundling a root KML document plus referenced resources. References: `https://developers.google.com/kml/documentation` — Google KML documentation (KMZ packaging rules)OGC KML 2.3 (OGC 12-007r2) — the standardized KML specification`https://en.wikipedia.org/wiki/Keyhole_Markup_Language` — Wikipedia
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8233,7 +8233,7 @@ Represents a single entry in a CP/M LBR archive directory.
 
 CP/M LBR library archive (LU by Gary P. Novosielski) — a directory of stored, uncompressed member files. References: LU library utility documentation (Gary P. Novosielski) — the defining format description`https://en.wikipedia.org/wiki/LBR_(file_format)` — Wikipedia
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8317,7 +8317,7 @@ Represents a single resource entry inside a LucasArts LFD bundle.
 
 LucasArts LFD resource bundle used by X-Wing and TIE Fighter. References: `https://github.com/MikeG621/LfdReader` — Idmr.LfdReader — community reference implementation with detailed format documentationNo official specification — community-reverse-engineered LucasArts container
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8384,7 +8384,7 @@ Implements `IDisposable`.
 
 Amiga LhFloppy (LhF) disk archive storing whole floppy tracks with LZ77+Huffman compression. References: `https://aminet.net` — Aminet — distribution home of the Amiga disk-archiver toolingNo published specification — format reverse-engineered from the archiver
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8551,7 +8551,7 @@ Writes a Long Range Zip (lrzip) container with the LZMA subtype. Other methods a
 
 Commodore 64 Lynx/LNX archive. The format stores a textual PETSCII-ish directory and uncompressed file extents in 254-byte blocks mirroring a 1541 sector with its two link bytes removed.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8782,7 +8782,7 @@ Creates LHA/LZH archives.
 
 LHA/LZH archive — the LZSS+Huffman archiver family historically dominant in Japan and on the Amiga. References: `https://github.com/jca02266/lha` — LHa for UNIX — maintained canonical implementation; header layouts documented in the source tree`https://en.wikipedia.org/wiki/LHA_(file_format)` — Wikipedia
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9079,7 +9079,7 @@ Represents a single entry in an Amiga LZX archive.
 
 Amiga LZX archive (Jonathan Forbes and Tomi Salo) — LZ77+Huffman with merged-file compression groups. References: `https://en.wikipedia.org/wiki/LZX` — Wikipedia — covers the Amiga LZX archiver lineage`https://aminet.net` — Aminet — home of the original archiver and the unlzx extractor whose source is the de-facto format reference
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9462,7 +9462,7 @@ Writes a valid Macrium Reflect X (`.mrimgx`) container from a flat disk-image pa
 
 Mozilla Archive Format (MAFF) — a ZIP container of saved web pages plus RDF metadata. References: `https://en.wikipedia.org/wiki/Mozilla_Archive_Format` — WikipediaMAFF specification by the Mozilla Archive Format add-on project (formerly maf.mozdev.org; mozdev has shut down)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9683,7 +9683,7 @@ Represents a single resource entry in a Cyan Mohawk (MHK) archive. Resources are
 
 Cyan / Broderbund Mohawk (MHWK) resource archive used by Myst, Riven and Living Books titles. References: `https://github.com/scummvm/scummvm` — ScummVM — the Mohawk engine is the de-facto reference implementation`https://wiki.scummvm.org` — ScummVM wiki — Mohawk engine and archive documentation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9756,7 +9756,7 @@ Represents a single entry in a Westwood TD/RA1 MIX archive.
 
 Westwood Studios MIX archive (Command and Conquer: Tiberian Dawn / Red Alert variant) — header plus CRC-keyed file table. References: `https://github.com/OpenRA/OpenRA` — OpenRA — maintained open reimplementation with a MIX readerXCC Utilities (Olaf van der Spek) — long-standing de-facto MIX reference implementationNo official specification — community-reverse-engineered
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10055,7 +10055,7 @@ Entry in an MPQ archive.
 
 Blizzard MPQ (Mo'PaQ) game archive used by Diablo, StarCraft, WarCraft III and World of Warcraft. References: `http://www.zezula.net/en/mpq/main.html` — Ladislav Zezula's MPQ format documentation — the de-facto specification`https://github.com/ladislav-zezula/StormLib` — StormLib — maintained reference implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10144,7 +10144,7 @@ Represents an entry (stream or storage) in an MSI/OLE Compound File.
 
 Microsoft OLE2 Compound File Binary container (MSI installer databases, legacy Office documents). References: `https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/` — [MS-CFB] Compound File Binary File Format — Microsoft Open Specifications`https://learn.microsoft.com/en-us/windows/win32/msi/windows-installer-portal` — Windows Installer documentation portal`https://en.wikipedia.org/wiki/Compound_File_Binary_Format` — Wikipedia
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10192,7 +10192,7 @@ Implements `IDisposable`.
 
 Descriptor for MSIX and MSIXBUNDLE packages. On disk these are ZIP archives whose root contains an `AppxManifest.xml` (MSIX) or `AppxBundleManifest.xml` (MSIX bundle). The on-disk structure is identical to APPX; only the manifest semantics and file extensions differ. The descriptor surfaces a synthetic `metadata.ini` summarising identity and capability declarations parsed from the manifest, followed by every ZIP entry verbatim. References: `https://learn.microsoft.com/en-us/windows/msix/` — Microsoft MSIX documentation portal`https://github.com/microsoft/msix-packaging` — Microsoft MSIX SDK — canonical packaging implementation`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE ZIP APPNOTE — the underlying container format
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10256,7 +10256,7 @@ Represents a single file inside a NARC archive.
 
 Nintendo DS NARC (Nitro Archive) — BTAF/BTNF/GMIF chunks reusing the NitroROM FNT/FAT layout. References: `https://problemkaputt.de/gbatek.htm` — GBATEK (Martin Korth) — canonical DS technical reference including the NitroROM FNT/FAT structures`https://github.com/pleonex/tinke` — Tinke — community DS resource tool reading NARC
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10328,7 +10328,7 @@ Represents a single file or directory entry within a Nintendo DS ROM NitroFS fil
 
 Nintendo DS ROM image — cartridge header, FNT/FAT filesystem and ARM9/ARM7 binaries. References: `https://problemkaputt.de/gbatek.htm` — GBATEK (Martin Korth) — canonical DS cartridge-header and filesystem reference`https://github.com/devkitPro/ndstool` — ndstool (devkitPro) — maintained ROM build/extract tool
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10484,7 +10484,7 @@ Represents a single file entry in an NSA archive.
 
 NScripter NSA game-data archive (entry table + data-offset header). References: ONScripter (Ogapee) — the open NScripter engine whose NsaReader is the de-facto format referenceNo official specification — NScripter is proprietary; the container is documented by the visual-novel tooling community
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10625,7 +10625,7 @@ Writes a minimal NSIS-formatted file. No PE stub is emitted — the reader's `Sc
 
 NuFX / ShrinkIt archive descriptor for Apple II and Apple IIgs archives. Supports plain SHK/SDK archives, native Stored/Squeeze/NuLZW1/NuLZW2/LZC-12/LZC-16 creation, record-preserving direct add/replace/remove, and slack-compacting rebuilds.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10670,7 +10670,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 NuGet package (.nupkg) — a ZIP/OPC container with a .nuspec manifest. References: `https://learn.microsoft.com/en-us/nuget/` — Microsoft NuGet documentation portal (package structure, .nuspec)`https://github.com/NuGet/NuGet.Client` — canonical client implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10770,7 +10770,7 @@ WORM writer for the NumPy NPY array serialization format (NEP 1). Emits a v1 fil
 
 Descriptor for NumPy's NPZ format — a ZIP archive whose entries are all `.npy` array serializations. Detection is extension-based (NPZ has no dedicated magic; its raw magic is the plain ZIP signature) and the contents are surfaced as-is: one entry per enclosed `.npy`, plus a `metadata.ini` summary of array names and byte sizes. References: `https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html` — numpy.lib.format — defines NPZ as a ZIP of .npy members`https://github.com/numpy/numpy` — canonical implementation (numpy.savez / numpy.load)`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE ZIP APPNOTE — the underlying container format
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10829,7 +10829,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 OpenDocument presentation (.odp) — an OASIS ODF ZIP package. References: OASIS OpenDocument Format v1.3 (also ISO/IEC 26300) — the ODF package and XML specification`https://en.wikipedia.org/wiki/OpenDocument` — Wikipedia`https://www.libreoffice.org` — LibreOffice — principal implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10865,7 +10865,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 OpenDocument spreadsheet (.ods) — an OASIS ODF ZIP package. References: OASIS OpenDocument Format v1.3 (also ISO/IEC 26300) — the ODF package and XML specification`https://en.wikipedia.org/wiki/OpenDocument` — Wikipedia`https://www.libreoffice.org` — LibreOffice — principal implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10901,7 +10901,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 OpenDocument text document (.odt) — an OASIS ODF ZIP package. References: OASIS OpenDocument Format v1.3 (also ISO/IEC 26300) — the ODF package and XML specification`https://en.wikipedia.org/wiki/OpenDocument` — Wikipedia`https://www.libreoffice.org` — LibreOffice — principal implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11264,7 +11264,7 @@ Represents a file entry in a PackIt (.pit) archive.
 
 PackIt classic Macintosh archive (.pit; Harry Chesley, 1984) — sequential PMag/PMa4 records bundling data and resource forks. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — maintained implementation including PackItNo formal specification — format known from PackIt itself and later community documentation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11335,7 +11335,7 @@ Implements `IDisposable`.
 
 id Software Quake PAK resource archive ('PACK' header + 64-byte-entry directory). References: `https://github.com/id-Software/Quake` — released Quake source — the pakfile code is the canonical definitionUnofficial Quake Specs (Olivier Montanuy et al.) — long-standing community format documentation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11467,7 +11467,7 @@ A single entry in the CWBP chunk-offset table — surfaces the exact per-chunk f
 
 R/O metadata descriptor for Paragon Backup & Recovery (`.pbf`) sector-image backup files. Surfaces the corrected (TrID-documented) `"PImg"` magic, a synthetic `metadata.ini` describing the multi-file companion convention and the format-evolution history, and the raw image bytes; no real entry walk is attempted. Promotion outcome: R/O metadata only. The earlier Stage-0 baseline declined any promotion entirely; this revision corrects the detection magic against the public spec and surfaces what little structural information is publicly documented. R/W is still blocked: the byte layout after the 4-byte magic is undocumented, the format is proprietary, vendor restore-only since HDM 16. What the deep-RE research established:Real magic, not the Stage-0 guess. The TrID file-identifier database catalogues the "Paragon Backup Format image" header as the 4-byte ASCII tag `"PImg"` (hex `50 49 6D 67`) at offset 0, cross-confirmed by file-extension.net, recoveryutility.com, and datenrettungtool.de. The earlier Stage-0 baseline had used the ASCII tags `"PBF"` / `"PBR1"`, which were a guess from the format's display name and never observed in real samples — those have been replaced by the documented `"PImg"` signature. Multi-file archive convention is documented. Per Paragon KB article 767 ("Archive Formats"), a complete Paragon backup directory contains: `.pbf` main image / legacy pre-HDM-11 index; `.pfi` Paragon Backup Index Data (main index since HDM 11 / late 2011, small and used to ship deltas over the network); `.pfm` Image Descriptor sidecar consumed by Paragon's Image Explorer for fast browsing; and split data chunks `.000` / `.001` / `.002` / ... at the ~4 GB segment boundary. Format-evolution timeline is documented. PBF was the sole index up to HDM 10 (2009/2010); HDM 11 (late 2011) introduced PFI and demoted PBF to the data file; HDM 14 introduced pVHD (Paragon Virtual Hard Disk) as the new container, with PBF still primary under "Smart Backup"; HDM 15 made pVHD the default, with PBF only via "Legacy Mode"; HDM 16+ removed PBF creation entirely — restore-only. R/W blockers that remain after research. The byte layout after the 4-byte magic is undocumented in every public source consulted — TrID only catalogues the signature, the Paragon Knowledge Base and the HDM / Backup&Recovery user manuals only describe user-facing operations, and no open-source third-party PBF reader exists. The block index, per-cluster allocation bitmap (sector-based mode), snapshot / incremental chain framing, on-disk compressor identifier, per-block frame header, and per-segment split-archive trailer all remain proprietary. The format is also obsolete for creation since HDM 16. Deep-RE audit conclusion. Twelve research vectors were pursued past the bare TrID signature on top of the Stage-0 -> R/O baseline: asmodean expimg (false lead, Japanese visual-novel format unrelated to Paragon), Paragon HDM SDK (partitioning only), Paragon-Software- Group + Paragon-Backup-Recovery GitHub orgs (no backup-format code), USPTO patent search (no Paragon-assigned PBF-layout disclosure), EnCase / X-Ways / FTK forensic-suite custom-carver repositories (no Paragon-PBF-specific carver), Russian Habr / Toster.ru threads, paragon284.rssing.com Drive Backup forum mirror (community confirms the conceptual triple {index, metadata, compressed} but no byte-level layout), Gary Kessler / SEARCH file-signatures table (no PBF entry), Kaitai Struct + 010 Editor / Hexinator / Synalize It! / ImHex template libraries (no `.ksy` / `.bt` template for PBF), Paragon Scripting Language User Manual (0-9 compression dial, `*.pbf` exclusion only), and the Paragon ExtFS / NTFS3 / UFSD / APFS-SDK-CE open-source releases (filesystem drivers only, share no structures with PBF). All twelve vectors dead-ended. The audit produced one material correction: legacy PBF is unencrypted; password protection, compression and splitting are pVHD-only per the B&R 17 / HDM 16 manuals — the earlier baseline's "optional AES with vendor KDF" blocker was incorrect and is retired. Stage stays at R/O metadata; the audit trail is persisted in `metadata.ini` as `re_audit_*` keys so the next maintainer doesn't repeat it. Sources (all public, all consulted during the R/O promotion): TrID file-identifier database; Paragon KB articles 767 (Archive Formats) and 262 (Backup Types); Paragon Backup & Recovery 17 User Manual; Paragon Hard Disk Manager 16 User Manual; cross-references via file-extension.net, recoveryutility.com, datenrettungtool.de, openthefile.net, fileinfo.com, file.org, solvusoft.com. References: `https://www.paragon-software.com` — vendor site — the .pbf container is proprietary and undocumentedNo public specification — vendor images parsed from a reverse-engineered header layout
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11644,7 +11644,7 @@ Represents a single section in a PSP PBP archive.
 
 Sony PSP PBP package (EBOOT.PBP) — 'PBP' magic plus eight offsets to PARAM.SFO, icon/PIC/PMF media and DATA.PSP / DATA.PSAR sections. References: `https://github.com/pspdev/pspsdk` — PSP homebrew SDK — de-facto reference for the PBP headerNo official Sony specification — structure documented by the PSP homebrew community
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11745,7 +11745,7 @@ Represents a single entry in a Nintendo Switch PartitionFS (PFS0) archive.
 
 Nintendo Switch PartitionFS (PFS0) archive — the flat file table inside NSP packages. References: `https://switchbrew.org/` — Switchbrew wiki — community reverse-engineered Switch format documentation (PFS0/NSP)`https://github.com/SciresM/hactool` — hactool — reference extraction tool implementing PFS0
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11917,7 +11917,7 @@ PPMd stream container format. Layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), then t
 
 Office Open XML presentation (.pptx) — an OPC ZIP package. References: `https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 Office Open XML File Formats (also ISO/IEC 29500)`https://en.wikipedia.org/wiki/Office_Open_XML` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11966,7 +11966,7 @@ Represents a single entry inside a PSARC archive.
 
 Sony PlayStation archive (PSARC) used on PS3/PS4/Vita — manifest-named entries behind a compressed table of contents. References: psdevwiki "PlayStation archive (PSARC)" (www.psdevwiki.com) — community on-disk layout notesPSARC.EXE from Sony's PlayStation SDKs — the defining (non-public) tool
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12193,7 +12193,7 @@ Represents an entry in a RAR archive.
 
 RAR archive (RAR4 and RAR5 container framing). References: `https://www.rarlab.com/technote.htm` — RAR 5.0 archive format technote (RARLAB, official)unrar source distribution (rarlab.com) — de-facto reference for RAR4 decoding`https://en.wikipedia.org/wiki/RAR_(file_format)` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12312,7 +12312,7 @@ Implements `IDisposable`.
 
 Nintendo Resource Archive (RARC), used heavily by GameCube-era JSystem titles and some Wii software. The raw container is big-endian; Yaz0/Yay0 compression is an independent outer layer and is intentionally not folded into this descriptor. References: `https://wiki.cloudmodding.com/zgcn/ARC` — RARC headers, nodes, file entries and flags`https://kuribo64.net/wiki/?page=RARC` — alignment, hierarchy and filename hash documentation`https://www.lumasworkshop.com/wiki/RARC_(File_Format)` — MRAM/ARAM/DVD data-block layout
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12490,7 +12490,7 @@ Writes a minimal PE32+ DLL whose only purpose is to host opaque files as Win32 r
 
 RPG Maker XP/VX/VX Ace RGSSAD encrypted resource archive. References: `https://github.com/morkt/GARbro` — GARbro — game resource browser implementing RGSSAD decryptionformat defined by Enterbrain's RPG Maker runtime (RGSS); no official spec, key schedule reverse-engineered
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12586,7 +12586,7 @@ A single entry parsed from an RPA index.
 
 Ren'Py visual-novel resource archive (RPA) — pickle-encoded index, zlib-compressed header. References: `https://github.com/renpy/renpy` — Ren'Py engine — its loader defines the RPA format`https://github.com/Shizmob/rpatool` — rpatool — standalone RPA reader/writer`https://www.renpy.org/` — Ren'Py project home
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12646,7 +12646,7 @@ Implements `IDisposable`.
 
 RPM package — lead + signature header + main header + compressed cpio payload. References: `https://github.com/rpm-software-management/rpm` — canonical rpm sources (docs/manual describes the package format)Edward C. Bailey, "Maximum RPM" — classic format documentation`https://en.wikipedia.org/wiki/RPM_Package_Manager` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12805,7 +12805,7 @@ Represents a single file entry in a SAR archive.
 
 NScripter SAR resource archive (uncompressed entries behind a big-endian index). References: `https://github.com/morkt/GARbro` — GARbro — implements NScripter SAR extractionNScripter engine (Naoki Takahashi) defines the format; ONScripter is the open reimplementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12874,7 +12874,7 @@ Represents a single file entry in a Nintendo SARC archive.
 
 Nintendo SARC (Sorted ARChive) used across Wii U / 3DS / Switch first-party titles. References: `https://zeldamods.org/wiki/SARC` — ZeldaMods wiki — community SARC/SFAT/SFNT layout documentationNintendo's internal archive format; no official spec, structure community-documented
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12939,7 +12939,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.SevenZip`
 
-[`SevenZipCodec`](#sevenzipcodec) · [`SevenZipEntry`](#sevenzipentry) · [`SevenZipFilter`](#sevenzipfilter) · [`SevenZipFormatDescriptor`](#sevenzipformatdescriptor) · [`SevenZipInPlaceAdder`](#sevenzipinplaceadder) · [`SevenZipInPlaceRemover`](#sevenzipinplaceremover) · [`SevenZipLayoutMap`](#sevenziplayoutmap) · [`SevenZipReader`](#sevenzipreader) · [`SevenZipWriter`](#sevenzipwriter) · [`SevenZipWriter.BlockDescriptor`](#sevenzipwriterblockdescriptor) · [`SolidBlockOptimizer`](#solidblockoptimizer) · [`SolidBlockOptimizer.OptimizeResult`](#solidblockoptimizeroptimizeresult) · [`SolidBlockOptimizer.ProgressCallback`](#solidblockoptimizerprogresscallback) · [`SolidBlockOptimizer.TrialResult`](#solidblockoptimizertrialresult) · [`SolidBlockPlanner`](#solidblockplanner) · [`SolidBlockPlanner.SolidBlock`](#solidblockplannersolidblock)
+[`SevenZipCodec`](#sevenzipcodec) · [`SevenZipEntry`](#sevenzipentry) · [`SevenZipFilter`](#sevenzipfilter) · [`SevenZipFormatDescriptor`](#sevenzipformatdescriptor) · [`SevenZipInPlaceAdder`](#sevenzipinplaceadder) · [`SevenZipInPlaceRemover`](#sevenzipinplaceremover) · [`SevenZipLayoutMap`](#sevenziplayoutmap) · [`SevenZipReader`](#sevenzipreader) · [`SevenZipWriter`](#sevenzipwriter) · [`SevenZipWriter.BlockDescriptor`](#sevenzipwriterblockdescriptor) · [`SolidBlockOptimizer`](#solidblockoptimizer) · [`SolidBlockOptimizer.DetailedProgress`](#solidblockoptimizerdetailedprogress) · [`SolidBlockOptimizer.OptimizeResult`](#solidblockoptimizeroptimizeresult) · [`SolidBlockOptimizer.ProgressCallback`](#solidblockoptimizerprogresscallback) · [`SolidBlockOptimizer.TrialResult`](#solidblockoptimizertrialresult) · [`SolidBlockPlanner`](#solidblockplanner) · [`SolidBlockPlanner.SolidBlock`](#solidblockplannersolidblock)
 
 #### `SevenZipCodec`
 
@@ -12992,7 +12992,7 @@ Specifies an optional pre-filter applied before compression when writing a 7z ar
 
 7-Zip (.7z) archive — LZMA/LZMA2-based container with solid compression and encrypted-header support. References: `https://www.7-zip.org/7z.html` — official 7z format page (Igor Pavlov)`7zFormat.txt` in the 7-Zip / LZMA SDK sources — the structural reference`https://en.wikipedia.org/wiki/7z` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13100,7 +13100,23 @@ Tries multiple solid-block grouping strategies on a 7z archive and returns the o
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Optimize` | `static OptimizeResult Optimize(Stream archive, int maxTrials = 5, ProgressCallback onProgress = null)` | Tries up to `maxTrials` candidate grouping strategies and returns the one that produces the smallest archive. |
+| `Optimize` | `static OptimizeResult Optimize(Stream archive, int maxTrials = 5, ProgressCallback onProgress = null, Action<DetailedProgress> onDetailedProgress = null, CancellationToken cancellationToken = null)` | Tries up to `maxTrials` candidate grouping strategies and returns the one that produces the smallest archive. |
+
+#### `SolidBlockOptimizer.DetailedProgress`
+
+Detailed progress used by the maintenance block-map UI. `Phase` is `extracting`, `strategy`, or `building`. The byte counters are meaningful for extraction; current/total are meaningful for strategy and target-entry construction.
+
+Implements `IEquatable<DetailedProgress>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DetailedProgress` | `DetailedProgress(string Phase, int Current, int Total, string Name, long BytesDone, long BytesTotal)` | Detailed progress used by the maintenance block-map UI. `Phase` is `extracting`, `strategy`, or `building`. The byte counters are meaningful for extraction; current/total are meaningful for strategy and target-entry construction. |
+| `BytesDone` | `long BytesDone { get; init; }` |  |
+| `BytesTotal` | `long BytesTotal { get; init; }` |  |
+| `Current` | `int Current { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Phase` | `string Phase { get; init; }` |  |
+| `Total` | `int Total { get; init; }` |  |
 
 #### `SolidBlockOptimizer.OptimizeResult`
 
@@ -13179,7 +13195,7 @@ One file entry inside a BioWare SFAR archive. SFARs store no in-band paths — o
 
 BioWare SFAR (Sirius File Archive) — Mass Effect 3 DLC container. References: `https://github.com/ME3Tweaks/LegendaryExplorer` — Legendary Explorer (ME3Tweaks) — modding toolset implementing SFARBioWare's DLC packaging format; no official spec, layout reverse-engineered by the modding community
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13246,7 +13262,7 @@ An entry in a shell archive.
 
 Shell archive (shar) — self-extracting Unix shell script carrying files as here-documents. References: `https://www.gnu.org/software/sharutils/` — GNU sharutils — shar/unshar reference implementation`https://en.wikipedia.org/wiki/Shar` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13319,7 +13335,7 @@ Represents one active entry inside a Sir-Tech SLF library (Jagged Alliance 2).
 
 Sir-Tech SLF library archive (Jagged Alliance 2). References: `https://github.com/ja2-stracciatella/ja2-stracciatella` — JA2 Stracciatella — open Jagged Alliance 2 engine; its SLF reader is the open referenceSir-Tech's library format; no official spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13484,7 +13500,7 @@ Represents the metadata for a single entry in a Spark archive.
 
 RISC OS Spark archive (Acorn/ARM) — ARC-compatible layout with RISC OS file-type extensions. References: David Pilling's Spark / SparkFS (davidpilling.com) — the defining RISC OS archivernspark — portable open unarchiver for Spark/ARC archives`https://en.wikipedia.org/wiki/ARC_(file_format)` — Wikipedia — the base ARC format Spark extends
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13675,7 +13691,7 @@ Represents a file entry in an SQX archive.
 
 SQX archive (SpeedProject Squeez / SpeedCommander) with multiple compression algorithms. References: SpeedProject (www.speedproject.de) — vendor of Squeez/SpeedCommander; published the "SQX Archive Format" description`https://en.wikipedia.org/wiki/SQX` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13786,7 +13802,7 @@ Represents a single file entry in a StuffIt (SIT) archive.
 
 Macintosh StuffIt (SIT) archive — classic Mac compression with resource/data fork entries. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — open StuffIt decoder, the de-facto format reference`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia overviewAladdin Systems StuffIt — proprietary; no official spec published
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13861,7 +13877,7 @@ Represents a single entry in a StuffIt X (.sitx) archive.
 
 StuffIt X (.sitx) archive (Aladdin/Smith Micro) — proprietary element-stream container. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — partial open StuffIt X decoder`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt Xproprietary format; the element-stream codecs have no public specification
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14038,7 +14054,7 @@ Provides static methods for reading and writing SWF (Adobe Flash) files.
 
 Descriptor for a Split WIM (.swm / .swmN) volume — a WIM file that has been chopped into N pieces for size-limited media (DVD, FAT32, etc.). References: `https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview` — Microsoft's WIM/ESD overview (DISM `/Split-Image` produces .swm sets)Microsoft "Windows Imaging File Format (WIM)" whitepaper — defines `part_number`/`total_parts` in the shared header`https://wimlib.net` — open-source implementation with full split-WIM support
 
-Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14158,7 +14174,7 @@ Implements `IFilesystemBlockMover`.
 
 Commodore 64 T64 tape container — directory of memory-load records. References: Peter Schepers, "C64 File Formats: T64" — the classic reference document`https://vice-emu.sourceforge.io/` — VICE emulator — reference implementation reading/writing T64
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFilesystemBlockMover`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemBlockMover`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14255,7 +14271,7 @@ Represents a single entry in a TAR archive.
 
 Unix tape archive (tar) — 512-byte header blocks; ustar/GNU/pax variants; container only, no compression. References: `https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html` — POSIX pax — defines the ustar header and pax extended headers`https://www.gnu.org/software/tar/manual/` — GNU tar manual — GNU extensions (long names, sparse files)`https://en.wikipedia.org/wiki/Tar_(computing)` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14437,7 +14453,7 @@ Implements `IDisposable`.
 
 Microsoft TNEF (winmail.dat) email attachment container. References: [MS-OXTNEF]: Transport Neutral Encapsulation Format (Microsoft Open Specifications, learn.microsoft.com)`https://github.com/Yeraze/ytnef` — ytnef — open TNEF decoder`https://en.wikipedia.org/wiki/Transport_Neutral_Encapsulation_Format` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14518,7 +14534,7 @@ Represents a single entry (file or directory) inside a Nintendo U8 archive.
 
 Nintendo U8 archive (Wii / Wii U / 3DS) — node table + string pool + aligned file data. References: `https://wiibrew.org/wiki/U8_archive` — WiiBrew wiki — community U8 archive documentationWiimms SZS Tools (wszst) — maintained implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14594,7 +14610,7 @@ Represents a single entry in a UHARC archive.
 
 UHARC high-compression archive (PPM/LZP/delta) by Uwe Herklotz. References: UHARC by Uwe Herklotz — closed-source archiver; the bundled UHARC documentation is the only official descriptionno public format specification; container layout reverse-engineered from the DOS/Win32 binaries
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14661,7 +14677,7 @@ Implements `IDisposable`.
 
 Unreal Engine 1 UMX music package — tracker modules (S3M/IT/XM/MOD) wrapped in Unreal package serialization. References: `https://www.gildor.org/` — Gildor's UE tools (UE Viewer) — reference for the Unreal package formatEpic MegaGames Unreal package (UPKG) serialized-object format; music objects embed standard tracker modules
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14716,7 +14732,7 @@ Writes a minimal UMX (Unreal Package) file with a valid header. File data is emb
 
 Unity Asset Bundle (`.unity3d` / `.assets` / `.bundle`) — the UnityFS container that ships serialized Unity assets bundled for runtime loading. Each bundled asset is listed as a Node entry (path from the internal directory). Storage blocks can be stored, LZMA, or LZ4/LZ4HC-compressed; all four are supported for reading and fresh UnityFS creation. References: `https://docs.unity3d.com/Manual/AssetBundlesIntro.html` — official Unity AssetBundle documentation`https://github.com/K0lb3/UnityPy` — UnityPy — open UnityFS parser/writer interoperability reference`https://github.com/Perfare/AssetStudio` — AssetStudio — widely used bundle inspector
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14801,7 +14817,7 @@ Clean-room UnityFS writer for modern Unity Asset Bundles. The writer emits versi
 
 Legacy-index Unreal Engine Pak archive. Versions 1-7 are read with strict index/entry SHA-1 verification and block-aware Stored/Zlib extraction. Fresh archives are emitted as the widely interoperable version-3 layout. Version 8+ compression-name/path-hash index generations and IoStore (`.utoc`/`.ucas`) are intentionally separate concerns. References: Epic `FPakInfo`/`FPakEntry` in Runtime/PakFile`https://github.com/panzi/u4pak` — open UE4 legacy-index reader/packer
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15500,7 +15516,7 @@ Entry in a VPK archive.
 
 Valve Pak (VPK) game resource archive — directory-tree index, optionally split across numbered data packs. References: `https://developer.valvesoftware.com/wiki/VPK` — Valve Developer Community — VPK format and tool documentation`https://github.com/ValvePython/vpk` — open VPK implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15570,7 +15586,7 @@ Represents a single file entry in a VPP_PC v1 archive.
 
 Volition Package (VPP v1) — Red Faction 1 / Summoner game archive. References: `https://github.com/gibbed/Gibbed.Volition` — Gibbed.Volition — community tools for Volition package formatsVolition's game archive; no official spec, layout community-documented
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15644,7 +15660,7 @@ Represents a single file entry in a VPP v2 (Saint's Row 2) archive.
 
 Volition Package v2 (Saint's Row 2 era) descriptor — handles `.vpp_pc` archives with optional per-entry zlib compression. References: `https://github.com/gibbed/Gibbed.Volition` — Gibbed.Volition — community tools for Volition package formatsVolition's package format for Saints Row 2 (.vpp_pc); no official spec, reverse-engineered
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15705,7 +15721,7 @@ Implements `IDisposable`.
 
 Microsoft Visio VSDX drawing — an OPC ZIP package. References: [MS-VSDX]: Visio Graphics Service File Format (Microsoft Open Specifications, learn.microsoft.com)`https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 Part 2 — Open Packaging Conventions, the container VSDX uses`https://en.wikipedia.org/wiki/Microsoft_Visio` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15742,7 +15758,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Descriptor for the WACZ (Web Archive Collection Zipped) format — a ZIP container that wraps one or more WARC files together with a Frictionless-Data manifest, page index and optional resource bundles. References: `https://specs.webrecorder.net/wacz/1.1.1/` — the WACZ 1.1.1 specification (Webrecorder)`https://webrecorder.net` — Webrecorder, the format's author and reference tooling (py-wacz, ReplayWeb.page)
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15786,7 +15802,7 @@ Represents a single lump entry in a WAD archive.
 
 Doom WAD (IWAD/PWAD) — the id Software lump-directory game-data archive. References: `https://doomwiki.org/wiki/WAD` — Doom Wiki — definitive community WAD documentationMatthew S. Fell, "The Unofficial Doom Specs" — the original public format documentation`https://en.wikipedia.org/wiki/Doom_WAD` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15865,7 +15881,7 @@ Represents a single entry in a WAD2/WAD3 texture archive.
 
 WAD2 texture/lump archive used by Quake (WAD3 variant used by GoldSrc/Half-Life). References: id Software "Quake Specifications" v3.4 — documents the WAD2 lump directory`https://developer.valvesoftware.com/wiki/WAD` — Valve Developer Community — the WAD3 (GoldSrc) variant
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15937,7 +15953,7 @@ Implements `IDisposable`.
 
 Java Web Application Archive (WAR) — a ZIP/JAR with WEB-INF layout. References: `https://jakarta.ee/specifications/servlet/` — Jakarta Servlet specification — defines WAR packaging`https://en.wikipedia.org/wiki/WAR_(file_format)` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15988,7 +16004,7 @@ Represents a single record in a WARC archive.
 
 Descriptor for WARC (Web ARChive, ISO 28500) files — the record-oriented container web crawlers use to store captured HTTP transactions and metadata. References: ISO 28500:2017 "WARC file format" — the defining standard`https://iipc.github.io/warc-specifications/` — IIPC-maintained WARC specifications and proposals`https://en.wikipedia.org/wiki/WARC_(file_format)` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16140,7 +16156,7 @@ WORM writer for Web Bundle (`.wbn`) files. Emits the canonical 10-byte CBOR-arra
 
 Descriptor for a Python wheel distribution (`.whl`) — a ZIP archive that obeys the on-disk layout mandated by PEP 427. References: `https://peps.python.org/pep-0427/` — PEP 427, the original wheel binary-package specification`https://packaging.python.org/en/latest/specifications/binary-distribution-format/` — the living binary-distribution (wheel) format spec that superseded the PEP text
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16211,7 +16227,7 @@ Constants for the Windows Imaging (WIM) file format.
 
 Windows Imaging Format (WIM) — file-based disk image with single-instance resource storage. References: Microsoft, "Windows Imaging File Format (WIM)" white paper — the vendor format description`https://wimlib.net/` — wimlib — open implementation with detailed format documentation`https://en.wikipedia.org/wiki/Windows_Imaging_Format` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16332,7 +16348,7 @@ Writes a WIM (Windows Imaging) file to a stream.
 
 Wrapster container — arbitrary files disguised as an MP3 (v1/v2/v3) for Napster-era sharing. References: Wrapster (ca. 2000) — the defining Napster-era tool; no formal spec ever publishedlayout reverse-engineered from the tool's output (fake MP3 framing + embedded file table)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16413,7 +16429,7 @@ Represents a single file entry in a XAR archive.
 
 eXtensible ARchive (XAR) — gzip-compressed XML table of contents + heap; used by Apple installer packages. References: `https://github.com/mackyle/xar` — maintained xar sources (format documentation in the repository)`https://en.wikipedia.org/wiki/Xar_(archiver)` — Wikipedia overvieworiginally released as an OpenDarwin/Apple open-source project
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16479,7 +16495,7 @@ Implements `IDisposable`.
 
 Office Open XML spreadsheet (.xlsx) — an OPC ZIP package. References: `https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 Office Open XML File Formats (also ISO/IEC 29500)`https://en.wikipedia.org/wiki/Office_Open_XML` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16515,7 +16531,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Mozilla XPI extension package (ZIP-based) for Firefox/Thunderbird. References: `https://extensionworkshop.com/` — Mozilla Extension Workshop — extension packaging documentation`https://en.wikipedia.org/wiki/XPInstall` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16729,7 +16745,7 @@ One entry in a YPF v480 archive. `IsCorrupt` is set by `YpfReader` when the stor
 
 YPF resource archive of the YU-RIS / YukaScript visual-novel engine. References: `https://github.com/morkt/GARbro` — GARbro — implements YPF extraction for the YU-RIS engineYU-RIS engine's packaging format; no official spec, reverse-engineered
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16807,7 +16823,7 @@ Implements `IDisposable`.
 
 Amiga ZAP disk archive — LZ77+RLE backward-bitstream disk packer. References: `https://aminet.net/` — Aminet — distribution home of the Amiga ZAP disk archiverno formal spec; format known from the tool's own documentation and depacker sources
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16922,7 +16938,7 @@ Represents a single entry in a ZIP archive.
 
 ZIP archive — the universal container with per-entry compression methods. References: `https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE.TXT — the canonical .ZIP file format specification`https://en.wikipedia.org/wiki/ZIP_(file_format)` — Wikipedia overviewInfo-ZIP zip/unzip — long-standing open reference implementations
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -17170,7 +17186,7 @@ Represents a single file entry in a Zoo archive.
 
 Zoo archive — early DOS/Unix compressor by Rahul Dhesi (LZW/LZH methods). References: `https://en.wikipedia.org/wiki/Zoo_(file_format)` — Wikipedia overviewRahul Dhesi's zoo 2.10 sources — the defining implementation (widely mirrored)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -17320,7 +17336,7 @@ Represents a single file entry recorded in a ZPAQ journaling archive.
 
 ZPAQ journaling archive with content-defined deduplication and configurable context-mixing compression. References: `http://mattmahoney.net/dc/zpaq.html` — official ZPAQ page and Level 2 format specification (Matt Mahoney)`https://github.com/zpaq/zpaq` — reference implementation`https://en.wikipedia.org/wiki/ZPAQ` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

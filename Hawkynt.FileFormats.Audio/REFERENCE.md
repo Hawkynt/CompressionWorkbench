@@ -1361,7 +1361,7 @@ Represents a single audio entry within a Square Enix AKB audio bank.
 
 Square Enix AKB audio bank descriptor — surfaces per-entry raw audio payloads plus a synthetic `metadata.ini` entry containing bank-wide header fields (sample rate, channel mode, loop points). References: `https://github.com/vgmstream/vgmstream` — vgmstream — implements AKB parsing; the de-facto referenceSquare Enix never published the AKB layout; header fields were recovered by the VGM ripping community
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1566,7 +1566,7 @@ Represents a single audio entry inside a CRI Audio Wave Bank (AFS2). The wave ba
 
 CRI Audio Wave Bank (AFS2) — used by Capcom (Resident Evil, Monster Hunter), Sega (Yakuza, Persona 5), and other CRI Middleware titles. Contains raw codec payloads (HCA, ADX, etc.) which are surfaced verbatim — we do not decode the inner audio. References: `https://github.com/vgmstream/vgmstream` — vgmstream — implements AFS2/AWB parsing; the de-facto referenceCRI Middleware never published the AFS2 layout; it was recovered by the VGM ripping community
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1725,7 +1725,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 Format descriptor and stream operations for the FLAC (Free Lossless Audio Codec) format. Also surfaces an archive view: `FULL.flac` plus one mono WAV per channel (`LEFT.wav`/`RIGHT.wav`/...) so multi-channel FLAC files can be decomposed in the archive browser.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IStreamFormatOperations`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
