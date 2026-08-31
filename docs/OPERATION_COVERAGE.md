@@ -35,10 +35,10 @@ round-trips and stays fsck-clean where a filesystem tool exists).
 
 | Operation        | Descriptors |
 |------------------|-------------|
-| Defragment       | 228 |
-| Wipe             | 180 |
-| Purge            | 153 |
-| Shrink           | 90  |
+| Defragment       | 229 |
+| Wipe             | 181 |
+| Purge            | 154 |
+| Shrink           | 91  |
 | Optimize (layout)| 43  |
 | Metadata-reorder | 6   |
 
@@ -75,8 +75,9 @@ under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
   via the verified rebuild — contents preserved, only geometry changes.
 - **NTFS per-file compression**: the `Compression` create option (`Off`/`LZNT1`)
   stores files in a compressed `$DATA` attribute; small files stay resident in the MFT.
-- **Creation-option schemas** (`IFormatOptionsSchema`) now cover **74 of 88** creatable
-  filesystems (was 43; Ufs gained a `VolumeLabel` → `fs_volname` knob). The remaining 14 —
+- **Creation-option schemas** (`IFormatOptionsSchema`) now cover **75 of 89** creatable
+  filesystems (was 43; Ufs gained a `VolumeLabel` → `fs_volname` knob, and PS1 memory
+  cards expose their bank count). The remaining 14 —
   Bfs, Coherent, CramFs, DragonFs, G64, Hpfs, MinixFs, Msa, Qnx4, Qnx6, Vdfs, Xenix,
   Yaffs2, ZxScl — are intentionally schema-less for concrete reasons, not laziness:
   - **Coherent** — `s_fname`/`s_fpack` are the format's *detection signature*
@@ -109,10 +110,11 @@ R/W for a *conceptually read-write* format; an edit that has to move data is sti
 by a format-specific modifier or by the verified extract → re-create rebuild (`RebuildVerb` /
 `ModifyRebuilder`, or the default `IArchiveModifiable` members).
 
-> **`CanModify` is advertised when the format is a mutable container with a working modify
-> path.** It is withheld only from **read-only-by-design** formats (CramFS, SquashFS) and
-> **create-only** formats — even though a rebuild could synthesise a modified copy, those do
-> not present themselves as editable.
+> **`CanModify` is advertised when the workbench has a proven existing-instance edit path.**
+> An operating system mounting a filesystem read-only does not make an offline image editor
+> WORM: CramFS, SquashFS and EROFS remain read-only when mounted by Linux while their supported
+> workbench profiles are R/W by verified rebuild. `CanModify` is withheld when no such edit path
+> exists, not merely because the native mount policy is immutable.
 
 `Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces the deterministic half:
 every `CanModify` claimant's ops must implement `IArchiveModifiable` (a real modify path —
@@ -123,19 +125,19 @@ no unbacked flag). That the modify *works* (round-trips) is covered by the regis
 
 - **Byte-preserving in place** (existing data stays put): FAT12/16/32 (`FatModifier`), GEMDOS,
   GS/OS, exFAT, ext, HFS/HFS+, APFS, F2FS, JFS, UFS, UDF, the log-structured
-  JFFS2/YAFFS2/UBIFS/NILFS2, the CVF family, the retro disk formats; the in-place archive
-  editors (ZIP family, TAR, AR, CPIO, XAR, LZH/LHA, ARJ, ZOO, PDF); byte-identity append
-  (Ghost); the sector-image editors (BIN/CUE, CDI, MDF, NRG, CSO); and the disk-image
-  containers that delegate to a R/W inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
-- **Relayout / re-pack** (valid result, existing data may move): **NTFS, XFS, Btrfs, ReiserFS**
-  (the writer re-packs the whole image — add/remove read the entries and re-emit a valid,
-  conformance-shaped image), and **7-Zip, CAB, RAR** (the solid streams are rewritten via the
-  extract → re-create rebuild; RAR re-emits a valid RAR5 via `RarWriter` and recomputes every
-  CRC — so the cross-referencing-checksum concern of an append-style edit does not apply).
+  JFFS2/YAFFS2/UBIFS/NILFS2, the CVF family, the retro disk formats; PS1 memory-card
+  deletion (which marks directory records deleted while retaining recoverable save blocks);
+  the in-place archive editors (ZIP family, TAR, AR, CPIO, XAR, LZH/LHA, ARJ, ZOO, PDF);
+  byte-identity append (Ghost); the sector-image editors (BIN/CUE, CDI, MDF, NRG, CSO); and
+  the disk-image containers that delegate to a R/W inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
+- **Relayout / re-pack** (valid result, existing data may move): **NTFS, XFS, Btrfs, ReiserFS,
+  CramFS, SquashFS, EROFS** and PS1 memory-card add/replace/defrag (the supported image is
+  rebuilt or re-packed and verified), plus **7-Zip, CAB, RAR** (the solid streams are rewritten
+  via the extract → re-create rebuild; RAR re-emits a valid RAR5 via `RarWriter` and recomputes
+  every CRC — so the cross-referencing-checksum concern of an append-style edit does not apply).
 
-### Stays WORM (create-only / read-only-by-design)
+### Stays WORM (create-only)
 
-- **CramFS**, **SquashFS** — compressed *read-only* filesystems by design; not presented as editable.
 - **Sqx**, **Wim**, **Swm**, **Ace** — checksum-record archives kept create-only (no in-place
   editor; an append-style edit would corrupt the cross-referencing checksum chain — see
   `ChecksumRecordArchiveReadOnlyContractTests`).
@@ -145,7 +147,7 @@ no unbacked flag). That the modify *works* (round-trips) is covered by the regis
 
 ## Filesystem descriptors
 
-Generated from the live registry (97 filesystem descriptors). **Compact** is the
+Generated from the live registry (98 filesystem descriptors). **Compact** is the
 composite verb (defrag + optimize + shrink, or a `--minimal` geometry rebuild) and
 is available whenever any of defrag/shrink/create is — see [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md).
 Wipe counts the `IWipeEmpty` implementers plus the extent/layout-map fallback;
@@ -168,7 +170,7 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | Coherent | Y | Y | Y | Y | · | · |
 | CpcDsk | Y | Y | Y | Y | Y | · |
 | Cpm | Y | Y | Y | Y | Y | · |
-| CramFs | Y | Y | Y | Y | Y | · |
+| CramFs | Y | Y | Y | Y | Y | Y |
 | Cromemco | Y | Y | Y | Y | Y | · |
 | D64 | Y | Y | Y | Y | Y | · |
 | D71 | Y | Y | Y | Y | Y | · |
@@ -178,7 +180,7 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | DriveSpace3 | Y | Y | Y | Y | Y | · |
 | DriveSpace | Y | Y | Y | Y | Y | · |
 | Efs | Y | Y | Y | Y | Y | · |
-| Erofs | Y | Y | Y | Y | · | · |
+| Erofs | Y | Y | Y | Y | Y | Y |
 | ExFat | Y | Y | Y | Y | Y | · |
 | Ext1 | Y | Y | Y | Y | Y | · |
 | Ext | Y | Y | Y | Y | Y | Y |
@@ -222,6 +224,7 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | Os9Rbf | Y | Y | Y | Y | Y | · |
 | Pc98 | Y | Y | Y | Y | Y | · |
 | ProDos | Y | Y | Y | Y | Y | · |
+| Ps1MemoryCard | Y | Y | Y | Y | Y | · |
 | Qnx4 | Y | Y | Y | Y | · | · |
 | Qnx6 | Y | Y | Y | Y | · | · |
 | Refs | · | · | · | · | · | · |
@@ -231,7 +234,7 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | Rt11 | Y | Y | Y | Y | Y | · |
 | Sfs | Y | Y | · | · | · | · |
 | SmartFs | Y | Y | · | · | · | · |
-| SquashFs | Y | Y | Y | Y | Y | · |
+| SquashFs | Y | Y | Y | Y | Y | Y |
 | SysV | Y | Y | Y | Y | · | · |
 | TFat | Y | Y | Y | Y | · | · |
 | Tfs | · | · | · | · | · | · |
