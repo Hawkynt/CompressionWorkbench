@@ -28,6 +28,7 @@ jobs:
           python3 .github/scripts/fill-api-summaries.py
           python3 .github/scripts/fix-residual-api-summaries.py
           python3 .github/scripts/materialize-size-metadata.py
+          python3 .github/scripts/document-record-constructors.py
 
       - name: Build checksum package with documentation warnings as errors
         run: dotnet build Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj --configuration Release --nologo /warnaserror:CS1591
