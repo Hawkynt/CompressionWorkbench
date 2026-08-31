@@ -22,30 +22,40 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Fill missing source summaries
-        run: python3 .github/scripts/fill-api-summaries.py
+        run: |
+          python3 .github/scripts/fill-api-summaries.py
+          python3 .github/scripts/fix-residual-api-summaries.py
 
       - name: Build checksum package
-        run: dotnet build Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj --configuration Release --nologo
+        run: dotnet build Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj --configuration Release --nologo /warnaserror:CS1591
 
       - name: Build hashing package
-        run: dotnet build Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj --configuration Release --nologo
+        run: dotnet build Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj --configuration Release --nologo /warnaserror:CS1591
 
       - name: Regenerate package API references
-        uses: Hawkynt/RepositoryTemplate/package-readme@v1
+        uses: Hawkynt/RepositoryTemplate/package-readme@b64e9f64cb808f7d0141eadff41c97e82925c14d
         with:
           mode: write
           project: |
             Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj
             Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj
 
-      - name: Report remaining blank summaries
+      - name: Require summaries for every reference row
         shell: bash
         run: |
           set -euo pipefail
+          failed=0
           for file in Hawkynt.Algorithms.Checksums/REFERENCE.md Hawkynt.Algorithms.Hashing/REFERENCE.md; do
-            count=$(grep -Ec '\|[[:space:]]*\|$' "$file" || true)
-            echo "$file: $count blank summary rows"
+            blank=$(grep -nE '\|[[:space:]]*\|$' "$file" || true)
+            if [[ -n "$blank" ]]; then
+              echo "::error file=$file::Public API reference contains blank summary cells"
+              echo "$blank"
+              failed=1
+            else
+              echo "$file: 0 blank summary rows"
+            fi
           done
+          test "$failed" -eq 0
           git diff --check
 
       - name: Commit generated documentation fixes
