@@ -101,7 +101,6 @@ Retro/constrained filesystems that mangle or synthesize entry names, or pad file
 | `Bbc` | BBC Micro DFS disk; name-synthesizing FS, payload not found by content |
 | `Cpm` | CP/M disk; 8.3-folding name-synth FS, payload not found by content |
 | `Lif` | HP-71 LIF disk pads file content to a 256-byte record so bytes differ |
-| `Ods1` | ODS-1 (Files-11) disk pads content to a 512-byte block so bytes differ |
 | `Ps1MemoryCard` | PlayStation memory-card saves allocate whole 8 KiB blocks and the directory records block-granular stored size, so arbitrary conversion payloads are zero-padded by design |
 | `Rt11` | RT-11 disk pads content to a 512-byte block so bytes differ |
 | `TrDos` | TR-DOS disk; name-synthesizing FS, payload not found by content |
@@ -136,7 +135,6 @@ Archive/format writers where the payload survives but entries are renamed (e.g. 
 | `Npz` | NumPy .npz; entries suffixed .npy (HELLO.TXT.npy) so verbatim-name match fails |
 | `PackDisk` | PackDisk Amiga disk; exposed as track_NNN.raw not original names |
 | `Paragon` | Paragon backup; exposed as chunk_NNNNNN.bin not original names |
-| `Reiser4` | Reiser4 image; exposed as *_superblock.bin not original names (read-back stub) |
 | `TfRecord` | TensorFlow TFRecord; entries renamed record_NNNNN.bin |
 | `Tfc` | UE texture cache; entries renamed bundle_NNNNN.bin |
 | `Warc` | WARC; entries listed as 'resource: <name>' so basename match fails |
