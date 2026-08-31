@@ -25,6 +25,7 @@ jobs:
         run: |
           python3 .github/scripts/fill-api-summaries.py
           python3 .github/scripts/fix-residual-api-summaries.py
+          python3 .github/scripts/patch-api-summary-ci.py
 
       - name: Build checksum package
         run: dotnet build Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj --configuration Release --nologo /warnaserror:CS1591
@@ -64,10 +65,10 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add Hawkynt.Algorithms.Checksums Hawkynt.Algorithms.Hashing
+          git add .github/workflows/ci.yml Hawkynt.Algorithms.Checksums Hawkynt.Algorithms.Hashing
           if git diff --cached --quiet; then
             echo 'No changes to commit.'
             exit 0
           fi
-          git commit -m 'Document algorithms public API'
+          git commit -m '# require complete public API summaries'
           git push
