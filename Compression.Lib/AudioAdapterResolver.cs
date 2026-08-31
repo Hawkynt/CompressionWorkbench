@@ -26,4 +26,24 @@ internal static class AudioAdapterResolver {
       "Dts" => Dts,
       _ => AudioFormatAdapters.ResolvePcmTarget(descriptor),
     };
+
+  public static IAudioDemuxSource? ResolveDemuxSource(IFormatDescriptor descriptor)
+    => descriptor as IAudioDemuxSource ?? descriptor.Id switch {
+      "Mp3" => Mp3AudioPacketAdapter.Instance,
+      "WavPack" => WavPackAudioPacketAdapter.Instance,
+      _ => null,
+    };
+
+  public static IAudioMuxTarget? ResolveMuxTarget(IFormatDescriptor descriptor)
+    => descriptor as IAudioMuxTarget ?? descriptor.Id switch {
+      "Mp3" => Mp3AudioPacketAdapter.Instance,
+      "WavPack" => WavPackAudioPacketAdapter.Instance,
+      _ => null,
+    };
+
+  public static IArchiveCreatable? ResolvePseudoArchiveTarget(IFormatDescriptor descriptor)
+    => descriptor is IArchiveCreatable creator &&
+       (descriptor.Category == FormatCategory.Audio || descriptor is IAudioContainerFormat)
+      ? creator
+      : null;
 }

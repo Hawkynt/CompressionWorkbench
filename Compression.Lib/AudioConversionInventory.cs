@@ -39,10 +39,10 @@ public static class AudioConversionInventory {
 
     var pcmSource = AudioAdapterResolver.ResolvePcmSource(descriptor);
     var pcmTarget = AudioAdapterResolver.ResolvePcmTarget(descriptor);
-    var demux = descriptor as IAudioDemuxSource;
-    var mux = descriptor as IAudioMuxTarget;
+    var demux = AudioAdapterResolver.ResolveDemuxSource(descriptor);
+    var mux = AudioAdapterResolver.ResolveMuxTarget(descriptor);
     var archive = descriptor as IArchiveFormatOperations;
-    var creator = descriptor as IArchiveCreatable;
+    var creator = AudioAdapterResolver.ResolvePseudoArchiveTarget(descriptor);
 
     return new AudioConversionCapability(
       descriptor.Id,
@@ -62,6 +62,6 @@ public static class AudioConversionInventory {
        || descriptor is IAudioContainerFormat
        || AudioAdapterResolver.ResolvePcmSource(descriptor) is not null
        || AudioAdapterResolver.ResolvePcmTarget(descriptor) is not null
-       || descriptor is IAudioDemuxSource
-       || descriptor is IAudioMuxTarget;
+       || AudioAdapterResolver.ResolveDemuxSource(descriptor) is not null
+       || AudioAdapterResolver.ResolveMuxTarget(descriptor) is not null;
 }

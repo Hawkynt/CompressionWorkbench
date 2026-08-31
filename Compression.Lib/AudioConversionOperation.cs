@@ -50,7 +50,9 @@ public static class AudioConversionOperation {
       return;
     }
 
-    if (source is IAudioDemuxSource demux && target is IAudioMuxTarget mux) {
+    var demux = AudioAdapterResolver.ResolveDemuxSource(source);
+    var mux = AudioAdapterResolver.ResolveMuxTarget(target);
+    if (demux is not null && mux is not null) {
       Rewind(input);
       if (demux.TryDemux(input, out var encoded) && encoded is not null &&
           mux.SupportedMuxCodecs.Contains(encoded.Format.CodecId, StringComparer.OrdinalIgnoreCase) &&
@@ -170,7 +172,8 @@ public static class AudioConversionOperation {
     IFormatDescriptor target,
     FormatCreateOptions options
   ) {
-    if (source is not IArchiveFormatOperations sourceArchive || target is not IArchiveCreatable targetCreate)
+    if (source is not IArchiveFormatOperations sourceArchive ||
+        AudioAdapterResolver.ResolvePseudoArchiveTarget(target) is not { } targetCreate)
       return false;
 
     Rewind(input);
