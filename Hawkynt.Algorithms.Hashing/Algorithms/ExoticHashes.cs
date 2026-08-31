@@ -20,6 +20,9 @@ public static class DarkCryptKeccak {
     0,1,62,28,27,36,44,6,55,20,3,10,43,25,39,41,45,15,21,8,18,2,61,56,14
   ];
 
+  /// <summary>
+  /// Computes the Dark Crypt Keccak hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     var streamLength = checked(data.Length + PaddingSuffix.Length);
     var paddedLength = checked(((streamLength + RateBytes - 1) / RateBytes) * RateBytes);
@@ -70,6 +73,9 @@ public static class DarkCryptKeccak {
 public static class Gimli24Hash {
   private const int RateBytes = 16;
 
+  /// <summary>
+  /// Computes the Gimli-24 Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     Span<uint> state = stackalloc uint[12];
     state.Clear();
@@ -137,6 +143,9 @@ public static class Gimli24Hash {
 public static class ChcHash {
   private const int BlockBytes = 16;
 
+  /// <summary>
+  /// Computes the Chc Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     Span<byte> zero = stackalloc byte[BlockBytes];
     zero.Clear();
@@ -176,6 +185,9 @@ public static class ChcHash {
 
 /// <summary>Modification Detection Code 2 (MDC-2), including both OpenSSL padding modes carried by the JavaScript source.</summary>
 public static class Mdc2 {
+  /// <summary>
+  /// Computes the Mdc-2 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int paddingType = 1) {
     if (paddingType is not 1 and not 2)
       throw new ArgumentOutOfRangeException(nameof(paddingType), "MDC-2 padding type must be 1 or 2.");

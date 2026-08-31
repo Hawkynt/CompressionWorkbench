@@ -3,10 +3,25 @@ using System.Numerics;
 
 namespace Hawkynt.Algorithms.Hashing;
 
+/// <summary>
+/// Provides the Shabal-192 hash implementation.
+/// </summary>
 public static class Shabal192 { public static byte[] Compute(ReadOnlySpan<byte> data) => ShabalCore.Compute(data, 24); }
+/// <summary>
+/// Provides the Shabal-224 hash implementation.
+/// </summary>
 public static class Shabal224 { public static byte[] Compute(ReadOnlySpan<byte> data) => ShabalCore.Compute(data, 28); }
+/// <summary>
+/// Provides the Shabal-256 hash implementation.
+/// </summary>
 public static class Shabal256 { public static byte[] Compute(ReadOnlySpan<byte> data) => ShabalCore.Compute(data, 32); }
+/// <summary>
+/// Provides the Shabal-384 hash implementation.
+/// </summary>
 public static class Shabal384 { public static byte[] Compute(ReadOnlySpan<byte> data) => ShabalCore.Compute(data, 48); }
+/// <summary>
+/// Provides the Shabal-512 hash implementation.
+/// </summary>
 public static class Shabal512 { public static byte[] Compute(ReadOnlySpan<byte> data) => ShabalCore.Compute(data, 64); }
 
 internal static class ShabalCore {

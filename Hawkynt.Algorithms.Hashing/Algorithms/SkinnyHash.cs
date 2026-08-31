@@ -13,8 +13,14 @@ public enum SkinnyHashVariant {
 
 /// <summary>SKINNY-HASH lightweight hash family based on SKINNY-128.</summary>
 public static class SkinnyHash {
+  /// <summary>
+  /// Creates a <see cref="SkinnyHash"/> containing exactly one bit size.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [HashSizeRange.Exact(256)];
 
+  /// <summary>
+  /// Computes the Skinny Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, SkinnyHashVariant variant = SkinnyHashVariant.Tk2) => variant switch {
     SkinnyHashVariant.Tk2 => ComputeCore(data, false),
     SkinnyHashVariant.Tk3 => ComputeCore(data, true),

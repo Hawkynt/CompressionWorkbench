@@ -29,6 +29,9 @@ public static class DarkCryptSkein {
     {33,51,39,35}
   };
 
+  /// <summary>
+  /// Computes the Dark Crypt Skein hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     var chain = new ulong[8];
     var config = new byte[32];
@@ -165,6 +168,9 @@ public static class DarkCryptSkein {
     private ulong _position;
     private ulong _tweak1;
 
+    /// <summary>
+    /// Resets the Dark Crypt Skein hash state to its initial value.
+    /// </summary>
     public void Reset(int type) {
       _position = 0;
       _tweak1 = ((ulong)type << 56) | FirstFlag;
@@ -172,6 +178,9 @@ public static class DarkCryptSkein {
       Array.Clear(_block);
     }
 
+    /// <summary>
+    /// Adds the supplied data to the current Dark Crypt Skein hash computation.
+    /// </summary>
     public void Update(ReadOnlySpan<byte> data, ulong[] chain) {
       var source = 0;
       while (source < data.Length) {
@@ -189,6 +198,9 @@ public static class DarkCryptSkein {
       }
     }
 
+    /// <summary>
+    /// Performs the finalize operation provided by <see cref="DarkCryptSkein"/>.
+    /// </summary>
     public void Finalize(ulong[] chain) {
       _block.AsSpan(_offset).Clear();
       _tweak1 |= FinalFlag;

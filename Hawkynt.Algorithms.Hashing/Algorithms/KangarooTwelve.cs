@@ -10,6 +10,9 @@ public static class KangarooTwelve {
   private static readonly byte[] FirstMarker = [3,0,0,0,0,0,0,0];
   private static readonly byte[] FinalMarker = [0xFF,0xFF,0x06];
 
+  /// <summary>
+  /// Computes the Kangaroo Twelve hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32, ReadOnlySpan<byte> personalization = default) {
     if (outputBytes < 1)
       throw new ArgumentOutOfRangeException(nameof(outputBytes));
@@ -74,6 +77,9 @@ public static class KangarooTwelve {
     private int _squeezeOffset = RateBytes;
     private bool _finalized;
 
+    /// <summary>
+    /// Performs the absorb operation provided by <see cref="KangarooTwelve"/>.
+    /// </summary>
     public void Absorb(ReadOnlySpan<byte> data) {
       if (_finalized)
         throw new InvalidOperationException("Cannot absorb after squeezing has started.");
@@ -92,6 +98,9 @@ public static class KangarooTwelve {
       }
     }
 
+    /// <summary>
+    /// Performs the finalize absorb operation provided by <see cref="KangarooTwelve"/>.
+    /// </summary>
     public void FinalizeAbsorb() {
       if (_finalized)
         return;
@@ -103,6 +112,9 @@ public static class KangarooTwelve {
       _finalized = true;
     }
 
+    /// <summary>
+    /// Performs the squeeze operation provided by <see cref="KangarooTwelve"/>.
+    /// </summary>
     public byte[] Squeeze(int length) {
       if (!_finalized)
         FinalizeAbsorb();

@@ -13,6 +13,9 @@ public static class AsconHash {
     0x348FA5C9D525E140UL
   ];
 
+  /// <summary>
+  /// Computes the Ascon Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => ComputeCore(data, 32, HashIv);
 
   internal static byte[] ComputeCore(ReadOnlySpan<byte> data, int outputBytes, ReadOnlySpan<ulong> initialState) {
@@ -58,6 +61,9 @@ public static class AsconXof {
     0x4F3E0E32539493B6UL
   ];
 
+  /// <summary>
+  /// Computes the Ascon Xof hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes) {
     if (outputBytes is < 1 or > 1024)
       throw new ArgumentOutOfRangeException(nameof(outputBytes));

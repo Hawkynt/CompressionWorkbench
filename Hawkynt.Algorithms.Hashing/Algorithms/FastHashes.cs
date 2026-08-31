@@ -5,6 +5,9 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Fowler-Noll-Vo hash family.</summary>
 public static class Fnv {
+  /// <summary>
+  /// Performs the compute-1 32 operation provided by <see cref="Fnv"/>.
+  /// </summary>
   public static uint Compute1_32(ReadOnlySpan<byte> data, uint offsetBasis = 2166136261U) {
     var hash = offsetBasis;
     foreach (var value in data) {
@@ -14,6 +17,9 @@ public static class Fnv {
     return hash;
   }
 
+  /// <summary>
+  /// Performs the compute-1 a 32 operation provided by <see cref="Fnv"/>.
+  /// </summary>
   public static uint Compute1A_32(ReadOnlySpan<byte> data, uint offsetBasis = 2166136261U) {
     var hash = offsetBasis;
     foreach (var value in data) {
@@ -23,6 +29,9 @@ public static class Fnv {
     return hash;
   }
 
+  /// <summary>
+  /// Performs the compute-1 64 operation provided by <see cref="Fnv"/>.
+  /// </summary>
   public static ulong Compute1_64(ReadOnlySpan<byte> data, ulong offsetBasis = 14695981039346656037UL) {
     var hash = offsetBasis;
     foreach (var value in data) {
@@ -32,6 +41,9 @@ public static class Fnv {
     return hash;
   }
 
+  /// <summary>
+  /// Performs the compute-1 a 64 operation provided by <see cref="Fnv"/>.
+  /// </summary>
   public static ulong Compute1A_64(ReadOnlySpan<byte> data, ulong offsetBasis = 14695981039346656037UL) {
     var hash = offsetBasis;
     foreach (var value in data) {
@@ -44,6 +56,9 @@ public static class Fnv {
 
 /// <summary>MurmurHash3 x86-32 and x64-128 variants.</summary>
 public static class MurmurHash3 {
+  /// <summary>
+  /// Computes the 32-bit Murmur Hash-3 hash of the supplied data.
+  /// </summary>
   public static uint Compute32(ReadOnlySpan<byte> data, uint seed = 0) {
     const uint c1 = 0xCC9E2D51;
     const uint c2 = 0x1B873593;
@@ -83,6 +98,9 @@ public static class MurmurHash3 {
     return Fmix32(hash);
   }
 
+  /// <summary>
+  /// Performs the static operation provided by <see cref="MurmurHash3"/>.
+  /// </summary>
   public static (ulong Low, ulong High) Compute128(ReadOnlySpan<byte> data, ulong seed = 0) {
     const ulong c1 = 0x87C37B91114253D5UL;
     const ulong c2 = 0x4CF5AD432745937FUL;
@@ -163,6 +181,9 @@ public static class MurmurHash3 {
     return (h1, h2);
   }
 
+  /// <summary>
+  /// Computes the 128-bit Murmur Hash-3 hash and returns its encoded bytes.
+  /// </summary>
   public static byte[] Compute128Bytes(ReadOnlySpan<byte> data, ulong seed = 0) {
     var (low, high) = Compute128(data, seed);
     var result = new byte[16];
@@ -192,6 +213,9 @@ public static class MurmurHash3 {
 
 /// <summary>SipHash-2-4 keyed 64-bit hash.</summary>
 public static class SipHash24 {
+  /// <summary>
+  /// Computes the Sip Hash-24 hash of the supplied data.
+  /// </summary>
   public static ulong Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key) {
     if (key.Length != 16)
       throw new ArgumentException("SipHash-2-4 requires a 16-byte key.", nameof(key));

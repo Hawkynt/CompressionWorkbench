@@ -35,6 +35,9 @@ public static class PhotonBeetleHash {
 
   private static readonly byte[] SBox = [12,5,6,11,9,0,10,13,3,14,15,8,4,7,1,2];
 
+  /// <summary>
+  /// Computes the Photon Beetle Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     Span<byte> state = stackalloc byte[StateBytes];
     var offset = 0;

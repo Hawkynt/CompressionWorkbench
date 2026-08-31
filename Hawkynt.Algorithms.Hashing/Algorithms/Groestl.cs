@@ -2,9 +2,21 @@ using System.Buffers.Binary;
 
 namespace Hawkynt.Algorithms.Hashing;
 
+/// <summary>
+/// Provides the Groestl-224 hash implementation.
+/// </summary>
 public static class Groestl224 { public static byte[] Compute(ReadOnlySpan<byte> data) => GroestlCore.Compute(data, 28); }
+/// <summary>
+/// Provides the Groestl-256 hash implementation.
+/// </summary>
 public static class Groestl256 { public static byte[] Compute(ReadOnlySpan<byte> data) => GroestlCore.Compute(data, 32); }
+/// <summary>
+/// Provides the Groestl-384 hash implementation.
+/// </summary>
 public static class Groestl384 { public static byte[] Compute(ReadOnlySpan<byte> data) => GroestlCore.Compute(data, 48); }
+/// <summary>
+/// Provides the Groestl-512 hash implementation.
+/// </summary>
 public static class Groestl512 { public static byte[] Compute(ReadOnlySpan<byte> data) => GroestlCore.Compute(data, 64); }
 
 internal static class GroestlCore {

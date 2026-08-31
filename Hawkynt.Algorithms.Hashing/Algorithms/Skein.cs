@@ -22,6 +22,9 @@ public static class Skein512 {
     {39,30,34,24},{13,50,10,17},{25,29,39,43},{8,35,56,22}
   };
 
+  /// <summary>
+  /// Computes the Skein-512 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     var chain = InitialState.ToArray();
     var ubi = new Ubi();
@@ -86,8 +89,14 @@ public static class Skein512 {
     private ulong _position;
     private ulong _tweak1;
 
+    /// <summary>
+    /// Resets the Skein-512 hash state to its initial value.
+    /// </summary>
     public void Reset(int type) { _position=0; _tweak1=((ulong)type<<56)|FirstFlag; _offset=0; Array.Clear(_block); }
 
+    /// <summary>
+    /// Adds the supplied data to the current Skein-512 hash computation.
+    /// </summary>
     public void Update(ReadOnlySpan<byte> data, ulong[] chain) {
       var source=0;
       while (source<data.Length) {
@@ -98,6 +107,9 @@ public static class Skein512 {
       }
     }
 
+    /// <summary>
+    /// Performs the finalize operation provided by <see cref="Skein512"/>.
+    /// </summary>
     public void Finalize(ulong[] chain) { _block.AsSpan(_offset).Clear(); _tweak1|=FinalFlag; Process(chain); }
 
     private void Process(ulong[] chain) {

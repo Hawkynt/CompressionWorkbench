@@ -5,11 +5,17 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>BLAKE2s-256.</summary>
 public static class Blake2s {
+  /// <summary>
+  /// Computes the Blake-2 s hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => Blake2sCore.Compute(data, 32, 1, 1, 0, 0, 0, 0);
 }
 
 /// <summary>BLAKE2xs extendable-output function.</summary>
 public static class Blake2xs {
+  /// <summary>
+  /// Computes the Blake-2 xs hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes) {
     if (outputBytes is < 1 or > 65534)
       throw new ArgumentOutOfRangeException(nameof(outputBytes));

@@ -5,11 +5,17 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>DryGASCON hash family from the NIST lightweight-cryptography finalist.</summary>
 public static class DryGasconHash {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
     HashSizeRange.Exact(256),
     HashSizeRange.Exact(512)
   ];
 
+  /// <summary>
+  /// Computes the Dry Gascon Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256) => hashSizeBits switch {
     256 => Compute128(data),
     512 => Compute256(data),
@@ -86,9 +92,18 @@ public static class DryGasconHash {
 
     private readonly uint[] _state = new uint[10];
     private readonly byte[] _x = new byte[16];
+    /// <summary>
+    /// Gets the output value.
+    /// </summary>
     public byte[] Output { get; } = new byte[16];
+    /// <summary>
+    /// Gets or initializes the domain value.
+    /// </summary>
     public uint Domain { get; set; }
 
+    /// <summary>
+    /// Performs the dry sponge-128 operation provided by <see cref="DryGasconHash"/>.
+    /// </summary>
     public DrySponge128() {
       for (var lane = 0; lane < 5; ++lane) {
         _state[lane * 2] = BinaryPrimitives.ReadUInt32LittleEndian(Initial.AsSpan(lane * 8, 4));
@@ -97,6 +112,9 @@ public static class DryGasconHash {
       Initial.AsSpan(40, 16).CopyTo(_x);
     }
 
+    /// <summary>
+    /// Performs the absorb and squeeze operation provided by <see cref="DryGasconHash"/>.
+    /// </summary>
     public void AbsorbAndSqueeze(ReadOnlySpan<byte> input) {
       Span<byte> block = stackalloc byte[16];
       block.Clear();
@@ -140,6 +158,9 @@ public static class DryGasconHash {
         _state[lane * 2] ^= SelectX((value >> (lane * 2)) & 3);
     }
 
+    /// <summary>
+    /// Performs the squeeze operation provided by <see cref="DryGasconHash"/>.
+    /// </summary>
     public void Squeeze() {
       Output.AsSpan().Clear();
       Span<byte> block = stackalloc byte[16];
@@ -169,9 +190,18 @@ public static class DryGasconHash {
 
     private readonly uint[] _state = new uint[18];
     private readonly byte[] _x = new byte[16];
+    /// <summary>
+    /// Gets the output value.
+    /// </summary>
     public byte[] Output { get; } = new byte[16];
+    /// <summary>
+    /// Gets or initializes the domain value.
+    /// </summary>
     public uint Domain { get; set; }
 
+    /// <summary>
+    /// Performs the dry sponge-256 operation provided by <see cref="DryGasconHash"/>.
+    /// </summary>
     public DrySponge256() {
       for (var lane = 0; lane < 9; ++lane) {
         _state[lane * 2] = BinaryPrimitives.ReadUInt32LittleEndian(Initial.AsSpan(lane * 8, 4));
@@ -182,6 +212,9 @@ public static class DryGasconHash {
 
     private uint SelectX(uint index) => BinaryPrimitives.ReadUInt32LittleEndian(_x.AsSpan(checked((int)index) * 4, 4));
 
+    /// <summary>
+    /// Performs the absorb operation provided by <see cref="DryGasconHash"/>.
+    /// </summary>
     public void Absorb(ReadOnlySpan<byte> input) {
       Span<byte> block = stackalloc byte[16];
       block.Clear();
@@ -213,11 +246,17 @@ public static class DryGasconHash {
         _state[lane * 2] ^= SelectX((value >> (lane * 2)) & 3);
     }
 
+    /// <summary>
+    /// Performs the permute only operation provided by <see cref="DryGasconHash"/>.
+    /// </summary>
     public void PermuteOnly() {
       for (var round = 0; round < 8; ++round)
         Gascon256Round(_state, round);
     }
 
+    /// <summary>
+    /// Performs the squeeze operation provided by <see cref="DryGasconHash"/>.
+    /// </summary>
     public void Squeeze() {
       Output.AsSpan().Clear();
       Span<byte> block = stackalloc byte[16];

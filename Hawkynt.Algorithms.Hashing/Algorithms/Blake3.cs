@@ -5,11 +5,17 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>BLAKE3 hash and XOF.</summary>
 public static class Blake3 {
+  /// <summary>
+  /// Computes the Blake-3 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32) => Blake3Core.Hash(data, outputBytes);
 }
 
 /// <summary>Registry-compatible BLAKE3-Enhanced surface, backed by the same complete BLAKE3 core.</summary>
 public static class Blake3Enhanced {
+  /// <summary>
+  /// Computes the Blake-3 Enhanced hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32) => Blake3Core.Hash(data, outputBytes);
 }
 

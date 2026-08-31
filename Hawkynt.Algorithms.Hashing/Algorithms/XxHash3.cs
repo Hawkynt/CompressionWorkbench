@@ -24,14 +24,23 @@ public static class XxHash3 {
     0x45,0xcb,0x3a,0x8f,0x95,0x16,0x04,0x28,0xaf,0xd7,0xfb,0xca,0xbb,0x4b,0x40,0x7e
   ];
 
+  /// <summary>
+  /// Computes the 64-bit xxHash-3 hash of the supplied data.
+  /// </summary>
   public static ulong Compute64(ReadOnlySpan<byte> data, ulong seed = 0) => Hash64(data, seed);
 
+  /// <summary>
+  /// Computes the 64-bit xxHash-3 hash and returns its encoded bytes.
+  /// </summary>
   public static byte[] Compute64Bytes(ReadOnlySpan<byte> data, ulong seed = 0) {
     var result = new byte[8];
     BinaryPrimitives.WriteUInt64BigEndian(result, Hash64(data, seed));
     return result;
   }
 
+  /// <summary>
+  /// Computes the 128-bit xxHash-3 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute128(ReadOnlySpan<byte> data, ulong seed = 0) {
     var first = Hash64(data, seed);
     var second = Hash64(data, seed ^ 0xAAAAAAAAAAAAAAAAUL);

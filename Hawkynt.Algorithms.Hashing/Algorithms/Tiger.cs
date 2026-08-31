@@ -12,6 +12,9 @@ namespace Hawkynt.Algorithms.Hashing;
 /// generated once from the identity tables and the 64-byte Tiger provenance string.
 /// </remarks>
 public static class Tiger {
+  /// <summary>
+  /// Creates a <see cref="Tiger"/> containing exactly one bit size.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [HashSizeRange.Exact(192)];
 
   private const ulong InitialA = 0x0123456789ABCDEFUL;
@@ -19,6 +22,9 @@ public static class Tiger {
   private const ulong InitialC = 0xF096A5B4C3B2E187UL;
   private static readonly ulong[] SBoxes = GenerateSBoxes();
 
+  /// <summary>
+  /// Computes the Tiger hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 192) {
     if (!SupportedHashSizes.Supports(hashSizeBits))
       throw new ArgumentOutOfRangeException(nameof(hashSizeBits));

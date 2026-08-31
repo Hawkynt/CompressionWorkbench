@@ -3,9 +3,21 @@ using System.Numerics;
 
 namespace Hawkynt.Algorithms.Hashing;
 
+/// <summary>
+/// Provides the RIPEMD-128 hash implementation.
+/// </summary>
 public static class Ripemd128 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 128); }
+/// <summary>
+/// Provides the RIPEMD-160 hash implementation.
+/// </summary>
 public static class Ripemd160 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 160); }
+/// <summary>
+/// Provides the RIPEMD-256 hash implementation.
+/// </summary>
 public static class Ripemd256 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 256); }
+/// <summary>
+/// Provides the RIPEMD-320 hash implementation.
+/// </summary>
 public static class Ripemd320 { public static byte[] Compute(ReadOnlySpan<byte> data) => RipemdCore.Compute(data, 320); }
 
 internal static class RipemdCore {

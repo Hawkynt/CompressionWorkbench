@@ -20,11 +20,17 @@ public enum KnotHashVariant {
 /// the family.
 /// </remarks>
 public static class KnotHash {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
     HashSizeRange.Exact(256),
     new(384, 512, 128)
   ];
 
+  /// <summary>
+  /// Computes the Knot Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, KnotHashVariant variant = KnotHashVariant.KnotHash256_256) => variant switch {
     KnotHashVariant.KnotHash256_256 => KnotHashCore.Compute(data, 32, 4, 68, 256, false),
     KnotHashVariant.KnotHash256_384 => KnotHashCore.Compute(data, 32, 16, 80, 384, true),

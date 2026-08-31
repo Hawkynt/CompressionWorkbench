@@ -12,6 +12,9 @@ namespace Hawkynt.Algorithms.Hashing;
 /// behavior and is named/documented accordingly instead of pretending to be standard JH.
 /// </remarks>
 public static class Jh {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
     new(224, 256, 32),
     new(384, 512, 128)
@@ -28,6 +31,9 @@ public static class Jh {
     0x5F6DAAD6U,0x3DBEAEB8U,0x68DB8BC8U,0x3A9D3C9FU
   ];
 
+  /// <summary>
+  /// Computes the Jh hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512) {
     if (!SupportedHashSizes.Supports(hashSizeBits))
       throw new ArgumentOutOfRangeException(nameof(hashSizeBits));

@@ -2,9 +2,21 @@ using System.Buffers.Binary;
 
 namespace Hawkynt.Algorithms.Hashing;
 
+/// <summary>
+/// Provides the Echo-224 hash implementation.
+/// </summary>
 public static class Echo224 { public static byte[] Compute(ReadOnlySpan<byte> data) => EchoCore.Compute(data, 28); }
+/// <summary>
+/// Provides the Echo-256 hash implementation.
+/// </summary>
 public static class Echo256 { public static byte[] Compute(ReadOnlySpan<byte> data) => EchoCore.Compute(data, 32); }
+/// <summary>
+/// Provides the Echo-384 hash implementation.
+/// </summary>
 public static class Echo384 { public static byte[] Compute(ReadOnlySpan<byte> data) => EchoCore.Compute(data, 48); }
+/// <summary>
+/// Provides the Echo-512 hash implementation.
+/// </summary>
 public static class Echo512 { public static byte[] Compute(ReadOnlySpan<byte> data) => EchoCore.Compute(data, 64); }
 
 internal static class EchoCore {
