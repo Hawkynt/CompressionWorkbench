@@ -25,11 +25,10 @@ jobs:
 
       - name: Complete XML documentation in C# sources
         run: |
+          python3 .github/scripts/fill-public-api-docs.py
           python3 .github/scripts/fill-api-summaries.py
           python3 .github/scripts/fix-residual-api-summaries.py
           python3 .github/scripts/materialize-size-metadata.py
-          python3 .github/scripts/document-record-constructors.py
-          python3 .github/scripts/fill-public-api-docs.py
 
       - name: Build published package graphs with documentation warnings as errors
         shell: bash
