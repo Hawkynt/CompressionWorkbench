@@ -1,0 +1,132 @@
+name: Generate
+
+# Cheap generation stage: every push to a working branch refreshes derived files and commits them
+# straight back onto that branch. By the time the pull request runs its full CI battery, the README
+# screenshot is already part of the branch rather than being a CI-only artifact.
+#
+# Never on main: that branch takes changes through pull requests only, and the shared action refuses
+# to touch the default branch as an additional guard.
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: generate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  screenshot:
+    name: refresh the UI screenshot
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Generate deterministic demo archive
+        shell: pwsh
+        run: |
+          $demoRoot = Join-Path $env:RUNNER_TEMP 'compressionworkbench-screenshot-demo'
+          $archive = Join-Path $env:RUNNER_TEMP 'compressionworkbench-demo.zip'
+          Remove-Item -Recurse -Force $demoRoot -ErrorAction Ignore
+          Remove-Item -Force $archive -ErrorAction Ignore
+
+          New-Item -ItemType Directory -Force -Path (Join-Path $demoRoot 'docs') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $demoRoot 'images') | Out-Null
+          [IO.File]::WriteAllText(
+            (Join-Path $demoRoot 'README.txt'),
+            "CompressionWorkbench documentation demo`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+          [IO.File]::WriteAllText(
+            (Join-Path $demoRoot 'docs\format-notes.txt'),
+            "Deterministic archive contents for the README screenshot.`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+          [IO.File]::WriteAllBytes(
+            (Join-Path $demoRoot 'images\preview.bin'),
+            [byte[]](0..255)
+          )
+
+          $timestamp = [DateTime]'2026-08-30T18:42:00Z'
+          Get-ChildItem -LiteralPath $demoRoot -Recurse -Force | ForEach-Object {
+            $_.LastWriteTimeUtc = $timestamp
+          }
+          Compress-Archive -Path (Join-Path $demoRoot '*') -DestinationPath $archive -CompressionLevel Optimal
+
+          "DEMO_ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Generate main window screenshot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path screenshots | Out-Null
+          $output = Join-Path (Get-Location) 'screenshots/main-window.png'
+
+          dotnet run `
+            --project Compression.UI/Compression.UI.csproj `
+            --configuration Release `
+            -- `
+            "--screenshot-demo=$output" `
+            "$env:DEMO_ARCHIVE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path $output)) {
+            Write-Error "CompressionWorkbench exited 0 but wrote no screenshot to $output."
+            exit 1
+          }
+
+          $bytes = [IO.File]::ReadAllBytes($output)
+          if ($bytes.Length -lt 10000) {
+            Write-Error "Generated screenshot is unexpectedly small ($($bytes.Length) bytes)."
+            exit 1
+          }
+          $png = [byte[]](0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+          for ($i = 0; $i -lt $png.Length; ++$i) {
+            if ($bytes[$i] -ne $png[$i]) {
+              Write-Error 'Generated screenshot is not a PNG file.'
+              exit 1
+            }
+          }
+
+      - name: Commit refreshed README screenshot
+        uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: screenshots/main-window.png
+          message: '* refresh the application screenshot'
+
+      # GITHUB_TOKEN updates to an already-open PR intentionally create an approval-required
+      # pull_request/synchronize run. workflow_dispatch is the documented exception that may start
+      # another workflow with GITHUB_TOKEN, so dispatch CI explicitly when the generated-file action
+      # actually advanced a branch that already belongs to an open PR.
+      - name: Run CI on the generated head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="$GITHUB_REF_NAME"
+          generated_head=$(gh api "repos/$GITHUB_REPOSITORY/branches/$branch" --jq '.commit.sha')
+          if [ "$generated_head" = "$GITHUB_SHA" ]; then
+            echo "::notice::The screenshot was already current; the normal PR synchronize run covers this head."
+            exit 0
+          fi
+
+          owner="${GITHUB_REPOSITORY%%/*}"
+          open_prs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f head="$owner:$branch" --jq 'length')
+          if [ "$open_prs" -eq 0 ]; then
+            echo "::notice::No open pull request for $branch; keeping generation as the cheap pre-PR stage."
+            exit 0
+          fi
+
+          echo "Dispatching CI for generated head $generated_head."
+          gh workflow run ci.yml --ref "$branch"
