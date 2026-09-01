@@ -7,9 +7,23 @@ The archive API is useful for whole-image tooling, but it is deliberately **not*
 1. **Container / media layer** — VHD/QCOW2/EWF expose logical blocks; G64/NIB/flux formats expose raw tracks until a sector decoder can project them as blocks.
 2. **Block device layer** — `IRandomAccessBlockDevice` provides positional logical-block I/O, flush and trim independent of the outer container.
 3. **Filesystem namespace layer** — `IFilesystemDriverProvider` probes the exact on-disk profile and opens an `IFilesystemSession` over stable node identities.
-4. **OS adapter** — FUSE, WinFsp, Dokany or another adapter translates kernel requests into the session contract. It should contain no filesystem-specific parsing.
+4. **OS adapter** — FUSE, WinFsp, Dokany or another adapter translates kernel requests into the already-open session contract. It contains no filesystem-specific parsing and never asks the host OS to mount or interpret the source image.
 
 The dependency direction is one-way: a FAT/ext/ReFS driver consumes a block device; it does not know how QCOW2/EWF stores that block. Likewise, G64 is not a CBM-DOS filesystem. It is a track device which may later be decoded into sectors and mounted by a CBM-DOS driver.
+
+## Mount means parse
+
+Mounting through CompressionWorkbench always means **CompressionWorkbench parses every source layer itself**. Host-native filesystem support is intentionally irrelevant to parser selection.
+
+- An ext4 image is parsed by the CompressionWorkbench ext driver on Linux, Windows, macOS, or any other supported host. Linux ext4 support is not a shortcut.
+- An NTFS image is parsed by the CompressionWorkbench NTFS driver even on Windows.
+- FAT, UDF, HFS+, ReFS and every other filesystem follow the same rule.
+- An archive such as ZIP is projected directly from its CompressionWorkbench archive parser into an `IFilesystemSession`; the OS adapter does not need a special ZIP parser.
+- A nested image such as `VHD -> GPT -> ext4` is resolved as `VHD container parser -> random-access block device -> GPT parser -> partition block view -> ext4 filesystem parser -> IFilesystemSession` before FUSE/Dokany/WinFsp sees it.
+
+Consequently a mount backend receives an already-open `IFilesystemSession`, never an image path or a request to discover the source format. Backends may translate host VFS operations to session calls, but must not invoke host facilities such as native filesystem mounts, loop-device attachment, virtual-disk attachment, `mount(8)`, or equivalent platform APIs to interpret any source or inner layer. This rule is both a portability guarantee and a correctness boundary: the same CompressionWorkbench parser and feature gating determine semantics on every host.
+
+`MountNamespaceResolver` owns source-layer resolution. Direct filesystem formats go through `FormatRegistry.ProbeFilesystem` / `FormatRegistry.OpenFilesystem`; block-container formats expose their guest bytes through `IRandomAccessBlockDeviceProvider`; partitions are bounded by `PartitionBlockDevice`; archives without a native filesystem session use the conservative archive-derived namespace. The OS backend is downstream of all of them.
 
 ## Repository-wide coverage invariant
 

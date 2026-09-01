@@ -11,6 +11,37 @@ public sealed class MountNamespaceResolverTests {
   public void RegisterFormats() => FormatRegistration.EnsureInitialized();
 
   [Test]
+  public void Ext4_IsParsedByCompressionWorkbenchEvenWhenHostCouldSupportIt() {
+    var data = "always parse through our ext driver"u8.ToArray();
+    using var image = Create(
+      "Ext",
+      [ArchiveInputInfo.InMemory("hello.txt", data)],
+      new FormatCreateOptions {
+        FormatSpecific = new Dictionary<string, string>(StringComparer.Ordinal) {
+          ["Version"] = "ext4",
+        },
+      });
+
+    var probe = MountNamespaceResolver.Probe("Ext", image);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Profile.FormatId, Is.EqualTo("Ext").IgnoreCase);
+      Assert.That(probe.Layers, Is.EqualTo(new[] { "filesystem:Ext" }));
+    });
+
+    image.Position = 0;
+    using var session = MountNamespaceResolver.Open(
+      "Ext",
+      image,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+
+    Assert.That(session.Profile.FormatId, Is.EqualTo("Ext").IgnoreCase);
+    var file = session.Lookup(session.RootNodeId, "hello.txt");
+    Assert.That(file, Is.Not.Null);
+    Assert.That(ReadAll(session, file!.Value), Is.EqualTo(data));
+  }
+
+  [Test]
   public void Zip_ProjectsAsReadOnlyFilesystemNamespace() {
     var data = "mounted from zip"u8.ToArray();
     using var archive = Create("Zip", [ArchiveInputInfo.InMemory("nested/hello.txt", data)]);
@@ -83,14 +114,34 @@ public sealed class MountNamespaceResolverTests {
     Assert.Throws<ArgumentOutOfRangeException>(() => partition.ReadBlocks(3, read));
   }
 
-  private static MemoryStream Create(string formatId, IReadOnlyList<ArchiveInputInfo> inputs) {
+  [Test]
+  public void MountBackendBoundary_ContainsParsedSessionRatherThanSourceImage() {
+    var properties = typeof(FilesystemMountRequest).GetProperties()
+      .Select(static property => property.Name)
+      .Order(StringComparer.Ordinal)
+      .ToArray();
+
+    Assert.That(properties, Is.EqualTo(new[] {
+      nameof(FilesystemMountRequest.Filesystem),
+      nameof(FilesystemMountRequest.OwnsFilesystemSession),
+      nameof(FilesystemMountRequest.Plan),
+      nameof(FilesystemMountRequest.Target),
+    }.Order(StringComparer.Ordinal).ToArray()));
+    Assert.That(typeof(FilesystemMountRequest).GetProperty("ImagePath"), Is.Null);
+    Assert.That(typeof(FilesystemMountRequest).GetProperty("Source"), Is.Null);
+  }
+
+  private static MemoryStream Create(
+      string formatId,
+      IReadOnlyList<ArchiveInputInfo> inputs,
+      FormatCreateOptions? options = null) {
     var ops = FormatRegistry.GetArchiveOps(formatId)
       ?? throw new AssertionException($"{formatId} has no archive operations.");
     if (ops is not IArchiveCreatable creator)
       throw new AssertionException($"{formatId} is not creatable.");
 
     var result = new MemoryStream();
-    creator.Create(result, inputs, new FormatCreateOptions { ForceCompress = true });
+    creator.Create(result, inputs, options ?? new FormatCreateOptions { ForceCompress = true });
     result.Position = 0;
     return result;
   }
