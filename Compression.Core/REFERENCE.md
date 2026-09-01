@@ -2100,34 +2100,7 @@ Decompresses data produced by `LzvnCompressor`.
 
 ### Namespace `Compression.Core.Dictionary.Lzw`
 
-[`LzcBuildingBlock`](#lzcbuildingblock) · [`LzcCodec`](#lzccodec) · [`LzwBuildingBlock`](#lzwbuildingblock) · [`LzwCompressionLevel`](#lzwcompressionlevel) · [`LzwDecoder`](#lzwdecoder) · [`LzwEncoder`](#lzwencoder) · [`NuLzwBuildingBlock`](#nulzwbuildingblock) · [`NuLzwCodec`](#nulzwcodec) · [`NuLzwVariant`](#nulzwvariant)
-
-#### `LzcBuildingBlock`
-
-Benchmarkable UNIX `compress` / LZC building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `LzcBuildingBlock` | `LzcBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `LzcCodec`
-
-UNIX `compress` / LZC codec for native `.Z` streams.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int maxBits = 16, bool blockMode = true)` | Compresses data to a native UNIX `compress` (`.Z`) stream. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a complete native UNIX `compress` (`.Z`) stream. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int expandedLength)` | Decompresses a native `.Z` stream and requires an exact expanded length. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int expandedLength, int expectedMaxBits)` | Decompresses a native `.Z` stream and requires both an exact expanded length and the expected maximum code width from an enclosing format. |
+[`LzwBuildingBlock`](#lzwbuildingblock) · [`LzwCompressionLevel`](#lzwcompressionlevel) · [`LzwDecoder`](#lzwdecoder) · [`LzwEncoder`](#lzwencoder) · [`NuLzwBuildingBlock`](#nulzwbuildingblock) · [`NuLzwCodec`](#nulzwcodec) · [`NuLzwVariant`](#nulzwvariant)
 
 #### `LzwBuildingBlock`
 
@@ -2721,7 +2694,7 @@ Reads the data blocks of one folder, which share their models.
 
 #### `QuickLzBuildingBlock`
 
-Exposes QuickLZ level-1 style compression as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support. Reference: Lasse Mikkel Reinhold, "QuickLZ", http://www.quicklz.com/.
+Exposes QuickLZ 1.5.0 level-1 compression as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -2737,19 +2710,19 @@ Implements `IBuildingBlock`.
 
 #### `QuickLzCompressor`
 
-Implements a QuickLZ level-1 style compressor from the public algorithm description: Lasse Mikkel Reinhold, "QuickLZ — fast compression library", http://www.quicklz.com/ — a hash-matched LZ77 variant with a 32-bit control word (one bit per token) and matches that reference a 4096-entry hash table by bucket index rather than by raw distance.
+Encodes the QuickLZ 1.5.0 level-1 payload format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the QuickLZ level-1 control-word format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` as a QuickLZ 1.5.0 level-1 payload. |
 
 #### `QuickLzDecompressor`
 
-Decodes the QuickLZ level-1 style control-word format produced by `QuickLzCompressor`. Reference: http://www.quicklz.com/. Mirrors the compressor's queued hash-table synchronization exactly (see remarks there): a position's hash entry only becomes visible once its 3-byte window is fully decoded.
+Decodes the QuickLZ 1.5.0 level-1 payload format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a QuickLZ stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a QuickLZ level-1 payload to exactly `originalLength` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.Rar`
 
