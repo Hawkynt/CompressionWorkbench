@@ -29,6 +29,9 @@ internal static class AudioAdapterResolver {
 
   public static IAudioDemuxSource? ResolveDemuxSource(IFormatDescriptor descriptor)
     => descriptor as IAudioDemuxSource ?? descriptor.Id switch {
+      "Wav" => G711PacketAdapter.Wav,
+      "Aiff" => G711PacketAdapter.Aiff,
+      "Au" => G711PacketAdapter.Au,
       "Mp3" => Mp3AudioPacketAdapter.Instance,
       "WavPack" => WavPackAudioPacketAdapter.Instance,
       _ => null,
@@ -36,6 +39,9 @@ internal static class AudioAdapterResolver {
 
   public static IAudioMuxTarget? ResolveMuxTarget(IFormatDescriptor descriptor)
     => descriptor as IAudioMuxTarget ?? descriptor.Id switch {
+      "Wav" => G711PacketAdapter.Wav,
+      "Aiff" => G711PacketAdapter.Aiff,
+      "Au" => G711PacketAdapter.Au,
       "Mp3" => Mp3AudioPacketAdapter.Instance,
       "WavPack" => WavPackAudioPacketAdapter.Instance,
       _ => null,
