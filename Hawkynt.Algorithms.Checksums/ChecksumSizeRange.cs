@@ -10,6 +10,9 @@ namespace Hawkynt.Algorithms.Checksums;
 /// A range with <c>MinimumBits == MaximumBits</c> represents one exact size. Families with
 /// discontiguous valid sizes expose multiple ranges.
 /// </remarks>
+/// <param name="MinimumBits">The smallest supported checksum-output size, in bits.</param>
+/// <param name="MaximumBits">The largest supported checksum-output size, in bits.</param>
+/// <param name="StepBits">The increment, in bits, between supported sizes.</param>
 public readonly record struct ChecksumSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1) : IEnumerable<int> {
   /// <summary>
   /// Gets the smallest supported checksum output size, in bits.

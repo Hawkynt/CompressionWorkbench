@@ -50,10 +50,8 @@ public static class Crc32ChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Crc64"/>.
 /// </summary>
 public static class Crc64ChecksumSizeExtensions {
-  extension(Crc64) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits64;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits64;
 }

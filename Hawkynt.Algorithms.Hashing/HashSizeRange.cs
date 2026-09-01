@@ -10,6 +10,9 @@ namespace Hawkynt.Algorithms.Hashing;
 /// discontiguous valid sizes expose multiple ranges. The range itself is enumerable so callers
 /// can use the metadata the same way the JavaScript registry exposes <c>SupportedOutputSizes</c>.
 /// </remarks>
+/// <param name="MinimumBits">The smallest supported hash-output size, in bits.</param>
+/// <param name="MaximumBits">The largest supported hash-output size, in bits.</param>
+/// <param name="StepBits">The increment, in bits, between supported sizes.</param>
 public readonly record struct HashSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1) : IEnumerable<int> {
   /// <summary>
   /// Gets the smallest supported hash output size, in bits.

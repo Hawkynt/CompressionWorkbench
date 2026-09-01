@@ -296,6 +296,12 @@ public static class Nmea0183 {
 }
 
 /// <summary>Parameters for CRC widths from 8 through 64 bits.</summary>
+/// <param name="Width">The CRC width, in bits.</param>
+/// <param name="Polynomial">The normal-form CRC polynomial.</param>
+/// <param name="InitialValue">The initial CRC register value.</param>
+/// <param name="ReflectInput">Whether each input byte is reflected before processing.</param>
+/// <param name="ReflectOutput">Whether the CRC register is reflected before the final XOR.</param>
+/// <param name="FinalXor">The value XORed with the CRC register to produce the final checksum.</param>
 public readonly record struct CrcParameters(
   int Width,
   ulong Polynomial,
@@ -467,6 +473,11 @@ public static class CrcPresets {
 }
 
 /// <summary>Parameters for the educational 128-bit CRC variants in the source registry.</summary>
+/// <param name="Polynomial">The normal-form 128-bit CRC polynomial.</param>
+/// <param name="InitialValue">The initial 128-bit CRC register value.</param>
+/// <param name="ReflectInput">Whether each input byte is reflected before processing.</param>
+/// <param name="ReflectOutput">Whether the CRC register is reflected before the final XOR.</param>
+/// <param name="FinalXor">The value XORed with the CRC register to produce the final checksum.</param>
 public readonly record struct Crc128Parameters(
   UInt128 Polynomial,
   UInt128 InitialValue,
@@ -492,6 +503,11 @@ public readonly record struct Crc128Parameters(
 
 /// <summary>Generic 128-bit CRC using normal-form polynomials.</summary>
 public static class Crc128 {
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits128;
+
   private static readonly UInt128 TopBit = UInt128.One << 127;
 
   /// <summary>

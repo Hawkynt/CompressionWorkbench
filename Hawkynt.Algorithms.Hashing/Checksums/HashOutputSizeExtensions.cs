@@ -61,10 +61,8 @@ public static class XxHash32HashSizeExtensions {
 /// Provides supported hash-output size metadata for <see cref="XxHash64"/>.
 /// </summary>
 public static class XxHash64HashSizeExtensions {
-  extension(XxHash64) {
-    /// <summary>
-    /// Gets the supported hash-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits64;
-  }
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits64;
 }

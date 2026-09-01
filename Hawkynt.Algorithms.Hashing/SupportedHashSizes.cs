@@ -741,10 +741,8 @@ public static class XoodyakHashSizeExtensions {
 /// Provides supported hash-output size metadata for <see cref="XxHash3"/>.
 /// </summary>
 public static class XxHash3HashSizeExtensions {
-  extension(XxHash3) {
-    /// <summary>
-    /// Gets the supported hash-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits64And128;
-  }
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits64And128;
 }

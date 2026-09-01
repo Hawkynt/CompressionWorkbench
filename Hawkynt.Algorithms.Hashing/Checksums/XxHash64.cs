@@ -9,6 +9,11 @@ namespace Compression.Core.Checksums;
 /// Provides both batch (<see cref="Compute"/>) and incremental (<see cref="Update"/>/<see cref="Value"/>) modes.
 /// </summary>
 public sealed class XxHash64 {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits64;
+
   // xxHash64 prime constants from the specification.
   private const ulong Prime1 = 0x9E3779B185EBCA87UL;
   private const ulong Prime2 = 0xC2B2AE3D27D4EB4FUL;
