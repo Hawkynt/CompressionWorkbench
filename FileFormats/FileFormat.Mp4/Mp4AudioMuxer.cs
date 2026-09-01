@@ -1,27 +1,78 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Compression.Registry;
 
 namespace FileFormat.Mp4;
 
-/// <summary>Minimal standards-based audio-only ISO BMFF writer for AAC access units.</summary>
+/// <summary>Minimal standards-based audio-only ISO BMFF writer for AAC and MPEG-1/2 Layer II/III packets.</summary>
 internal static class Mp4AudioMuxer {
+  private static readonly string[] MuxCodecs = ["aac", "mp3", "mp2"];
+  private static readonly int[] Mpeg1SampleRates = [32_000, 44_100, 48_000];
+  private static readonly int[] Mpeg2SampleRates = [16_000, 22_050, 24_000];
 
-  internal static byte[] MuxAac(AudioEncodedStream stream) {
-    if (!stream.Format.CodecId.Equals("aac", StringComparison.OrdinalIgnoreCase))
-      throw new NotSupportedException($"MP4 AAC muxer cannot carry codec '{stream.Format.CodecId}'.");
-    if (stream.Format.SampleRate <= 0 || stream.Format.Channels is < 1 or > 2)
-      throw new ArgumentOutOfRangeException(nameof(stream), "AAC MP4 muxing requires a positive sample rate and mono/stereo channels.");
+  internal static IReadOnlyList<string> SupportedCodecs => MuxCodecs;
+
+  internal static bool CanMux(AudioStreamFormat format, out string? reason) {
+    ArgumentNullException.ThrowIfNull(format);
+
+    if (!MuxCodecs.Contains(format.CodecId, StringComparer.OrdinalIgnoreCase)) {
+      reason = $"the audio-only MP4 writer cannot carry codec '{format.CodecId}'";
+      return false;
+    }
+    if (format.SampleRate <= 0 || format.SampleRate > ushort.MaxValue || format.Channels is < 1 or > 2) {
+      reason = "MP4 audio muxing requires mono/stereo, a positive sample rate, and a version-0 mp4a-compatible sample rate no greater than 65535 Hz";
+      return false;
+    }
+    if (format.CodecId.Equals("aac", StringComparison.OrdinalIgnoreCase)) {
+      reason = null;
+      return true;
+    }
+
+    if (!TryGetMpegVersion(format, out var version)) {
+      reason = "MPEG audio in MP4 requires the demuxed 'mpeg-version' stream property";
+      return false;
+    }
+    if (version == 25) {
+      reason = "MPEG-2.5 audio has no registered MP4 objectTypeIndication and cannot be muxed without mislabeling the stream";
+      return false;
+    }
+    if (version is not (1 or 2)) {
+      reason = $"MPEG audio version '{GetProperty(format, "mpeg-version")}' is not supported by the MP4 writer";
+      return false;
+    }
+    if (!TryGetMpegLayer(format, out var layer) || layer is not (2 or 3)) {
+      reason = "MPEG audio in MP4 requires the demuxed 'mpeg-layer' stream property for Layer II or III";
+      return false;
+    }
+    if (format.CodecId.Equals("mp3", StringComparison.OrdinalIgnoreCase) != (layer == 3)) {
+      reason = $"codec '{format.CodecId}' does not match MPEG Layer {layer}";
+      return false;
+    }
+
+    var validRates = version == 1 ? Mpeg1SampleRates : Mpeg2SampleRates;
+    if (!validRates.Contains(format.SampleRate)) {
+      reason = $"{format.SampleRate} Hz is not a standard MPEG-{version} audio sample rate";
+      return false;
+    }
+
+    reason = null;
+    return true;
+  }
+
+  internal static byte[] Mux(AudioEncodedStream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (!CanMux(stream.Format, out var reason))
+      throw new NotSupportedException(reason);
     if (stream.Packets.Count == 0)
-      throw new ArgumentException("AAC MP4 muxing requires at least one access unit.", nameof(stream));
-    if (stream.CodecPrivateData is not { Length: >= 2 } asc)
-      throw new ArgumentException("AAC MP4 muxing requires AudioSpecificConfig codec-private data.", nameof(stream));
+      throw new ArgumentException("MP4 audio muxing requires at least one encoded packet.", nameof(stream));
 
+    var codec = ResolveCodecConfiguration(stream);
     var sampleDurations = stream.Packets
-      .Select(static packet => checked((uint)(packet.DurationSamples > 0 ? packet.DurationSamples : 1024)))
+      .Select(packet => checked((uint)(packet.DurationSamples > 0 ? packet.DurationSamples : codec.DefaultPacketDuration)))
       .ToArray();
-    var mediaDuration = sampleDurations.Aggregate(0UL, static (sum, value) => sum + value);
+    var mediaDuration = sampleDurations.Aggregate(0UL, static (sum, value) => checked(sum + value));
     var mediaBytes = checked((int)stream.Packets.Sum(static packet => (long)packet.Data.Length));
     var averageBitrate = mediaDuration == 0
       ? 0u
@@ -32,18 +83,61 @@ internal static class Mp4AudioMuxer {
     var mdatPayload = new byte[mediaBytes];
     var mediaOffset = 0;
     foreach (var packet in stream.Packets) {
+      if (packet.IsHeader)
+        throw new InvalidDataException("MP4 media samples cannot contain out-of-band header packets.");
       packet.Data.CopyTo(mdatPayload, mediaOffset);
       mediaOffset += packet.Data.Length;
     }
     var mdat = Box("mdat", mdatPayload);
     var chunkOffset = checked((uint)(ftyp.Length + 8));
-    var moov = BuildMoov(stream, asc, sampleDurations, mediaDuration, averageBitrate, chunkOffset);
+    var moov = BuildMoov(stream, codec, sampleDurations, mediaDuration, averageBitrate, chunkOffset);
 
     var result = new byte[checked(ftyp.Length + mdat.Length + moov.Length)];
     ftyp.CopyTo(result, 0);
     mdat.CopyTo(result, ftyp.Length);
     moov.CopyTo(result, ftyp.Length + mdat.Length);
     return result;
+  }
+
+  private static CodecConfiguration ResolveCodecConfiguration(AudioEncodedStream stream) {
+    if (stream.Format.CodecId.Equals("aac", StringComparison.OrdinalIgnoreCase)) {
+      if (stream.CodecPrivateData is not { Length: >= 2 } asc)
+        throw new ArgumentException("AAC MP4 muxing requires AudioSpecificConfig codec-private data.", nameof(stream));
+      return new CodecConfiguration(0x40, asc, 1_024);
+    }
+
+    if (!TryGetMpegVersion(stream.Format, out var version) || version is not (1 or 2))
+      throw new NotSupportedException("MP4 MPEG audio muxing requires MPEG-1 or MPEG-2 stream metadata.");
+    if (!TryGetMpegLayer(stream.Format, out var layer) || layer is not (2 or 3))
+      throw new NotSupportedException("MP4 MPEG audio muxing requires Layer II or III stream metadata.");
+
+    var objectType = version == 1 ? (byte)0x6B : (byte)0x69;
+    var defaultDuration = layer == 2 || version == 1 ? 1_152u : 576u;
+    return new CodecConfiguration(objectType, null, defaultDuration);
+  }
+
+  private static bool TryGetMpegVersion(AudioStreamFormat format, out int version) {
+    var value = GetProperty(format, "mpeg-version");
+    if (value is null) {
+      version = 0;
+      return false;
+    }
+    if (value.Equals("2.5", StringComparison.OrdinalIgnoreCase)) {
+      version = 25;
+      return true;
+    }
+    return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out version);
+  }
+
+  private static bool TryGetMpegLayer(AudioStreamFormat format, out int layer)
+    => int.TryParse(GetProperty(format, "mpeg-layer"), NumberStyles.Integer, CultureInfo.InvariantCulture, out layer);
+
+  private static string? GetProperty(AudioStreamFormat format, string key) {
+    if (format.Properties is null) return null;
+    foreach (var property in format.Properties)
+      if (property.Key.Equals(key, StringComparison.OrdinalIgnoreCase))
+        return property.Value;
+    return null;
   }
 
   private static byte[] BuildFtyp() {
@@ -58,7 +152,7 @@ internal static class Mp4AudioMuxer {
 
   private static byte[] BuildMoov(
     AudioEncodedStream stream,
-    byte[] asc,
+    CodecConfiguration codec,
     uint[] durations,
     ulong mediaDuration,
     uint averageBitrate,
@@ -66,9 +160,9 @@ internal static class Mp4AudioMuxer {
   ) {
     var movieTimescale = 1_000u;
     var movieDuration = checked((uint)Math.Min(uint.MaxValue,
-      mediaDuration * movieTimescale / (ulong)stream.Format.SampleRate));
+      checked(mediaDuration * movieTimescale) / (ulong)stream.Format.SampleRate));
     var mvhd = BuildMvhd(movieTimescale, movieDuration);
-    var trak = BuildTrak(stream, asc, durations, mediaDuration, averageBitrate, chunkOffset, movieTimescale, movieDuration);
+    var trak = BuildTrak(stream, codec, durations, mediaDuration, averageBitrate, chunkOffset, movieDuration);
     return Container("moov", mvhd, trak);
   }
 
@@ -90,16 +184,15 @@ internal static class Mp4AudioMuxer {
 
   private static byte[] BuildTrak(
     AudioEncodedStream stream,
-    byte[] asc,
+    CodecConfiguration codec,
     uint[] durations,
     ulong mediaDuration,
     uint averageBitrate,
     uint chunkOffset,
-    uint movieTimescale,
     uint movieDuration
   ) {
     var tkhd = BuildTkhd(movieDuration);
-    var mdia = BuildMdia(stream, asc, durations, mediaDuration, averageBitrate, chunkOffset);
+    var mdia = BuildMdia(stream, codec, durations, mediaDuration, averageBitrate, chunkOffset);
     return Container("trak", tkhd, mdia);
   }
 
@@ -125,7 +218,7 @@ internal static class Mp4AudioMuxer {
 
   private static byte[] BuildMdia(
     AudioEncodedStream stream,
-    byte[] asc,
+    CodecConfiguration codec,
     uint[] durations,
     ulong mediaDuration,
     uint averageBitrate,
@@ -133,7 +226,7 @@ internal static class Mp4AudioMuxer {
   ) {
     var mdhd = BuildMdhd((uint)stream.Format.SampleRate, checked((uint)Math.Min(uint.MaxValue, mediaDuration)));
     var hdlr = BuildHdlr();
-    var minf = BuildMinf(stream, asc, durations, averageBitrate, chunkOffset);
+    var minf = BuildMinf(stream, codec, durations, averageBitrate, chunkOffset);
     return Container("mdia", mdhd, hdlr, minf);
   }
 
@@ -161,14 +254,14 @@ internal static class Mp4AudioMuxer {
 
   private static byte[] BuildMinf(
     AudioEncodedStream stream,
-    byte[] asc,
+    CodecConfiguration codec,
     uint[] durations,
     uint averageBitrate,
     uint chunkOffset
   ) {
     var smhd = FullBox("smhd", 0, [0, 0, 0, 0]);
     var dinf = BuildDinf();
-    var stbl = BuildStbl(stream, asc, durations, averageBitrate, chunkOffset);
+    var stbl = BuildStbl(stream, codec, durations, averageBitrate, chunkOffset);
     return Container("minf", smhd, dinf, stbl);
   }
 
@@ -183,12 +276,12 @@ internal static class Mp4AudioMuxer {
 
   private static byte[] BuildStbl(
     AudioEncodedStream stream,
-    byte[] asc,
+    CodecConfiguration codec,
     uint[] durations,
     uint averageBitrate,
     uint chunkOffset
   ) {
-    var stsd = BuildStsd(stream.Format, asc, averageBitrate);
+    var stsd = BuildStsd(stream.Format, codec, averageBitrate);
     var stts = BuildStts(durations);
     var stsc = BuildStsc(stream.Packets.Count);
     var stsz = BuildStsz(stream.Packets);
@@ -196,8 +289,8 @@ internal static class Mp4AudioMuxer {
     return Container("stbl", stsd, stts, stsc, stsz, stco);
   }
 
-  private static byte[] BuildStsd(AudioStreamFormat format, byte[] asc, uint averageBitrate) {
-    var esds = BuildEsds(asc, averageBitrate);
+  private static byte[] BuildStsd(AudioStreamFormat format, CodecConfiguration codec, uint averageBitrate) {
+    var esds = BuildEsds(codec.ObjectType, codec.DecoderSpecificInfo, averageBitrate);
     using var entry = new MemoryStream();
     entry.Write(new byte[6]);
     WriteUInt16(entry, 1); // data reference index
@@ -208,7 +301,7 @@ internal static class Mp4AudioMuxer {
     WriteUInt16(entry, 16);
     WriteUInt16(entry, 0); // compression id
     WriteUInt16(entry, 0); // packet size
-    WriteUInt32(entry, checked((uint)format.SampleRate << 16));
+    WriteUInt32(entry, checked((uint)format.SampleRate * 0x1_0000u));
     entry.Write(esds);
     var mp4a = Box("mp4a", entry.ToArray());
 
@@ -219,15 +312,15 @@ internal static class Mp4AudioMuxer {
     return Box("stsd", stsdBody.ToArray());
   }
 
-  private static byte[] BuildEsds(byte[] asc, uint averageBitrate) {
-    var decoderSpecific = Descriptor(0x05, asc);
+  private static byte[] BuildEsds(byte objectType, byte[]? decoderSpecificInfo, uint averageBitrate) {
     using var decoderConfigBody = new MemoryStream();
-    decoderConfigBody.WriteByte(0x40); // MPEG-4 Audio
+    decoderConfigBody.WriteByte(objectType);
     decoderConfigBody.WriteByte(0x15); // AudioStream, upstream=0, reserved=1
     decoderConfigBody.Write([0, 0, 0]); // bufferSizeDB
     WriteUInt32(decoderConfigBody, averageBitrate);
     WriteUInt32(decoderConfigBody, averageBitrate);
-    decoderConfigBody.Write(decoderSpecific);
+    if (decoderSpecificInfo is { Length: > 0 })
+      decoderConfigBody.Write(Descriptor(0x05, decoderSpecificInfo));
     var decoderConfig = Descriptor(0x04, decoderConfigBody.ToArray());
     var slConfig = Descriptor(0x06, [0x02]);
 
@@ -249,7 +342,7 @@ internal static class Mp4AudioMuxer {
     foreach (var duration in durations) {
       if (runs.Count > 0 && runs[^1].Duration == duration) {
         var last = runs[^1];
-        runs[^1] = (last.Count + 1, last.Duration);
+        runs[^1] = (checked(last.Count + 1), last.Duration);
       } else {
         runs.Add((1, duration));
       }
@@ -302,6 +395,9 @@ internal static class Mp4AudioMuxer {
   }
 
   private static void WriteDescriptorLength(Stream output, int length) {
+    if (length is < 0 or > 0x0FFF_FFFF)
+      throw new ArgumentOutOfRangeException(nameof(length), "ISO/IEC 14496 descriptor lengths are limited to four 7-bit continuation bytes.");
+
     Span<byte> encoded = stackalloc byte[4];
     var count = 0;
     do {
@@ -356,4 +452,9 @@ internal static class Mp4AudioMuxer {
     BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
     output.Write(bytes);
   }
+
+  private readonly record struct CodecConfiguration(
+    byte ObjectType,
+    byte[]? DecoderSpecificInfo,
+    uint DefaultPacketDuration);
 }
