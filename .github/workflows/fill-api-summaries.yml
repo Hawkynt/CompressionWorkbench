@@ -25,7 +25,7 @@ jobs:
 
       - name: Complete XML documentation in C# sources
         run: |
-          python3 .github/scripts/fill-public-api-docs.py
+          dotnet run --project .github/tools/ApiDocFiller/ApiDocFiller.csproj --configuration Release
           python3 .github/scripts/fill-api-summaries.py
           python3 .github/scripts/fix-residual-api-summaries.py
           python3 .github/scripts/materialize-size-metadata.py
