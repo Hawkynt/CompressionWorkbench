@@ -7,8 +7,8 @@ using Compression.Registry;
 namespace FileFormat.Mp4;
 
 /// <summary>
-/// MP4/MOV demux surface plus an audio-only M4A write path. The writer currently
-/// accepts AAC-LC access units directly or canonical PCM16 that can be encoded to AAC-LC.
+/// MP4/MOV demux surface plus an audio-only M4A write path. The writer accepts
+/// AAC-LC access units, MPEG-1/2 Layer II/III frames, or canonical PCM16 that can be encoded to AAC-LC.
 /// </summary>
 public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IFileInternalLayoutMap, IFileInternalChunkMover,
@@ -67,7 +67,7 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "MP4/MOV container; demuxed tracks plus audio-only AAC-LC M4A muxing.";
+  public string Description => "MP4/MOV container; demuxed tracks plus audio-only AAC-LC encoding and AAC/MPEG audio packet muxing.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -102,19 +102,12 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
-  public IReadOnlyList<string> SupportedMuxCodecs => ["aac"];
+  public IReadOnlyList<string> SupportedMuxCodecs => Mp4AudioMuxer.SupportedCodecs;
 
   public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
-    if (!stream.CodecId.Equals("aac", StringComparison.OrdinalIgnoreCase)) {
-      reason = "the audio-only MP4 writer currently accepts AAC access units";
-      return false;
-    }
-    if (stream.SampleRate <= 0 || stream.Channels is < 1 or > 2) {
-      reason = "AAC M4A muxing requires mono/stereo with a positive sample rate";
-      return false;
-    }
-    reason = null;
-    return true;
+    ArgumentNullException.ThrowIfNull(stream);
+    ArgumentNullException.ThrowIfNull(options);
+    return Mp4AudioMuxer.CanMux(stream, out reason);
   }
 
   public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options) {
@@ -123,7 +116,7 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(options);
     if (!this.CanMux(stream.Format, options, out var reason))
       throw new NotSupportedException(reason);
-    output.Write(Mp4AudioMuxer.MuxAac(stream));
+    output.Write(Mp4AudioMuxer.Mux(stream));
   }
 
   public IReadOnlyList<string> SupportedEncodeCodecs => AacCodecs;
@@ -139,6 +132,10 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     if (format.Channels is < 1 or > 2) {
       reason = "the current AAC-LC encoder supports mono or stereo";
+      return false;
+    }
+    if (format.SampleRate > ushort.MaxValue) {
+      reason = "the current version-0 mp4a sample entry cannot represent sample rates above 65535 Hz";
       return false;
     }
     if (Array.IndexOf(AacAdtsReader.SampleRateTable, format.SampleRate) is < 0 or > 12) {
