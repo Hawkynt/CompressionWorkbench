@@ -39,7 +39,7 @@ jobs:
       - name: Run maintenance and driver safety tests
         run: >-
           dotnet test Compression.Tests/Compression.Tests.csproj -c Release --no-build
-          --filter "FullyQualifiedName~MarkerInterfaceCoverageTests|FullyQualifiedName~GenericPurgeRoundTripTests|FullyQualifiedName~FilesystemRwPromotionRoundTripTests|FullyQualifiedName~FilesystemDriver|FullyQualifiedName~Btrfs|FullyQualifiedName~Zfs"
+          --filter "FullyQualifiedName~MarkerInterfaceCoverageTests|FullyQualifiedName~GenericPurgeRoundTripTests|FullyQualifiedName~FilesystemRwPromotionRoundTripTests|FullyQualifiedName~FilesystemDriver|FullyQualifiedName~MountNamespaceResolverTests|FullyQualifiedName~Btrfs|FullyQualifiedName~Zfs"
       - name: Commit generated fixes
         run: |
           git config user.name "github-actions[bot]"
