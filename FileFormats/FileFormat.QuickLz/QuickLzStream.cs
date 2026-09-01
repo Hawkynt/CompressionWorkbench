@@ -1,236 +1,117 @@
-#pragma warning disable CS1591
-
 using System.Buffers.Binary;
+using Compression.Core.Dictionary.QuickLz;
 
 namespace FileFormat.QuickLz;
 
-/// <summary>
-/// QuickLZ level-1 stream format by Lasse Mikkel Reinhold.
-///
-/// Header layout (9-byte long form, always used here):
-///   byte 0      flags: 0x47 = compressed, 0x46 = stored (level 1, long header, bit6=1)
-///   uint32 LE   compressed size   (includes the 9-byte header)
-///   uint32 LE   decompressed size
-///
-/// Payload encoding (after header):
-///   Control words are 32-bit LE values written before each group of up to 31 tokens.
-///   Bit 31 is a sentinel (always 1). The remaining bits describe tokens from LSB upward:
-///     0 = literal  → 1 raw byte follows
-///     1 = match    → 2-byte LE offset + 1-byte (length - 3) follow; min match = 3
-///   If compressed output >= original, the block is stored uncompressed (flag 0x46).
-/// </summary>
+/// <summary>Reads and writes non-streaming QuickLZ 1.5.0 level-1 packets.</summary>
 public static class QuickLzStream {
+  private const int ShortHeaderSize = 3;
+  private const int LongHeaderSize = 9;
+  private const int ShortHeaderLimit = 216;
+  private const byte CompressedFlag = 0x01;
+  private const byte LongHeaderFlag = 0x02;
+  private const byte Level1Flag = 0x04;
+  private const byte StreamingMask = 0x30;
+  private const byte RequiredFlag = 0x40;
+  private const byte ReservedFlag = 0x80;
 
-  private const byte FlagCompressed   = 0x47; // level 1 | long header | bit6 | compressed
-  private const byte FlagUncompressed = 0x46; // level 1 | long header | bit6 | stored
-  private const int  HeaderSize       = 9;
-  private const int  HashBits         = 12;
-  private const int  HashSize         = 1 << HashBits;   // 4096
-  private const int  HashMask         = HashSize - 1;
-  private const int  MinMatch         = 3;
-  private const int  MaxMatch         = 255 + MinMatch;  // length byte is (len-3), max 255 → len 258
-  private const int  MaxDistance      = 65535;            // offset is uint16
-
-  /// <summary>Compresses <paramref name="input"/> into QuickLZ format and writes to <paramref name="output"/>.</summary>
+  /// <summary>Compresses one packet using QuickLZ 1.5.0 level 1 without streaming state.</summary>
   public static void Compress(Stream input, Stream output) {
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var src = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
 
-    var compressed = CompressData(src);
+    using var source = new MemoryStream();
+    input.CopyTo(source);
+    var plain = source.ToArray();
+    var payload = QuickLzCompressor.Compress(plain);
+    var useCompressed = payload.Length < plain.Length;
+    var longHeader = plain.Length >= ShortHeaderLimit;
+    var headerSize = longHeader ? LongHeaderSize : ShortHeaderSize;
+    var storedPayload = useCompressed ? payload : plain;
+    var totalSize = checked(headerSize + storedPayload.Length);
 
-    // If compression doesn't help, store uncompressed
-    if (compressed.Length >= src.Length) {
-      WriteHeader(output, FlagUncompressed, src.Length + HeaderSize, src.Length);
-      output.Write(src);
-    } else {
-      WriteHeader(output, FlagCompressed, compressed.Length + HeaderSize, src.Length);
-      output.Write(compressed);
-    }
+    if (!longHeader && totalSize > byte.MaxValue)
+      throw new InvalidDataException("QuickLZ short packet does not fit its one-byte compressed-size field.");
+
+    var flags = (byte)(RequiredFlag | Level1Flag |
+      (longHeader ? LongHeaderFlag : 0) |
+      (useCompressed ? CompressedFlag : 0));
+    WriteHeader(output, flags, totalSize, plain.Length, longHeader);
+    output.Write(storedPayload);
   }
 
-  /// <summary>Decompresses a QuickLZ stream from <paramref name="input"/> and writes to <paramref name="output"/>.</summary>
+  /// <summary>Decompresses one non-streaming QuickLZ 1.5.0 level-1 packet.</summary>
   public static void Decompress(Stream input, Stream output) {
-    Span<byte> hdr = stackalloc byte[HeaderSize];
-    input.ReadExactly(hdr);
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
 
-    var flags        = hdr[0];
-    var compSize     = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdr[1..]) - HeaderSize;
-    var decompSize   = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdr[5..]);
+    var first = input.ReadByte();
+    if (first < 0)
+      throw new InvalidDataException("QuickLZ stream is empty.");
+    var flags = (byte)first;
+    ValidateFlags(flags);
 
-    if ((flags & 0x40) == 0)
-      throw new InvalidDataException("Not a QuickLZ stream: bit 6 not set in flags byte.");
+    var longHeader = (flags & LongHeaderFlag) != 0;
+    var headerSize = longHeader ? LongHeaderSize : ShortHeaderSize;
+    Span<byte> header = stackalloc byte[LongHeaderSize];
+    header[0] = flags;
+    input.ReadExactly(header.Slice(1, headerSize - 1));
 
-    bool isCompressed = (flags & 0x01) != 0;
+    uint totalSize;
+    uint expandedSize;
+    if (longHeader) {
+      totalSize = BinaryPrimitives.ReadUInt32LittleEndian(header[1..5]);
+      expandedSize = BinaryPrimitives.ReadUInt32LittleEndian(header[5..9]);
+    } else {
+      totalSize = header[1];
+      expandedSize = header[2];
+    }
 
-    if (!isCompressed) {
-      // Stored: payload is the raw data
-      if (compSize < 0)
-        throw new InvalidDataException("Invalid QuickLZ header: negative payload size.");
-      var buf = new byte[compSize];
-      input.ReadExactly(buf);
-      output.Write(buf);
+    if (totalSize < headerSize)
+      throw new InvalidDataException("QuickLZ compressed size is smaller than its header.");
+    if (totalSize - headerSize > int.MaxValue || expandedSize > int.MaxValue)
+      throw new NotSupportedException("QuickLZ packet exceeds the managed in-memory size supported by this implementation.");
+
+    var payloadSize = checked((int)totalSize - headerSize);
+    var expandedLength = checked((int)expandedSize);
+    var payload = new byte[payloadSize];
+    input.ReadExactly(payload);
+
+    if ((flags & CompressedFlag) == 0) {
+      if (payloadSize != expandedLength)
+        throw new InvalidDataException("QuickLZ stored packet size does not match its expanded size.");
+      output.Write(payload);
       return;
     }
 
-    var payload = new byte[compSize];
-    input.ReadExactly(payload);
-    var result = DecompressData(payload, decompSize);
-    output.Write(result);
+    var expanded = QuickLzDecompressor.Decompress(payload, expandedLength);
+    output.Write(expanded);
   }
 
-  // ── Compression ──────────────────────────────────────────────────────────
+  private static void ValidateFlags(byte flags) {
+    if ((flags & RequiredFlag) == 0)
+      throw new InvalidDataException("QuickLZ packet is missing mandatory flag bit 6.");
+    if ((flags & ReservedFlag) != 0)
+      throw new InvalidDataException("QuickLZ packet uses reserved flag bit 7.");
+    if ((flags & StreamingMask) != 0)
+      throw new NotSupportedException("QuickLZ streaming-state packets are not supported by this stateless descriptor.");
+    var level = (flags >> 2) & 0x03;
+    if (level != 1)
+      throw new NotSupportedException($"QuickLZ compression level {level} is not supported; this descriptor implements level 1.");
+  }
 
-  private static byte[] CompressData(byte[] src) {
-    if (src.Length == 0)
-      return [];
-
-    // Hash table: hash → position of most recent match
-    var hashTable = new int[HashSize];
-    Array.Fill(hashTable, -1);
-
-    using var dst = new MemoryStream(src.Length);
-
-    // Control word: bits 0..N-1 are token types (0=literal, 1=match),
-    // bit N is the sentinel (always 1). Decompressor shifts right through
-    // token bits; when cw==1, sentinel reached = group done. Max 31 tokens.
-    var controlPos   = 0L;
-    uint controlBits = 0;
-    var tokenCount   = 0;
-
-    // Reusable buffers hoisted out of loops (stackalloc inside loops triggers CA2014)
-    Span<byte> zeroes4 = stackalloc byte[4] { 0, 0, 0, 0 };
-    Span<byte> tok     = stackalloc byte[3];
-
-    // Reserve space for the first control word
-    dst.Write(zeroes4);
-    controlPos = 0;
-
-    var i = 0;
-    while (i < src.Length) {
-      if (tokenCount == 31) {
-        // Flush: sentinel at bit 31
-        FlushControl(dst, controlPos, controlBits | (1u << 31));
-        controlPos = dst.Position;
-        dst.Write(zeroes4);
-        controlBits = 0;
-        tokenCount  = 0;
-      }
-
-      // Try to find a match
-      int matchLen = 0, matchOffset = 0;
-
-      if (i + MinMatch <= src.Length) {
-        var h = Hash3(src, i);
-        var candidate = hashTable[h];
-        hashTable[h] = i;
-
-        if (candidate >= 0 && i - candidate <= MaxDistance) {
-          var maxLen = Math.Min(MaxMatch, src.Length - i);
-          var len = 0;
-          while (len < maxLen && src[candidate + len] == src[i + len])
-            len++;
-          if (len >= MinMatch) {
-            matchLen    = len;
-            matchOffset = i - candidate;
-          }
-        }
-      }
-
-      if (matchLen >= MinMatch) {
-        // Match token: set bit at current position
-        controlBits |= (1u << tokenCount);
-        BinaryPrimitives.WriteUInt16LittleEndian(tok, (ushort)matchOffset);
-        tok[2] = (byte)(matchLen - MinMatch);
-        dst.Write(tok);
-
-        for (var k = 1; k < matchLen; k++) {
-          if (i + k + MinMatch <= src.Length)
-            hashTable[Hash3(src, i + k)] = i + k;
-        }
-        i += matchLen;
-      } else {
-        // Literal token: bit stays 0
-        dst.WriteByte(src[i]);
-        i++;
-      }
-
-      tokenCount++;
+  private static void WriteHeader(Stream output, byte flags, int totalSize, int expandedSize, bool longHeader) {
+    Span<byte> header = stackalloc byte[LongHeaderSize];
+    header[0] = flags;
+    if (longHeader) {
+      BinaryPrimitives.WriteUInt32LittleEndian(header[1..5], checked((uint)totalSize));
+      BinaryPrimitives.WriteUInt32LittleEndian(header[5..9], checked((uint)expandedSize));
+      output.Write(header);
+      return;
     }
 
-    // Flush final partial group: sentinel at bit tokenCount
-    FlushControl(dst, controlPos, controlBits | (1u << tokenCount));
-
-    return dst.ToArray();
-  }
-
-  private static void FlushControl(MemoryStream dst, long pos, uint controlWord) {
-    var saved = dst.Position;
-    dst.Position = pos;
-    Span<byte> buf = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, controlWord);
-    dst.Write(buf);
-    dst.Position = saved;
-  }
-
-  private static int Hash3(byte[] data, int pos) {
-    // 3-byte hash into HashBits bits
-    var v = (uint)data[pos] | ((uint)data[pos + 1] << 8) | ((uint)data[pos + 2] << 16);
-    return (int)((v * 0x9E3779B1u) >> (32 - HashBits)) & HashMask;
-  }
-
-  // ── Decompression ────────────────────────────────────────────────────────
-
-  private static byte[] DecompressData(byte[] src, int decompSize) {
-    if (decompSize == 0)
-      return [];
-
-    var dst = new byte[decompSize];
-    var si  = 0;
-    var di  = 0;
-
-    while (di < decompSize && si < src.Length) {
-      // Read control word
-      if (si + 4 > src.Length)
-        throw new InvalidDataException("QuickLZ: truncated control word.");
-      var cw = BinaryPrimitives.ReadUInt32LittleEndian(src.AsSpan(si));
-      si += 4;
-
-      // Process tokens: shift right through bits, sentinel is the last remaining 1-bit.
-      // When cw == 1, all tokens have been consumed.
-      while (cw != 1 && di < decompSize && si < src.Length) {
-        if ((cw & 1) == 0) {
-          // Literal
-          dst[di++] = src[si++];
-        } else {
-          // Match: 2-byte offset + 1-byte (len-3)
-          if (si + 3 > src.Length)
-            throw new InvalidDataException("QuickLZ: truncated match token.");
-          var offset = (int)BinaryPrimitives.ReadUInt16LittleEndian(src.AsSpan(si));
-          var length = src[si + 2] + MinMatch;
-          si += 3;
-
-          if (offset == 0 || di - offset < 0)
-            throw new InvalidDataException("QuickLZ: invalid match offset.");
-
-          var srcPos = di - offset;
-          for (var k = 0; k < length && di < decompSize; k++)
-            dst[di++] = dst[srcPos + k];
-        }
-        cw >>= 1;
-      }
-    }
-
-    return dst;
-  }
-
-  // ── Header helpers ───────────────────────────────────────────────────────
-
-  private static void WriteHeader(Stream output, byte flags, int totalCompSize, int decompSize) {
-    Span<byte> hdr = stackalloc byte[HeaderSize];
-    hdr[0] = flags;
-    BinaryPrimitives.WriteUInt32LittleEndian(hdr[1..], (uint)totalCompSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(hdr[5..], (uint)decompSize);
-    output.Write(hdr);
+    header[1] = checked((byte)totalSize);
+    header[2] = checked((byte)expandedSize);
+    output.Write(header[..ShortHeaderSize]);
   }
 }
