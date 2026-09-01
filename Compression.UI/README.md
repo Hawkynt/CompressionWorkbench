@@ -2,6 +2,12 @@
 
 WPF archive browser and binary analysis wizard for CompressionWorkbench.
 
+## Screenshot
+
+![CompressionWorkbench archive browser](../screenshots/main-window.png)
+
+The screenshot is regenerated automatically from a deterministic demo archive whenever a working branch is pushed.
+
 ## Features
 
 ### Archive Browser
