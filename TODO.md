@@ -6,6 +6,14 @@ Expose supported archives, filesystem images, and nested disk/container images a
 
 A writable offline rebuild is **not** automatically a writable mount. `FormatCapabilities.CanModify` answers whether an existing container can be modified through the archive/image API; mountability is determined by the mount-grade filesystem/provider contracts and their per-image probe result.
 
+### Non-negotiable mount parsing invariant
+
+**If CompressionWorkbench mounts it, CompressionWorkbench parses it.** Every source layer must be decoded by CompressionWorkbench before an OS-facing backend receives the namespace. The only valid boundary is:
+
+`source bytes -> CompressionWorkbench container/archive/partition/filesystem parsers -> IFilesystemSession -> FUSE/Dokan`
+
+Never delegate source interpretation to the host's filesystem or mount stack. This applies even when the current host happens to support the filesystem natively: ext4, NTFS, FAT, XFS, APFS, Btrfs, ZFS, and every other mounted format still go through CompressionWorkbench's own layers. Host support is irrelevant because the same image must resolve on an OS that does not understand that format. FUSE/Dokan are transport adapters for an already-parsed namespace, not alternate filesystem decoders.
+
 ## Non-goals
 
 - Do not advertise writable mounting merely because a format can be recreated or rewritten offline.
