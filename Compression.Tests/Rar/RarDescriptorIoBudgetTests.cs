@@ -54,6 +54,53 @@ public sealed class RarDescriptorIoBudgetTests {
     Assert.That(reader.Extract(0), Is.EqualTo(large));
   }
 
+  [Test]
+  public void CbrPureAdd_DoesNotSnapshotUntouchedPayload() {
+    var large = new byte[4 * 1024 * 1024];
+    new Random(0x434252).NextBytes(large);
+    var descriptor = new FileFormat.Cbr.CbrFormatDescriptor();
+    using var archive = Expandable(Build([
+      ("page01.png", large),
+      ("page02.png", "page two"u8.ToArray()),
+    ]));
+
+    using var counted = new CountingStream(archive);
+    descriptor.Add(counted, [ArchiveInputInfo.InMemory("page03.png", "page three"u8.ToArray())]);
+
+    Assert.That(counted.BytesRead, Is.LessThan(128 * 1024),
+      "CBR must not reintroduce an O(total bytes) copy around the RAR5 append editor.");
+    Assert.That(counted.BytesWritten, Is.LessThan(128 * 1024));
+
+    archive.Position = 0;
+    using var reader = new RarReader(archive, leaveOpen: true);
+    Assert.That(reader.Entries.Select(entry => entry.Name),
+      Is.EqualTo(new[] { "page01.png", "page02.png", "page03.png" }));
+    Assert.That(reader.Extract(0), Is.EqualTo(large));
+  }
+
+  [Test]
+  public void CbrRemoveLastSmallPage_DoesNotSnapshotUntouchedPayload() {
+    var large = new byte[4 * 1024 * 1024];
+    new Random(0x43425252).NextBytes(large);
+    var descriptor = new FileFormat.Cbr.CbrFormatDescriptor();
+    using var archive = Expandable(Build([
+      ("page01.png", large),
+      ("page02.png", "remove page"u8.ToArray()),
+    ]));
+
+    using var counted = new CountingStream(archive);
+    descriptor.Remove(counted, ["page02.png"]);
+
+    Assert.That(counted.BytesRead, Is.LessThan(128 * 1024),
+      "CBR remove must pass the underlying RAR tail-shift behavior through directly.");
+    Assert.That(counted.BytesWritten, Is.LessThan(128 * 1024));
+
+    archive.Position = 0;
+    using var reader = new RarReader(archive, leaveOpen: true);
+    Assert.That(reader.Entries.Select(entry => entry.Name), Is.EqualTo(new[] { "page01.png" }));
+    Assert.That(reader.Extract(0), Is.EqualTo(large));
+  }
+
   private static byte[] Build(IReadOnlyList<(string Name, byte[] Data)> entries) {
     using var output = new MemoryStream();
     using (var writer = new RarWriter(output, leaveOpen: true, method: RarConstants.MethodStore, solid: false)) {
