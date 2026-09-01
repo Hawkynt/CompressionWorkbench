@@ -3,6 +3,8 @@ using F = Compression.Lib.FormatDetector.Format;
 namespace Compression.UI;
 
 public partial class App : System.Windows.Application {
+  private const string ScreenshotDemoArgument = "--screenshot-demo";
+
   protected override void OnStartup(System.Windows.StartupEventArgs e) {
     base.OnStartup(e);
 
@@ -12,6 +14,15 @@ public partial class App : System.Windows.Application {
     // script sets this variable so normal Windows builds are unaffected.
     if (System.Environment.GetEnvironmentVariable("COMPRESSIONWORKBENCH_WINE") == "1")
       System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+
+    // Documentation screenshots use a dedicated deterministic launch mode rather than external
+    // desktop automation. Software rendering keeps the checked-in image independent from the
+    // runner's GPU, and the caller may provide a small demo archive to populate the browser.
+    if (TryGetDocumentationScreenshotRequest(e.Args, out var screenshotPath, out var demoArchivePath)) {
+      System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+      CaptureDocumentationScreenshot(screenshotPath, demoArchivePath);
+      return;
+    }
 
     // Warm the format registry on a background thread so the first user-driven
     // CanExecute / right-click that calls FormatDetector.DetectByExtension or
@@ -80,6 +91,84 @@ public partial class App : System.Windows.Application {
     }
   }
 
+  private static bool TryGetDocumentationScreenshotRequest(
+    string[] args,
+    out string outputPath,
+    out string? demoArchivePath
+  ) {
+    var prefix = ScreenshotDemoArgument + "=";
+    var screenshotArgument = args.FirstOrDefault(arg =>
+      arg.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase)
+    );
+
+    if (screenshotArgument is null) {
+      outputPath = string.Empty;
+      demoArchivePath = null;
+      return false;
+    }
+
+    outputPath = screenshotArgument[prefix.Length..];
+    if (string.IsNullOrWhiteSpace(outputPath))
+      throw new System.ArgumentException($"{ScreenshotDemoArgument}= requires an output path.");
+
+    demoArchivePath = args.FirstOrDefault(arg =>
+      !arg.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase)
+      && System.IO.File.Exists(arg)
+    );
+    return true;
+  }
+
+  private void CaptureDocumentationScreenshot(string outputPath, string? demoArchivePath) {
+    try {
+      Compression.Lib.FormatRegistration.EnsureInitialized();
+
+      var window = new MainWindow();
+      MainWindow = window;
+      window.Show();
+
+      if (demoArchivePath is not null)
+        window.OpenArchive(demoArchivePath);
+
+      window.Dispatcher.BeginInvoke(new System.Action(() => {
+        try {
+          SaveWindowAsPng(window, outputPath);
+          window.Close();
+          Shutdown();
+        } catch (System.Exception ex) {
+          System.Diagnostics.Trace.TraceError($"Screenshot generation failed: {ex}");
+          window.Close();
+          Shutdown(1);
+        }
+      }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+    } catch (System.Exception ex) {
+      System.Diagnostics.Trace.TraceError($"Screenshot setup failed: {ex}");
+      Shutdown(1);
+    }
+  }
+
+  private static void SaveWindowAsPng(System.Windows.Window window, string outputPath) {
+    window.UpdateLayout();
+
+    var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(window);
+    var pixelWidth = System.Math.Max(1, (int)System.Math.Ceiling(window.ActualWidth * dpi.DpiScaleX));
+    var pixelHeight = System.Math.Max(1, (int)System.Math.Ceiling(window.ActualHeight * dpi.DpiScaleY));
+    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+      pixelWidth,
+      pixelHeight,
+      dpi.PixelsPerInchX,
+      dpi.PixelsPerInchY,
+      System.Windows.Media.PixelFormats.Pbgra32
+    );
+    bitmap.Render(window);
+
+    var fullPath = System.IO.Path.GetFullPath(outputPath);
+    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(fullPath)!);
+    using var stream = System.IO.File.Create(fullPath);
+    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+    encoder.Save(stream);
+  }
+
   private static void LogCrash(string source, System.Exception? ex) {
     try {
       var path = System.IO.Path.Combine(
@@ -105,7 +194,6 @@ public partial class App : System.Windows.Application {
     var baseName = System.IO.Path.GetFileName(inputPath);
     var dir = System.IO.Path.GetDirectoryName(inputPath) ?? ".";
     var archivePath = System.IO.Path.Combine(dir, baseName + ext);
-
     var format = Compression.Lib.FormatDetector.DetectByExtension(archivePath);
     if (format == F.Unknown) {
       System.Windows.MessageBox.Show($"Unknown archive format for {ext}", "Create Archive",
