@@ -1,17 +1,18 @@
-name: Audit API summaries
+name: Fill API summaries
 
 on:
   push:
     branches: [docs/complete-api-summaries]
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  audit:
+  fill:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,32 +23,53 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Build published package graphs with missing-doc warnings as errors
+      - name: Complete XML documentation in C# sources
+        run: |
+          python3 .github/scripts/fill-api-summaries.py
+          python3 .github/scripts/fix-residual-api-summaries.py
+          python3 .github/scripts/materialize-size-metadata.py
+          python3 .github/scripts/document-record-constructors.py
+          python3 .github/scripts/fill-public-api-docs.py
+
+      - name: Build published package graphs with documentation warnings as errors
         shell: bash
         run: |
-          set -uo pipefail
-          projects=(
+          set -euo pipefail
+          for project in \
+            Compression.Core/Hawkynt.Compression.Core.csproj \
+            Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj \
+            Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj \
+            Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj \
+            Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj \
+            Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj; do
+            echo "===== $project ====="
+            dotnet build "$project" --configuration Release --nologo /warnaserror:CS1591
+          done
+
+      - name: Validate output-size contracts
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release
+          --filter "FullyQualifiedName~SupportedHashSizesContractTests|FullyQualifiedName~SupportedChecksumSizesContractTests"
+          --nologo
+
+      - name: Regenerate every published package API reference with stock generator
+        uses: Hawkynt/RepositoryTemplate/package-readme@v1
+        with:
+          mode: write
+          project: |
             Compression.Core/Hawkynt.Compression.Core.csproj
             Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj
             Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj
             Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj
             Hawkynt.Algorithms.Checksums/Hawkynt.Algorithms.Checksums.csproj
             Hawkynt.Algorithms.Hashing/Hawkynt.Algorithms.Hashing.csproj
-          )
-          failed=0
-          for project in "${projects[@]}"; do
-            echo "===== CS1591 AUDIT: $project ====="
-            if ! dotnet build "$project" --configuration Release --nologo /warnaserror:CS1591; then
-              failed=1
-            fi
-          done
-          exit "$failed"
 
-      - name: Count blank generated API summaries
-        if: always()
+      - name: Report residual blank reference summaries
         shell: bash
         run: |
           set -euo pipefail
+          failed=0
           files=(
             Compression.Core/REFERENCE.md
             Hawkynt.FileFormats.Archives/REFERENCE.md
@@ -60,6 +82,26 @@ jobs:
             count=$(grep -cE '\|[[:space:]]*\|$' "$file" || true)
             echo "$file: $count blank summary rows"
             if [[ "$count" -gt 0 ]]; then
-              grep -nE '\|[[:space:]]*\|$' "$file" | head -n 80
+              grep -nE '\|[[:space:]]*\|$' "$file" | head -n 160
+              failed=1
             fi
           done
+          git diff --check
+          exit "$failed"
+
+      - name: Commit source and generated references
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Compression.Core Codecs FileFormats FileSystems \
+            Hawkynt.FileFormats.Archives Hawkynt.FileFormats.Audio Hawkynt.FileFormats.FileSystems \
+            Hawkynt.Algorithms.Checksums Hawkynt.Algorithms.Hashing
+          if git diff --cached --quiet; then
+            echo 'No source/reference changes to commit.'
+            exit 0
+          fi
+          git commit -m '# complete published API XML summaries'
+          git push
