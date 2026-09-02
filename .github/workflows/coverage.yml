@@ -1,0 +1,106 @@
+name: Coverage
+
+# Coverage used to be a required check on every pull request. Instrumenting the whole assembly set
+# across ~27,000 tests costs 131-233 minutes against 25 for the same tests uninstrumented, so it was
+# superseded and cancelled before finishing on all but two of the last twenty-five runs - it gated
+# merges without ever reporting a number. It is a reporting metric, not a correctness gate: the two
+# test matrix jobs decide whether main is good. So it runs on its own schedule, where it has the
+# hours it needs and blocks nobody.
+on:
+  schedule:
+    # 03:17 UTC daily - off the hour, because everybody's cron fires on the hour.
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Deliberately NOT cancel-in-progress: a run that takes three hours must be allowed to finish.
+concurrency:
+  group: coverage
+  cancel-in-progress: false
+
+# Force JavaScript-based actions to run on Node 24 instead of the deprecated Node 20 ahead of
+# the 2026-06-16 hard cutover, until we bump each action to a Node-24-native major version.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone PNGCrushCS sibling
+        shell: bash
+        run: git clone --depth 1 https://github.com/Hawkynt/PNGCrushCS.git "$GITHUB_WORKSPACE/../PNGCrushCS"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Pre-build PNGCrushCS sibling (Release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/../PNGCrushCS"
+          REQUIRED="Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
+                    FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
+                    FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
+                    FileFormat.Png"
+          # Sibling reorganised most format projects into a FileFormats/ subdir
+          # but kept Compression.Core / FileFormat.Core at the root. Probe both
+          # locations per project so the script tolerates the layout move; also
+          # tolerate transient sibling-mid-refactor commits where a project is
+          # missing entirely — FileFormat.PngCrushAdapters.csproj has a matching
+          # SiblingPresent gate that falls back to an empty assembly.
+          locate() {
+            local proj="$1"
+            if [ -f "$proj/$proj.csproj" ]; then echo "$proj"; return 0; fi
+            if [ -f "FileFormats/$proj/$proj.csproj" ]; then echo "FileFormats/$proj"; return 0; fi
+            return 1
+          }
+          MISSING=""
+          for proj in $REQUIRED; do
+            if ! locate "$proj" >/dev/null; then
+              MISSING="$MISSING $proj"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::PNGCrushCS sibling incomplete (missing:$MISSING). Skipping pre-build; consumer csproj SiblingPresent gate handles the fallback."
+            exit 0
+          fi
+          for proj in $REQUIRED; do
+            dir="$(locate "$proj")"
+            echo "::group::Building $proj ($dir)"
+            dotnet build "$dir/$proj.csproj" --configuration Release --nologo
+            echo "::endgroup::"
+            test -f "$dir/bin/Release/net8.0/$proj.dll" || {
+              echo "::error::Pre-build did not produce $dir/bin/Release/net8.0/$proj.dll"
+              exit 1
+            }
+          done
+          echo "All sibling Release DLLs verified."
+
+      - name: Run tests with coverage
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release
+          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop&Category!=Performance"
+          --collect:"XPlat Code Coverage"
+          --results-directory ./coverage
+
+      - name: Generate coverage report
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator -reports:./coverage/**/coverage.cobertura.xml -targetdir:./coverage/report -reporttypes:HtmlInline_AzurePipelines
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ./coverage/report
