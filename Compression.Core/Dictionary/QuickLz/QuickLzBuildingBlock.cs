@@ -3,25 +3,26 @@ using Compression.Registry;
 
 namespace Compression.Core.Dictionary.QuickLz;
 
-/// <summary>
-/// Exposes QuickLZ level-1 style compression as a benchmarkable building block.
-/// Prepends a 4-byte LE uncompressed size header for round-trip support.
-/// Reference: Lasse Mikkel Reinhold, "QuickLZ", http://www.quicklz.com/.
-/// </summary>
+/// <summary>Exposes QuickLZ 1.5.0 level-1 compression as a benchmarkable building block.</summary>
+/// <remarks>
+/// A native QuickLZ payload has no independent expanded-length field. The building-block envelope
+/// prefixes a four-byte little-endian length; <see cref="QuickLzCompressor"/> and
+/// <see cref="QuickLzDecompressor"/> operate on the actual level-1 payload bytes.
+/// </remarks>
 public sealed class QuickLzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string Id => "BB_QuickLz";
   /// <inheritdoc/>
-  public string DisplayName => "QuickLZ";
+  public string DisplayName => "QuickLZ 1.5 level 1";
   /// <inheritdoc/>
-  public string Description => "Speed-focused hash-matched LZ77 with a 32-bit control word and indexed matches";
+  public string Description => "QuickLZ 1.5 level-1 hash-indexed LZ77 payload coding";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressed = QuickLzCompressor.Compress(data);
-    var result = new byte[4 + compressed.Length];
+    var result = new byte[checked(4 + compressed.Length)];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
     compressed.CopyTo(result.AsSpan(4));
     return result;
@@ -29,7 +30,11 @@ public sealed class QuickLzBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
+    if (data.Length < 4)
+      throw new InvalidDataException("QuickLZ building-block envelope is truncated.");
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
-    return originalSize == 0 ? [] : QuickLzDecompressor.Decompress(data[4..], originalSize);
+    if (originalSize < 0)
+      throw new InvalidDataException("QuickLZ building-block envelope has a negative expanded length.");
+    return QuickLzDecompressor.Decompress(data[4..], originalSize);
   }
 }

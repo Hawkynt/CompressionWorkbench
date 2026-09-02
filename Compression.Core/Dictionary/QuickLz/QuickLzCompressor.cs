@@ -1,125 +1,118 @@
+using System.Buffers.Binary;
+
 namespace Compression.Core.Dictionary.QuickLz;
 
-/// <summary>
-/// Implements a QuickLZ level-1 style compressor from the public algorithm description:
-/// Lasse Mikkel Reinhold, "QuickLZ — fast compression library", http://www.quicklz.com/ —
-/// a hash-matched LZ77 variant with a 32-bit control word (one bit per token) and matches
-/// that reference a 4096-entry hash table by bucket index rather than by raw distance.
-/// </summary>
+/// <summary>Encodes the QuickLZ 1.5.0 level-1 payload format.</summary>
 /// <remarks>
-/// As with LZRW3's index-based matches, the decoder cannot resolve a forward-looking 3-byte
-/// hash the instant a token is produced (the trailing bytes of that window may not exist yet).
-/// Both compressor and decompressor therefore queue candidate hash-table insertions and commit
-/// them only once their 3-byte window is fully available, keeping both tables byte-for-byte
-/// identical at every point in the stream.
+/// This is the payload below the QuickLZ 3/9-byte packet header. Level 1 references a 4096-entry
+/// destination hash table by index; it does not store a byte distance. Control words describe up to
+/// 31 tokens from least-significant bit upward and keep bit 31 set as the group sentinel.
 /// </remarks>
 public static class QuickLzCompressor {
-  private const int HashBits = 12;
-  private const int HashSize = 1 << QuickLzCompressor.HashBits;
-  private const int HashMask = QuickLzCompressor.HashSize - 1;
+  private const int HashSize = 4096;
+  private const int HashMask = HashSize - 1;
   private const int MinMatch = 3;
-  private const int MaxShortMatch = 17;
-  private const int MaxMatch = 18 + 255;
-  private const int ControlWordBits = 32;
+  private const int LongMatchThreshold = 18;
+  private const int MaxMatch = 255;
+  private const int TailLiteralCount = 10;
+  private const int UncompressedEnd = 4;
+  private const int TokensPerControlWord = 31;
+  private const uint ControlSentinel = 1u << 31;
 
-  /// <summary>Compresses <paramref name="data"/> using the QuickLZ level-1 control-word format.</summary>
-  /// <param name="data">The uncompressed input bytes.</param>
-  /// <returns>The QuickLZ-encoded byte stream.</returns>
+  /// <summary>Compresses <paramref name="data"/> as a QuickLZ 1.5.0 level-1 payload.</summary>
   public static byte[] Compress(ReadOnlySpan<byte> data) {
-    var n = data.Length;
-    var output = new List<byte>(Math.Max(16, n));
-    if (n == 0)
+    if (data.IsEmpty)
       return [];
 
-    var hashTable = new int[QuickLzCompressor.HashSize];
+    using var output = new MemoryStream(data.Length);
+    var hashTable = new int[HashSize];
     hashTable.AsSpan().Fill(-1);
-    var pending = new Queue<int>();
+    var nextHashed = 0;
+    var sourceOffset = 0;
+    Span<byte> emptyControl = stackalloc byte[4];
+    emptyControl.Clear();
 
-    var controlWordPos = -1;
-    uint controlWord = 0;
-    var bitIndex = QuickLzCompressor.ControlWordBits;
+    while (sourceOffset < data.Length) {
+      var controlOffset = output.Position;
+      output.Write(emptyControl);
+      uint control = ControlSentinel;
 
-    var pos = 0;
-    while (pos < n) {
-      if (bitIndex == QuickLzCompressor.ControlWordBits) {
-        if (controlWordPos >= 0)
-          WriteU32LE(output, controlWordPos, controlWord);
-        controlWordPos = output.Count;
-        output.Add(0); output.Add(0); output.Add(0); output.Add(0);
-        controlWord = 0;
-        bitIndex = 0;
+      for (var token = 0; token < TokensPerControlWord && sourceOffset < data.Length; ++token) {
+        if (sourceOffset < data.Length - TailLiteralCount &&
+            TryFindMatch(data, sourceOffset, hashTable, out var hash, out var matchLength)) {
+          control |= 1u << token;
+          WriteReference(output, hash, matchLength);
+
+          var phraseStart = sourceOffset;
+          sourceOffset += matchLength;
+          UpdateHashes(data, hashTable, ref nextHashed, phraseStart + 1);
+          nextHashed = sourceOffset;
+          continue;
+        }
+
+        output.WriteByte(data[sourceOffset++]);
+        if (sourceOffset <= data.Length - TailLiteralCount)
+          UpdateHashes(data, hashTable, ref nextHashed, sourceOffset - 2);
       }
 
-      FlushPending(pending, hashTable, data, pos);
-
-      var matchLength = 0;
-      var matchHash = -1;
-
-      if (pos + QuickLzCompressor.MinMatch <= n) {
-        var hash = Hash(data, pos);
-        var candidate = hashTable[hash];
-        if (candidate >= 0 && candidate < pos)
-          matchLength = MatchLength(data, candidate, pos, Math.Min(QuickLzCompressor.MaxMatch, n - pos));
-        if (matchLength >= QuickLzCompressor.MinMatch)
-          matchHash = hash;
-        pending.Enqueue(pos);
-      }
-
-      if (matchLength >= QuickLzCompressor.MinMatch) {
-        controlWord |= 1u << bitIndex;
-        EmitMatch(output, matchHash, matchLength);
-        pos += matchLength;
-      } else {
-        output.Add(data[pos]);
-        ++pos;
-      }
-
-      ++bitIndex;
+      PatchControlWord(output, controlOffset, control);
     }
 
-    if (controlWordPos >= 0)
-      WriteU32LE(output, controlWordPos, controlWord);
-
-    return [.. output];
+    return output.ToArray();
   }
 
-  /// <summary>Commits queued hash-table updates whose 3-byte window is now fully available in <paramref name="buffer"/>.</summary>
-  private static void FlushPending(Queue<int> pending, int[] hashTable, ReadOnlySpan<byte> buffer, int currentPos) {
-    while (pending.Count > 0 && pending.Peek() + 2 < currentPos) {
-      var p = pending.Dequeue();
-      hashTable[Hash(buffer, p)] = p;
+  private static bool TryFindMatch(ReadOnlySpan<byte> data, int sourceOffset, int[] hashTable,
+      out int hash, out int matchLength) {
+    hash = Hash(data, sourceOffset);
+    var candidate = hashTable[hash];
+    matchLength = 0;
+
+    if (candidate < 0 || sourceOffset - candidate < MinMatch ||
+        !data.Slice(candidate, MinMatch).SequenceEqual(data.Slice(sourceOffset, MinMatch)))
+      return false;
+
+    var maximum = Math.Min(MaxMatch, data.Length - UncompressedEnd - sourceOffset);
+    matchLength = MinMatch;
+    while (matchLength < maximum && data[candidate + matchLength] == data[sourceOffset + matchLength])
+      ++matchLength;
+    return true;
+  }
+
+  private static void WriteReference(Stream output, int hash, int matchLength) {
+    Span<byte> token = stackalloc byte[3];
+    if (matchLength < LongMatchThreshold) {
+      var value = (hash << 4) | (matchLength - 2);
+      BinaryPrimitives.WriteUInt16LittleEndian(token, checked((ushort)value));
+      output.Write(token[..2]);
+      return;
     }
+
+    var longValue = hash << 4;
+    BinaryPrimitives.WriteUInt16LittleEndian(token, checked((ushort)longValue));
+    token[2] = checked((byte)matchLength);
+    output.Write(token);
   }
 
-  private static void EmitMatch(List<byte> output, int hash, int length) {
-    if (length <= QuickLzCompressor.MaxShortMatch) {
-      var word = (hash << 4) | (length - QuickLzCompressor.MinMatch);
-      output.Add((byte)word);
-      output.Add((byte)(word >> 8));
-    } else {
-      var word = (hash << 4) | 0x0F;
-      output.Add((byte)word);
-      output.Add((byte)(word >> 8));
-      output.Add((byte)(length - (QuickLzCompressor.MaxShortMatch + 1)));
+  private static void UpdateHashes(ReadOnlySpan<byte> data, int[] hashTable, ref int nextHashed,
+      int endExclusive) {
+    var maximumEnd = Math.Min(endExclusive, data.Length - 2);
+    while (nextHashed < maximumEnd) {
+      hashTable[Hash(data, nextHashed)] = nextHashed;
+      ++nextHashed;
     }
-  }
-
-  private static void WriteU32LE(List<byte> output, int pos, uint value) {
-    output[pos] = (byte)value;
-    output[pos + 1] = (byte)(value >> 8);
-    output[pos + 2] = (byte)(value >> 16);
-    output[pos + 3] = (byte)(value >> 24);
   }
 
   private static int Hash(ReadOnlySpan<byte> data, int position) {
     var value = data[position] | (data[position + 1] << 8) | (data[position + 2] << 16);
-    return (value ^ (value >> 12)) & QuickLzCompressor.HashMask;
+    return (value ^ (value >> 12)) & HashMask;
   }
 
-  private static int MatchLength(ReadOnlySpan<byte> data, int a, int b, int maxLength) {
-    var len = 0;
-    while (len < maxLength && data[a + len] == data[b + len])
-      ++len;
-    return len;
+  private static void PatchControlWord(MemoryStream output, long offset, uint value) {
+    var saved = output.Position;
+    output.Position = offset;
+    Span<byte> bytes = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+    output.Write(bytes);
+    output.Position = saved;
   }
 }
