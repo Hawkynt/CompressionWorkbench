@@ -22,6 +22,9 @@ The goal of `FileSystem.Refs` is a reusable filesystem core, not merely an image
 - [x] tier-aware metadata-zone placement for Medium/Container/Small-owned structures
 - [x] self-describing Schema Table catalog and failover validation
 - [x] explicit offline-vs-native mutation transaction boundary
+- [x] offline-quiescent existing regular-file replacement with allocator-verified reallocation and old-block release
+- [x] offline-quiescent regular-file / empty-directory removal through CoW B+ replacement + alternate CHKP publication
+- [x] archive API exposes the proven offline mutation profile without claiming mounted-driver crash semantics
 - [x] alternate-CHKP prepare/publish primitive with clock/self-checksum validation
 - [x] MLog LogCore/control/data framing parser and inner redo-record codec
 

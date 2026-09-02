@@ -1,0 +1,108 @@
+name: Branch screenshots
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - master
+    paths-ignore:
+      - README.md
+      - docs/screenshots/**
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: branch-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+# Match the repository's other workflows while GitHub finishes the Node 24
+# transition for JavaScript actions.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  capture:
+    # The workflow commits refreshed images back to the branch. The actor guard
+    # is a second loop breaker in addition to the [skip ci] commit marker.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Build screenshot host
+        # Documentation capture needs the normal build output, not the Release
+        # single-file packaging target which rewrites/removes that output tree.
+        run: dotnet build Compression.UI/Compression.UI.csproj --configuration Release --nologo -p:EnableSingleFileBundle=false
+
+      - name: Capture deterministic UI screenshots
+        shell: pwsh
+        run: |
+          Remove-Item docs/screenshots -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force docs/screenshots | Out-Null
+
+          dotnet run --project Compression.UI/Compression.UI.csproj --configuration Release --no-build -p:EnableSingleFileBundle=false -- --screenshots docs/screenshots
+          if ($LASTEXITCODE -ne 0) {
+            $diagnostic = "docs/screenshots/screenshot-error.txt"
+            if (Test-Path $diagnostic) {
+              Write-Host "--- screenshot diagnostic ---"
+              Get-Content $diagnostic
+              Write-Host "--- end diagnostic ---"
+            }
+            throw "Compression.UI screenshot mode exited with $LASTEXITCODE"
+          }
+
+          $expected = @(
+            "archive-browser.png",
+            "analysis.png",
+            "maintenance.png"
+          )
+          foreach ($name in $expected) {
+            $path = Join-Path "docs/screenshots" $name
+            if (!(Test-Path $path)) { throw "Missing screenshot: $path" }
+            if ((Get-Item $path).Length -lt 1024) { throw "Screenshot is suspiciously small: $path" }
+          }
+
+      - name: Update README screenshot section
+        run: python .github/workflows/scripts/update-readme-screenshots.py
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-screenshots
+          path: docs/screenshots/*.png
+          retention-days: 14
+
+      # Through the shared action, never a raw `git commit && git push`. A commit made by git on a
+      # runner is UNSIGNED, and required_signatures is evaluated over a pull request's commits --
+      # a squash merge does not launder it -- so a raw push here makes the branch unmergeable
+      # later, with an error that points at the merge rather than at this step. The action goes
+      # through the contents API, which GitHub signs.
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: README.md
+          message: '* refresh the screenshot section'
+
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: docs/screenshots/archive-browser.png
+          message: '* refresh the archive browser screenshot'
+
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: docs/screenshots/analysis.png
+          message: '* refresh the analysis window screenshot'
+
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: docs/screenshots/maintenance.png
+          message: '* refresh the maintenance window screenshot'

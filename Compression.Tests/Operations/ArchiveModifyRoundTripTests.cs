@@ -19,15 +19,13 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public class ArchiveModifyRoundTripTests {
 
-  // Name-preserving modifiable archive containers (probe names round-trip verbatim).
   private static readonly string[] NamePreservingModifiableArchives = [
     "Ace", "Afs", "Ampk", "AndroidBundle", "Ba2", "Big", "Bsa", "Cbr", "Chm",
-    "CompactPro", "Deb", "Doc", "Dzip", "FreeArc", "Gar", "Gob", "GodotPck",
+    "CompactPro", "Deb", "Dmg", "Doc", "Dzip", "FreeArc", "Gar", "Gob", "GodotPck",
     "Grp", "Hpi", "LzxAmiga", "Mpq", "Msg", "Msi", "Msix", "Narc", "Nds", "Nsa",
     "Ppt", "Psarc", "Rgss", "Rpa", "Sar", "Sarc", "Slf", "Sqx", "StuffIt",
     "ThumbsDb", "Tnef", "U8", "Uharc", "Vpk", "Vpp", "VppV2", "Vsdx", "Wad",
     "Xls", "Xps", "Ypf", "Zpaq",
-    // previously promoted siblings that share the same contract
     "SevenZip", "Zip", "Tar", "Rar", "Cab", "Arj", "Zoo", "Arc", "Appx", "Apk",
   ];
 
@@ -64,7 +62,6 @@ public class ArchiveModifyRoundTripTests {
     }
     if (ms.Length == 0) { Assert.Ignore($"{formatId}: create produced no image."); return; }
 
-    // Add a third file through the modify path.
     ms.Position = 0;
     try {
       modifiable.Add(ms, [ArchiveInputInfo.InMemory("C.TXT", cData)]);
@@ -77,7 +74,6 @@ public class ArchiveModifyRoundTripTests {
     Assert.That(Has(afterAdd, "B.BIN"), Is.True, $"{formatId}: B.BIN lost during Add (after={Join(afterAdd)})");
     Assert.That(Has(afterAdd, "C.TXT"), Is.True, $"{formatId}: C.TXT missing after Add (after={Join(afterAdd)})");
 
-    // Remove the second file through the modify path.
     ms.Position = 0;
     var bName = afterAdd.First(n => Matches(n, "B.BIN"));
     modifiable.Remove(ms, [bName]);
@@ -86,7 +82,6 @@ public class ArchiveModifyRoundTripTests {
     Assert.That(Has(afterRemove, "A.TXT"), Is.True, $"{formatId}: A.TXT lost during Remove (after={Join(afterRemove)})");
     Assert.That(Has(afterRemove, "C.TXT"), Is.True, $"{formatId}: C.TXT lost during Remove (after={Join(afterRemove)})");
 
-    // Survivors must extract byte-identically.
     var work = Path.Combine(Path.GetTempPath(), "cwb_modrt_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(work);
     try {
@@ -100,7 +95,7 @@ public class ArchiveModifyRoundTripTests {
       Assert.That(File.ReadAllBytes(a!).SequenceEqual(aData), Is.True, $"{formatId}: A.TXT content changed by modify cycle");
       Assert.That(File.ReadAllBytes(c!).SequenceEqual(cData), Is.True, $"{formatId}: C.TXT content changed by modify cycle");
     } finally {
-      try { Directory.Delete(work, true); } catch { /* best effort */ }
+      try { Directory.Delete(work, true); } catch { }
     }
   }
 
@@ -113,6 +108,5 @@ public class ArchiveModifyRoundTripTests {
     string.Equals(Path.GetFileName(name.Replace('\\', '/')), user, StringComparison.OrdinalIgnoreCase);
 
   private static bool Has(IEnumerable<string> names, string user) => names.Any(n => Matches(n, user));
-
   private static string Join(IEnumerable<string> names) => string.Join(",", names.Take(8));
 }

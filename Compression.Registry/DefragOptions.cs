@@ -100,13 +100,18 @@ public sealed record class DefragOptions {
   public long HoleAt { get; init; } = -1;
 
   /// <summary>
-  /// Optional progress callback. When non-null, the defragmenter emits at
-  /// least three events: a "scanning" event with the pre-defrag block map,
-  /// periodic "writing" events with read/write offsets during the rebuild,
-  /// and a "complete" event with the post-defrag block map. UI consumers
-  /// can render a live tile chart from these events.
+  /// Optional progress callback. When non-null, the defragmenter emits snapshots
+  /// and incremental read/write-head updates that can drive the maintenance block
+  /// map. Staged archive rebuilds use the same contract as native block movers.
   /// </summary>
   public Action<DefragProgressEvent>? OnProgress { get; init; }
+
+  /// <summary>
+  /// Cooperative cancellation for long maintenance operations. Generic staged
+  /// rebuilds honour it while reading and writing and never commit a cancelled
+  /// target. Native in-place movers may honour it at their next safe move boundary.
+  /// </summary>
+  public CancellationToken CancellationToken { get; init; }
 
   /// <summary>
   /// Layout profile for planner-driven defragmentation. Controls whether

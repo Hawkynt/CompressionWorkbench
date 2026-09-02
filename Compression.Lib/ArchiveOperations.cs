@@ -1319,9 +1319,25 @@ public static class ArchiveOperations {
     try {
       Directory.CreateDirectory(tempDir);
       Extract(archivePath, tempDir, password, [entryPath]);
-      // The entry may contain path separators; find the file on disk
-      var file = Path.Combine(tempDir, entryPath.Replace('/', Path.DirectorySeparatorChar));
-      return File.Exists(file) ? File.ReadAllBytes(file) : [];
+      // Look where the extractor actually wrote, which means repeating its
+      // sanitising rather than combining the raw entry name. A filesystem
+      // descriptor names its entries from the volume root ("/HELLO.TXT"), and
+      // Path.Combine throws the base directory away the moment its second
+      // argument is rooted — the lookup then probed "/HELLO.TXT" on the host
+      // and reported the entry as empty instead of missing.
+      var relative = entryPath.Replace('\\', '/').TrimStart('/');
+      if (relative.Contains("..")) relative = Path.GetFileName(relative);
+      var file = Path.Combine(tempDir, relative.Replace('/', Path.DirectorySeparatorChar));
+      if (File.Exists(file)) return File.ReadAllBytes(file);
+
+      // Descriptors are free to place an entry under a path of their own
+      // making; the leaf name is the last thing still shared with the request.
+      var leaf = Path.GetFileName(relative);
+      var fallback = leaf.Length == 0
+        ? null
+        : Directory.EnumerateFiles(tempDir, "*", SearchOption.AllDirectories)
+            .FirstOrDefault(f => string.Equals(Path.GetFileName(f), leaf, StringComparison.OrdinalIgnoreCase));
+      return fallback != null ? File.ReadAllBytes(fallback) : [];
     }
     finally {
       try { Directory.Delete(tempDir, true); } catch { }

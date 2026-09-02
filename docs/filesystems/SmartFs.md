@@ -29,7 +29,7 @@ SmartFS wear-levelled raw-flash filesystem (Apache NuttX). Reads the format sect
 | create | yes | write a fresh volume holding the given files |
 | add / remove | no | change a volume in place |
 | defragment | yes | lay the volume out again |
-| wipe free space | no | zero what no file holds |
+| wipe free space | yes | zero what no file holds |
 | shrink | no | reduce the volume to what it needs |
 | optimise layout | no | re-lay the volume at a chosen geometry |
 | report layout | yes | say where every byte belongs |

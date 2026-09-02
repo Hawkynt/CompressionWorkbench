@@ -15,14 +15,19 @@ public partial class App : System.Windows.Application {
     if (System.Environment.GetEnvironmentVariable("COMPRESSIONWORKBENCH_WINE") == "1")
       System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
-    // Documentation screenshots use a dedicated deterministic launch mode rather than external
-    // desktop automation. Software rendering keeps the checked-in image independent from the
-    // runner's GPU, and the caller may provide a small demo archive to populate the browser.
+    // Two capture entry points, deliberately. `--screenshot-demo=<file>` renders the main window
+    // alone and is what generate.yml calls on every working-branch push; `--screenshots [dir]`
+    // renders the whole documented surface set - archive browser, analysis, maintenance. They take
+    // different flags and neither replaces the other, so both are checked here. Software rendering
+    // keeps the checked-in images independent from the runner's GPU.
     if (TryGetDocumentationScreenshotRequest(e.Args, out var screenshotPath, out var demoArchivePath)) {
       System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
       CaptureDocumentationScreenshot(screenshotPath, demoArchivePath);
       return;
     }
+
+    if (ScreenshotMode.TryRun(this, e.Args))
+      return;
 
     // Warm the format registry on a background thread so the first user-driven
     // CanExecute / right-click that calls FormatDetector.DetectByExtension or

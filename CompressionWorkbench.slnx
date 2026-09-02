@@ -7,6 +7,8 @@
     <Project Path="Compression.Registry.Generator/Compression.Registry.Generator.csproj" />
     <Project Path="Compression.Lib/Compression.Lib.csproj" />
     <Project Path="Compression.Analysis/Compression.Analysis.csproj" />
+    <Project Path="Compression.Mounting/Compression.Mounting.csproj" />
+    <Project Path="Compression.Mounting.Dokan/Compression.Mounting.Dokan.csproj" />
   </Folder>
   <Folder Name="/MetaPackages/">
     <Project Path="Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj" />
@@ -212,6 +214,7 @@
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
+    <Project Path="FileSystems/FileSystem.Ps1MemoryCard/FileSystem.Ps1MemoryCard.csproj" />
     <Project Path="FileSystems/FileSystem.Ext/FileSystem.Ext.csproj" />
     <Project Path="FileSystems/FileSystem.F2fs/FileSystem.F2fs.csproj" />
     <Project Path="FileSystems/FileSystem.Fat/FileSystem.Fat.csproj" />

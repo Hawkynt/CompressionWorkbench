@@ -4,15 +4,22 @@ namespace Compression.Registry;
 
 /// <summary>
 /// Detects the filesystem contained within a virtual disk stream by scanning
-/// <see cref="FormatRegistry"/> magic signatures against the stream header.
-/// Falls back to heuristic BPB checks for FAT (which has no magic signature).
-/// Returns the inner descriptor if it implements the required archive operations.
+/// the registered CompressionWorkbench filesystem descriptors against the
+/// stream header. Falls back to heuristic BPB checks for FAT (which has no
+/// magic signature).
 /// </summary>
+/// <remarks>
+/// This detector is deliberately filesystem-only. Mount composition must never
+/// hand a guest disk back to the host OS, nor mistake an archive/container
+/// descriptor for the filesystem that owns the bytes. Containers are decoded
+/// by their own CompressionWorkbench layer first; this class selects only the
+/// next CompressionWorkbench filesystem parser.
+/// </remarks>
 public static class InnerFsDetector {
 
   /// <summary>
   /// Tries to detect the inner filesystem descriptor from a virtual disk stream.
-  /// Returns the descriptor if one is found and it implements
+  /// Returns only descriptors registered as filesystem formats and exposing
   /// <see cref="IArchiveFormatOperations"/>; otherwise <c>null</c>.
   /// </summary>
   public static IFormatDescriptor? Detect(Stream virtualDisk) {
@@ -35,20 +42,16 @@ public static class InnerFsDetector {
 
       var headerSpan = header.AsSpan(0, bytesRead);
 
-      // Phase 1: magic-signature-based detection via the registry
+      // Phase 1: magic-signature-based detection via filesystem descriptors
+      // only. This matters for mount composition: e.g. a VHD guest containing
+      // ext4 must select our ext driver even when the host OS could mount ext4.
       IFormatDescriptor? best = null;
       var bestConfidence = 0.0;
 
-      foreach (var desc in FormatRegistry.All) {
-        // Only consider archive-category descriptors (filesystems, disk images)
-        if (desc.Category is not FormatCategory.Archive)
+      foreach (var formatId in FormatRegistry.FilesystemFormatIds) {
+        var desc = FormatRegistry.GetById(formatId);
+        if (desc is null || desc.Category is not FormatCategory.Archive)
           continue;
-
-        // Skip disk-image containers to avoid infinite recursion
-        if (desc.Id is "Vhd" or "Vhdx" or "Qcow2" or "Vmdk" or "Vdi")
-          continue;
-
-        // Only consider descriptors that can list/extract
         if (desc is not IArchiveFormatOperations)
           continue;
 
@@ -72,7 +75,6 @@ public static class InnerFsDetector {
         if (bytesPerSector is 512 or 1024 or 2048 or 4096
             && sectorsPerCluster is > 0 and <= 128
             && (sectorsPerCluster & (sectorsPerCluster - 1)) == 0) {
-          // Likely FAT — return the FAT descriptor
           return FormatRegistry.GetById("Fat");
         }
       }

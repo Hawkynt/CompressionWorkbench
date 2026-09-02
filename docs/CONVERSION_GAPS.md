@@ -19,17 +19,17 @@ Measured on the full grid (8 representative sources x all creatable targets):
 |---|---|
 | Passing pairs | 1632 |
 | Ignored — genuinely-impossible | 440 |
-| Ignored — known gap (quarantined here) | 416 |
+| Ignored — known gap (quarantined here) | 432 |
 | **Total grid cells (+ coverage report)** | **2489** |
 
 ## Bucket summary
 
 | Bucket | Failing targets | Failing pairs |
 |---|---:|---:|
-| single-payload/whole-image target | 18 | 144 |
-| name/charset/size constraint | 7 | 56 |
-| other | 27 | 216 |
-| **Total** | **52** | **416** |
+| single-payload/whole-image target | 20 | 160 |
+| name/charset/size constraint | 8 | 64 |
+| other | 26 | 208 |
+| **Total** | **54** | **432** |
 
 > Fixed and flipped to enforced-pass: `Svx8` (descriptor class renamed so the
 > source-generated Format enum Id matches its registry Id), `Crate`, `FreeArc`,
@@ -58,6 +58,13 @@ Measured on the full grid (8 representative sources x all creatable targets):
 > FAT, so the re-list ran the wrong reader; and `Rpm`, whose `List` returned a
 > hardcoded `payload.cpio` placeholder while `Extract` fed the still-compressed
 > payload to the cpio parser.
+>
+> `Dmg` is enforced-pass: exact logical partition lengths are preserved through the
+> reader and the tail index, so read-back is no longer 512-byte padded.
+
+> `CramFs` is also enforced-pass again. Its reader now performs real block-by-block
+> zlib/deflate decompression and existing-image add/remove is rebuild-backed R/W;
+> the old "0-byte decompression stub" quarantine described code that no longer exists.
 
 > Most gaps are **target-wide** (the target fails from every one of the 8 sources, so
 > the failing-pair count is `targets x 8`). Pair-specific gaps are listed in their own
@@ -77,6 +84,8 @@ The target collapses an arbitrary file tree into a single stream or whole-image 
 | `Ewf` | EnCase EWF (.E01) wraps raw media as opaque chunks; the reader surfaces section blobs (volume/sectors/table/...), not the original files |
 | `Lrzip` | single-stream long-range compressor; one 'data' member only |
 | `Mp3` | single audio stream; collapses tree to one FULL.mp3 |
+| `Nib` | CBM nibble image; the writer lays down raw GCR tracks (track_00.bin…track_68.bin) and the container has no filename namespace of its own — names would need a CBM DOS directory written into those tracks |
+| `OrangeFs` | OrangeFS DBPF object; the writer packs the tree into one object.bin and re-lists as FULL.orangefs+metadata.ini+object.bin |
 | `Psf` | PlayStation sound format; fixed header.bin+program.bin pair, not a tree |
 | `Sparseimage` | Apple sparse disk image; one disk.img blob |
 | `SplitFile` | byte-splitter; rejoins to a single 'joined' member, not a tree |
@@ -97,7 +106,7 @@ Retro/constrained filesystems that mangle or synthesize entry names, or pad file
 | `Bbc` | BBC Micro DFS disk; name-synthesizing FS, payload not found by content |
 | `Cpm` | CP/M disk; 8.3-folding name-synth FS, payload not found by content |
 | `Lif` | HP-71 LIF disk pads file content to a 256-byte record so bytes differ |
-| `Ods1` | ODS-1 (Files-11) disk pads content to a 512-byte block so bytes differ |
+| `Ps1MemoryCard` | PlayStation memory-card saves allocate whole 8 KiB blocks and the directory records block-granular stored size, so arbitrary conversion payloads are zero-padded by design |
 | `Rt11` | RT-11 disk pads content to a 512-byte block so bytes differ |
 | `TrDos` | TR-DOS disk; name-synthesizing FS, payload not found by content |
 | `Wad` | Doom WAD lump names are 8-char-truncated (HELLO.TX) so verbatim-name match fails |
@@ -110,10 +119,8 @@ Archive/format writers where the payload survives but entries are renamed (e.g. 
 | Target | Reason |
 |---|---|
 | `Akb` | Koei AKB audio bank; entries renamed to entry_NNN.bin so verbatim-name match fails |
-| `CramFs` | CramFs read-back returns 0-byte content for HELLO.TXT (decompression stub) |
 | `Cso` | CSO compressed ISO; payload exposed as FULL.cso+block_* not original names |
 | `Dcs` | DCS Amiga disk; exposed as track_NNN.raw not original names |
-| `Dmg` | DMG read-back returns 512-byte padded content (block padding, content mismatch) |
 | `Dtb` | Device-tree blob; names re-rooted under _root/ and de-extensioned (HELLO.bin) |
 | `Fits` | FITS; payload exposed as hdu_* header/data members not original names |
 | `G64` | G64 GCR disk; exposed as track_NN.bin not original names |
@@ -132,9 +139,9 @@ Archive/format writers where the payload survives but entries are renamed (e.g. 
 | `Npz` | NumPy .npz; entries suffixed .npy (HELLO.TXT.npy) so verbatim-name match fails |
 | `PackDisk` | PackDisk Amiga disk; exposed as track_NNN.raw not original names |
 | `Paragon` | Paragon backup; exposed as chunk_NNNNNN.bin not original names |
-| `Reiser4` | Reiser4 image; exposed as *_superblock.bin not original names (read-back stub) |
 | `TfRecord` | TensorFlow TFRecord; entries renamed record_NNNNN.bin |
 | `Tfc` | UE texture cache; entries renamed bundle_NNNNN.bin |
+| `UefiFv` | UEFI firmware volume; an FFS file is identified by GUID, so the writer names each one <guid>_RAW.bin and the original filename has nowhere to live |
 | `Warc` | WARC; entries listed as 'resource: <name>' so basename match fails |
 | `Zap` | Zap Amiga disk; exposed as track_NNN.raw not original names |
 

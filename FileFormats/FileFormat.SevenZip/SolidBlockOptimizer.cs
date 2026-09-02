@@ -36,6 +36,20 @@ public static class SolidBlockOptimizer {
   }
 
   /// <summary>
+  /// Detailed progress used by the maintenance block-map UI. <c>Phase</c> is
+  /// <c>extracting</c>, <c>strategy</c>, or <c>building</c>. The byte counters
+  /// are meaningful for extraction; current/total are meaningful for strategy
+  /// and target-entry construction.
+  /// </summary>
+  public sealed record DetailedProgress(
+    string Phase,
+    int Current,
+    int Total,
+    string? Name,
+    long BytesDone,
+    long BytesTotal);
+
+  /// <summary>
   /// Callback invoked before each trial starts. Parameters: (strategyIndex, totalStrategies, strategyName).
   /// </summary>
   public delegate void ProgressCallback(int index, int total, string strategyName);
@@ -46,24 +60,44 @@ public static class SolidBlockOptimizer {
   /// </summary>
   /// <param name="archive">Seekable stream containing a valid 7z archive.</param>
   /// <param name="maxTrials">Maximum number of strategies to try (1-5). Default 5.</param>
-  /// <param name="onProgress">Optional progress callback invoked before each trial.</param>
-  /// <returns>The optimization result with the winning archive bytes and trial report.</returns>
-  public static OptimizeResult Optimize(Stream archive, int maxTrials = 5, ProgressCallback? onProgress = null) {
+  /// <param name="onProgress">Optional coarse callback invoked before each trial.</param>
+  /// <param name="onDetailedProgress">Optional per-entry/per-strategy callback for UI feedback.</param>
+  /// <param name="cancellationToken">Cancellation checked between extraction, planning and target-build units.</param>
+  public static OptimizeResult Optimize(
+      Stream archive,
+      int maxTrials = 5,
+      ProgressCallback? onProgress = null,
+      Action<DetailedProgress>? onDetailedProgress = null,
+      CancellationToken cancellationToken = default) {
     ArgumentNullException.ThrowIfNull(archive);
     maxTrials = Math.Clamp(maxTrials, 1, Strategies.Count);
+    cancellationToken.ThrowIfCancellationRequested();
 
-    // Step 1: Extract all entries from the input archive
+    // Step 1: Extract all entries. The callback is deliberately emitted before
+    // and after each file so even a multi-gigabyte regroup has visible read-head
+    // progress rather than a frozen indeterminate spinner.
     archive.Position = 0;
     var reader = new SevenZipReader(archive, leaveOpen: true);
+    var fileEntries = reader.Entries.Where(e => !e.IsDirectory).ToArray();
+    var totalBytes = Math.Max(1L, fileEntries.Sum(e => Math.Max(0L, e.Size)));
+    long extractedBytes = 0;
     var entries = new List<(string Name, byte[] Data, SevenZipEntry Meta)>();
     for (var i = 0; i < reader.Entries.Count; i++) {
+      cancellationToken.ThrowIfCancellationRequested();
       var e = reader.Entries[i];
       if (e.IsDirectory) continue;
-      var data = reader.Extract(i);
-      entries.Add((e.Name, data, e));
-    }
 
-    // Trivial case: 0 or 1 files cannot benefit from regrouping
+      onDetailedProgress?.Invoke(new DetailedProgress(
+        "extracting", entries.Count, fileEntries.Length, e.Name, extractedBytes, totalBytes));
+      var data = reader.Extract(i);
+      extractedBytes += data.LongLength;
+      entries.Add((e.Name, data, e));
+      onDetailedProgress?.Invoke(new DetailedProgress(
+        "extracting", entries.Count, fileEntries.Length, e.Name, extractedBytes, totalBytes));
+    }
+    cancellationToken.ThrowIfCancellationRequested();
+
+    // Trivial case: 0 or 1 files cannot benefit from regrouping.
     if (entries.Count <= 1) {
       archive.Position = 0;
       var original = new byte[archive.Length];
@@ -75,28 +109,40 @@ public static class SolidBlockOptimizer {
       };
     }
 
-    // Step 2: Run each strategy (up to maxTrials)
+    // Step 2: Run each strategy (up to maxTrials).
     var strategies = Strategies.Take(maxTrials).ToList();
     var trials = new List<(string Name, byte[] Output, TimeSpan Elapsed)>();
 
     for (var i = 0; i < strategies.Count; i++) {
+      cancellationToken.ThrowIfCancellationRequested();
       var (name, grouper) = strategies[i];
       onProgress?.Invoke(i, strategies.Count, name);
+      onDetailedProgress?.Invoke(new DetailedProgress(
+        "strategy", i, strategies.Count, name, i, strategies.Count));
 
       var sw = System.Diagnostics.Stopwatch.StartNew();
       try {
         var groups = grouper(entries);
-        var output = BuildArchive(entries, groups);
+        cancellationToken.ThrowIfCancellationRequested();
+        var output = BuildArchive(entries, groups, cancellationToken,
+          (current, total, entryName) => onDetailedProgress?.Invoke(new DetailedProgress(
+            "building", current, total, entryName, current, total)));
         sw.Stop();
         trials.Add((name, output, sw.Elapsed));
+        onDetailedProgress?.Invoke(new DetailedProgress(
+          "strategy", i + 1, strategies.Count, name, i + 1, strategies.Count));
+      } catch (OperationCanceledException) {
+        sw.Stop();
+        throw;
       } catch {
         sw.Stop();
-        // Strategy failed — skip it
+        // A strategy can legitimately fail for a particular content/layout.
+        // Skip it and continue searching the other candidates.
       }
     }
 
+    cancellationToken.ThrowIfCancellationRequested();
     if (trials.Count == 0) {
-      // All strategies failed — return original
       archive.Position = 0;
       var original = new byte[archive.Length];
       archive.ReadExactly(original);
@@ -107,7 +153,7 @@ public static class SolidBlockOptimizer {
       };
     }
 
-    // Step 3: Pick the smallest
+    // Step 3: Pick the smallest.
     var sorted = trials.OrderBy(t => t.Output.Length).ToList();
     var winner = sorted[0];
 
@@ -124,10 +170,6 @@ public static class SolidBlockOptimizer {
 
   // ── Strategy registry ──────────────────────────────────────────────
 
-  /// <summary>
-  /// A grouping strategy: given a list of entries, returns a list of groups
-  /// (each group is a list of indices into the entries list).
-  /// </summary>
   private delegate IReadOnlyList<int[]> GroupingStrategy(
     IReadOnlyList<(string Name, byte[] Data, SevenZipEntry Meta)> entries);
 
@@ -160,10 +202,8 @@ public static class SolidBlockOptimizer {
 
   private static IReadOnlyList<int[]> GroupBySimilarityHash(
       IReadOnlyList<(string Name, byte[] Data, SevenZipEntry Meta)> entries) {
-    // Compute a fingerprint from the first 4KB of each file using a
-    // simple rolling hash, then cluster files with similar fingerprints.
     const int FingerprintSize = 4096;
-    const int NumBuckets = 16; // cluster into 16 buckets by hash
+    const int NumBuckets = 16;
 
     var groups = new Dictionary<int, List<int>>();
     for (var i = 0; i < entries.Count; i++) {
@@ -180,26 +220,18 @@ public static class SolidBlockOptimizer {
     return groups.Values.Select(g => g.ToArray()).ToArray();
   }
 
-  /// <summary>
-  /// Computes a simple rolling hash fingerprint over data. Uses a polynomial
-  /// hash with a small window to produce a content-dependent signature.
-  /// </summary>
   private static int ComputeRollingHash(ReadOnlySpan<byte> data) {
     if (data.IsEmpty) return 0;
-    // Use byte frequency distribution as the fingerprint — files with similar
-    // byte distributions will hash to similar values.
     Span<int> freq = stackalloc int[256];
     freq.Clear();
     foreach (var b in data)
       freq[b]++;
 
-    // Hash the frequency table
-    var hash = 0x811C9DC5u; // FNV-1a offset basis
+    var hash = 0x811C9DC5u;
     for (var i = 0; i < 256; i++) {
-      // Quantize frequency to reduce noise: bucket into 8 levels
       var quantized = (byte)Math.Min(7, freq[i] * 8 / Math.Max(1, data.Length));
       hash ^= quantized;
-      hash *= 0x01000193u; // FNV-1a prime
+      hash *= 0x01000193u;
     }
     return (int)hash;
   }
@@ -208,9 +240,9 @@ public static class SolidBlockOptimizer {
 
   private static IReadOnlyList<int[]> GroupBySizeBuckets(
       IReadOnlyList<(string Name, byte[] Data, SevenZipEntry Meta)> entries) {
-    var small = new List<int>();  // < 4KB
-    var medium = new List<int>(); // 4KB - 64KB
-    var large = new List<int>();  // > 64KB
+    var small = new List<int>();
+    var medium = new List<int>();
+    var large = new List<int>();
 
     for (var i = 0; i < entries.Count; i++) {
       var len = entries[i].Data.Length;
@@ -222,7 +254,6 @@ public static class SolidBlockOptimizer {
     var result = new List<int[]>();
     if (small.Count > 0) result.Add(small.ToArray());
     if (medium.Count > 0) result.Add(medium.ToArray());
-    // Large files each get their own block for better random access
     foreach (var idx in large)
       result.Add([idx]);
     return result;
@@ -253,49 +284,29 @@ public static class SolidBlockOptimizer {
     return groups.Values.Select(g => g.ToArray()).ToArray();
   }
 
-  /// <summary>
-  /// Detects the file type from magic bytes in the header. Returns a
-  /// short category string for grouping purposes.
-  /// </summary>
   private static string DetectFileKind(byte[] data) {
     if (data.Length < 4) return "tiny";
 
     var b = data.AsSpan();
-    // PDF
     if (b.Length >= 5 && b[0] == '%' && b[1] == 'P' && b[2] == 'D' && b[3] == 'F') return "pdf";
-    // PNG
     if (b.Length >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') return "image";
-    // JPEG
     if (b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return "image";
-    // GIF
     if (b[0] == 'G' && b[1] == 'I' && b[2] == 'F' && b[3] == '8') return "image";
-    // BMP
     if (b[0] == 'B' && b[1] == 'M') return "image";
-    // WebP
     if (b.Length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' &&
         b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P') return "image";
-    // PE executable (MZ header)
     if (b[0] == 'M' && b[1] == 'Z') return "executable";
-    // ELF
     if (b[0] == 0x7F && b[1] == 'E' && b[2] == 'L' && b[3] == 'F') return "executable";
-    // Mach-O
     if ((b[0] == 0xFE && b[1] == 0xED && b[2] == 0xFA) ||
         (b[0] == 0xCF && b[1] == 0xFA && b[2] == 0xED)) return "executable";
-    // ZIP / JAR / Office (PK)
     if (b[0] == 'P' && b[1] == 'K' && b[2] == 3 && b[3] == 4) return "archive";
-    // Gzip
     if (b[0] == 0x1F && b[1] == 0x8B) return "archive";
-    // 7z
     if (b[0] == '7' && b[1] == 'z' && b[2] == 0xBC && b[3] == 0xAF) return "archive";
-    // RAR
     if (b[0] == 'R' && b[1] == 'a' && b[2] == 'r' && b[3] == '!') return "archive";
-    // XML / HTML / SVG (angle bracket start)
     if (b[0] == '<') return "markup";
-    // JSON (object or array)
     if (b[0] == '{' || b[0] == '[') return "structured";
-    // UTF-8 BOM
     if (b.Length >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) return "text";
-    // Heuristic: mostly printable ASCII → text
+
     var printable = 0;
     var sample = Math.Min(data.Length, 512);
     for (var i = 0; i < sample; i++)
@@ -310,22 +321,25 @@ public static class SolidBlockOptimizer {
 
   /// <summary>
   /// Builds a 7z archive from the given entries with the specified block grouping.
-  /// Each group becomes one solid block.
+  /// Each group becomes one solid block. Cancellation is checked between target
+  /// entries and immediately before/after the potentially expensive solid encode.
   /// </summary>
   private static byte[] BuildArchive(
       IReadOnlyList<(string Name, byte[] Data, SevenZipEntry Meta)> entries,
-      IReadOnlyList<int[]> groups) {
+      IReadOnlyList<int[]> groups,
+      CancellationToken cancellationToken,
+      Action<int, int, string?>? onProgress) {
 
     using var ms = new MemoryStream();
     var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true);
 
-    // Add all entries in group order (entries within each group stay together
-    // in the solid block)
-    var entryIndexMap = new int[entries.Count]; // original index → add-order index
+    var entryIndexMap = new int[entries.Count];
     var addOrder = 0;
     foreach (var group in groups)
       foreach (var idx in group) {
+        cancellationToken.ThrowIfCancellationRequested();
         var (name, data, meta) = entries[idx];
+        onProgress?.Invoke(addOrder, entries.Count, name);
         writer.AddEntry(new SevenZipEntry {
           Name = name,
           LastWriteTime = meta.LastWriteTime,
@@ -333,9 +347,9 @@ public static class SolidBlockOptimizer {
           Attributes = meta.Attributes,
         }, data);
         entryIndexMap[idx] = addOrder++;
+        onProgress?.Invoke(addOrder, entries.Count, name);
       }
 
-    // Build block descriptors mapping add-order indices to groups
     var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
     foreach (var group in groups) {
       blockDescs.Add(new SevenZipWriter.BlockDescriptor {
@@ -343,7 +357,9 @@ public static class SolidBlockOptimizer {
       });
     }
 
+    cancellationToken.ThrowIfCancellationRequested();
     writer.FinishWithBlocks(blockDescs);
+    cancellationToken.ThrowIfCancellationRequested();
     return ms.ToArray();
   }
 }

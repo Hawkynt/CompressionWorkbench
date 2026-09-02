@@ -41,12 +41,27 @@ public static partial class PdfLayoutMap {
     yield return new DefragBlockInfo(0, headerEnd, DefragBlockKind.MetadataReserved,
       FileName: "PDF Header");
 
+    // Which objects the newest xref chain still calls in-use. A removal here is
+    // an incremental update: the object's bytes stay where they were and the new
+    // xref subsection marks its slot free ('f'). Those bytes are unreachable
+    // dead space, so the map has to say so — otherwise a wipe reads the whole
+    // file as live and a deleted attachment stays recoverable in it. Null means
+    // the file has no parseable xref, and then every lexically present object
+    // counts as live, exactly as the reader treats it.
+    var liveObjects = PdfReader.TryBuildLiveObjectSet(text);
+
     // Find all objects: "N 0 obj ... endobj"
     var objMatches = ObjPattern().Matches(text);
     foreach (Match m in objMatches) {
       var objNum = m.Groups[1].Value;
       var objStart = m.Index;
       var objLen = m.Length;
+
+      if (liveObjects != null && int.TryParse(objNum, out var objNumber)
+          && !liveObjects.Contains(objNumber)) {
+        yield return new DefragBlockInfo(objStart, objLen, DefragBlockKind.Free);
+        continue;
+      }
 
       // Check if this object contains a stream (has "stream" keyword)
       var objBody = m.Groups[2].Value;

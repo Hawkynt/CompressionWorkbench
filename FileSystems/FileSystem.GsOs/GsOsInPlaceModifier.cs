@@ -41,7 +41,15 @@ public static class GsOsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(data);
 
     var image = ReadProDosOrderedImage(archive);
-    if (TryInPlace(archive, image, work => FileSystem.ProDos.ProDosModifier.AddFile(work, name, data)))
+    // Drop any existing entry of that name first, the way the ProDOS descriptor
+    // does. ProDosModifier.AddFile always takes a fresh directory slot, so on
+    // its own it appends rather than replaces and the volume ends up listing
+    // the name twice — while the rebuild fallback below keys by name and does
+    // replace. The two paths have to mean the same thing.
+    if (TryInPlace(archive, image, work => {
+          FileSystem.ProDos.ProDosModifier.RemoveFile(work, name, wipeData: true);
+          FileSystem.ProDos.ProDosModifier.AddFile(work, name, data);
+        }))
       return;
 
     // Fallback: verified rebuild from the pre-edit snapshot (image untouched on the

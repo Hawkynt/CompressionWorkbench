@@ -17,10 +17,10 @@ namespace FileFormat.Dtb;
 /// <list type="bullet">
 ///   <item><description><c>https://github.com/devicetree-org/devicetree-specification</c> — Devicetree Specification — defines the flattened (FDT/DTB) encoding</description></item>
 ///   <item><description><c>https://www.devicetree.org</c> — devicetree.org portal</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Device_tree</c> — background</description></item>
 /// </list>
 /// </summary>
-public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+    IArchiveCreatable, IArchiveModifiable {
 
   /// <summary>
   /// Gets the id.
@@ -39,7 +39,7 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
@@ -75,13 +75,7 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "Flattened Device Tree Blob — BE structured description of hardware used by Linux/U-Boot. " +
-    "R-only: in-place R/W is not honestly available because the 40-byte FDT header carries " +
-    "totalsize / off_dt_strings / off_dt_struct / size_dt_struct / size_dt_strings fields whose " +
-    "values cascade through every property add/remove. Any single-byte change to the struct or " +
-    "strings block would require rewriting all four header offsets plus shifting every " +
-    "downstream byte of the blob — that's a rebuild, not an in-place mutation, so promoting " +
-    "to CanModify would mis-advertise the surface.";
+    "Flattened Device Tree Blob — hierarchy-preserving create/add/replace/remove with reservation and boot CPU preservation.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -102,15 +96,6 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  /// <summary>
-  /// WORM creation: emits a minimal valid FDT v17 blob whose root node carries
-  /// each input as a leaf property. The synthetic <c>metadata.ini</c> + any
-  /// reader-emitted <c>.txt</c>/<c>.bin</c> suffixes are stripped from the
-  /// archive name before sanitisation so a list-then-create round-trip lands at
-  /// the same property name. Property names are sanitised to the
-  /// devicetree-spec character set; collisions in the input list are preserved
-  /// as repeated FDT_PROP records.
-  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -119,27 +104,27 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (i.IsDirectory) continue;
       var leaf = Path.GetFileName(i.ArchiveName);
       if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
-      // Strip reader-emitted ".txt" / ".bin" suffixes so the property name on
-      // round-trip matches the original property name in the input DTB.
-      if (leaf.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ||
-          leaf.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
-        leaf = leaf[..^4];
-      list.Add((leaf, i.ReadContent()));
+      list.Add((i.ArchiveName, i.ReadContent()));
     }
     DtbWriter.Write(output, list);
   }
 
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => DtbModifier.Add(archive, inputs);
+
+  public void Remove(Stream archive, string[] entryNames)
+    => DtbModifier.Remove(archive, entryNames);
+
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    var fdt = DtbReader.Read(ms.GetBuffer().AsSpan(0, (int)ms.Length));
+    var fdt = DtbReader.Read(ms.GetBuffer().AsSpan(0, checked((int)ms.Length)));
 
     var entries = new List<(string, byte[], string)> {
       ("metadata.ini", BuildMetadata(fdt), "stored"),
     };
 
-    // Names can collide (same property name reached through NOP-walked ambiguity);
-    // disambiguate with an auto-increment suffix per collision.
     var seen = new Dictionary<string, int>(StringComparer.Ordinal);
     foreach (var p in fdt.Properties) {
       var asText = TryStringifyPropertyValue(p.Data);
@@ -159,14 +144,9 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  /// <summary>
-  /// Returns a newline-separated decoded string when <paramref name="data"/> is
-  /// entirely printable ASCII plus NUL separators (the common <c>compatible</c>
-  /// pattern), or null for binary cell/byte data.
-  /// </summary>
   private static string? TryStringifyPropertyValue(byte[] data) {
     if (data.Length == 0) return "";
-    if (data[^1] != 0) return null; // must be NUL-terminated
+    if (data[^1] != 0) return null;
     foreach (var b in data)
       if (b != 0 && (b < 0x20 || b > 0x7E)) return null;
     var parts = Encoding.ASCII.GetString(data, 0, data.Length - 1).Split('\0');

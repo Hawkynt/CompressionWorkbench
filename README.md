@@ -86,6 +86,17 @@ against the real source code (R / WORM / R/W states, upstream spec links, limita
 
 ---
 
+<!-- branch-screenshots:start -->
+## UI snapshots
+
+These screenshots are generated from the current branch by the real WPF application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
+
+| Archive browser | Binary analysis | Maintenance |
+| :--: | :--: | :--: |
+| [![Archive browser](docs/screenshots/archive-browser.png)](docs/screenshots/archive-browser.png) | [![Binary analysis](docs/screenshots/analysis.png)](docs/screenshots/analysis.png) | [![Maintenance](docs/screenshots/maintenance.png)](docs/screenshots/maintenance.png) |
+
+<!-- branch-screenshots:end -->
+
 ## Vision
 
 CompressionWorkbench exists to answer two kinds of questions about compressed and packaged data, entirely in managed .NET with no native dependency on zlib, liblzma, libarchive, or any other third-party compression library:

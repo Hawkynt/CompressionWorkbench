@@ -5,29 +5,16 @@ using FileSystem.D64;
 namespace FileSystem.CbmNibble;
 
 /// <summary>
-/// From-scratch writer for the Commodore nibble container the
-/// <see cref="CbmNibbleReader"/> consumes. The Commodore 1541 filesystem is
-/// flat — files live in the single directory on track 18 with a BAM — so the
-/// writer first builds a standard sectored D64 image (reusing
-/// <see cref="D64Writer"/> for the BAM, directory and linked sector chains)
-/// and then GCR-encodes every track into the VICE <c>.g64</c> wire format,
-/// framing each sector with sync marks, a header block and a data block exactly
-/// as a real 1541 lays them down on disk.
+/// Writer for Commodore nibble containers. It supports two distinct layers:
+/// ordinary Commodore files are first placed into a D64 and GCR-encoded, while
+/// pseudo-archive callers can directly build G64/NIB containers from opaque
+/// <c>track_XX.bin</c> payloads without touching the filesystem inside them.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The reader surfaces each G64 track as an opaque GCR byte buffer; it does not
-/// decode GCR. <see cref="DecodeToD64"/> performs the inverse transform so a
-/// caller can recover the sectored image (and thus the directory and file
-/// contents) from the tracks the reader hands back.
-/// </para>
-/// </remarks>
 public sealed class CbmNibbleWriter {
 
   private const int SectorSize = 256;
   private const int TotalTracks = 35;
 
-  // 1541 sector layout per track (track 0 is unused).
   private static readonly int[] SectorsPerTrack = [
     0,
     21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
@@ -36,7 +23,6 @@ public sealed class CbmNibbleWriter {
     17, 17, 17, 17, 17,
   ];
 
-  // 1541 speed zones: outer tracks spin faster (more sectors), inner slower.
   private static byte SpeedZoneFor(int track) => track switch {
     >= 1 and <= 17 => 3,
     >= 18 and <= 24 => 2,
@@ -44,9 +30,7 @@ public sealed class CbmNibbleWriter {
     _ => 0,
   };
 
-  // Sync mark: a run of 0xFF bytes the controller uses to lock onto a block.
   private const int SyncLength = 5;
-  // Gap bytes between blocks; 0x55 is the conventional 1541 inter-sector gap.
   private const byte GapByte = 0x55;
   private const int HeaderGap = 9;
   private const int TailGap = 8;
@@ -56,17 +40,12 @@ public sealed class CbmNibbleWriter {
   private byte _diskId2 = (byte)'0';
   private string _diskName = "DISK";
 
-  /// <summary>Sets the on-disk volume name (PETSCII, ≤16 chars) and the 2-byte disk id.</summary>
   public void SetDisk(string name, char id1 = '0', char id2 = '0') {
     _diskName = name ?? "DISK";
     _diskId1 = (byte)id1;
     _diskId2 = (byte)id2;
   }
 
-  /// <summary>
-  /// Adds a file to the flat directory. Commodore names are PETSCII and at most
-  /// 16 characters; longer names are truncated. The default file type is PRG.
-  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -74,76 +53,125 @@ public sealed class CbmNibbleWriter {
     _d64.AddFile(trimmed, data);
   }
 
-  /// <summary>Builds the G64 GCR nibble image holding all added files.</summary>
+  /// <summary>Builds a VICE G64 image from the ordinary files added above.</summary>
   public byte[] Build() {
     var d64 = _d64.Build(_diskName);
     return BuildG64(d64);
   }
 
-  /// <summary>Writes the G64 image to <paramref name="output"/>.</summary>
+  /// <summary>
+  /// Builds a raw 84×8192-byte NIB image from the ordinary files added above.
+  /// Whole-track G64 payloads are copied to their corresponding even half-track
+  /// slots and padded with the conventional 0x55 gap byte; unused half-tracks
+  /// remain the workbench's all-zero empty-slot representation.
+  /// </summary>
+  public byte[] BuildNib() {
+    var g64 = CbmNibbleReader.Read(this.Build(), "image.g64");
+    var result = new byte[CbmNibbleReader.NibExpectedFileSize];
+    foreach (var track in g64.Tracks) {
+      if (track.Data.Length == 0 || track.Index >= CbmNibbleReader.NibTrackCount) continue;
+      if (track.Data.Length > CbmNibbleReader.NibTrackSize)
+        throw new InvalidOperationException(
+          $"Encoded GCR track {track.Index} is {track.Data.Length} bytes and does not fit a NIB slot.");
+      var slot = result.AsSpan(track.Index * CbmNibbleReader.NibTrackSize, CbmNibbleReader.NibTrackSize);
+      slot.Fill(GapByte);
+      track.Data.CopyTo(slot);
+    }
+    return result;
+  }
+
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     var image = this.Build();
     output.Write(image, 0, image.Length);
   }
 
-  // ── G64 assembly ────────────────────────────────────────────────────────
+  /// <summary>
+  /// Builds a compact G64 directly from opaque half-track payloads. This is the
+  /// canonical mutation/re-layout path for the pseudo-archive surface: track
+  /// bytes are preserved exactly and placed back-to-back with no obsolete
+  /// fixed-stride padding. Constant speed zones 0..3 are preserved; pointer-based
+  /// variable-speed maps are intentionally refused until their auxiliary speed
+  /// blocks are modeled.
+  /// </summary>
+  public static byte[] BuildG64FromTracks(
+      IReadOnlyList<CbmNibbleReader.Track> tracks,
+      byte version = 0,
+      int? trackCount = null) {
+    ArgumentNullException.ThrowIfNull(tracks);
+    var byIndex = tracks.GroupBy(t => t.Index).ToDictionary(g => g.Key, g => g.Last());
+    foreach (var track in byIndex.Values) {
+      if (track.Index is < 0 or >= 84)
+        throw new ArgumentOutOfRangeException(nameof(tracks), $"G64 half-track index {track.Index} is outside 0..83.");
+      if (track.Data.Length > ushort.MaxValue)
+        throw new NotSupportedException($"G64 track {track.Index} exceeds the 16-bit track-length field.");
+      if (track.SpeedZone > 3)
+        throw new NotSupportedException(
+          $"G64 track {track.Index} uses variable-speed map pointer 0x{track.SpeedZone:X8}; direct mutation requires constant speed zones 0..3.");
+    }
+
+    var highest = byIndex.Count == 0 ? 0 : byIndex.Keys.Max() + 1;
+    var count = trackCount ?? Math.Max(1, highest);
+    if (count is < 1 or > 84 || count < highest)
+      throw new ArgumentOutOfRangeException(nameof(trackCount), "G64 track count must be 1..84 and cover every supplied track index.");
+
+    var maxTrackSize = byIndex.Values.Where(t => t.Data.Length > 0)
+      .Select(t => t.Data.Length).DefaultIfEmpty(0).Max();
+    const int headerSize = 12;
+    var tablesEnd = headerSize + count * 8;
+    var payloadBytes = byIndex.Values.Where(t => t.Index < count && t.Data.Length > 0)
+      .Sum(t => checked(2 + t.Data.Length));
+    var buffer = new byte[checked(tablesEnd + payloadBytes)];
+
+    CbmNibbleReader.G64Signature.CopyTo(buffer, 0);
+    buffer[8] = version;
+    buffer[9] = (byte)count;
+    BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(10), (ushort)maxTrackSize);
+
+    var offsetTable = headerSize;
+    var speedTable = headerSize + count * 4;
+    var cursor = tablesEnd;
+    for (var i = 0; i < count; ++i) {
+      if (!byIndex.TryGetValue(i, out var track)) continue;
+      BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(speedTable + i * 4), track.SpeedZone);
+      if (track.Data.Length == 0) continue;
+      BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offsetTable + i * 4), (uint)cursor);
+      BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(cursor), (ushort)track.Data.Length);
+      track.Data.CopyTo(buffer, cursor + 2);
+      cursor += 2 + track.Data.Length;
+    }
+    return buffer;
+  }
+
+  /// <summary>
+  /// Builds a fixed-size NIB directly from opaque track slots. A non-empty
+  /// replacement must be exactly 8192 bytes so extracting it again yields the
+  /// same pseudo-entry bytes. Missing/empty tracks are encoded as all-zero slots.
+  /// </summary>
+  public static byte[] BuildNibFromTracks(IReadOnlyList<CbmNibbleReader.Track> tracks) {
+    ArgumentNullException.ThrowIfNull(tracks);
+    var result = new byte[CbmNibbleReader.NibExpectedFileSize];
+    foreach (var track in tracks) {
+      if (track.Index is < 0 or >= CbmNibbleReader.NibTrackCount)
+        throw new ArgumentOutOfRangeException(nameof(tracks), $"NIB half-track index {track.Index} is outside 0..83.");
+      if (track.Data.Length == 0) continue;
+      if (track.Data.Length != CbmNibbleReader.NibTrackSize)
+        throw new NotSupportedException(
+          $"NIB track_{track.Index:D2}.bin must be exactly {CbmNibbleReader.NibTrackSize} bytes; got {track.Data.Length}.");
+      track.Data.CopyTo(result, track.Index * CbmNibbleReader.NibTrackSize);
+    }
+    return result;
+  }
 
   private byte[] BuildG64(byte[] d64) {
-    // One G64 half-track entry per physical track (1..35) → indices 0,2,4,...
-    // (the reader maps half-track index N to track N/2 + 1). Half-tracks
-    // between real tracks stay empty (offset 0).
-    var halfTrackCount = TotalTracks * 2 - 1; // 69 half-tracks cover tracks 1..35
-
-    // Encode each real track first to learn the maximum block size.
-    var encodedTracks = new byte[TotalTracks + 1][];
-    var maxTrackSize = 0;
+    var halfTrackCount = TotalTracks * 2 - 1;
+    var encodedTracks = new List<CbmNibbleReader.Track>(TotalTracks);
     for (var track = 1; track <= TotalTracks; track++) {
-      var gcr = EncodeTrack(d64, track);
-      encodedTracks[track] = gcr;
-      if (gcr.Length > maxTrackSize) maxTrackSize = gcr.Length;
+      var half = (track - 1) * 2;
+      encodedTracks.Add(new CbmNibbleReader.Track(
+        half, EncodeTrack(d64, track), SpeedZoneFor(track)));
     }
-
-    const int headerSize = 12;
-    var offsetTableSize = halfTrackCount * 4;
-    var speedTableSize = halfTrackCount * 4;
-    var tableEnd = headerSize + offsetTableSize + speedTableSize;
-
-    // Each populated half-track stores a u16 length prefix + its GCR payload.
-    var blockStride = 2 + maxTrackSize;
-    var populated = TotalTracks;
-    var total = tableEnd + populated * blockStride;
-    var buf = new byte[total];
-
-    CbmNibbleReader.G64Signature.CopyTo(buf, 0);
-    buf[8] = 0;                                   // version 0
-    buf[9] = (byte)halfTrackCount;
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(10), (ushort)maxTrackSize);
-
-    var offsetTableStart = headerSize;
-    var speedTableStart = offsetTableStart + offsetTableSize;
-    var nextBlock = tableEnd;
-
-    for (var half = 0; half < halfTrackCount; half++) {
-      var isWholeTrack = half % 2 == 0;
-      var track = half / 2 + 1;
-      if (!isWholeTrack || track > TotalTracks) {
-        // Empty half-track: offset 0, speed 0.
-        continue;
-      }
-
-      var gcr = encodedTracks[track];
-      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(offsetTableStart + half * 4), (uint)nextBlock);
-      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(speedTableStart + half * 4), SpeedZoneFor(track));
-
-      BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(nextBlock), (ushort)gcr.Length);
-      gcr.CopyTo(buf, nextBlock + 2);
-      // Remaining bytes of the fixed-stride block stay as gap (0x00 padding is
-      // acceptable; the length prefix bounds the meaningful GCR data).
-      nextBlock += blockStride;
-    }
-
-    return buf;
+    return BuildG64FromTracks(encodedTracks, version: 0, trackCount: halfTrackCount);
   }
 
   private byte[] EncodeTrack(byte[] d64, int track) {
@@ -157,7 +185,6 @@ public sealed class CbmNibbleWriter {
   }
 
   private void WriteSectorImage(Stream output, int track, int sector, ReadOnlySpan<byte> data) {
-    // Header block (8 bytes pre-GCR): 0x08, checksum, sector, track, id2, id1, 0x0F, 0x0F.
     Span<byte> header = stackalloc byte[8];
     header[0] = 0x08;
     header[2] = (byte)sector;
@@ -166,17 +193,14 @@ public sealed class CbmNibbleWriter {
     header[5] = _diskId1;
     header[6] = 0x0F;
     header[7] = 0x0F;
-    header[1] = (byte)(header[2] ^ header[3] ^ header[4] ^ header[5]); // header checksum
+    header[1] = (byte)(header[2] ^ header[3] ^ header[4] ^ header[5]);
 
-    // Data block (260 bytes pre-GCR): 0x07 marker, 256 data bytes, checksum, 2 × 0x00.
     Span<byte> dataBlock = stackalloc byte[260];
     dataBlock[0] = 0x07;
     data[..SectorSize].CopyTo(dataBlock[1..]);
     byte checksum = 0;
     for (var i = 0; i < SectorSize; i++) checksum ^= dataBlock[1 + i];
     dataBlock[257] = checksum;
-    dataBlock[258] = 0x00;
-    dataBlock[259] = 0x00;
 
     WriteSync(output);
     output.Write(CbmGcr.Encode(header));
@@ -208,13 +232,9 @@ public sealed class CbmNibbleWriter {
     return offset + sector * SectorSize;
   }
 
-  // ── GCR → D64 recovery ────────────────────────────────────────────────────
-
   /// <summary>
-  /// Reconstructs a standard 174 848-byte D64 image from the GCR tracks of a
-  /// nibble image previously parsed by <see cref="CbmNibbleReader"/>. Each
-  /// track is rescanned for sync marks and its header/data blocks GCR-decoded
-  /// back into the correct sector slots.
+  /// Reconstructs a standard 174848-byte D64 image from the GCR tracks of a
+  /// nibble image. Whole-track entries are rescanned for sync/header/data blocks.
   /// </summary>
   public static byte[] DecodeToD64(CbmNibbleReader.NibbleImage image) {
     ArgumentNullException.ThrowIfNull(image);
@@ -222,7 +242,6 @@ public sealed class CbmNibbleWriter {
 
     foreach (var trackEntry in image.Tracks) {
       if (trackEntry.Data.Length == 0) continue;
-      // Half-track index N → physical track N/2 + 1; ignore half-step tracks.
       if (trackEntry.Index % 2 != 0) continue;
       var track = trackEntry.Index / 2 + 1;
       if (track < 1 || track > TotalTracks) continue;
@@ -234,14 +253,10 @@ public sealed class CbmNibbleWriter {
   private static void DecodeTrack(byte[] gcr, int track, byte[] d64) {
     var pos = 0;
     while (pos < gcr.Length) {
-      // Skip to the start of a sync run (0xFF bytes).
       while (pos < gcr.Length && gcr[pos] != 0xFF) pos++;
       while (pos < gcr.Length && gcr[pos] == 0xFF) pos++;
       if (pos >= gcr.Length) break;
 
-      // After a sync we expect a GCR block. A header block is 8 raw bytes → 10
-      // GCR bytes; a data block is 260 raw bytes → 325 GCR bytes. Peek the
-      // decoded marker to tell them apart.
       if (pos + 10 > gcr.Length) break;
       byte[] firstBlock;
       try {
@@ -252,7 +267,6 @@ public sealed class CbmNibbleWriter {
       }
 
       if (firstBlock[0] != 0x08) {
-        // Not a recognised header marker — advance and keep scanning.
         pos++;
         continue;
       }
@@ -261,7 +275,6 @@ public sealed class CbmNibbleWriter {
       var blockTrack = firstBlock[3];
       pos += 10;
 
-      // Advance past the header gap to the data-block sync.
       while (pos < gcr.Length && gcr[pos] != 0xFF) pos++;
       while (pos < gcr.Length && gcr[pos] == 0xFF) pos++;
       if (pos + 325 > gcr.Length) break;

@@ -1,29 +1,28 @@
 namespace Compression.Registry;
 
 /// <summary>
-/// Opt-in capability: the descriptor exposes add / remove (and thereby the purge verb).
+/// Opt-in capability for editing an existing archive/image through add/replace/remove.
 /// <para>
-/// Implementing this interface makes the verbs <em>work</em>; it does <b>not</b> by itself
-/// entitle the format to advertise <see cref="FormatCapabilities.CanModify"/> (R/W). The
-/// default <see cref="Add"/> / <see cref="Remove"/> below — and any override that delegates
-/// to <c>ModifyRebuilder</c> / <see cref="RebuildVerb"/> — are a verified extract → re-create
-/// <em>rebuild</em>, i.e. a full rewrite of the container. A format whose modification is only
-/// rebuild-backed is WORM: it advertises <see cref="FormatCapabilities.CanCreate"/> and must
-/// NOT advertise <see cref="FormatCapabilities.CanModify"/> (see <see cref="FormatCapabilities"/>).
-/// Reserve <see cref="FormatCapabilities.CanModify"/> for a genuine in-place writer that edits
-/// the existing bytes (R/W filesystems; central-directory / member edits; byte-identity append).
+/// The physical strategy is format-specific: implementations may patch blocks in place,
+/// append replacement metadata, relayout members, or perform a verified extract → edit →
+/// re-create rebuild. All are valid implementations of the same public mutation contract
+/// when the resulting instance preserves the semantics the descriptor claims to support.
+/// </para>
+/// <para>
+/// A descriptor advertising <see cref="FormatCapabilities.CanModify"/> must expose this
+/// interface and its supported-profile edit path must actually round-trip. Merely being able
+/// to create a fresh instance is not enough. A fully modifiable container is also purgeable:
+/// removing all live entries is a required subset of the remove contract.
 /// </para>
 /// </summary>
-public interface IArchiveModifiable {
+public interface IArchiveModifiable : IArchivePurgeable {
   /// <summary>
-  /// Appends or replaces files inside <paramref name="archive"/>. On replacement the
-  /// previous bytes are wiped the same way <see cref="Remove"/> wipes them.
+  /// Adds files to an existing instance, replacing entries with the same logical path/name.
   ///
-  /// <para><b>Default implementation</b>: any descriptor that also implements
-  /// <see cref="IArchiveFormatOperations"/> + <see cref="IArchiveCreatable"/> gets
-  /// add for free — a verified extract → splat-new-files → re-create rebuild via
-  /// <see cref="RebuildVerb.EditViaRebuild"/> (the same WORM rebuild that backs the
-  /// other verbs). Formats with a true in-place writer override for efficiency.</para>
+  /// <para><b>Default implementation</b>: descriptors that also implement
+  /// <see cref="IArchiveFormatOperations"/> and <see cref="IArchiveCreatable"/> get a verified
+  /// extract → edit → re-create implementation through <see cref="RebuildVerb.EditViaRebuild"/>.
+  /// Formats with a cheaper native editor override it.</para>
   /// </summary>
   void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
@@ -41,11 +40,12 @@ public interface IArchiveModifiable {
   }
 
   /// <summary>
-  /// Removes the named entries from <paramref name="archive"/> and wipes all on-disk
-  /// traces. <b>Default implementation</b>: a verified extract → drop-named-files →
-  /// re-create rebuild via <see cref="RebuildVerb.EditViaRebuild"/>. Passing every
-  /// entry name (or all files) yields an empty container — i.e. the <em>purge</em> verb.
-  /// Formats with a true in-place writer override for efficiency and forensic wiping.
+  /// Removes the named entries from an existing instance. Passing every entry name yields an
+  /// empty container/image where the format permits one.
+  ///
+  /// <para><b>Default implementation</b>: a verified extract → drop-named-files → re-create
+  /// edit through <see cref="RebuildVerb.EditViaRebuild"/>. Native implementations may instead
+  /// unlink/free in place and optionally wipe released storage.</para>
   /// </summary>
   void Remove(Stream archive, string[] entryNames) {
     if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)

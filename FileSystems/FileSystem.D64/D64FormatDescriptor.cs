@@ -13,9 +13,10 @@ namespace FileSystem.D64;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Commodore_1541</c> — Wikipedia overview of the drive whose disks D64 images</description></item>
 /// </list>
 /// </summary>
-public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
-
-  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+  IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
+  IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable,
+  IRandomAccessBlockDeviceProvider, IFilesystemDriverProvider {
 
   /// <summary>
   /// Tunable knobs for D64 creation. The Commodore 1541 stores a 16-char
@@ -44,7 +45,6 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => D64ExtentMap.Enumerate(image);
 
-  // D64 1541 geometry — zoned sectors per track (track 0 doesn't exist).
   private const int D64SectorSize = 256;
   private const int D64DirTrack = 18;
   private const int D64DirStartSector = 1;
@@ -89,10 +89,8 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     image.CopyTo(ms);
     var data = ms.GetBuffer();
     var length = (int)ms.Length;
-
     var totalWiped = 0L;
 
-    // 1. Wipe the tail slack of every file chain's final sector.
     if (wipeClusterTips && length >= 174848) {
       var t = D64DirTrack;
       var s = D64DirStartSector;
@@ -113,9 +111,6 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
     }
 
-    // 2. Wipe free sectors via the generic wiper. Tips are handled above, so
-    //    disable the generic cluster-tip path (its offset+size model is wrong
-    //    for chained sectors).
     var msStream = new MemoryStream(data, 0, length, writable: true);
     msStream.Position = 0;
     var extents = D64ExtentMap.Enumerate(msStream);
@@ -123,7 +118,6 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     totalWiped += UnusedSpaceWiper.Wipe(msStream, extents, length, wipeClusterTips: false, fileSizeLookup: null);
     msStream.Flush();
 
-    // Persist back to the caller's stream.
     image.Position = 0;
     image.Write(data, 0, length);
     image.SetLength(length);
@@ -146,7 +140,6 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var nextTrack = data[off];
       var nextSector = data[off + 1];
       if (nextTrack == 0) {
-        // Final sector: nextSector = bytes used + 1, data starts at off+2.
         var bytesUsed = nextSector > 1 ? nextSector - 1 : 254;
         var tipStart = off + 2 + bytesUsed;
         var changed = 0L;
@@ -175,12 +168,10 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the can accept operation.
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
-    // C64 allows any filename internally; the PETSCII-to-ASCII mapping happens at write time.
     reason = null;
     return true;
   }
 
-  // D64 has only one canonical size. Shrink therefore rebuilds to the fixed 174848 bytes.
   /// <summary>
   /// Gets the canonical sizes.
   /// </summary>
@@ -189,7 +180,7 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the shrink operation.
   /// </summary>
   public void Shrink(Stream input, Stream output) =>
-    Compression.Registry.ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
+    ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
 
   /// <summary>
   /// Gets the id.
@@ -220,7 +211,6 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     foreach (var (name, data) in FilesOnly(inputs)) {
       var truncatedName = name.Length > 16 ? name[..16] : name;
-      // Replacement semantics: if the file exists, remove it first.
       D64Modifier.RemoveFile(archive, truncatedName, wipeData: true);
       D64Modifier.AddFile(archive, truncatedName, data);
     }
@@ -270,7 +260,86 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Commodore 64 1541 disk image";
+  public string Description => "Commodore 64 1541 disk image with mount-grade sector and CBM DOS namespace access";
+
+  /// <summary>
+  /// Opens the image as a random-access block device.
+  /// </summary>
+  public IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)
+    => new D64BlockDevice(image, writable, leaveOpen);
+
+  /// <summary>
+  /// Probes the image and reports the filesystem driver profile.
+  /// </summary>
+  public FilesystemDriverProfile ProbeFilesystem(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var limitations = new List<string> {
+      "CBM DOS 2.6 is a flat root namespace; subdirectories, hard links, symlinks and transactions are unavailable.",
+      "Node ids are stable for the lifetime of one mounted session but are not persistent across remounts.",
+      "Writable mounting supports ordinary closed SEQ/PRG/USR files; REL side-sector semantics are fail-closed.",
+    };
+    if (!image.CanRead || !image.CanSeek) {
+      limitations.Add("Mounting requires a readable, seekable image stream.");
+      return BuildProfile(false, false, limitations);
+    }
+
+    var saved = image.Position;
+    try {
+      if (image.Length < D64BlockDevice.DataLength) {
+        limitations.Add($"Image is {image.Length} bytes; a 35-track D64 needs at least {D64BlockDevice.DataLength} bytes.");
+        return BuildProfile(false, false, limitations);
+      }
+      image.Position = 0;
+      var data = new byte[D64BlockDevice.DataLength];
+      image.ReadExactly(data);
+      var validation = D64MountValidator.Validate(data);
+      limitations.AddRange(validation.Limitations);
+      return BuildProfile(validation.CanRead, validation.CanWrite && image.CanWrite, limitations);
+    } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException) {
+      limitations.Add(ex.Message);
+      return BuildProfile(false, false, limitations);
+    } finally {
+      image.Position = saved;
+    }
+  }
+
+  /// <summary>
+  /// Opens a filesystem session over the image.
+  /// </summary>
+  public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    var profile = ProbeFilesystem(image);
+    if (!profile.CanMount)
+      throw new InvalidDataException("D64 cannot be mounted: " + string.Join(" ", profile.Limitations));
+    if (!options.ReadOnly && !profile.CanMountWritable)
+      throw new NotSupportedException("D64 is not safe for writable mounting: " + string.Join(" ", profile.Limitations));
+    var device = new D64BlockDevice(image, writable: !options.ReadOnly, leaveOpen: options.LeaveOpen);
+    return new D64FilesystemSession(device, profile, options.ReadOnly, ownsDevice: true);
+  }
+
+  private static FilesystemDriverProfile BuildProfile(bool canMount, bool canWrite, IReadOnlyList<string> limitations) {
+    var capabilities = FilesystemDriverCapabilities.None;
+    if (canMount)
+      capabilities = FilesystemDriverCapabilities.EnumerateDirectories |
+        FilesystemDriverCapabilities.ReadData |
+        FilesystemDriverCapabilities.RandomAccess |
+        FilesystemDriverCapabilities.StableNodeIds |
+        FilesystemDriverCapabilities.Flush;
+    if (canWrite)
+      capabilities |= FilesystemDriverCapabilities.WriteData |
+        FilesystemDriverCapabilities.Truncate |
+        FilesystemDriverCapabilities.CreateFile |
+        FilesystemDriverCapabilities.DeleteFile |
+        FilesystemDriverCapabilities.Rename;
+    return new FilesystemDriverProfile(
+      "D64",
+      "CBM DOS 2.6 / 1541",
+      capabilities,
+      canWrite ? FilesystemMutationModel.Direct : FilesystemMutationModel.None,
+      canMount,
+      canWrite,
+      limitations.Distinct().ToArray());
+  }
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -314,7 +383,7 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
     }
     return new Compression.Registry.Streaming.BoundedEntryStream(
-      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+      new MemoryStream(Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
   }
 
   /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
@@ -338,8 +407,6 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var diskId = options?.GetOption("DiskId", "00") ?? "00";
     output.Write(w.Build(label, diskId));
   }
-
-  // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
@@ -367,8 +434,6 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         DefragmentWithPlanner(archive, options);
         return;
       } catch (Exception planFailure) {
-        // A silent fallback looks exactly like a successful in-place
-        // defragmentation from outside, so the reason is reported.
         options.OnProgress?.Invoke(new DefragProgressEvent(
           "fallback", 0, -1, -1, archive.Length, null,
           $"In-place planning declined ({planFailure.GetType().Name}: " +
@@ -397,7 +462,8 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var imageData = snap.ToArray();
     var extents = D64ExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
     var mover = new D64BlockMover();
-    var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 256, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    var moves = DefragPlanner.Plan(extents, 0, imageSize, 256, options.Profile, options.Mode,
+      holeSize: options.HoleSize, holeAt: options.HoleAt);
     if (moves.Count == 0) return;
     DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
   }
@@ -407,5 +473,4 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var end = message.IndexOf('\n');
     return end < 0 ? message : message[..end].TrimEnd('\r');
   }
-
 }

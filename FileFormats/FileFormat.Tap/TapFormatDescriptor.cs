@@ -158,11 +158,14 @@ public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var data = ms.ToArray();
     var pos = 0;
     string? pendingName = null;
+    var walkAborted = false;
 
     while (pos + 2 <= data.Length) {
       var blockLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
-      if (blockLength == 0 || pos + 2 + blockLength > data.Length)
+      if (blockLength == 0 || pos + 2 + blockLength > data.Length) {
+        walkAborted = true;
         break;
+      }
 
       var flag = data[pos + 2];
 
@@ -186,8 +189,18 @@ public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       pos += 2 + blockLength;
     }
 
-    if (pos < data.Length)
-      yield return new DefragBlockInfo(pos, data.Length - pos, DefragBlockKind.Free);
+    if (pos >= data.Length)
+      yield break;
+
+    // A tail the block walk gave up on is undecoded, not proven empty: a length
+    // word this reader rejects can still be followed by blocks a real Spectrum
+    // loader reads. The map's contract says an unproven region is reserved, and
+    // saying Free here handed the generic wipe live tape blocks to zero. Only a
+    // remainder too short to hold a length word is genuinely spare.
+    yield return walkAborted
+      ? new DefragBlockInfo(pos, data.Length - pos, DefragBlockKind.MetadataReserved,
+          $"Undecoded tail @{pos}")
+      : new DefragBlockInfo(pos, data.Length - pos, DefragBlockKind.Free);
   }
 
   // ── Shared delegates ─────────────────────────────────────────────────

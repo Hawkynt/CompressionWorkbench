@@ -5,9 +5,11 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.SquashFs;
 
 /// <summary>
-/// R/W descriptor for SquashFS images ("hsqs" magic) — the compressed
-/// read-only filesystem used by live media and embedded Linux; this writer
-/// emits gzip-compressed images.
+/// Offline R/W descriptor for SquashFS images ("hsqs" magic). Linux mounts
+/// SquashFS read-only by design; the workbench nevertheless supports editing an
+/// existing image by verified rebuild, plus guarded physical re-layout where
+/// compressed metadata can be repointed safely. The writer emits gzip-compressed
+/// images.
 ///
 /// References:
 /// <list type="bullet">
@@ -47,16 +49,17 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM (Write-Once-Read-Many), NOT R/W: SquashFS is a compressed, read-only image.
-  // Add/Remove go through the verified extract -> re-create rebuild (ModifyRebuilder),
-  // a full rewrite — the verb works but nothing is modified in place. Advertising
-  // CanModify would falsely claim genuine in-place R/W. See FormatCapabilities.cs.
+  // R/W describes the supported existing-image edit API. It does not imply that
+  // the Linux kernel can mount this filesystem writable or that every edit is
+  // byte-local: Add/Remove may perform a complete verified re-layout.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -79,7 +82,7 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("squashfs", "SquashFS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("squashfs", "SquashFS", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -91,7 +94,7 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Linux compressed read-only filesystem";
+  public string Description => "Linux compressed read-only-on-mount filesystem with offline R/W and layout optimization";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -229,14 +232,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
-    // Moving what is out of place beats writing the image out again, even
-    // though the field that names a file's data lives inside a deflated
-    // metadata block: the block is taken apart, changed and packed again, and
-    // it has to come back no longer than it was.
     if (archive.CanSeek && archive.Length <= PlannerImageCap) {
       var planned = false;
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
         readContents: ReadPayloadsForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
@@ -289,8 +286,6 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
       archive.Length, reinitAfterMove: null);
 
-    // The table is packed again once, because a block that has to grow can
-    // only be found out about after every field in it is final.
     mover.SettleInodeTable(archive);
 
     archive.Position = 0;
@@ -313,11 +308,9 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       });
 
   /// <summary>
-  /// SquashFS is a compressed, read-only image: superblock, compressed data
-  /// blocks, fragment table, inode/directory tables and the export/id/lookup
-  /// tables are packed back-to-back with no free regions and no cluster tips
-  /// (file data is stored at the compressed-block level, so there is no
-  /// allocation slack to wipe).
+  /// A canonical SquashFS image is fully packed. The real extent map marks all
+  /// non-file bytes as metadata-reserved, so there is no proven dead space to
+  /// scrub and this format-specific implementation is intentionally a no-op.
   ///
   /// <para>Note: <see cref="EnumerateExtents"/> reports Used runs at synthetic,
   /// uncompressed-size offsets for the defrag preview — those offsets do
@@ -327,7 +320,6 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
-    // Fully packed, read-only image — no free regions or cluster tips exist.
     return 0;
   }
 
@@ -376,9 +368,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       }
       owned.Sort((a, b) => a.Start.CompareTo(b.Start));
 
-      // The image is packed: the superblock leads, the data blocks follow, and
-      // the inode, directory and fragment tables trail. Whatever no file claims
-      // is one of those, not free space.
+      // SquashFS is packed: everything not owned by a file data extent belongs
+      // to the superblock, fragment store, inode/directory tables or indexes.
       var cursor = 0L;
       foreach (var (start, end) in owned) {
         if (start > cursor)
@@ -390,7 +381,7 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
         result.Add(new DefragBlockInfo(cursor, image.Length - cursor,
           DefragBlockKind.MetadataReserved, "fragments and tables"));
     } catch {
-      // An image we cannot walk claims nothing; wiping it would zero live data.
+      // Fail closed: an image we cannot walk claims no free space.
       return [];
     }
     return result;

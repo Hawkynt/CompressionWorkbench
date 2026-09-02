@@ -118,8 +118,15 @@ public class SameSizedFilesKeepTheirOwnBytesTests {
         if (!expected.TryGetValue(leaf, out var want)) continue;
 
         var got = File.ReadAllBytes(file);
-        // Trailing padding is the format's own granularity, not a swap.
-        if (got.Length > want.Length && got.Length - want.Length < 4096
+        // Trailing padding is the format's own granularity, not a swap. What
+        // proves identity is that the content STARTS with this file's bytes and
+        // the rest is zero — no other probe can satisfy that, since the probes
+        // differ from their first byte. The cap only stops the tolerance from
+        // swallowing an unbounded tail, so it has to clear a real allocation
+        // unit: a PS1 memory-card save owns whole 8 KiB blocks, and 4096 was
+        // under that, which read the format's own block granularity as a file
+        // holding bytes that belong to nobody.
+        if (got.Length > want.Length && got.Length - want.Length < 64 * 1024
             && got.AsSpan(0, want.Length).SequenceEqual(want)
             && !got.AsSpan(want.Length).ContainsAnyExcept((byte)0))
           got = want;

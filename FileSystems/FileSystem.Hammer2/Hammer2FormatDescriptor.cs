@@ -72,12 +72,33 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
     if (layout == null) yield break;
 
-    foreach (var (offset, length) in layout.Structure.OrderBy(s => s.Offset))
+    var claimed = new List<(long Start, long End)>();
+    foreach (var (offset, length) in layout.Structure.OrderBy(s => s.Offset)) {
       yield return new DefragBlockInfo(offset, length, DefragBlockKind.MetadataReserved,
         "HAMMER2 structure");
+      if (length > 0) claimed.Add((offset, offset + length));
+    }
 
-    foreach (var block in layout.DataBlocks.OrderBy(b => b.Offset))
+    foreach (var block in layout.DataBlocks.OrderBy(b => b.Offset)) {
       yield return new DefragBlockInfo(block.Offset, block.Length, DefragBlockKind.Used, block.Owner);
+      if (block.Length > 0) claimed.Add((block.Offset, block.Offset + block.Length));
+    }
+
+    // Name the space between the claims as well. A walk that reached this point
+    // read the whole volume — every header, freemap and blockref is above — so
+    // what is left over is genuinely unallocated, and a consumer that is only
+    // allowed to act on a stated Free region needs it stated. A deleted file's
+    // blocks live exactly here, which is what makes the difference between a
+    // wipe that clears them and one that leaves them readable on the device.
+    claimed.Sort(static (a, b) => a.Start.CompareTo(b.Start));
+    var cursor = 0L;
+    foreach (var (start, end) in claimed) {
+      if (start > cursor)
+        yield return new DefragBlockInfo(cursor, start - cursor, DefragBlockKind.Free);
+      cursor = Math.Max(cursor, end);
+    }
+    if (cursor < image.Length)
+      yield return new DefragBlockInfo(cursor, image.Length - cursor, DefragBlockKind.Free);
   }
 
   // ── IArchiveDefragmentable ──────────────────────────────────────────────

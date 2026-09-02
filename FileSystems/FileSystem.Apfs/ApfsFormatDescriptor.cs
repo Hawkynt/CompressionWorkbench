@@ -14,7 +14,7 @@ namespace FileSystem.Apfs;
 /// </summary>
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable,
-    IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
+    IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -219,6 +219,35 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       w.AddStreamingFile(Path.GetFileName(input.Name), input.Size, input.OpenStream);
     }
     w.BuildTo(output);
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  // The descriptor is the registry-visible face of the mover: a caller holding
+  // only a format id can move an extent and repoint it without knowing the
+  // FileSystem.Apfs types. A fresh mover per call keeps the façade stateless,
+  // which is why the run-capability flags are left at their conservative
+  // defaults here — SupportsHeldRuns in particular describes a run parked
+  // outside the volume across several calls, and nothing survives between two
+  // calls through this surface. Defragment drives one long-lived
+  // ApfsBlockMover directly and keeps those capabilities.
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    ArgumentNullException.ThrowIfNull(image);
+    var mover = new ApfsBlockMover();
+    image.Position = 0;
+    mover.Init(image);
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    ArgumentNullException.ThrowIfNull(image);
+    var mover = new ApfsBlockMover();
+    image.Position = 0;
+    mover.Init(image);
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
   /// <summary>

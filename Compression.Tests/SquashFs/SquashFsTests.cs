@@ -94,16 +94,15 @@ public class SquashFsTests {
   [Test, Category("HappyPath")]
   public void Descriptor_ImplementsModifiable() {
     var desc = new SquashFsFormatDescriptor();
-    // The verb plumbing is present (add/remove/defragment work via the extract ->
-    // re-create rebuild) ...
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveDefragmentable>());
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IFilesystemExtentMap>());
-    // ... but SquashFS is a compressed, read-only image: the rebuild is a full rewrite,
-    // not in-place modification, so the descriptor advertises WORM (CanCreate) and must
-    // NOT claim R/W (CanModify). See FormatCapabilities.cs for the rule.
+    // Linux mounts SquashFS read-only, but this API reports offline image-editor
+    // semantics. Add/Remove rebuild and verify a new valid image, so existing
+    // instances are genuinely modifiable at the workbench surface — the case
+    // FormatCapabilities.cs names SquashFS in.
     Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
-    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False);
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
   }
 
   [Test, Category("RoundTrip")]

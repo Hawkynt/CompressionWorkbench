@@ -424,6 +424,20 @@ public class EndToEndInteropTests {
     // GFS2 creation is empty-volume-only today — the writer raises NotSupportedException
     // when given files. Honest WORM-shy state; see the FileSystems support table.
     ".gfs2",
+    // CBM nibble image: the writer lays down raw GCR tracks and re-lists them as
+    // track_NN.bin. The container has no filename namespace of its own — names
+    // would need a CBM DOS directory written into those tracks first.
+    ".nib",
+    // OrangeFS DBPF object: Create packs the tree into one object.bin, so the
+    // re-list is FULL.orangefs+metadata.ini+object.bin, not a file tree.
+    ".orangefs",
+    // UEFI firmware volume: an FFS file is identified by GUID, so each input is
+    // written as <guid>_RAW.bin and the original filename has nowhere to live.
+    ".fv",
+    // PlayStation memory card: a save owns whole 8 KiB blocks and the directory
+    // records the block-granular stored size, so a payload comes back zero-padded
+    // up to the block boundary. Names round-trip; only the length does not.
+    ".mcr",
   };
 
   private static IEnumerable<string> RoundTripFormats() {

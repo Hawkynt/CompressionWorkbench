@@ -33,6 +33,7 @@ public class FreshVolumeHasRoomTests {
     ["Ico"] = "entries must be PNG or BMP images",
     ["Lbr"] = "the directory is a fixed size and cannot grow in place",
     ["Mdf"] = "a raw CD image is edited a sector at a time, by LBA, not by file name",
+    ["Nib"] = "a nibble image is edited a track at a time, by track_NN.bin, not by file name",
     ["Nrg"] = "a raw CD image is edited a sector at a time, by LBA, not by file name",
     ["Ova"] = "needs a disk image or a descriptor, not an arbitrary file",
     ["Sparseimage"] = "a sparse image is edited a band at a time, not by file name",

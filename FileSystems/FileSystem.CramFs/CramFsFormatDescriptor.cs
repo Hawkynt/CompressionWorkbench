@@ -5,6 +5,11 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.CramFs;
 
 /// <summary>
+/// Offline R/W descriptor for Linux CramFS images. The Linux filesystem is
+/// intentionally read-only when mounted, but the workbench can create and edit
+/// an existing image by verified rebuild and can perform physical layout moves
+/// where the compressed-block metadata can be repointed safely.
+///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://docs.kernel.org/filesystems/cramfs.html</c> — Linux kernel cramfs documentation</description></item>
@@ -25,17 +30,16 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM (Write-Once-Read-Many), NOT R/W: CramFS is a compressed, read-only ROM
-  // filesystem. Add/Remove are implemented via the verified extract -> re-create
-  // rebuild (ModifyRebuilder), which is a full rewrite — so the verb works, but the
-  // image is not modified in place. Advertising CanModify would falsely claim genuine
-  // in-place R/W. See Compression.Registry/FormatCapabilities.cs for the WORM vs R/W rule.
+  // R/W is the public existing-instance edit contract, not a claim that a Linux
+  // kernel mounts CramFS writable or that every edit is byte-local. Add/Remove
+  // rebuild the image when necessary and return a valid edited CramFS image.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -67,7 +71,7 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Linux Compressed ROM filesystem";
+  public string Description => "Linux compressed ROM filesystem with offline R/W rebuild and layout maintenance support";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -247,21 +251,14 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   /// <summary>
-  /// CramFS is a compressed, read-only ROM filesystem: the superblock, inode
-  /// tables, block-pointer tables and zlib-compressed page blocks are laid out
-  /// tightly back-to-back (only 4-byte alignment padding, which is already
-  /// zero) with no free space and no cluster tips. File data is packed at the
-  /// compressed-block level, so there is no allocation slack to wipe.
-  ///
-  /// <para>Note: <see cref="EnumerateExtents"/> reports Used runs at synthetic,
-  /// uncompressed-size offsets for the defrag preview — those offsets do
-  /// <em>not</em> map to real on-disk positions, so this method deliberately
-  /// does not drive the generic wiper from them (doing so would zero live
-  /// compressed bytes). Nothing is reclaimable; this returns 0.</para>
+  /// CramFS images produced by the canonical writer are tightly packed and have
+  /// no allocation-unit cluster tips. If a non-canonical image contains gaps,
+  /// the physical extent map below identifies them; this explicit override
+  /// remains conservative and leaves them alone because old CramFS tooling may
+  /// use alignment/padding bytes in ways that are not recoverable from inodes.
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
-    // Fully packed, read-only image — no free regions or cluster tips exist.
     return 0;
   }
 
@@ -270,12 +267,6 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// area as structure, and each file's block pointer table and compressed
   /// blocks under its name.
   /// </summary>
-  /// <remarks>
-  /// This used to walk a cursor forward by each file's uncompressed size, which
-  /// described a volume that does not exist — the bytes on disk are compressed
-  /// and sit wherever the inode says. Anything driven off that map operated on
-  /// offsets that belonged to nothing.
-  /// </remarks>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
@@ -295,11 +286,6 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       }
       owned.Sort((a, b) => a.Start.CompareTo(b.Start));
 
-      // The superblock and every inode with its name sit ahead of the first
-      // file's table; nothing of the volume's own is written past it. So the
-      // prefix is structure and whatever no file claims after it is space
-      // nothing holds — alignment padding in a freshly written image, and a
-      // gap wherever something has since been moved out of.
       if (firstData > 0 && firstData <= image.Length)
         result.Add(new DefragBlockInfo(0, firstData, DefragBlockKind.MetadataReserved,
           "superblock and inodes"));
@@ -313,7 +299,7 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       if (cursor < image.Length)
         result.Add(new DefragBlockInfo(cursor, image.Length - cursor, DefragBlockKind.Free));
     } catch {
-      // An image we cannot walk claims nothing; wiping it would zero live data.
+      // Fail closed: an image we cannot walk claims no free space.
       return [];
     }
     return result;

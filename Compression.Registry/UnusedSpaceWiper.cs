@@ -145,6 +145,65 @@ public static class UnusedSpaceWiper {
   }
 
   /// <summary>
+  /// Zero-fills only the regions a map <em>positively declares</em>
+  /// <see cref="DefragBlockKind.Free"/>, plus the cluster tips of Used extents
+  /// when a size lookup can prove one. Silence about a region means nothing here.
+  /// </summary>
+  /// <remarks>
+  /// <para><see cref="Wipe"/> reads a gap between two live extents as free
+  /// space. That is sound for a filesystem extent map, which is written to
+  /// account for the whole volume — every superblock, table and bitmap is a
+  /// region it names. It is not sound for a map that only enumerates the
+  /// entries it can find: an archive layout map typically yields one extent per
+  /// member payload and says nothing about the header, the entry table or the
+  /// trailing index, and reading those silences as free space zeroes the
+  /// structure that made the file readable.</para>
+  ///
+  /// <para>So the generic path — the one a descriptor gets without writing any
+  /// wipe code of its own — is limited to what its map spelled out. A map that
+  /// wants its free space zeroed emits it as <see cref="DefragBlockKind.Free"/>;
+  /// a descriptor that knows its own dead regions overrides
+  /// <see cref="IWipeEmpty.WipeUnusedSpace"/> and calls <see cref="Wipe"/>
+  /// directly.</para>
+  /// </remarks>
+  /// <returns>Total number of bytes written as zeros.</returns>
+  public static long WipeDeclaredFree(
+      Stream image,
+      IEnumerable<DefragBlockInfo> extents,
+      long imageSize,
+      bool wipeClusterTips = true,
+      Func<string, long>? fileSizeLookup = null) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(extents);
+    if (!image.CanRead || !image.CanWrite || !image.CanSeek)
+      throw new ArgumentException("Stream must be readable, writable, and seekable.", nameof(image));
+
+    var totalWiped = 0L;
+    var zeroBuf = new byte[64 * 1024];
+    foreach (var ex in extents) {
+      var start = Math.Max(0, ex.Offset);
+      var end = Math.Min(ex.Offset + ex.Length, imageSize);
+      if (end <= start) continue;
+
+      if (ex.Kind == DefragBlockKind.Free) {
+        totalWiped += ZeroRange(image, start, end - start, zeroBuf);
+        continue;
+      }
+
+      if (!wipeClusterTips || ex.Kind != DefragBlockKind.Used) continue;
+      if (ex.FileName == null || fileSizeLookup == null) continue;
+      var actualSize = fileSizeLookup(ex.FileName);
+      if (actualSize < 0 || actualSize >= ex.Length) continue;
+      var tipStart = ex.Offset + actualSize;
+      if (end > tipStart)
+        totalWiped += ZeroRange(image, tipStart, end - tipStart, zeroBuf);
+    }
+
+    image.Flush();
+    return totalWiped;
+  }
+
+  /// <summary>
   /// Writes zeros to <paramref name="stream"/> at
   /// [<paramref name="offset"/>, <paramref name="offset"/> + <paramref name="length"/>).
   /// Only writes bytes that are not already zero, to minimize I/O on already-clean images.

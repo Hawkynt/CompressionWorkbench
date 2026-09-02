@@ -15,14 +15,15 @@ namespace FileFormat.Dmg;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Apple_Disk_Image</c> — format overview</description></item>
 /// </list>
 /// </summary>
-public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+  IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
-      "DMG is an Apple disk image with mish blocks and a signed footer — defragmentation isn't meaningful.");
+      "DMG is an Apple disk image with mish blocks and a trailing block index; defragmentation is not exposed as a generic archive verb.");
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
@@ -45,7 +46,7 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -132,9 +133,6 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    // WORM: each input becomes a partition with a single raw mish block (no
-    // compression). The reader rebuilds sectors from the raw block and writes
-    // each partition out at extract time.
     var w = new DmgWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
@@ -142,4 +140,20 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     w.WriteTo(output);
   }
+
+  /// <summary>
+  /// Adds or replaces partitions in the raw UDIF profile emitted by this writer.
+  /// Existing partition payload offsets are preserved; new data occupies the old
+  /// plist tail and only the blkx/plist + koly index are rewritten.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => DmgInPlaceModifier.Add(archive, inputs);
+
+  /// <summary>
+  /// Removes partitions from the raw UDIF profile by dropping their blkx records.
+  /// Payload bytes are left as unreachable data-fork slack so unrelated partitions
+  /// never need to move.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => DmgInPlaceModifier.Remove(archive, entryNames);
 }

@@ -17,9 +17,12 @@ namespace FileSystem.Refs;
 public sealed class RefsFormatDescriptor :
   IFormatDescriptor,
   IArchiveFormatOperations,
+  IArchiveModifiable,
   IFilesystemExtentMap,
   IArchiveDefragmentable,
-  ILayoutOptimizable {
+  ILayoutOptimizable,
+  IFilesystemDriverProvider,
+  IFilesystemDriverReadinessProvider {
 
   /// <summary>
   /// Gets the id.
@@ -33,12 +36,15 @@ public sealed class RefsFormatDescriptor :
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  // CanModify covers the offline-quiescent image editor only. A mounted ReFS
+  // driver's transactional write path is a separate readiness tier and is not
+  // what this flag reports — see DRIVER_READINESS.md.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -76,7 +82,27 @@ public sealed class RefsFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft ReFS 3.x volume image with namespace, allocation, in-place data relocation and filesystem-metadata placement support.";
+  public string Description => "Microsoft ReFS 3.x volume image with native read-only driver projection, namespace/allocation parsing, and offline-quiescent existing-file replace/remove plus metadata placement. Native mounted-driver transactions remain a separate readiness tier.";
+
+  /// <summary>
+  /// Probes the image and reports the filesystem driver profile.
+  /// </summary>
+  public FilesystemDriverProfile ProbeFilesystem(Stream image)
+    => RefsFilesystemDriver.Probe(image);
+
+  /// <summary>
+  /// Opens a filesystem session over the image.
+  /// </summary>
+  public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)
+    => RefsFilesystemDriver.Open(image, options);
+
+  /// <summary>
+  /// Describes how ready the filesystem driver is for the requested access.
+  /// </summary>
+  public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
+      Stream image,
+      FilesystemDriverTarget target)
+    => RefsFilesystemDriver.Readiness(image, target);
 
   /// <summary>
   /// Enumerates the extents.
@@ -225,6 +251,21 @@ public sealed class RefsFormatDescriptor :
 
     ExtractDiagnosticSurface(stream, outputDir, files);
   }
+
+  /// <summary>
+  /// Offline-quiescent existing-file replacement for the proven regular-stream profile.
+  /// A new name is rejected before mutation until ReFS file-identity/security/link fields
+  /// are proven for every supported 3.x profile.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => RefsOfflineModifier.Add(archive, inputs);
+
+  /// <summary>
+  /// Removes regular files or empty directories from an unmounted ReFS image. Namespace
+  /// deletion is published through immutable B+ replacement pages and the alternate CHKP.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => RefsOfflineModifier.Remove(archive, entryNames);
 
   private static List<ArchiveEntryInfo> ListDiagnosticSurface(Stream stream) {
     var entries = new List<ArchiveEntryInfo>();
