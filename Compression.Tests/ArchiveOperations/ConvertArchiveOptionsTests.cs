@@ -129,25 +129,15 @@ public class ConvertArchiveOptionsTests {
     }
   }
 
-  /// <summary>
-  /// Registers a fake descriptor so the format-id lookup in
-  /// <c>ArchiveOperations.Create</c> resolves to our capture-and-record
-  /// implementation. Format IDs are looked up via <c>format.ToString()</c>
-  /// against <see cref="FormatRegistry"/>, so the fake's <c>Id</c> just
-  /// has to match the <see cref="FormatDetector.Format"/> value we pass.
-  /// </summary>
-  private static CapturingDescriptor RegisterCapturingDescriptor() {
-    var existing = FormatRegistry.GetArchiveOps("TestCapturingFormat");
-    if (existing is CapturingDescriptor already) return already;
-    var fake = new CapturingDescriptor();
-    FormatRegistry.Register(fake);
-    return fake;
-  }
-
   [Test, Category("HappyPath")]
   public void Create_WithFormatSpecific_ForwardsDictToTargetDescriptor() {
-    var fake = RegisterCapturingDescriptor();
-    fake.LastOptions = null;
+    // Straight to the descriptor: the assertion below is about what a writer
+    // receives in FormatCreateOptions, and the call under test is made on the
+    // instance directly, so the registry never takes part. Putting the fake in
+    // it was left over from an earlier shape of this test and is now also
+    // impossible — the registry is sealed once its coverage invariants have
+    // been published, which every earlier test in a run has already triggered.
+    var fake = new CapturingDescriptor();
 
     // Use a real source file just to satisfy ArchiveInput's contract.
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_cao_" + Guid.NewGuid().ToString("N")[..8]);

@@ -30,7 +30,10 @@ public class OrangeFsDetectionTests {
     Assert.That(d.MagicSignatures, Has.Count.EqualTo(2));
     Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo("PVFS"u8.ToArray()));
     Assert.That(d.MagicSignatures[1].Bytes, Is.EqualTo("OGFP"u8.ToArray()));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    // The DBPF writer landed, so the descriptor is creatable. What the payload
+    // means still needs the cluster's fs.conf — see OrangeFsStubBehaviorTests
+    // for the opaque-entry shape and the Description that says so.
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
   }
 
   [Test, Category("HappyPath")]
