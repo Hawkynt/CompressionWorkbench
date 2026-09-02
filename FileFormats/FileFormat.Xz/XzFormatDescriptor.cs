@@ -109,7 +109,7 @@ public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperati
 
   /// <summary>Parses the LZMA2 compression level from the options, falling back to Normal.</summary>
   internal static LzmaCompressionLevel ParseLevel(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("Level");
+    var raw = options.GetString("Level");
     return raw is not null && Enum.TryParse<LzmaCompressionLevel>(raw, ignoreCase: true, out var level)
       ? level
       : LzmaCompressionLevel.Normal;
@@ -117,7 +117,7 @@ public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperati
 
   /// <summary>Parses the dictionary size label into bytes, falling back to the 8 MiB default.</summary>
   internal static int ParseDictionarySize(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("DictionarySize");
+    var raw = options.GetString("DictionarySize");
     return raw is not null && DictionarySizesByLabel.TryGetValue(raw, out var bytes)
       ? bytes
       : DefaultDictionarySize;

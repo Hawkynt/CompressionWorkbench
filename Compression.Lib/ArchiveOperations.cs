@@ -162,7 +162,7 @@ public static class ArchiveOperations {
       // Prefer the explicit per-call formatSpecific bag (threaded by
       // ConvertArchive's target-options dialog); fall back to the one carried
       // on the CompressionOptions for CLI callers that fill it in there.
-      FormatSpecific = formatSpecific ?? opts.FormatSpecific,
+      FormatSpecific = Compression.Registry.FormatCreateOptions.FormatSpecificFrom(formatSpecific ?? opts.FormatSpecific),
     };
 
     // An entry larger than a byte[] can hold cannot go through Create(), whose
@@ -1090,7 +1090,7 @@ public static class ArchiveOperations {
       }
 
       var memOpts = new Compression.Registry.FormatCreateOptions {
-        FormatSpecific = createOptions?.FormatSpecific,
+        FormatSpecific = Compression.Registry.FormatCreateOptions.FormatSpecificFrom(createOptions?.FormatSpecific),
       };
       Compression.Lib.InMemoryProcessing.RebuildToFileAtomic(outputPath, dstCreatable, inputs, memOpts);
       return warnings;
@@ -1124,7 +1124,7 @@ public static class ArchiveOperations {
     // pick the zero-buffer (length-up-front) path automatically. A spilled
     // DeferredLengthWriteStream is never instantiated for a normal convert.
     var streamOpts = new Compression.Registry.FormatCreateOptions {
-      FormatSpecific = createOptions?.FormatSpecific,
+      FormatSpecific = Compression.Registry.FormatCreateOptions.FormatSpecificFrom(createOptions?.FormatSpecific),
     };
     using (var sharedSrc = File.OpenRead(inputPath))
     using (var writer = ArchiveWriter.Create(outputPath, dstFormat.ToString(), streamOpts)) {

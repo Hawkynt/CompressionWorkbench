@@ -111,7 +111,7 @@ public static class AudioConversionOperation {
     Rewind(input);
     var listed = sourceArchive.List(input, password: null);
     var entries = listed
-      .Where(static entry => entry.Kind.Equals("Channel", StringComparison.OrdinalIgnoreCase) &&
+      .Where(static entry => string.Equals(entry.Kind, "Channel", StringComparison.OrdinalIgnoreCase) &&
                              entry.Name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
       .OrderBy(static entry => entry.Index)
       .ToArray();
@@ -178,7 +178,7 @@ public static class AudioConversionOperation {
 
     Rewind(input);
     var entries = sourceArchive.List(input, password: null)
-      .Where(static entry => entry.Kind.Equals("Channel", StringComparison.OrdinalIgnoreCase) &&
+      .Where(static entry => string.Equals(entry.Kind, "Channel", StringComparison.OrdinalIgnoreCase) &&
                              entry.Name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
       .OrderBy(static entry => entry.Index)
       .ToArray();

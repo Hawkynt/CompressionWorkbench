@@ -62,8 +62,21 @@ public sealed class FormatCreateOptions {
   /// The collection is initialized so callers can use collection/index initializers
   /// without allocating a dictionary explicitly.
   /// </summary>
-  public IDictionary<string, string> FormatSpecific { get; init; }
-    = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+  public Dictionary<string, string> FormatSpecific { get; init; }
+    = new(StringComparer.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// Builds a <see cref="FormatSpecific"/> map from an optional source, keeping the case-insensitive
+  /// comparer the property's own initializer uses. Callers hold read-only or nullable views of the
+  /// bag, which cannot be assigned to the mutable property directly.
+  /// </summary>
+  public static Dictionary<string, string> FormatSpecificFrom(IEnumerable<KeyValuePair<string, string>>? source) {
+    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    if (source != null)
+      foreach (var pair in source)
+        result[pair.Key] = pair.Value;
+    return result;
+  }
 
   /// <summary>True when the caller explicitly supplied a non-empty value for <paramref name="key"/>.</summary>
   public bool HasOption(string key)
@@ -82,9 +95,11 @@ public sealed class FormatCreateOptions {
     => this.TryGetInt(key, out var value) ? value : fallback;
 
   /// <summary>Attempts to read a format-specific invariant-culture integer.</summary>
-  public bool TryGetInt(string key, out int value)
-    => this.FormatSpecific.TryGetValue(key, out var text)
-       && int.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out value);
+  public bool TryGetInt(string key, out int value) {
+    value = 0;
+    return this.FormatSpecific.TryGetValue(key, out var text)
+           && int.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out value);
+  }
 
   /// <summary>Reads a format-specific boolean option. Accepts true/false/1/0 (case-insensitive).</summary>
   public bool GetOptionBool(string key, bool fallback) {

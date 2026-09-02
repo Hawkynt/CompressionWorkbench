@@ -77,7 +77,7 @@ public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// options, clamped to the supported 1..9 range; falls back to the generic
   /// compression level if set, otherwise the default (9).</summary>
   internal static int ParseBlockSize(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("BlockSize");
+    var raw = options.GetString("BlockSize");
     if (raw is not null && int.TryParse(raw, out var bs)) return Math.Clamp(bs, 1, 9);
     return options.Level is { } l ? Math.Clamp(l, 1, 9) : 9;
   }

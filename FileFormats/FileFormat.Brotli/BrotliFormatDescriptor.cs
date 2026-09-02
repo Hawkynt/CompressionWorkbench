@@ -85,7 +85,7 @@ public sealed class BrotliFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// options; falls back to the encoder default (<see cref="BrotliCompressionLevel.Default"/>)
   /// when the value is absent or unrecognised.</summary>
   internal static BrotliCompressionLevel ParseQuality(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("Quality");
+    var raw = options.GetString("Quality");
     return Enum.TryParse<BrotliCompressionLevel>(raw, ignoreCase: true, out var level)
       ? level
       : BrotliCompressionLevel.Default;

@@ -164,7 +164,7 @@ public sealed class AudioPacketAdapterTests {
       Assert.That(capability.CanBeTarget, Is.False);
     });
 
-    var wav = PcmCodec.ToWavBlob(new byte[128], numChannels: 1, sampleRate: 8_000, bitsPerSample: 16);
+    var wav = PcmCodec.ToWavBlob(new byte[128], channels: 1, sampleRate: 8_000, bitsPerSample: 16);
     using var input = new MemoryStream(wav, writable: false);
     using var output = new MemoryStream();
 

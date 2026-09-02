@@ -463,7 +463,9 @@ internal static class AudioFormatAdapters {
       if (bitrate > 1_000) bitrate = (bitrate + 500) / 1_000;
       var quality = options.GetOptionInt("quality", options.Level ?? 5);
       var variableBitrate = options.GetOptionBool("vbr", false);
-      var outputRate = options.HasOption("sample-rate") ? options.GetOptionInt("sample-rate", pcm.Format.SampleRate) : null;
+      var outputRate = options.HasOption("sample-rate")
+        ? (int?)options.GetOptionInt("sample-rate", pcm.Format.SampleRate)
+        : null;
       var channelMode = options.GetOption("channel-mode", "auto").ToLowerInvariant() switch {
         "stereo" => Mp3EncoderChannelMode.Stereo,
         "joint" or "joint-stereo" or "jointstereo" => Mp3EncoderChannelMode.JointStereo,
