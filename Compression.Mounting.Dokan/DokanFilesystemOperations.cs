@@ -102,8 +102,10 @@ public sealed class DokanFilesystemOperations(IFilesystemSession filesystem) : I
         return DokanResult.FileNotFound;
 
       var node = this._filesystem.Stat(nodeId);
+      // DokanNet 2.3.0.3 exposes no FileIsADirectory; a read against a directory handle is what
+      // Windows itself answers with ERROR_ACCESS_DENIED, so that is the status reported here.
       if (node.Kind == FilesystemNodeKind.Directory)
-        return DokanResult.FileIsADirectory;
+        return DokanResult.AccessDenied;
       if (node.Kind != FilesystemNodeKind.RegularFile)
         return DokanResult.NotImplemented;
 
