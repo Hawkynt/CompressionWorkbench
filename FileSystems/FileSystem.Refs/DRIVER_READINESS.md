@@ -27,21 +27,38 @@ The goal of `FileSystem.Refs` is a reusable filesystem core, not merely an image
 
 ## Required for complete native R/W
 
-- [ ] native CoW page allocator and immutable-page mutation path
+- [x] native CoW page allocator and immutable-page mutation path
 - [ ] wire alternate-checkpoint publication into NativeCow transactions after CoW + MLog durability
-- [ ] MLog entry XOR-fold generation/verification and circular-log writer/control-page advancement
-- [ ] redo payload codecs for every opcode emitted by supported ReFS versions
-- [ ] redo replay/restarter path and dirty-volume recovery
-- [ ] B+ insert/update/delete with split, merge and root height changes
+      (`RefsNativeCowPublisher.Commit` already publishes the alternate CHKP after allocator CoW and
+      MLog durability and re-verifies the roots; `RefsMutationTransactions.Begin` still throws for
+      `RefsMutationMode.NativeCow`, so no transaction facade reaches that path)
+- [x] MLog entry XOR-fold generation/verification and circular-log writer/control-page advancement
+- [ ] redo payload codecs for every opcode emitted by supported ReFS versions (the opcode set and the
+      `_SmsRedoHeader`/`_SmsRedoRecord` framing are decoded; each opcode's payload is still carried as
+      an opaque blob)
+- [ ] redo replay/restarter path and dirty-volume recovery (`RefsMLogRecovery`/`RefsMLogRestarter`
+      verify XOR folds, apply the CHKP-advertised recovery window and order the live LSN chain; no
+      `IRefsRedoTarget` implementation applies a record, and nothing detects a dirty volume)
+- [x] B+ insert/update/delete with split, merge and root height changes
 - [ ] implement every Schema Table key-rule selector needed by writable tables (unknown selectors must remain fail-closed)
+      (`RefsKeyComparer` covers the namespace, allocator, object-table, refcount and attribute schemas
+      and throws for anything else; dispatch is by schema id rather than the key-rules selector, and
+      Container Index plus the remaining system schemas have no proven comparator)
 - [ ] complete Medium Allocator allocation-zone policy rather than row-local free-run selection
 - [ ] complete Container Allocator allocation-zone policy
 - [ ] complete Small Allocator allocation-zone policy
-- [ ] Container Table + Container Index coordinated container create/delete/move
+- [ ] Container Table + Container Index coordinated container create/delete/move (the Container Table
+      key comparator and the Add/MoveContainer redo opcodes are decoded; no code creates, deletes or
+      moves a container)
 - [ ] Block Refcount row creation/removal, increment/clone semantics and all snapshot/dedup ownership cases
+      (`RefsBlockRefcountPolicy` and `RefsCowBlockRefcountEditor` increment, clone, decrement and drop
+      an unflagged zero row; CoW row creation is still fail-closed on the unresolved +0x10 creation
+      stamp, and the dedup/snapshot ownership bits are preserved rather than transitioned)
 - [ ] hard-link create/remove and link-count/back-reference semantics
 - [ ] sparse allocation mutation
-- [ ] integrity-stream data-checksum generation/update
+- [ ] integrity-stream data-checksum generation/update (`RefsIntegrityDataVerifier` generates and
+      stamps the inline 0x1C00D0 CRC32-C element on 4 KiB-cluster volumes; every other cluster
+      geometry and the non-inline integrity representation throw)
 - [ ] stream snapshot create/delete/write-CoW semantics
 - [ ] named-data/ADS mutation
 - [ ] container compression/dedup mutation and integrity metadata
