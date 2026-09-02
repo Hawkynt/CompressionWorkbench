@@ -32,7 +32,7 @@ Apple File System container image (full-scope in-place mutation: omap + FS-tree 
 | shrink | yes | reduce the volume to what it needs |
 | optimise layout | yes | re-lay the volume at a chosen geometry |
 | report layout | yes | say where every byte belongs |
-| move blocks | no | relocate a run and repoint what names it |
+| move blocks | yes | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |
 
 ### How it defragments

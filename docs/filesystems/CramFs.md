@@ -1,6 +1,6 @@
 # CramFS (`CramFs`)
 
-Linux Compressed ROM filesystem
+Linux compressed ROM filesystem with offline R/W rebuild and layout maintenance support
 
 > Generated from the implementation. Edit the doc comments on the descriptor,
 > reader or writer rather than this file; a test regenerates it and fails on drift.
@@ -51,7 +51,7 @@ the bytes that actually move rather than the whole volume.
 
 ### CramFsFormatDescriptor
 
-References:
+Offline R/W descriptor for Linux CramFS images. The Linux filesystem is intentionally read-only when mounted, but the workbench can create and edit an existing image by verified rebuild and can perform physical layout moves where the compressed-block metadata can be repointed safely. References:
 
 ### CramFsReader
 

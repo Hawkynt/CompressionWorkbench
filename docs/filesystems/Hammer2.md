@@ -28,7 +28,7 @@ HAMMER2 (DragonFly BSD newer) filesystem image — volume-data sector surface on
 | create | yes | write a fresh volume holding the given files |
 | add / remove | yes | change a volume in place |
 | defragment | yes | lay the volume out again |
-| wipe free space | no | zero what no file holds |
+| wipe free space | yes | zero what no file holds |
 | shrink | yes | reduce the volume to what it needs |
 | optimise layout | yes | re-lay the volume at a chosen geometry |
 | report layout | yes | say where every byte belongs |

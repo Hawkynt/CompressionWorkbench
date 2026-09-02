@@ -1,6 +1,6 @@
 # EROFS (`Erofs`)
 
-Android read-only compressed filesystem; uncompressed + inline inode layouts.
+Android/Linux read-only-on-mount filesystem; FLAT_PLAIN/FLAT_INLINE profile supports offline R/W and maintenance.
 
 > Generated from the implementation. Edit the doc comments on the descriptor,
 > reader or writer rather than this file; a test regenerates it and fails on drift.
@@ -51,7 +51,7 @@ the bytes that actually move rather than the whole volume.
 
 ### ErofsFormatDescriptor
 
-Descriptor for EROFS images. Reading covers the uncompressed + inline inode layouts; creation produces a minimal uncompressed (FLAT_PLAIN) image via `ErofsWriter`. Full-fidelity, compressed images remain the job of `mkfs.erofs`; our writer targets the round-trippable WORM subset (compact inodes, plain data, nested directories). References:
+Offline R/W descriptor for EROFS images. Reading covers the uncompressed FLAT_PLAIN/FLAT_INLINE inode layouts; creation emits the same conservative, round-trippable subset through `ErofsWriter`. Linux mounts EROFS read-only by design, but an existing supported-profile image can be edited by verified rebuild. Compressed inode layouts remain readable as metadata only until their data decoder/writer is implemented and are therefore rejected by mutation rather than silently rewritten as placeholders. References:
 
 ### ErofsReader
 
@@ -71,11 +71,11 @@ Builds a valid, uncompressed EROFS image from a set of files and their (possibly
 
 ## Storage methods
 
-- `stored` — Stored
+- `stored` — Stored / flat inode
 
 ## Further reading
 
-- https://docs.kernel.org/filesystems/erofs.html — Linux kernel EROFS documentation (on-disk overview)
-- https://github.com/torvalds/linux/tree/master/fs/erofs — mainline implementation (erofs_fs.h defines the on-disk structures)
-- https://en.wikipedia.org/wiki/EROFS — Wikipedia overview
+- https://docs.kernel.org/filesystems/erofs.html — Linux kernel EROFS documentation
+- https://github.com/torvalds/linux/tree/master/fs/erofs — mainline implementation (erofs_fs.h)
+- https://en.wikipedia.org/wiki/EROFS — overview
 

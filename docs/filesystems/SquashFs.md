@@ -1,6 +1,6 @@
 # SquashFS (`SquashFs`)
 
-Linux compressed read-only filesystem
+Linux compressed read-only-on-mount filesystem with offline R/W and layout optimization
 
 > Generated from the implementation. Edit the doc comments on the descriptor,
 > reader or writer rather than this file; a test regenerates it and fails on drift.
@@ -52,7 +52,7 @@ the bytes that actually move rather than the whole volume.
 
 ### SquashFsFormatDescriptor
 
-R/W descriptor for SquashFS images ("hsqs" magic) — the compressed read-only filesystem used by live media and embedded Linux; this writer emits gzip-compressed images. References:
+Offline R/W descriptor for SquashFS images ("hsqs" magic). Linux mounts SquashFS read-only by design; the workbench nevertheless supports editing an existing image by verified rebuild, plus guarded physical re-layout where compressed metadata can be repointed safely. The writer emits gzip-compressed images. References:
 
 ### SquashFsReader
 

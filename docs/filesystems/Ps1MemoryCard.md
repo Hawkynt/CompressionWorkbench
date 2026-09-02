@@ -1,6 +1,6 @@
-# G64 (Commodore GCR) (`G64`)
+# PlayStation Memory Card (`Ps1MemoryCard`)
 
-VICE G64 Commodore GCR track image with raw-track, strict sector, and CBM DOS driver layers
+Sony PlayStation 128 KiB memory card and bank-switched multi-card image
 
 > Generated from the implementation. Edit the doc comments on the descriptor,
 > reader or writer rather than this file; a test regenerates it and fails on drift.
@@ -11,14 +11,14 @@ VICE G64 Commodore GCR track image with raw-track, strict sector, and CBM DOS dr
 |---|---|
 | Category | Archive |
 | Family | Archive |
-| Default extension | `.g64` |
-| Recognised extensions | `.g64` |
+| Default extension | `.mcr` |
+| Recognised extensions | `.mcr`, `.mcd`, `.mem`, `.psm` |
 
 ## Detection
 
 | Bytes | At offset | Confidence |
 |---|---|---|
-| `47 43 52 2D 31 35 34 31` | 0 | 0.90 |
+| `4D 43` | 0 | 0.45 |
 
 ## Verbs
 
@@ -31,7 +31,7 @@ VICE G64 Commodore GCR track image with raw-track, strict sector, and CBM DOS dr
 | wipe free space | yes | zero what no file holds |
 | shrink | yes | reduce the volume to what it needs |
 | optimise layout | no | re-lay the volume at a chosen geometry |
-| report layout | no | say where every byte belongs |
+| report layout | yes | say where every byte belongs |
 | move blocks | no | relocate a run and repoint what names it |
 | move metadata | no | relocate the volume's own structures |
 
@@ -42,21 +42,19 @@ order the requested layout asks for. Correct, but it costs the whole payload.
 
 ## How a volume is laid out
 
-### G64FormatDescriptor
+### Ps1MemoryCardFormatDescriptor
 
-VICE G64 raw-GCR track container. Archive-level operations expose tracks; block/filesystem providers expose only strict canonical 1541 sector media.
+Sony PlayStation memory-card filesystem. One hardware-visible card bank is always the canonical 128 KiB layout (one metadata block plus fifteen 8 KiB save blocks). Larger third-party cards from the PS1 era are represented as bank-switched collections of independent canonical banks; no enlarged fictional allocation table is invented.
 
-### CbmNibbleReader
+## Parameters
 
-Reader for Commodore 1541/1571 nibble dumps — both raw .nib fixed-slot images and VICE .g64 track containers. The pseudo-archive surface is one opaque GCR payload per half-track; callers that need filesystem semantics can explicitly decode those tracks to a D64 through `DecodeToD64`.
-
-### CbmNibbleWriter
-
-Writer for Commodore nibble containers. It supports two distinct layers: ordinary Commodore files are first placed into a D64 and GCR-encoded, while pseudo-archive callers can directly build G64/NIB containers from opaque `track_XX.bin` payloads without touching the filesystem inside them.
+| Key | Kind | Default | Allowed | Meaning |
+|---|---|---|---|---|
+| `Banks` | Enum | `Auto` | `Auto`, `1`, `2`, `4`, `8`, `16`, `32`, `64` | Number of independent 128 KiB PS1 card banks. Auto chooses the smallest historical power-of-two bank count that fits. |
 
 ## Storage methods
 
-- `stored` — Stored GCR tracks
+- `stored` — 8 KiB save blocks
 
 ## Further reading
 
