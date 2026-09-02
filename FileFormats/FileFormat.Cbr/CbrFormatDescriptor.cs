@@ -16,22 +16,15 @@ namespace FileFormat.Cbr;
 public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>
-  /// Adds (or replaces by name) pages inside an existing CBR archive. Delegates to
-  /// the RAR in-place editors (CBR is a RAR variant): a pure add of new names takes
-  /// the genuine byte-additive append (<see cref="FileFormat.Rar.RarInPlaceAdder"/>),
-  /// a same-name update excises the old block first
-  /// (<see cref="FileFormat.Rar.RarInPlaceRemover"/>). Any case the in-place path
-  /// cannot serve byte-additively falls back to the verified extract -> re-create
-  /// rebuild.
+  /// Adds new pages directly through the RAR5 append editor when the archive profile
+  /// permits it. The RAR editor validates collisions and unsupported whole-archive
+  /// structures before writing, so unsupported profiles can fall back without first
+  /// cloning the entire CBR. Same-name replacement remains rebuild-backed because a
+  /// remove+add pair is a two-step transaction.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-
-    archive.Position = 0;
-    using var original = new MemoryStream();
-    archive.CopyTo(original);
-    var originalBytes = original.ToArray();
 
     var hasDirectory = false;
     var newFiles = new List<(string Name, byte[] Data, DateTimeOffset? ModifiedTime)>();
@@ -42,26 +35,13 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     if (!hasDirectory && newFiles.Count > 0) {
-      var existing = ExistingNames(originalBytes);
-      var collisions = newFiles.Where(f => existing.Contains(f.Name)).Select(f => f.Name).ToArray();
       try {
-        using var work = new MemoryStream();
-        work.Write(originalBytes, 0, originalBytes.Length);
-        work.Position = 0;
-        if (collisions.Length > 0)
-          FileFormat.Rar.RarInPlaceRemover.Remove(work, collisions);
-        FileFormat.Rar.RarInPlaceAdder.Add(work, newFiles);
-
-        var result = work.ToArray();
         archive.Position = 0;
-        archive.Write(result, 0, result.Length);
-        archive.SetLength(result.Length);
-        archive.Flush();
+        FileFormat.Rar.RarInPlaceAdder.Add(archive, newFiles);
         return;
       } catch (NotSupportedException) {
-        archive.Position = 0;
-        archive.Write(originalBytes, 0, originalBytes.Length);
-        archive.SetLength(originalBytes.Length);
+        if (archive.CanSeek)
+          archive.Position = 0;
       }
     }
 
@@ -77,36 +57,22 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Removes the named pages. Non-solid FILE blocks are excised by the genuine
-  /// in-place remover (<see cref="FileFormat.Rar.RarInPlaceRemover"/>); anything it
-  /// cannot serve byte-additively falls back to the verified extract -> re-create
-  /// rebuild.
+  /// Removes supported non-solid pages directly through the RAR5 block remover.
+  /// Unsupported encryption, recovery/quick-open, solid dependency and RAR4 cases
+  /// are rejected before the first byte move and therefore safely fall back to the
+  /// verified rebuild without an O(total bytes) transaction snapshot.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
 
-    archive.Position = 0;
-    using var original = new MemoryStream();
-    archive.CopyTo(original);
-    var originalBytes = original.ToArray();
-
     try {
-      using var work = new MemoryStream();
-      work.Write(originalBytes, 0, originalBytes.Length);
-      work.Position = 0;
-      FileFormat.Rar.RarInPlaceRemover.Remove(work, entryNames);
-
-      var result = work.ToArray();
       archive.Position = 0;
-      archive.Write(result, 0, result.Length);
-      archive.SetLength(result.Length);
-      archive.Flush();
+      FileFormat.Rar.RarInPlaceRemover.Remove(archive, entryNames);
       return;
     } catch (NotSupportedException) {
-      archive.Position = 0;
-      archive.Write(originalBytes, 0, originalBytes.Length);
-      archive.SetLength(originalBytes.Length);
+      if (archive.CanSeek)
+        archive.Position = 0;
     }
 
     var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
@@ -117,18 +83,6 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           File.Delete(file);
       }
     });
-  }
-
-  private static HashSet<string> ExistingNames(byte[] archiveBytes) {
-    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    try {
-      using var ms = new MemoryStream(archiveBytes, writable: false);
-      var r = new FileFormat.Rar.RarReader(ms);
-      foreach (var e in r.Entries)
-        if (!e.IsDirectory)
-          names.Add(e.Name);
-    } catch { /* unreadable — treat as no collisions; the adder will throw if needed */ }
-    return names;
   }
 
   /// <summary>
@@ -177,9 +131,8 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Cbr";
   public string DisplayName => "CBR";
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable comic-book archive (RAR variant). Add/Replace/Remove take the
-  // genuine in-place RAR block editors where byte-additive, else the verified
-  // extract -> edit -> re-create rebuild. See FormatCapabilities.cs (WORM vs R/W).
+  // R/W: a mutable comic-book archive (RAR variant). Supported RAR5 edits go
+  // straight through the native block editors; unsupported profiles rebuild.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
@@ -213,8 +166,6 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new FileFormat.Rar.RarWriter(output, leaveOpen: true, password: options.Password);
     foreach (var i in inputs) {
-      // RAR stores directory structure implicitly via entry path components;
-      // skip explicit directory inputs (mirrors how the RarReader exposes them).
       if (i.IsDirectory) continue;
       var modified = File.Exists(i.FullPath) ? new DateTimeOffset(File.GetLastWriteTimeUtc(i.FullPath), TimeSpan.Zero) : (DateTimeOffset?)null;
       w.AddFile(i.ArchiveName, i.ReadContent(), modified);

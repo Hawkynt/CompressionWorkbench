@@ -3756,14 +3756,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) pages inside an existing CBR archive. Delegates to the RAR in-place editors (CBR is a RAR variant): a pure add of new names takes the genuine byte-additive append (`RarInPlaceAdder`), a same-name update excises the old block first (`RarInPlaceRemover`). Any case the in-place path cannot serve byte-additively falls back to the verified extract -> re-create rebuild. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds new pages directly through the RAR5 append editor when the archive profile permits it. The RAR editor validates collisions and unsupported whole-archive structures before writing, so unsupported profiles can fall back without first cloning the entire CBR. Same-name replacement remains rebuild-backed because a remove+add pair is a two-step transaction. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to RAR (CBR is a RAR variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to RAR (CBR is a RAR variant). |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named pages. Non-solid FILE blocks are excised by the genuine in-place remover (`RarInPlaceRemover`); anything it cannot serve byte-additively falls back to the verified extract -> re-create rebuild. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes supported non-solid pages directly through the RAR5 block remover. Unsupported encryption, recovery/quick-open, solid dependency and RAR4 cases are rejected before the first byte move and therefore safely fall back to the verified rebuild without an O(total bytes) transaction snapshot. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: gaps not covered by a live extent in the RAR layout map (markers, block headers, packed data and ENDARC are live and preserved). Cluster-tip wiping is N/A (RAR packs blocks back to back). |
 
 ### Namespace `FileFormat.Cbz`
@@ -12210,7 +12210,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends (or same-name updates) `inputs` in `archive`. A pure add of new file names to a non-solid/recovery-free, unencrypted RAR5 archive takes the genuine in-place append (`RarInPlaceAdder`): new non-solid FILE blocks are written before a rewritten ENDARC, leaving every pre-existing block byte-identical at its original offset. A same-name update is attempted as an in-place remove of the old block (`RarInPlaceRemover`, only when the old block is not part of a solid run) followed by an in-place add of the new content. Any case that cannot be served byte-additively — encryption headers, a recovery-record (RR) or quick-open (QO) service block, a RAR4 archive, a directory input, or an update whose old block is part of a solid run — falls back to the verified extract -> re-create rebuild. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends new files directly to supported RAR5 archives. The in-place adder validates the complete block profile and all name collisions before its first write, so an unsupported profile can safely fall back without taking a whole-archive transaction snapshot. Same-name updates deliberately take the rebuild path because remove+add is a two-step transaction. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a RAR archive from `inputs`. Selects RAR4 or RAR5 based on `options.MethodName` and resolves dictionary / level from `options.DictSize` / `options.Level`. |
 | `Defragment` | `void Defragment(Stream archive)` |  |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
@@ -12219,7 +12219,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single RAR entry as a bounded read-only `Stream`. The reader's per-entry extractor returns the fully-decompressed bytes; they are wrapped in a `BoundedEntryStream` sized to the entry's uncompressed size so the universal per-entry isolation contract holds even though RAR's decoder produces a byte[]. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from the RAR5 archive. Removing a non-solid FILE block from a recovery-free, unencrypted RAR5 archive is a genuine O(bytes-shifted) in-place remove: the block's `[header + data]` range is excised and the following blocks (and ENDARC) shift down to close the gap, so every surviving block stays byte-identical — the ones before the hole at their exact offset, the ones after shifted down (`RarInPlaceRemover`). Any case that cannot be served byte-additively — a target that is part of a solid run (itself solid, or immediately followed by a solid block that reuses its dictionary), an encryption header, a recovery-record (RR) or quick-open (QO) service block, or a RAR4 archive — falls back to the verified extract -> re-create rebuild. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes non-solid RAR5 FILE blocks directly. The remover performs all format, recovery/quick-open, encryption, ENDARC and solid-chain checks before its first byte move, so unsupported archives can fall back without cloning the entire container first. Cost is proportional to block headers plus the tail physically shifted after removed blocks. |
 
 #### `RarInPlaceAdder`
 
