@@ -73,9 +73,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path screenshots | Out-Null
           $output = Join-Path (Get-Location) 'screenshots/main-window.png'
 
+          # The Release post-build target bundles the app and then removes
+          # bin/Release/<tfm>/win-x64, which is exactly where dotnet run resolves the
+          # executable from. Keep the bundle off for this run.
           dotnet run `
             --project Compression.UI/Compression.UI.csproj `
             --configuration Release `
+            -p:EnableSingleFileBundle=false `
             -- `
             "--screenshot-demo=$output" `
             "$env:DEMO_ARCHIVE"
