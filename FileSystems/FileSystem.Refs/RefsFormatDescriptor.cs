@@ -17,6 +17,7 @@ namespace FileSystem.Refs;
 public sealed class RefsFormatDescriptor :
   IFormatDescriptor,
   IArchiveFormatOperations,
+  IArchiveModifiable,
   IFilesystemExtentMap,
   IArchiveDefragmentable,
   ILayoutOptimizable,
@@ -26,9 +27,12 @@ public sealed class RefsFormatDescriptor :
   public string Id => "Refs";
   public string DisplayName => "ReFS";
   public FormatCategory Category => FormatCategory.Archive;
+  // CanModify covers the offline-quiescent image editor only. A mounted ReFS
+  // driver's transactional write path is a separate readiness tier and is not
+  // what this flag reports — see DRIVER_READINESS.md.
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".refs";
   public IReadOnlyList<string> Extensions => [".refs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -42,7 +46,7 @@ public sealed class RefsFormatDescriptor :
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Microsoft ReFS 3.x volume image with native read-only driver projection, namespace/allocation parsing, and offline filesystem-metadata placement support.";
+  public string Description => "Microsoft ReFS 3.x volume image with native read-only driver projection, namespace/allocation parsing, and offline-quiescent existing-file replace/remove plus metadata placement. Native mounted-driver transactions remain a separate readiness tier.";
 
   public FilesystemDriverProfile ProbeFilesystem(Stream image)
     => RefsFilesystemDriver.Probe(image);
@@ -184,6 +188,21 @@ public sealed class RefsFormatDescriptor :
 
     ExtractDiagnosticSurface(stream, outputDir, files);
   }
+
+  /// <summary>
+  /// Offline-quiescent existing-file replacement for the proven regular-stream profile.
+  /// A new name is rejected before mutation until ReFS file-identity/security/link fields
+  /// are proven for every supported 3.x profile.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => RefsOfflineModifier.Add(archive, inputs);
+
+  /// <summary>
+  /// Removes regular files or empty directories from an unmounted ReFS image. Namespace
+  /// deletion is published through immutable B+ replacement pages and the alternate CHKP.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => RefsOfflineModifier.Remove(archive, entryNames);
 
   private static List<ArchiveEntryInfo> ListDiagnosticSurface(Stream stream) {
     var entries = new List<ArchiveEntryInfo>();

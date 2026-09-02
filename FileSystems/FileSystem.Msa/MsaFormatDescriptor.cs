@@ -19,12 +19,14 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Msa";
   public string DisplayName => "MSA (Magic Shadow Archiver)";
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
-  // so the verb works via rebuild but nothing is modified in place. CanModify
-  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
+  // R/W: Add/Remove open an existing image, mutate the GEMDOS/FAT12 volume it
+  // wraps, and re-encode the tracks around it. Whether the RLE track encoding
+  // is rewritten wholesale is a write strategy, not the capability — the
+  // capability is that an existing instance survives add/replace/remove and
+  // still lists. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest;
   public string DefaultExtension => ".msa";
   public IReadOnlyList<string> Extensions => [".msa"];
   public IReadOnlyList<string> CompoundExtensions => [];

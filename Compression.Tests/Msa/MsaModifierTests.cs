@@ -243,12 +243,13 @@ public class MsaModifierTests {
   // ── Descriptor IArchiveModifiable surface ─────────────────────────────
 
   [Test, Category("HappyPath")]
-  public void Descriptor_IsWormNotRw_BecauseModifyRebuilds() {
+  public void Descriptor_IsRw_BecauseExistingImagesSurviveModification() {
     var desc = new MsaFormatDescriptor();
-    // MSA Add re-emits the whole inner FAT image via FatWriter (read-all -> re-create),
-    // i.e. a full rewrite — WORM, not in-place R/W — so CanModify must not be advertised
-    // (the verb still works via rebuild). See Compression.Registry/FormatCapabilities.cs.
-    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False);
+    // Add/Remove open an existing MSA, mutate the GEMDOS/FAT12 volume inside it
+    // and re-encode the tracks. Re-encoding is a write strategy; the capability
+    // is that the existing instance takes the edit and stays a listable MSA.
+    // See Compression.Registry/FormatCapabilities.cs.
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
   }
 

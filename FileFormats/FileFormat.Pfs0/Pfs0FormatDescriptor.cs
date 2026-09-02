@@ -49,12 +49,14 @@ public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Id => "Pfs0";
   public string DisplayName => "Nintendo PartitionFS";
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
-  // so the verb works via rebuild but nothing is modified in place. CanModify
-  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
+  // R/W: Add/Remove go through Pfs0InPlaceModifier, which rewrites the header,
+  // entry table, string table and data region of an EXISTING archive and hands
+  // back a valid PFS0. That is the R/W contract; how many bytes the relayout
+  // touches is a write strategy, not the capability. See
+  // Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".nsp";
   public IReadOnlyList<string> Extensions => [".nsp", ".pfs0"];
   public IReadOnlyList<string> CompoundExtensions => [];
