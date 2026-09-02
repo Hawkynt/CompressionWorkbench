@@ -7,6 +7,9 @@ namespace FileFormat.Avro;
 /// </summary>
 public static class AvroVarLong {
 
+  /// <summary>
+  /// Reads the long from the supplied input.
+  /// </summary>
   public static long ReadLong(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     ulong result = 0;
@@ -22,6 +25,9 @@ public static class AvroVarLong {
     return (long)(result >> 1) ^ -(long)(result & 1);
   }
 
+  /// <summary>
+  /// Writes the long to the supplied output.
+  /// </summary>
   public static void WriteLong(Stream stream, long value) {
     ArgumentNullException.ThrowIfNull(stream);
     var encoded = (ulong)((value << 1) ^ (value >> 63));

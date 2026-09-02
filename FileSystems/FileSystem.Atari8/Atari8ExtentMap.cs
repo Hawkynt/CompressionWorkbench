@@ -22,6 +22,9 @@ public static class Atari8ExtentMap {
   private const int DirectoryEntrySize = 16;
   private const int TotalSectors = 720;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

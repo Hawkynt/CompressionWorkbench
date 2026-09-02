@@ -29,29 +29,68 @@ namespace FileFormat.Bkf;
 /// </summary>
 public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveModifiable, IArchiveCreatable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Bkf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Microsoft NTBackup (MTF)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".bkf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".bkf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     // First DBLK is always TAPE — 4 ASCII bytes at offset 0.
     [new("TAPE"u8.ToArray(), Offset: 0, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("compressed", "Compressed (passthrough)"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Microsoft NTBackup .bkf — MTF DBLK-chain reader (FILE+DATA) plus in-place " +
     "R/W via append-before-EOTM (Add) and XXXX tombstone (Remove).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new BkfReader(stream);
     var result = new List<ArchiveEntryInfo>(r.Entries.Count);
@@ -65,6 +104,9 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return result;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new BkfReader(stream);
     foreach (var e in r.Entries) {

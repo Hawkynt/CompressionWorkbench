@@ -58,6 +58,9 @@ public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <inheritdoc/>
   /// <remarks>Empty: outer container is TAR; detection is by extension to avoid
   /// shadowing the TAR descriptor.</remarks>
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>

@@ -46,27 +46,66 @@ public sealed class YpfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ypf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "YukaScript YPF";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ypf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ypf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(YpfConstants.Magic, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("ypf-v480", "YPF v480")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "YukaScript engine archive (Yu-No, Iyashi VN engine)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new YpfReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -80,6 +119,9 @@ public sealed class YpfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new YpfReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -119,6 +161,9 @@ public sealed class YpfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new YpfWriter(output, leaveOpen: true);
     foreach (var (name, data) in FlatFiles(inputs))

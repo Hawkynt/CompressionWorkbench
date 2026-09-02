@@ -19,6 +19,9 @@ namespace FileSystem.Coherent;
 /// </remarks>
 public static class CoherentExtentMap {
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 

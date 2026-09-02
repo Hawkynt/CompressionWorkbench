@@ -47,22 +47,58 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       });
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Crx";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "CRX";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".crx";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".crx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'C', (byte)'r', (byte)'2', (byte)'4'], Confidence: 0.95)
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Chrome extension package (CRX3 header + ZIP). The CRX3 header carries a " +
     "SignedData protobuf whose signed_header_data + ZIP body bytes are covered by " +
@@ -82,6 +118,9 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return stream;
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     StripCrxHeader(stream);
     var r = new FileFormat.Zip.ZipReader(stream, password: password);
@@ -89,6 +128,9 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       e.CompressionMethod.ToString(), e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     StripCrxHeader(stream);
     var r = new FileFormat.Zip.ZipReader(stream, password: password);
@@ -130,6 +172,9 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // Write a minimal CRX3 envelope: "Cr24" magic, version 3, empty signed header.
     // Roundtrips through our reader. NOTE: not browser-loadable because the

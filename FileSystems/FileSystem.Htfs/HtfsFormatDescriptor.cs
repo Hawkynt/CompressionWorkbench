@@ -29,25 +29,64 @@ public sealed class HtfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Htfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HTFS (SCO High Throughput File System)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".htfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".htfs", ".s5"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x5D, 0xD1, 0x2F, 0x01], Offset: 512, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "SCO HTFS — WORM writer + nested-directory reader.";
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "512",
       AllowedValues: ["512", "1024", "2048"],
@@ -57,6 +96,9 @@ public sealed class HtfsFormatDescriptor :
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var r = new HtfsReader(stream);
@@ -71,6 +113,9 @@ public sealed class HtfsFormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     try {
       var r = new HtfsReader(stream);
@@ -88,6 +133,9 @@ public sealed class HtfsFormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HtfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
@@ -110,6 +158,9 @@ public sealed class HtfsFormatDescriptor :
     w.WriteTo(output);
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => HtfsExtentMap.Enumerate(image);
 
   // ── IArchiveModifiable (true in-place R/W) ──────────────────────────
@@ -121,6 +172,9 @@ public sealed class HtfsFormatDescriptor :
   // any case that would need a new inode block or a multi-block root dir fall
   // back to ModifyRebuilder so the user always gets a working image.
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier reads the volume into an array to walk its
     // structures, which a volume past two gigabytes does not fit in. Above that
@@ -134,6 +188,9 @@ public sealed class HtfsFormatDescriptor :
       (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
@@ -145,9 +202,15 @@ public sealed class HtfsFormatDescriptor :
       (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
@@ -211,6 +274,9 @@ public sealed class HtfsFormatDescriptor :
     return w.Build();
   }
 
+  /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

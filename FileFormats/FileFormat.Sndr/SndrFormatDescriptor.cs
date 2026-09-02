@@ -24,35 +24,86 @@ namespace FileFormat.Sndr;
 public sealed class SndrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
+  /// <summary>
+  /// Defines the header size constant value.
+  /// </summary>
   public const int HeaderSize = 8;
   private const int DefaultRate = 8000;
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Sndr";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Sounder (PC)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".sndr";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".sndr"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Sounder (PC) mono 8-bit sampled sound; full file + MONO.wav.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveCreatable: assemble a Sounder file from a mono 8-bit WAV ──
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
@@ -83,9 +134,18 @@ public sealed class SndrFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     output.Write(file);
   }
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription => "Sounder archive accepts: FULL.sndr or one mono WAV.";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name == "full.sndr" || name.EndsWith(".wav")) { reason = null; return true; }

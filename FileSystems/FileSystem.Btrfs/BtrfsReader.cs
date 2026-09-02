@@ -46,8 +46,14 @@ public sealed class BtrfsReader : IDisposable {
   // Chunk map: logical address -> (physical offset, length)
   private readonly List<(long logical, long physical, long length)> _chunkMap = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<BtrfsEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="BtrfsReader"/>.
+  /// </summary>
   public BtrfsReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _data = new ImageAccessor(stream, leaveOpen: true);
@@ -443,6 +449,9 @@ public sealed class BtrfsReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(BtrfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -538,5 +547,8 @@ public sealed class BtrfsReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

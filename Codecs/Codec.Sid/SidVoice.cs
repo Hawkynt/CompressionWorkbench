@@ -14,6 +14,9 @@ namespace Codec.Sid;
 /// </summary>
 public sealed class SidVoice {
 
+  /// <summary>
+  /// Provides the envelope value.
+  /// </summary>
   public readonly SidEnvelope Envelope = new();
 
   private uint _accumulator;     // 24-bit
@@ -26,17 +29,44 @@ public sealed class SidVoice {
 
   private const uint AccumulatorMask = 0x00FFFFFF;
 
+  /// <summary>
+  /// Gets a value indicating whether test bit.
+  /// </summary>
   public bool TestBit => (this._control & 0x08) != 0;
+  /// <summary>
+  /// Gets a value indicating whether ring mod.
+  /// </summary>
   public bool RingMod => (this._control & 0x04) != 0;
+  /// <summary>
+  /// Gets a value indicating whether sync enabled.
+  /// </summary>
   public bool SyncEnabled => (this._control & 0x02) != 0;
 
+  /// <summary>
+  /// Gets the accumulator.
+  /// </summary>
   public uint Accumulator => this._accumulator;
 
+  /// <summary>
+  /// Writes the freq lo to the supplied output.
+  /// </summary>
   public void WriteFreqLo(byte value) => this._frequency = (this._frequency & 0xFF00) | value;
+  /// <summary>
+  /// Writes the freq hi to the supplied output.
+  /// </summary>
   public void WriteFreqHi(byte value) => this._frequency = (this._frequency & 0x00FF) | (uint)(value << 8);
+  /// <summary>
+  /// Writes the pw lo to the supplied output.
+  /// </summary>
   public void WritePwLo(byte value) => this._pulseWidth = (this._pulseWidth & 0x0F00) | value;
+  /// <summary>
+  /// Writes the pw hi to the supplied output.
+  /// </summary>
   public void WritePwHi(byte value) => this._pulseWidth = (this._pulseWidth & 0x00FF) | (uint)((value & 0x0F) << 8);
 
+  /// <summary>
+  /// Writes the control to the supplied output.
+  /// </summary>
   public void WriteControl(byte value) {
     this.Envelope.Gate((value & 0x01) != 0);
     this._control = value;

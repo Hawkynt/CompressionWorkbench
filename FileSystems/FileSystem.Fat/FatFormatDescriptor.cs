@@ -118,7 +118,13 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // Canonical FAT image sizes in ascending order: 3.5" floppies, then continuous sizes for
   // hard disks. Shrink picks the smallest that fits the current payload.
+  /// <summary>
+  /// Gets the canonical sizes.
+  /// </summary>
   public IReadOnlyList<long> CanonicalSizes => [737280, 1474560, 2949120];
+  /// <summary>
+  /// Performs the shrink operation.
+  /// </summary>
   public void Shrink(Stream input, Stream output) =>
     Compression.Registry.ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
 
@@ -603,25 +609,64 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Fat";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "FAT Filesystem Image";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: add/remove edit the FAT, clusters and directory in place (FatModifier /
   // FatRemover); existing files and the boot sector stay byte-identical. A verified
   // rebuild is only a structural-edge-case fallback. See FormatCapabilities.cs.
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".img";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp", ".fat"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "FAT12/FAT16/FAT32 filesystem image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new FatReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -629,6 +674,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new FatReader(stream);
     foreach (var e in r.Entries) {
@@ -673,6 +721,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -894,6 +945,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var items0 = inputs.Where(i => !i.IsDirectory)
       .Select(i => (Name: i.ArchiveName, Data: i.ReadContent(),

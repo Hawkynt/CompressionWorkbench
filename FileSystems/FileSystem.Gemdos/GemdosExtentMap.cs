@@ -8,6 +8,9 @@ namespace FileSystem.Gemdos;
 /// </summary>
 public static class GemdosExtentMap {
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static System.Collections.Generic.IEnumerable<Compression.Registry.DefragBlockInfo> Enumerate(
       System.IO.Stream image) {
     System.ArgumentNullException.ThrowIfNull(image);

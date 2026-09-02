@@ -21,6 +21,9 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
 
   private NssVolume? _volume;
 
+  /// <summary>
+  /// Performs the init operation.
+  /// </summary>
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
@@ -33,6 +36,9 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
       this._offsetField[file.Offset] = file.OffsetField;
   }
 
+  /// <summary>
+  /// Gets the block size.
+  /// </summary>
   public int BlockSize => NssLayout.BlockSize;
 
   /// <summary>First byte a file may occupy: past the anchors and the directory.</summary>

@@ -67,6 +67,9 @@ public sealed class UfsWriter {
   /// </summary>
   private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -169,6 +172,9 @@ public sealed class UfsWriter {
     return root;
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek) {

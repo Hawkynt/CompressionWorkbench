@@ -36,9 +36,21 @@ public sealed class SfsVolume {
 
   private readonly byte[] _image;
 
+  /// <summary>
+  /// Gets a value indicating whether valid.
+  /// </summary>
   public bool Valid { get; private set; }
+  /// <summary>
+  /// Gets or sets the status.
+  /// </summary>
   public string Status { get; private set; } = "unparsed";
+  /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
   public int BlockSize { get; private set; } = 512;
+  /// <summary>
+  /// Gets or sets the total blocks.
+  /// </summary>
   public long TotalBlocks { get; private set; }
 
   /// <summary>Blocks the volume's own structures occupy.</summary>
@@ -48,11 +60,20 @@ public sealed class SfsVolume {
   /// <summary>Where the tree of extents lives.</summary>
   public long ExtentTreeBlock { get; private set; }
 
+  /// <summary>
+  /// Gets the files.
+  /// </summary>
   public IReadOnlyList<VolumeFile> Files => this._files;
   private readonly List<VolumeFile> _files = [];
 
+  /// <summary>
+  /// Gets the image length.
+  /// </summary>
   public long ImageLength => this._image.LongLength;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="SfsVolume"/>.
+  /// </summary>
   public SfsVolume(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 

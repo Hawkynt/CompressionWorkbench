@@ -24,24 +24,63 @@ public sealed class RarcFormatDescriptor :
   IArchiveDefragmentable,
   IArchiveLayoutMap {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Rarc";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Nintendo RARC";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".arc";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".arc", ".rarc"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("RARC"u8.ToArray(), Confidence: 0.99),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Nintendo Resource Archive (RARC) with directory nodes and 32-byte-aligned file data";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (stream.CanSeek)
       stream.Position = 0;
@@ -57,6 +96,9 @@ public sealed class RarcFormatDescriptor :
       LastModified: null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (stream.CanSeek)
       stream.Position = 0;
@@ -70,6 +112,9 @@ public sealed class RarcFormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -81,6 +126,9 @@ public sealed class RarcFormatDescriptor :
     return entry is null ? [] : reader.Extract(entry);
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -92,6 +140,9 @@ public sealed class RarcFormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     if (archive.CanSeek)
       archive.Position = 0;

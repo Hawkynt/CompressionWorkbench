@@ -11,6 +11,9 @@ namespace FileFormat.Mp4;
 /// child boxes; leaf boxes (mdat, tkhd, hdlr, …) carry payload bytes.
 /// </summary>
 public sealed class BoxParser {
+  /// <summary>
+  /// Represents a box.
+  /// </summary>
   public sealed record Box(string Type, long Offset, long Size, long BodyOffset, long BodyLength, List<Box>? Children);
 
   // Compound-box types whose body is another box list. Leaves aren't in this set.
@@ -19,6 +22,9 @@ public sealed class BoxParser {
     "mvex", "meta", "ipro", "sinf", "mfra", "tref",
   };
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public List<Box> Parse(ReadOnlySpan<byte> data) => ParseRange(data, 0, data.Length);
 
   private List<Box> ParseRange(ReadOnlySpan<byte> data, long start, long end) {
@@ -49,6 +55,9 @@ public sealed class BoxParser {
     return list;
   }
 
+  /// <summary>
+  /// Performs the find operation.
+  /// </summary>
   public static Box? Find(IEnumerable<Box> boxes, string type) {
     foreach (var b in boxes) {
       if (b.Type == type) return b;
@@ -60,6 +69,9 @@ public sealed class BoxParser {
     return null;
   }
 
+  /// <summary>
+  /// Performs the find all operation.
+  /// </summary>
   public static IEnumerable<Box> FindAll(IEnumerable<Box> boxes, string type) {
     foreach (var b in boxes) {
       if (b.Type == type) yield return b;

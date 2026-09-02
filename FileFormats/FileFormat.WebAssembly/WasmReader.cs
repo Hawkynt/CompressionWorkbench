@@ -20,11 +20,17 @@ public sealed class WasmReader {
     byte[] Body            // section body excluding the (id, leb-size) framing
   );
 
+  /// <summary>
+  /// Represents a module.
+  /// </summary>
   public sealed record Module(uint Version, IReadOnlyList<Section> Sections);
 
   /// <summary>Magic bytes that begin every wasm binary.</summary>
   public static ReadOnlySpan<byte> Magic => [0x00, 0x61, 0x73, 0x6D]; // \0 a s m
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public static Module Read(ReadOnlySpan<byte> data) {
     if (data.Length < 8) throw new InvalidDataException("wasm: file shorter than 8-byte preamble.");
     if (!data[..4].SequenceEqual(Magic))

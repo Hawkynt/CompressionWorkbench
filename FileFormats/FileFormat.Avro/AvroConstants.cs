@@ -1,6 +1,9 @@
 #pragma warning disable CS1591
 namespace FileFormat.Avro;
 
+/// <summary>
+/// Represents an avro constants.
+/// </summary>
 public static class AvroConstants {
 
   /// <summary>Avro OCF magic bytes: "Obj" followed by version byte 0x01.</summary>

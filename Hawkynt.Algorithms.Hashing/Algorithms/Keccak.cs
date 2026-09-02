@@ -29,9 +29,21 @@ public static class Keccak {
     18,  2, 61, 56, 14
   ];
 
+  /// <summary>
+  /// Computes the 224-bit Keccak hash of the supplied data.
+  /// </summary>
   public static byte[] Compute224(ReadOnlySpan<byte> data) => Sponge(data, 144, 0x01, 28);
+  /// <summary>
+  /// Computes the 256-bit Keccak hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(ReadOnlySpan<byte> data) => Sponge(data, 136, 0x01, 32);
+  /// <summary>
+  /// Computes the 384-bit Keccak hash of the supplied data.
+  /// </summary>
   public static byte[] Compute384(ReadOnlySpan<byte> data) => Sponge(data, 104, 0x01, 48);
+  /// <summary>
+  /// Computes the 512-bit Keccak hash of the supplied data.
+  /// </summary>
   public static byte[] Compute512(ReadOnlySpan<byte> data) => Sponge(data, 72, 0x01, 64);
 
   internal static byte[] Sponge(ReadOnlySpan<byte> data, int rateBytes, byte suffix, int outputBytes) {
@@ -111,20 +123,41 @@ public static class Keccak {
 
 /// <summary>SHA-3 family from FIPS 202.</summary>
 public static class Sha3 {
+  /// <summary>
+  /// Computes the 224-bit Sha-3 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute224(ReadOnlySpan<byte> data) => Keccak.Sponge(data, 144, 0x06, 28);
+  /// <summary>
+  /// Computes the 256-bit Sha-3 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(ReadOnlySpan<byte> data) => Keccak.Sponge(data, 136, 0x06, 32);
+  /// <summary>
+  /// Computes the 384-bit Sha-3 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute384(ReadOnlySpan<byte> data) => Keccak.Sponge(data, 104, 0x06, 48);
+  /// <summary>
+  /// Computes the 512-bit Sha-3 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute512(ReadOnlySpan<byte> data) => Keccak.Sponge(data, 72, 0x06, 64);
 }
 
 /// <summary>SHAKE extendable-output functions from FIPS 202.</summary>
 public static class Shake {
+  /// <summary>
+  /// Computes the 128-bit Shake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute128(ReadOnlySpan<byte> data, int outputBytes) => Keccak.Sponge(data, 168, 0x1F, outputBytes);
+  /// <summary>
+  /// Computes the 256-bit Shake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(ReadOnlySpan<byte> data, int outputBytes) => Keccak.Sponge(data, 136, 0x1F, outputBytes);
 }
 
 /// <summary>cSHAKE customizable XOF functions from NIST SP 800-185.</summary>
 public static class CShake {
+  /// <summary>
+  /// Computes the 128-bit C Shake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute128(
     ReadOnlySpan<byte> data,
     int outputBytes,
@@ -132,6 +165,9 @@ public static class CShake {
     ReadOnlySpan<byte> customization = default
   ) => Compute(data, outputBytes, 168, functionName, customization);
 
+  /// <summary>
+  /// Computes the 256-bit C Shake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(
     ReadOnlySpan<byte> data,
     int outputBytes,
@@ -161,9 +197,15 @@ public static class CShake {
 public static class TupleHash {
   private static readonly byte[] FunctionName = Encoding.ASCII.GetBytes("TupleHash");
 
+  /// <summary>
+  /// Computes the 128-bit Tuple Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute128(IEnumerable<ReadOnlyMemory<byte>> tuple, int outputBytes, ReadOnlySpan<byte> customization = default) =>
     Compute(tuple, outputBytes, customization, 128);
 
+  /// <summary>
+  /// Computes the 256-bit Tuple Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(IEnumerable<ReadOnlyMemory<byte>> tuple, int outputBytes, ReadOnlySpan<byte> customization = default) =>
     Compute(tuple, outputBytes, customization, 256);
 
@@ -200,9 +242,15 @@ public static class TupleHash {
 public static class ParallelHash {
   private static readonly byte[] FunctionName = Encoding.ASCII.GetBytes("ParallelHash");
 
+  /// <summary>
+  /// Computes the 128-bit Parallel Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute128(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = default) =>
     Compute(data, blockBytes, outputBytes, customization, 128);
 
+  /// <summary>
+  /// Computes the 256-bit Parallel Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = default) =>
     Compute(data, blockBytes, outputBytes, customization, 256);
 

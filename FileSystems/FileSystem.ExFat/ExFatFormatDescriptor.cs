@@ -91,9 +91,21 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => ExFatExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "ExFat";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "exFAT";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
@@ -121,6 +133,9 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -237,16 +252,43 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
   }
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".img";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".img", ".exfat"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("EXFAT   "u8.ToArray(), Offset: 3, Confidence: 0.90)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "exFAT filesystem image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ExFatReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -286,6 +328,9 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -389,6 +434,9 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     _ => 0,
   };
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ExFatReader(stream);
     foreach (var e in r.Entries) {

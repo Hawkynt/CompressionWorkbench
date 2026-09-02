@@ -27,29 +27,71 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "RomFs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "ROMFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".romfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".romfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("-rom1fs-"u8.ToArray(), Confidence: 0.95)
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("romfs", "ROMFS")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Linux ROM filesystem image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RomFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.Size,
       "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new RomFsReader(stream);
     foreach (var e in r.Entries) {
@@ -91,6 +133,9 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new RomFsWriter(output, leaveOpen: true);
     foreach (var i in inputs) {
@@ -211,6 +256,9 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -281,6 +329,9 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => RomFsExtentMap.Enumerate(image);
 

@@ -30,19 +30,55 @@ namespace FileFormat.Aff4;
 /// </list>
 /// </summary>
 public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Aff4";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Advanced Forensic Format 4 (AFF4)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".aff4";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [".aff4"];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Advanced Forensic Format 4 (AFF4): a ZIP/ZIP64 container with information.turtle RDF " +
     "metadata, version.txt and aff4:// image streams. Delegates to the ZIP reader; surfaces " +
@@ -50,6 +86,9 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   private sealed record MemberInfo(string Name, long Size, string Method, DateTime? LastModified, string? Kind);
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
     var entries = new List<ArchiveEntryInfo> {
@@ -62,6 +101,9 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (Wants(files, "FULL.aff4")) {
       stream.Seek(0, SeekOrigin.Begin);

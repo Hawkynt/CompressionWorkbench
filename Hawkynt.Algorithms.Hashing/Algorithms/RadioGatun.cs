@@ -4,6 +4,9 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>RadioGatún[32] belt-and-mill hash function.</summary>
 public static class RadioGatun32 {
+  /// <summary>
+  /// Computes the Radio Gatun-32 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32) {
     if (outputBytes < 0)
       throw new ArgumentOutOfRangeException(nameof(outputBytes));

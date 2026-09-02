@@ -62,16 +62,49 @@ public sealed class XmPlayer {
 /// <summary>Parsed XM module structure.</summary>
 public sealed class XmModule {
 
+  /// <summary>
+  /// Provides the song name value.
+  /// </summary>
   public string SongName = "";
+  /// <summary>
+  /// Provides the tracker name value.
+  /// </summary>
   public string TrackerName = "";
+  /// <summary>
+  /// Provides the channel count value.
+  /// </summary>
   public int ChannelCount;
+  /// <summary>
+  /// Provides the song length value.
+  /// </summary>
   public int SongLength;
+  /// <summary>
+  /// Provides the restart position value.
+  /// </summary>
   public int RestartPosition;
+  /// <summary>
+  /// Provides the default tempo value.
+  /// </summary>
   public int DefaultTempo;   // ticks per row (XM "tempo")
+  /// <summary>
+  /// Provides the default bpm value.
+  /// </summary>
   public int DefaultBpm;     // BPM
+  /// <summary>
+  /// Provides the linear frequency value.
+  /// </summary>
   public bool LinearFrequency;
+  /// <summary>
+  /// Provides the order value.
+  /// </summary>
   public byte[] Order = [];
+  /// <summary>
+  /// Provides the patterns value.
+  /// </summary>
   public XmPattern[] Patterns = [];
+  /// <summary>
+  /// Provides the instruments value.
+  /// </summary>
   public XmInstrument[] Instruments = [];
 
   /// <summary>Parses the XM header, patterns and instruments. Throws on malformed input.</summary>
@@ -244,40 +277,121 @@ public sealed class XmModule {
 
 /// <summary>A decoded XM envelope (volume or panning).</summary>
 public sealed class XmEnvelope {
+  /// <summary>
+  /// Provides the enabled value.
+  /// </summary>
   public bool Enabled;
+  /// <summary>
+  /// Provides the sustain value.
+  /// </summary>
   public bool Sustain;
+  /// <summary>
+  /// Provides the loop value.
+  /// </summary>
   public bool Loop;
+  /// <summary>
+  /// Provides the sustain point value.
+  /// </summary>
   public int SustainPoint;
+  /// <summary>
+  /// Provides the loop start value.
+  /// </summary>
   public int LoopStart;
+  /// <summary>
+  /// Provides the loop end value.
+  /// </summary>
   public int LoopEnd;
+  /// <summary>
+  /// Provides the points value.
+  /// </summary>
   public (int X, int Y)[] Points = [];
 }
 
 /// <summary>A decoded XM instrument.</summary>
 public sealed class XmInstrument {
+  /// <summary>
+  /// Provides the name value.
+  /// </summary>
   public string Name = "";
+  /// <summary>
+  /// Provides the sample map value.
+  /// </summary>
   public byte[] SampleMap = new byte[96];
+  /// <summary>
+  /// Provides the samples value.
+  /// </summary>
   public XmSample[] Samples = [];
+  /// <summary>
+  /// Provides the volume envelope value.
+  /// </summary>
   public XmEnvelope VolumeEnvelope = new();
+  /// <summary>
+  /// Provides the panning envelope value.
+  /// </summary>
   public XmEnvelope PanningEnvelope = new();
+  /// <summary>
+  /// Provides the vibrato type value.
+  /// </summary>
   public int VibratoType;
+  /// <summary>
+  /// Provides the vibrato sweep value.
+  /// </summary>
   public int VibratoSweep;
+  /// <summary>
+  /// Provides the vibrato depth value.
+  /// </summary>
   public int VibratoDepth;
+  /// <summary>
+  /// Provides the vibrato rate value.
+  /// </summary>
   public int VibratoRate;
+  /// <summary>
+  /// Provides the fadeout value.
+  /// </summary>
   public int Fadeout;
 }
 
 /// <summary>A decoded XM sample with its PCM expanded to signed 16-bit (delta-decoded).</summary>
 public sealed class XmSample {
+  /// <summary>
+  /// Provides the name value.
+  /// </summary>
   public string Name = "";
+  /// <summary>
+  /// Provides the volume value.
+  /// </summary>
   public int Volume = 64;
+  /// <summary>
+  /// Provides the finetune value.
+  /// </summary>
   public sbyte Finetune;
+  /// <summary>
+  /// Provides the panning value.
+  /// </summary>
   public byte Panning = 128;
+  /// <summary>
+  /// Provides the relative note value.
+  /// </summary>
   public sbyte RelativeNote;
+  /// <summary>
+  /// Provides the is 16 bit value.
+  /// </summary>
   public bool Is16Bit;
+  /// <summary>
+  /// Provides the loop type value.
+  /// </summary>
   public int LoopType;
+  /// <summary>
+  /// Provides the loop start value.
+  /// </summary>
   public int LoopStart;   // in sample frames
+  /// <summary>
+  /// Provides the loop length value.
+  /// </summary>
   public int LoopLength;  // in sample frames
+  /// <summary>
+  /// Provides the pcm value.
+  /// </summary>
   public short[] Pcm = [];
 
   /// <summary>Stores raw delta-coded XM sample bytes, expanding to absolute signed 16-bit PCM.</summary>

@@ -8,18 +8,39 @@ namespace FileSystem.Msa;
 /// MSA uses simple RLE compression on individual tracks.
 /// </summary>
 public sealed class MsaReader : IDisposable {
+  /// <summary>
+  /// Defines the msa magic constant value.
+  /// </summary>
   public const ushort MsaMagic = 0x0E0F;
   private const int SectorSize = 512;
 
   private readonly byte[] _diskData;
   private readonly List<MsaEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the sectors per track.
+  /// </summary>
   public ushort SectorsPerTrack { get; }
+  /// <summary>
+  /// Gets the sides.
+  /// </summary>
   public ushort Sides { get; } // 0=single, 1=double
+  /// <summary>
+  /// Gets the start track.
+  /// </summary>
   public ushort StartTrack { get; }
+  /// <summary>
+  /// Gets the end track.
+  /// </summary>
   public ushort EndTrack { get; }
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<MsaEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="MsaReader"/>.
+  /// </summary>
   public MsaReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -89,10 +110,16 @@ public sealed class MsaReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(MsaEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return _diskData.ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

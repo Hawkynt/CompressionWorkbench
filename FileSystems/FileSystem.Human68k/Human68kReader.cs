@@ -39,19 +39,46 @@ namespace FileSystem.Human68k;
 /// </para>
 /// </summary>
 public sealed class Human68kReader : IDisposable {
+  /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
   public const int SectorSize = 512;
 
   private readonly byte[] _data;
   private readonly List<Human68kEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<Human68kEntry> Entries => _entries;
+  /// <summary>
+  /// Gets a value indicating whether valid volume.
+  /// </summary>
   public bool ValidVolume { get; private set; }
+  /// <summary>
+  /// Gets or sets the sectors per cluster.
+  /// </summary>
   public int SectorsPerCluster { get; private set; }
+  /// <summary>
+  /// Gets or sets the reserved sectors.
+  /// </summary>
   public int ReservedSectors { get; private set; }
+  /// <summary>
+  /// Gets or sets the fat count.
+  /// </summary>
   public int FatCount { get; private set; }
+  /// <summary>
+  /// Gets or sets the root entries.
+  /// </summary>
   public int RootEntries { get; private set; }
+  /// <summary>
+  /// Gets or sets the sectors per fat.
+  /// </summary>
   public int SectorsPerFat { get; private set; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Human68kReader"/>.
+  /// </summary>
   public Human68kReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -137,6 +164,9 @@ public sealed class Human68kReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(Human68kEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -152,6 +182,9 @@ public sealed class Human68kReader : IDisposable {
     return size <= 0 ? [] : _data.AsSpan(clusterOffset, size).ToArray();
   }
 
+  /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
   public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidVolume ? "ok" : "invalid").Append('\n');
@@ -165,5 +198,8 @@ public sealed class Human68kReader : IDisposable {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

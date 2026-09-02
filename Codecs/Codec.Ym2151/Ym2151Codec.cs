@@ -88,6 +88,9 @@ public sealed class Ym2151Codec {
   private uint _egCounter;
 
   /// <param name="clock">OPM input clock in Hz (3579545 on the X68000, 4000000 on many arcades).</param>
+  /// <summary>
+  /// Initializes a new instance of <see cref="Ym2151Codec"/>.
+  /// </summary>
   public Ym2151Codec(double clock = 3579545.0) => this._nativeRate = clock / Prescale;
 
   /// <summary>The chip's native output sample rate (<c>clock / 64</c>).</summary>

@@ -37,11 +37,26 @@ public sealed class VmdkStream : Stream {
     _leaveOpen = leaveOpen;
   }
 
+  /// <summary>
+  /// Gets a value indicating whether can read.
+  /// </summary>
   public override bool CanRead => true;
+  /// <summary>
+  /// Gets a value indicating whether can seek.
+  /// </summary>
   public override bool CanSeek => true;
+  /// <summary>
+  /// Gets a value indicating whether can write.
+  /// </summary>
   public override bool CanWrite => _backing.CanWrite;
+  /// <summary>
+  /// Gets the length.
+  /// </summary>
   public override long Length => _diskSize;
 
+  /// <summary>
+  /// Gets or sets the position.
+  /// </summary>
   public override long Position {
     get => _position;
     set {
@@ -50,6 +65,9 @@ public sealed class VmdkStream : Stream {
     }
   }
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public override int Read(byte[] buffer, int offset, int count) {
     if (_position >= _diskSize) return 0;
     var remaining = (int)Math.Min(count, _diskSize - _position);
@@ -81,6 +99,9 @@ public sealed class VmdkStream : Stream {
     return totalRead;
   }
 
+  /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
   public override void Write(byte[] buffer, int offset, int count) {
     if (!CanWrite) throw new NotSupportedException("Backing stream is not writable.");
     if (_position + count > _diskSize)
@@ -108,6 +129,9 @@ public sealed class VmdkStream : Stream {
     }
   }
 
+  /// <summary>
+  /// Performs the seek operation.
+  /// </summary>
   public override long Seek(long offset, SeekOrigin origin) {
     var newPos = origin switch {
       SeekOrigin.Begin => offset,
@@ -120,6 +144,9 @@ public sealed class VmdkStream : Stream {
     return _position;
   }
 
+  /// <summary>
+  /// Sets the length.
+  /// </summary>
   public override void SetLength(long value) {
     if (value != _diskSize)
       throw new NotSupportedException(
@@ -127,8 +154,14 @@ public sealed class VmdkStream : Stream {
         $"(current={_diskSize}, requested={value}).");
   }
 
+  /// <summary>
+  /// Performs the flush operation.
+  /// </summary>
   public override void Flush() => _backing.Flush();
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   protected override void Dispose(bool disposing) {
     if (disposing && !_leaveOpen)
       _backing.Dispose();

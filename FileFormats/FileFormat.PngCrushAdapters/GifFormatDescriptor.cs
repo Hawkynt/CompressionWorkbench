@@ -25,27 +25,69 @@ namespace FileFormat.PngCrushAdapters;
 /// dependency-free utility (it produces RGBA32 byte buffers, no PngCrushCS types).
 /// </remarks>
 public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFileInternalLayoutMap {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Gif";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "GIF (multi-frame)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".gif";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".gif"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("GIF87a"u8.ToArray(), Confidence: 0.95),
     new("GIF89a"u8.ToArray(), Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Animated GIF; each frame is decoded to RGBA32 with disposal/blend applied, then exposed with the full colorspace tree.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     MultiImageArchiveHelper.List(stream, "frame", ReadAll);
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     MultiImageArchiveHelper.Extract(stream, outputDir, files, "frame", ReadAll);
 

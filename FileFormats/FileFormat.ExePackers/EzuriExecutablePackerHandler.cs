@@ -29,9 +29,18 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
   private const int KeyLength = 32;
   private const int IvLength = 16;
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "ezuri";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Ezuri ELF crypter (AES-256-CFB)";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -40,6 +49,9 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsElf |
     ExecutableUnpackCapabilities.SupportsX64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (TryLocate(image.ToArray(), out _, out _, out _))
       return new(true, this.Id, 1.0, []);
@@ -48,6 +60,9 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
         "No Ezuri loader with an appended AES-256-CFB key/IV/ciphertext trailer was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var bytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -59,6 +74,9 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
     });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     if (image.LongLength > options.MaximumInputSize)

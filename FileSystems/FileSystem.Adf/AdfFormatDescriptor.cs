@@ -47,18 +47,45 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => AdfExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => 901120;  // standard DD (880 KB) — 11 sectors × 2 sides × 80 tracks × 512
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "Amiga DD ADF disk; any file up to 901 120 bytes total.";
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
+  /// <summary>
+  /// Gets the canonical sizes.
+  /// </summary>
   public IReadOnlyList<long> CanonicalSizes => [901120];
+  /// <summary>
+  /// Performs the shrink operation.
+  /// </summary>
   public void Shrink(Stream input, Stream output) =>
     Compression.Registry.ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Adf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "ADF";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
@@ -86,22 +113,52 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       AdfModifier.RemoveFile(archive, name, wipeData: true);
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".adf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".adf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("DOS\0"u8.ToArray(), Confidence: 0.60)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("adf", "ADF")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Amiga Disk File";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new AdfReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
       e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new AdfReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -143,6 +200,9 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new AdfWriter();
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
@@ -165,6 +225,9 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new AdfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

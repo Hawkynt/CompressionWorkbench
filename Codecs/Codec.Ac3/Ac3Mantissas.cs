@@ -22,6 +22,9 @@ public sealed class Ac3Mantissas {
   private int _grp11Count;           // bap 4 (11-level): 2 mantissas per 7-bit word
   private float _grp11a;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Ac3Mantissas"/>.
+  /// </summary>
   public Ac3Mantissas(Ac3BitReader r) => this._r = r;
 
   /// <summary>

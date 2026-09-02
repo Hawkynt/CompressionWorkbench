@@ -138,15 +138,39 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         "old = the S/M/L free-space-list layout of a 640 KB ADFS-L floppy."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Adfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Acorn ADFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".adl";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".adl", ".adf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "Hugo" at 0x200 (old map S/M/L) — confidence kept moderate because
     // .adf collides with Amiga ADF (which begins with "DOS" at offset 0).
@@ -163,17 +187,35 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Offset: 4, Confidence: 0.80,
       Mask: [0xFF, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0xFF]),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Acorn ADFS (BBC Micro / Archimedes / RISC OS) filesystem — read + R/W (ADFS-L variant; in-place Add/Remove against the old-map FSM and Hugo-bracketed root directory).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new AdfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new AdfsReader(stream);
     foreach (var e in r.Entries) {
@@ -183,6 +225,9 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -197,6 +242,9 @@ public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memoryStream = new MemoryStream();

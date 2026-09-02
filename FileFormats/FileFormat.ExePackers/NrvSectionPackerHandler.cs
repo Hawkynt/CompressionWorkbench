@@ -15,9 +15,18 @@ namespace FileFormat.ExePackers;
 /// promoting section-name heuristics into fake unpacking.
 /// </summary>
 public sealed class GenericNrvPackedPeHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "nrv_pe";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Generic NRV-packed PE";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -26,6 +35,9 @@ public sealed class GenericNrvPackedPeHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Generic NRV PE: not a valid PE.", true)]);
@@ -39,6 +51,9 @@ public sealed class GenericNrvPackedPeHandler : IExecutablePackerHandler {
     ]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -55,6 +70,9 @@ public sealed class GenericNrvPackedPeHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [

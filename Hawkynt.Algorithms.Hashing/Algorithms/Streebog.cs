@@ -4,11 +4,17 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Streebog-256 (GOST R 34.11-2012) hash function.</summary>
 public static class Streebog256 {
+  /// <summary>
+  /// Computes the Streebog-256 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => StreebogCore.Compute(data, 32);
 }
 
 /// <summary>Streebog-512 (GOST R 34.11-2012) hash function.</summary>
 public static class Streebog512 {
+  /// <summary>
+  /// Computes the Streebog-512 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => StreebogCore.Compute(data, 64);
 }
 

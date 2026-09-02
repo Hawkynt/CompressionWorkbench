@@ -16,6 +16,9 @@ namespace FileFormat.Mz;
 /// </remarks>
 public sealed class MzReader {
 
+  /// <summary>
+  /// Represents a mz image.
+  /// </summary>
   public sealed record MzImage(
     ushort BytesInLastBlock,
     ushort BlocksInFile,
@@ -37,6 +40,9 @@ public sealed class MzReader {
     byte[] Overlay               // bytes imageSize .. eof (can be empty)
   );
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public static MzImage Read(ReadOnlySpan<byte> data) {
     if (data.Length < 28) throw new InvalidDataException("MZ: file shorter than 28-byte header.");
     if (data[0] != 'M' || data[1] != 'Z')

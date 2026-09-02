@@ -5,6 +5,9 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.CbmNibble;
 
 internal static class CbmNibbleEntries {
+  /// <summary>
+  /// Reads the nibble image from the supplied stream.
+  /// </summary>
   public static CbmNibbleReader.NibbleImage ReadImage(Stream stream, string fileName) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -13,6 +16,9 @@ internal static class CbmNibbleEntries {
     return CbmNibbleReader.Read(ms.ToArray(), fileName);
   }
 
+  /// <summary>
+  /// Performs the build operation.
+  /// </summary>
   public static List<(string Name, byte[] Data)> Build(Stream stream, string fileName) {
     var image = ReadImage(stream, fileName);
     var result = new List<(string, byte[])> {
@@ -24,11 +30,17 @@ internal static class CbmNibbleEntries {
     return result;
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public static List<ArchiveEntryInfo> List(Stream stream, string fileName)
     => Build(stream, fileName).Select((entry, index) => new ArchiveEntryInfo(
       index, entry.Name, entry.Data.LongLength, entry.Data.LongLength,
       "stored", false, false, null)).ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static void Extract(Stream stream, string outputDir, string[]? files, string fileName) {
     foreach (var entry in Build(stream, fileName)) {
       if (files != null && files.Length > 0 && !MatchesFilter(entry.Name, files)) continue;
@@ -36,6 +48,9 @@ internal static class CbmNibbleEntries {
     }
   }
 
+  /// <summary>
+  /// Attempts to parse a track index from an entry name.
+  /// </summary>
   public static bool TryParseTrackName(string name, out int index) {
     index = -1;
     var leaf = Path.GetFileName(name.Replace('\\', '/'));
@@ -46,9 +61,15 @@ internal static class CbmNibbleEntries {
       System.Globalization.CultureInfo.InvariantCulture, out index);
   }
 
+  /// <summary>
+  /// Gets a value indicating whether the resource is a metadata resource.
+  /// </summary>
   public static bool IsMetadata(string name)
     => string.Equals(Path.GetFileName(name), "metadata.ini", StringComparison.OrdinalIgnoreCase);
 
+  /// <summary>
+  /// Gets the default speed zone for the supplied half-track index.
+  /// </summary>
   public static uint DefaultSpeedZone(int halfTrackIndex) {
     var track = halfTrackIndex / 2 + 1;
     return track switch {
@@ -59,6 +80,9 @@ internal static class CbmNibbleEntries {
     };
   }
 
+  /// <summary>
+  /// Writes the modified image back to the archive stream.
+  /// </summary>
   public static void Commit(Stream archive, byte[] image) {
     if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
       throw new ArgumentException("Nibble-image mutation requires a readable, writable, seekable stream.", nameof(archive));
@@ -68,6 +92,9 @@ internal static class CbmNibbleEntries {
     archive.Flush();
   }
 
+  /// <summary>
+  /// Reads the all from the supplied input.
+  /// </summary>
   public static byte[] ReadAll(Stream stream) {
     if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
@@ -92,42 +119,102 @@ public sealed class G64FormatDescriptor :
   IRandomAccessBlockDeviceProvider,
   IFilesystemDriverProvider {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "G64";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "G64 (Commodore GCR)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".g64";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".g64"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
     [new("GCR-1541"u8.ToArray(), Offset: 0, Confidence: 0.90)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored GCR tracks")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "VICE G64 Commodore GCR track image with raw-track, strict sector, and CBM DOS driver layers";
 
+  /// <summary>
+  /// Opens the image as a raw track device.
+  /// </summary>
   public IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)
     => CbmNibbleRawTrackDevices.OpenG64(image, writable, leaveOpen);
 
+  /// <summary>
+  /// Opens the image as a random-access block device.
+  /// </summary>
   public IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)
     => CbmNibbleFilesystemDriver.OpenBlockDevice(
       image, CbmNibbleFilesystemDriver.ContainerKind.G64, writable, leaveOpen);
 
+  /// <summary>
+  /// Probes the image and reports the filesystem driver profile.
+  /// </summary>
   public FilesystemDriverProfile ProbeFilesystem(Stream image)
     => CbmNibbleFilesystemDriver.Probe(image, CbmNibbleFilesystemDriver.ContainerKind.G64);
 
+  /// <summary>
+  /// Opens a filesystem session over the image.
+  /// </summary>
   public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)
     => CbmNibbleFilesystemDriver.OpenFilesystem(
       image, CbmNibbleFilesystemDriver.ContainerKind.G64, options);
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => CbmNibbleEntries.List(stream, "image.g64");
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => CbmNibbleEntries.Extract(stream, outputDir, files, "image.g64");
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     var image = CbmNibbleEntries.ReadImage(archive, "image.g64");
     byte[] data;
@@ -141,6 +228,9 @@ public sealed class G64FormatDescriptor :
       new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var entry = this.OpenEntry(archive, entryName, password);
     using var ms = new MemoryStream();
@@ -148,6 +238,11 @@ public sealed class G64FormatDescriptor :
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Builds a fresh G64 image from the inputs. The Commodore filesystem is flat,
+  /// so names are reduced to their filename component and stored in the single
+  /// track-18 directory by <see cref="CbmNibbleWriter"/>.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -170,6 +265,9 @@ public sealed class G64FormatDescriptor :
     writer.WriteTo(output);
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var image = RequireDirectWritableProfile(archive);
     var tracks = image.Tracks.ToDictionary(t => t.Index);
@@ -191,6 +289,9 @@ public sealed class G64FormatDescriptor :
     CbmNibbleEntries.Commit(archive, rebuilt);
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     var image = RequireDirectWritableProfile(archive);
     var remove = new HashSet<int>();
@@ -207,6 +308,9 @@ public sealed class G64FormatDescriptor :
     CbmNibbleEntries.Commit(archive, rebuilt);
   }
 
+  /// <summary>
+  /// Removes every entry from the target container.
+  /// </summary>
   public void Purge(Stream archive) {
     var image = RequireDirectWritableProfile(archive);
     var empty = image.Tracks.Select(t => t with { Data = [] }).ToArray();
@@ -214,9 +318,15 @@ public sealed class G64FormatDescriptor :
       CbmNibbleWriter.BuildG64FromTracks(empty, image.Version, image.TrackCount));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions());
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     var image = RequireDirectWritableProfile(archive);
@@ -231,6 +341,9 @@ public sealed class G64FormatDescriptor :
       "complete", 1, -1, -1, archive.Length, this.EnumerateLayout(archive).ToList(), "G64 track blocks compacted"));
   }
 
+  /// <summary>
+  /// Performs the shrink operation.
+  /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
@@ -245,6 +358,9 @@ public sealed class G64FormatDescriptor :
     output.Write(selected);
   }
 
+  /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var image = CbmNibbleEntries.ReadImage(archive, "image.g64");
     if (image.Tracks.Any(t => t.SpeedZone > 3))
@@ -261,6 +377,9 @@ public sealed class G64FormatDescriptor :
     return result;
   }
 
+  /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     var extents = this.EnumerateLayout(image).ToList();
     if (extents.Count == 0) return 0;
@@ -306,41 +425,98 @@ public sealed class NibFormatDescriptor :
   IRandomAccessBlockDeviceProvider,
   IFilesystemDriverProvider {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Nib";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NIB (Commodore nibble dump)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".nib";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".nib"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Fixed 8192-byte GCR slots")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Commodore raw nibble dump with raw-track, strict sector, and CBM DOS driver layers";
 
+  /// <summary>
+  /// Opens the image as a raw track device.
+  /// </summary>
   public IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)
     => CbmNibbleRawTrackDevices.OpenNib(image, writable, leaveOpen);
 
+  /// <summary>
+  /// Opens the image as a random-access block device.
+  /// </summary>
   public IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)
     => CbmNibbleFilesystemDriver.OpenBlockDevice(
       image, CbmNibbleFilesystemDriver.ContainerKind.Nib, writable, leaveOpen);
 
+  /// <summary>
+  /// Probes the image and reports the filesystem driver profile.
+  /// </summary>
   public FilesystemDriverProfile ProbeFilesystem(Stream image)
     => CbmNibbleFilesystemDriver.Probe(image, CbmNibbleFilesystemDriver.ContainerKind.Nib);
 
+  /// <summary>
+  /// Opens a filesystem session over the image.
+  /// </summary>
   public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)
     => CbmNibbleFilesystemDriver.OpenFilesystem(
       image, CbmNibbleFilesystemDriver.ContainerKind.Nib, options);
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => CbmNibbleEntries.List(stream, "image.nib");
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => CbmNibbleEntries.Extract(stream, outputDir, files, "image.nib");
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     var image = CbmNibbleEntries.ReadImage(archive, "image.nib");
     byte[] data;
@@ -354,6 +530,9 @@ public sealed class NibFormatDescriptor :
       new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var entry = this.OpenEntry(archive, entryName, password);
     using var ms = new MemoryStream();
@@ -361,6 +540,11 @@ public sealed class NibFormatDescriptor :
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Builds a fresh G64 image from the inputs. The Commodore filesystem is flat,
+  /// so names are reduced to their filename component and stored in the single
+  /// track-18 directory by <see cref="CbmNibbleWriter"/>.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -383,6 +567,9 @@ public sealed class NibFormatDescriptor :
     output.Write(writer.BuildNib());
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var image = CbmNibbleEntries.ReadImage(archive, "image.nib");
     var tracks = image.Tracks.ToDictionary(t => t.Index);
@@ -400,6 +587,9 @@ public sealed class NibFormatDescriptor :
     CbmNibbleEntries.Commit(archive, rebuilt);
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     var image = CbmNibbleEntries.ReadImage(archive, "image.nib");
     var remove = new HashSet<int>();
@@ -416,14 +606,23 @@ public sealed class NibFormatDescriptor :
     CbmNibbleEntries.Commit(archive, rebuilt);
   }
 
+  /// <summary>
+  /// Removes every entry from the target container.
+  /// </summary>
   public void Purge(Stream archive) {
     _ = CbmNibbleEntries.ReadImage(archive, "image.nib");
     CbmNibbleEntries.Commit(archive, new byte[CbmNibbleReader.NibExpectedFileSize]);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions());
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     var image = CbmNibbleEntries.ReadImage(archive, "image.nib");
@@ -436,6 +635,9 @@ public sealed class NibFormatDescriptor :
       "NIB is already physically canonical"));
   }
 
+  /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var image = CbmNibbleEntries.ReadImage(archive, "image.nib");
     var result = new List<DefragBlockInfo>(image.Tracks.Count + 1);
@@ -452,6 +654,9 @@ public sealed class NibFormatDescriptor :
     return result;
   }
 
+  /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     var extents = this.EnumerateLayout(image).ToList();
     if (extents.Count == 0) return 0;

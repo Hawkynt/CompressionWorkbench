@@ -36,8 +36,17 @@ namespace FileSystem.Hpfs;
 /// </remarks>
 public sealed class HpfsReader : IDisposable {
 
+  /// <summary>
+  /// Defines the lba size constant value.
+  /// </summary>
   public const int LbaSize = 512;
+  /// <summary>
+  /// Defines the superblock lba constant value.
+  /// </summary>
   public const int SuperblockLba = 16;
+  /// <summary>
+  /// Defines the dir block size constant value.
+  /// </summary>
   public const int DirBlockSize = 2048;
 
   /// <summary>
@@ -60,8 +69,14 @@ public sealed class HpfsReader : IDisposable {
   /// <summary>Root-fnode LBA from the superblock.</summary>
   public uint RootFnodeLba { get; }
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<HpfsEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="HpfsReader"/>.
+  /// </summary>
   public HpfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     _data = new ImageAccessor(stream, leaveOpen: true);
@@ -79,6 +94,9 @@ public sealed class HpfsReader : IDisposable {
     ParseRootDirectory();
   }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="HpfsReader"/>.
+  /// </summary>
   public HpfsReader(byte[] data) : this(new MemoryStream(data)) { }
 
   // 64-bit: an HPFS volume past 2 GB overflows the int product.
@@ -266,6 +284,9 @@ public sealed class HpfsReader : IDisposable {
     _data.CopyTo(off, destination, entry.Size);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(HpfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -280,5 +301,8 @@ public sealed class HpfsReader : IDisposable {
     return result;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

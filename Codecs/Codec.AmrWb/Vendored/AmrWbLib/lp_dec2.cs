@@ -6,6 +6,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     private const int lp_dec2_L_FIR = 5;    // 30 Apr 25 PHR -- changed from L_FIR due to naming conflict

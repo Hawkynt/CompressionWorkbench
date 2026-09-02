@@ -15,7 +15,13 @@ public sealed class PackDiskReader : IDisposable {
   private readonly List<PackDiskEntry> _entries = [];
   private string _format;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<PackDiskEntry> Entries => _entries;
+  /// <summary>
+  /// Gets the format.
+  /// </summary>
   public string Format => _format;
 
   // Known magics
@@ -30,6 +36,9 @@ public sealed class PackDiskReader : IDisposable {
 
   private const int TrackSize = 11 * 512; // Amiga DD
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="PackDiskReader"/>.
+  /// </summary>
   public PackDiskReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -86,6 +95,9 @@ public sealed class PackDiskReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(PackDiskEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.CompressedSize > _data.Length)
@@ -96,5 +108,8 @@ public sealed class PackDiskReader : IDisposable {
     return _data.AsSpan(entry.Offset, (int)entry.CompressedSize).ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

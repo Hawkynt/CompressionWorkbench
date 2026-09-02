@@ -192,21 +192,57 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       Description: "Labelled PFS name (newfs_hammer2 -L); max 63 ASCII chars."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Hammer2";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HAMMER2 (DragonFly BSD)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".hammer2";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".hammer2"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(Hammer2VolumeData.MagicBytesHboLE, Offset: 0, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "HAMMER2 (DragonFly BSD newer) filesystem image — volume-data sector surface only. " +
     "WORM emit deferred: HAMMER2 requires four redundant 64 KB volume-data sectors at " +
@@ -216,6 +252,9 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     "leaf+meta blockmap that survives the COW promotion rules. Multi-week effort, " +
     "deferred to a future phase.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
@@ -365,6 +404,9 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ImageAccessor image;
     try {

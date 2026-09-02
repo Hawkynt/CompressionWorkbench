@@ -3,10 +3,42 @@ using System.Numerics;
 
 namespace Hawkynt.Algorithms.Hashing;
 
-public static class Luffa224 { public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 28, 3); }
-public static class Luffa256 { public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 32, 3); }
-public static class Luffa384 { public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 48, 4); }
-public static class Luffa512 { public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 64, 5); }
+/// <summary>
+/// Provides the Luffa-224 hash implementation.
+/// </summary>
+public static class Luffa224 {
+  /// <summary>
+  /// Computes the Luffa-224 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 28, 3);
+}
+/// <summary>
+/// Provides the Luffa-256 hash implementation.
+/// </summary>
+public static class Luffa256 {
+  /// <summary>
+  /// Computes the Luffa-256 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 32, 3);
+}
+/// <summary>
+/// Provides the Luffa-384 hash implementation.
+/// </summary>
+public static class Luffa384 {
+  /// <summary>
+  /// Computes the Luffa-384 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 48, 4);
+}
+/// <summary>
+/// Provides the Luffa-512 hash implementation.
+/// </summary>
+public static class Luffa512 {
+  /// <summary>
+  /// Computes the Luffa-512 hash of the supplied data.
+  /// </summary>
+  public static byte[] Compute(ReadOnlySpan<byte> data) => LuffaCore.Compute(data, 64, 5);
+}
 
 internal static class LuffaCore {
   private static readonly uint[][] Initial = [

@@ -33,6 +33,9 @@ public sealed class SidChip {
   private double _clocksPerSample;
   private double _sampleError;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="SidChip"/>.
+  /// </summary>
   public SidChip(SidModel model, double clockHz, int outputRate = OutputSampleRate) {
     // Collapse aliases (e.g. the 6582 is electrically an 8580) onto the behaviour the filter implements.
     this._model = model.Resolve();

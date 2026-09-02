@@ -10,6 +10,9 @@ namespace FileFormat.JpegArchive;
 /// on IFD0 as a BYTE/UNDEFINED array.
 /// </summary>
 public static class TiffMetadataEditor {
+  /// <summary>
+  /// Defines the xmp packet tag constant value.
+  /// </summary>
   public const ushort XmpPacketTag = 0x02BC;
 
   /// <summary>
@@ -77,6 +80,9 @@ public static class TiffMetadataEditor {
     return TiffWriter.Serialize(image);
   }
 
+  /// <summary>
+  /// Attempts to read the xmp packet from the supplied input.
+  /// </summary>
   public static byte[]? TryReadXmpPacket(ReadOnlySpan<byte> tiffBytes) {
     try {
       var image = TiffReader.Parse(tiffBytes);

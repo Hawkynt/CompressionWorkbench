@@ -15,6 +15,9 @@ public static class JpegLayoutMap {
   private static readonly byte[] ExifHeader = "Exif\0\0"u8.ToArray();
   private static readonly byte[] XmpHeader = Encoding.ASCII.GetBytes("http://ns.adobe.com/xap/1.0/\0");
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     stream.Position = 0;

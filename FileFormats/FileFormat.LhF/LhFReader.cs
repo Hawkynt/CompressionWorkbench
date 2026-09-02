@@ -10,14 +10,23 @@ namespace FileFormat.LhF;
 /// Magic: "LhF\0" at offset 0, followed by track count and track headers.
 /// </summary>
 public sealed class LhFReader : IDisposable {
+  /// <summary>
+  /// Provides the lh f magic value.
+  /// </summary>
   public static readonly byte[] LhFMagic = "LhF\0"u8.ToArray();
   private const int TrackSize = 11 * 512; // Amiga DD: 11 sectors × 512 bytes
 
   private readonly byte[] _data;
   private readonly List<LhFEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<LhFEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="LhFReader"/>.
+  /// </summary>
   public LhFReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -58,6 +67,9 @@ public sealed class LhFReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(LhFEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.CompressedSize > _data.Length)
@@ -80,5 +92,8 @@ public sealed class LhFReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

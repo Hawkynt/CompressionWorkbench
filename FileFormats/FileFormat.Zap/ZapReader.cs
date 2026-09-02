@@ -9,14 +9,23 @@ namespace FileFormat.Zap;
 /// Magic: "ZAP\0" at offset 0.
 /// </summary>
 public sealed class ZapReader : IDisposable {
+  /// <summary>
+  /// Provides the zap magic value.
+  /// </summary>
   public static readonly byte[] ZapMagic = "ZAP\0"u8.ToArray();
   private const int TrackSize = 11 * 512; // Amiga DD: 11 sectors × 512 bytes
 
   private readonly byte[] _data;
   private readonly List<ZapEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<ZapEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ZapReader"/>.
+  /// </summary>
   public ZapReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -57,6 +66,9 @@ public sealed class ZapReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(ZapEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.CompressedSize > _data.Length)
@@ -126,5 +138,8 @@ public sealed class ZapReader : IDisposable {
     return output;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

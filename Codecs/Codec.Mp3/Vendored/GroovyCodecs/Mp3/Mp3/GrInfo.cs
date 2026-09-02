@@ -54,7 +54,7 @@ namespace GroovyCodecs.Mp3.Mp3
         /// <summary>
         ///     added for LSF
         /// </summary>
-    internal int[] sfb_partition_table;
+        internal int[] sfb_partition_table;
 
         internal int sfb_smin;
 

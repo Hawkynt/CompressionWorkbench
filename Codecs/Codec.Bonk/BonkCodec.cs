@@ -25,6 +25,9 @@ public static class BonkCodec {
   private const int LatticeShift = 10;
   private const int SampleShift = 4;
   private const int SampleFactor = 1 << SampleShift;
+  /// <summary>
+  /// Defines the header bytes constant value.
+  /// </summary>
   public const int HeaderBytes = 17;
 
   /// <summary>Decoded stream geometry.</summary>

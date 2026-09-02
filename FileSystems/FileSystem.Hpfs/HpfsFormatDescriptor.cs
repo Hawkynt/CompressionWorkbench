@@ -30,33 +30,72 @@ public sealed class HpfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Hpfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HPFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".img";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".img", ".hpfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // Superblock magic at LBA 16 (offset 8192): 0xF995E849 stored little-endian.
   // The first 4 bytes are sufficient for detection.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x49, 0xE8, 0x95, 0xF9], Offset: 8192, Confidence: 0.85),
   ];
 
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "OS/2 High Performance File System — read/write with direct-allocation layout.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new HpfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -64,6 +103,9 @@ public sealed class HpfsFormatDescriptor
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new HpfsReader(stream);
     foreach (var e in r.Entries) {
@@ -110,6 +152,9 @@ public sealed class HpfsFormatDescriptor
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HpfsWriter();
     foreach (var i in inputs) {
@@ -194,9 +239,15 @@ public sealed class HpfsFormatDescriptor
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
@@ -278,6 +329,9 @@ public sealed class HpfsFormatDescriptor
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     // Walked from the stream, never copied into a byte[]. Buffering a volume past

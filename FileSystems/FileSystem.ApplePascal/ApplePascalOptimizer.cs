@@ -9,11 +9,17 @@ namespace FileSystem.ApplePascal;
 /// </summary>
 public static class ApplePascalOptimizer {
 
+  /// <summary>
+  /// Represents an apple pascal geometry.
+  /// </summary>
   public sealed record ApplePascalGeometry(int BlockSize, int VolumeBlocks);
 
   /// <summary>Reserved for the 6-block boot + directory region.</summary>
   private const int ReservedBlocks = 6;
 
+  /// <summary>
+  /// Performs the find operation.
+  /// </summary>
   public static ApplePascalGeometry Find(System.Collections.Generic.IReadOnlyList<long> fileSizes) {
     System.ArgumentNullException.ThrowIfNull(fileSizes);
     var totalBlocks = ReservedBlocks;

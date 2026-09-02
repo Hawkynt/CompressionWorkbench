@@ -12,10 +12,22 @@ namespace Codec.Dts;
 /// </summary>
 public sealed class DtsVlc {
 
+  /// <summary>
+  /// Gets the codes.
+  /// </summary>
   public ushort[] Codes { get; }
+  /// <summary>
+  /// Gets the lengths.
+  /// </summary>
   public byte[] Lengths { get; }
+  /// <summary>
+  /// Gets the max bits.
+  /// </summary>
   public int MaxBits { get; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="DtsVlc"/>.
+  /// </summary>
   public DtsVlc(ushort[] codes, byte[] lengths) {
     ArgumentNullException.ThrowIfNull(codes);
     ArgumentNullException.ThrowIfNull(lengths);
@@ -57,9 +69,18 @@ public sealed class DtsVlc {
 /// symbol index (e.g. the scale-factor books bias by -64, the bit-allocation index books by +1).
 /// </summary>
 public sealed class DtsBitAllocBook {
+  /// <summary>
+  /// Gets the offset.
+  /// </summary>
   public int Offset { get; }
+  /// <summary>
+  /// Gets the vlc.
+  /// </summary>
   public DtsVlc?[] Vlc { get; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="DtsBitAllocBook"/>.
+  /// </summary>
   public DtsBitAllocBook(int offset, DtsVlc?[] vlc) {
     this.Offset = offset;
     this.Vlc = vlc;

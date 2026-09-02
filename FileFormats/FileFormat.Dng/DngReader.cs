@@ -12,31 +12,88 @@ namespace FileFormat.Dng;
 /// Also walks the EXIF sub-IFD (tag 0x8769) so the MakerNote (0x927C) is visible.
 /// </summary>
 public sealed class DngReader {
+  /// <summary>
+  /// Defines the tag sub if ds constant value.
+  /// </summary>
   public const ushort TagSubIFDs = 0x014A;
+  /// <summary>
+  /// Defines the tag strip offsets constant value.
+  /// </summary>
   public const ushort TagStripOffsets = 0x0111;
+  /// <summary>
+  /// Defines the tag strip byte counts constant value.
+  /// </summary>
   public const ushort TagStripByteCounts = 0x0117;
+  /// <summary>
+  /// Defines the tag jpeg interchange format constant value.
+  /// </summary>
   public const ushort TagJpegInterchangeFormat = 0x0201;
+  /// <summary>
+  /// Defines the tag jpeg interchange format length constant value.
+  /// </summary>
   public const ushort TagJpegInterchangeFormatLength = 0x0202;
+  /// <summary>
+  /// Defines the tag compression constant value.
+  /// </summary>
   public const ushort TagCompression = 0x0103;
+  /// <summary>
+  /// Defines the tag photometric interpretation constant value.
+  /// </summary>
   public const ushort TagPhotometricInterpretation = 0x0106;
+  /// <summary>
+  /// Defines the tag new sub file type constant value.
+  /// </summary>
   public const ushort TagNewSubFileType = 0x00FE;
+  /// <summary>
+  /// Defines the tag exif ifd constant value.
+  /// </summary>
   public const ushort TagExifIfd = 0x8769;
+  /// <summary>
+  /// Defines the tag maker note constant value.
+  /// </summary>
   public const ushort TagMakerNote = 0x927C;
+  /// <summary>
+  /// Defines the tag dng version constant value.
+  /// </summary>
   public const ushort TagDngVersion = 0xC612;
 
+  /// <summary>
+  /// Represents an ifd.
+  /// </summary>
   public sealed record Ifd(long Offset, IReadOnlyList<Entry> Entries);
+  /// <summary>
+  /// Represents an entry.
+  /// </summary>
   public sealed record Entry(ushort Tag, ushort Type, uint Count, uint ValueOrOffset);
 
+  /// <summary>
+  /// Gets a value indicating whether is big endian.
+  /// </summary>
   public bool IsBigEndian { get; }
+  /// <summary>
+  /// Gets the top level ifds.
+  /// </summary>
   public IReadOnlyList<Ifd> TopLevelIfds { get; }
+  /// <summary>
+  /// Gets the sub ifds.
+  /// </summary>
   public IReadOnlyList<Ifd> SubIfds { get; }
+  /// <summary>
+  /// Gets the exif ifd.
+  /// </summary>
   public Ifd? ExifIfd { get; }
+  /// <summary>
+  /// Gets the raw.
+  /// </summary>
   public byte[] Raw { get; }
   /// <summary>Size of the <c>DNGVersion</c> tag value or 0 when absent. Used to filter plain TIFF.</summary>
   public int DngVersionLength { get; }
 
   private readonly byte[] _data;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="DngReader"/>.
+  /// </summary>
   public DngReader(byte[] data) {
     this._data = data;
     this.Raw = data;
@@ -96,6 +153,9 @@ public sealed class DngReader {
     return new Ifd(offset, entries);
   }
 
+  /// <summary>
+  /// Reads the values as u int 32 from the supplied input.
+  /// </summary>
   public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) {
     // TIFF types: 1=BYTE, 3=SHORT (2), 4=LONG (4), 5=RATIONAL (8).
     var tsize = e.Type switch { 1 => 1, 3 => 2, 4 => 4, _ => 0 };
@@ -151,6 +211,9 @@ public sealed class DngReader {
     return result;
   }
 
+  /// <summary>
+  /// Reads the bytes at from the supplied input.
+  /// </summary>
   public byte[] ReadBytesAt(long offset, long length) {
     if (offset < 0 || length <= 0 || offset + length > this._data.Length) return Array.Empty<byte>();
     var result = new byte[length];

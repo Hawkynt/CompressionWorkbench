@@ -64,6 +64,9 @@ public sealed class XenixWriter : IDisposable {
   private const ushort ModeDirectory = 0x41ED;
   private const ushort ModeRegularFile = 0x81A4;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="XenixWriter"/>.
+  /// </summary>
   public XenixWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
@@ -485,6 +488,9 @@ public sealed class XenixWriter : IDisposable {
     dest[2] = (byte)((val >> 16) & 0xFF);
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }

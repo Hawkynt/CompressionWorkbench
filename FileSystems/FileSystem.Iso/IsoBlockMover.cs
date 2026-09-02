@@ -126,6 +126,9 @@ public sealed class IsoBlockMover : IFilesystemBlockMover {
   /// flushes. No full-image load — multi-GB DVD/BD images require only a
   /// handful of sector reads/writes per move.
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
     if (this._recordOfExtent.Count == 0) this.Init(image);

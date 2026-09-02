@@ -53,25 +53,64 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     FilesystemSchemaPresets.VolumeLabel(maxChars: 63),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "AdvFs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "AdvFS (Tru64 UNIX)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".advfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".advfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(AdvFsReader.DetectionCookie, Offset: (int)AdvFsReader.RbmtPageOffset, Confidence: 0.80f),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "AdvFS (Tru64 UNIX Advanced File System) image — header parse + WORM emit of a clean-room storage-domain layout (RBMT page 0 cookie + DMN/VD/MATTR fields + AdvFS-WB file-table extension).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
@@ -103,6 +142,9 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // A seekable domain is walked in place: ReadAllBounded stops at FullReadCap,
     // so buffering silently truncated anything larger -- and FULL.advfs would
@@ -202,6 +244,9 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   // 8 KB RBMT page (or the header can't be parsed) it falls back to
   // ModifyRebuilder so the user always gets a working image.
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier reads the volume into an array to walk its
     // structures, which a volume past two gigabytes does not fit in. Above that
@@ -215,6 +260,9 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
@@ -226,9 +274,15 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage, largeVolumeCreator: this));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);

@@ -47,9 +47,21 @@ public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Spark";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Spark";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -74,21 +86,51 @@ public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       SparkModifier.RemoveFile(archive, Path.GetFileName(name), wipeData: true);
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".spk";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".spk", ".spark"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("spark", "Spark")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "RISC OS Spark archive (Acorn/ARM)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SparkReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize,
       e.CompressedSize, $"Method {e.Method:X2}", e.IsDirectory, false, e.LastModified)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new SparkReader(stream);
     foreach (var e in r.Entries) {
@@ -130,6 +172,9 @@ public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new SparkWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))

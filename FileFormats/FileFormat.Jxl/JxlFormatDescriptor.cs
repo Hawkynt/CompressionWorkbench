@@ -22,28 +22,67 @@ namespace FileFormat.Jxl;
 /// </list>
 /// </summary>
 public sealed class JxlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Jxl";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "JPEG XL";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".jxl";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".jxl"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ISOBMFF-wrapped JXL signature box: 0x00 00 00 0C 'JXL ' 0x0D 0A 87 0A
     new(new byte[] { 0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A }, Offset: 0, Confidence: 0.99),
     // Naked codestream: FF 0A
     new(new byte[] { 0xFF, 0x0A }, Offset: 0, Confidence: 0.92),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "JPEG XL image container (.jxl). Surfaces codestream and metadata boxes (EXIF, XMP, JUMBF). " +
     "Codestream itself is not decoded.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     List<(string Name, byte[] Data)> entries;
     try {
@@ -58,6 +97,9 @@ public sealed class JxlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     List<(string Name, byte[] Data)> entries;
     try {

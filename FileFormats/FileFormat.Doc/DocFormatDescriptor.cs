@@ -15,35 +15,80 @@ namespace FileFormat.Doc;
 /// </summary>
 public sealed class DocFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "DOC is an OLE2 Compound File envelope with cross-referenced internal streams (WordDocument, 1Table, etc.) — " +
       "rebuilding from the surface stream list would destroy the document's internal references.");
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Doc";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "DOC";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".doc";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".doc"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("cfb", "Compound File Binary")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Microsoft Word 97-2003 document (OLE2)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new Msi.MsiReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -52,6 +97,9 @@ public sealed class DocFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new Msi.MsiReader(stream);
     foreach (var e in r.Entries) {
@@ -61,6 +109,9 @@ public sealed class DocFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // WORM creation: produce a structurally-valid CFB envelope holding the
     // input files as streams. The result roundtrips through our reader and

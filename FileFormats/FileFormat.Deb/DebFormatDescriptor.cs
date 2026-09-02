@@ -56,26 +56,65 @@ public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Deb";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "DEB";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".deb";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".deb"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deb", "DEB")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Debian package archive (ar + tar.gz/xz)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new DebReader(stream);
     var data = r.ReadDataEntries();
@@ -83,6 +122,9 @@ public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "deb", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new DebReader(stream);
     foreach (var e in r.ReadDataEntries()) {
@@ -123,6 +165,9 @@ public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var control = new DebEntry("control", "Package: pkg\nVersion: 1.0\nArchitecture: all\nDescription: created by CompressionWorkbench\n"u8.ToArray(), false);
     var dataFiles = FormatHelpers.FilesOnly(inputs)

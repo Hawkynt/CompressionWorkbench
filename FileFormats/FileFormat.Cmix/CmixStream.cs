@@ -21,6 +21,9 @@ public static class CmixStream {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
@@ -61,6 +64,9 @@ public static class CmixStream {
     enc.Flush();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static void Decompress(Stream input, Stream output) {
     // Read 5-byte header
     var h0 = input.ReadByte();

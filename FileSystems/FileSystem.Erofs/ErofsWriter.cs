@@ -97,6 +97,9 @@ public sealed class ErofsWriter {
     this.AddPayload(path, FilePayload.FromStream(size, openStream));
   }
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string path, byte[] content) {
     ArgumentNullException.ThrowIfNull(content);
     this.AddPayload(path, FilePayload.FromBytes(content));

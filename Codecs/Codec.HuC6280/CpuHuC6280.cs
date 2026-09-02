@@ -44,23 +44,65 @@ public sealed class CpuHuC6280 {
   /// <summary>Processor status flag bits. Bit 5 is the HuC6280 <b>T</b> (memory-operation) flag.</summary>
   [Flags]
   public enum Status : byte {
+    /// <summary>
+    /// Specifies the carry option.
+    /// </summary>
     Carry = 0x01,
+    /// <summary>
+    /// Specifies the zero option.
+    /// </summary>
     Zero = 0x02,
+    /// <summary>
+    /// Specifies the interrupt option.
+    /// </summary>
     Interrupt = 0x04,
+    /// <summary>
+    /// Specifies the decimal option.
+    /// </summary>
     Decimal = 0x08,
+    /// <summary>
+    /// Specifies the break option.
+    /// </summary>
     Break = 0x10,
+    /// <summary>
+    /// Specifies the memory option.
+    /// </summary>
     Memory = 0x20, // T flag on the HuC6280 (the 6502 "unused" bit)
+    /// <summary>
+    /// Specifies the overflow option.
+    /// </summary>
     Overflow = 0x40,
+    /// <summary>
+    /// Specifies the negative option.
+    /// </summary>
     Negative = 0x80,
   }
 
   private readonly IBus6502 _bus;
 
+  /// <summary>
+  /// Provides the a value.
+  /// </summary>
   public byte A;
+  /// <summary>
+  /// Provides the x value.
+  /// </summary>
   public byte X;
+  /// <summary>
+  /// Provides the y value.
+  /// </summary>
   public byte Y;
+  /// <summary>
+  /// Provides the sp value.
+  /// </summary>
   public byte SP;
+  /// <summary>
+  /// Provides the pc value.
+  /// </summary>
   public ushort PC;
+  /// <summary>
+  /// Provides the p value.
+  /// </summary>
   public Status P;
 
   /// <summary>The eight MPR (memory-paging) registers — TAM/TMA load/store these; the host bus
@@ -72,6 +114,9 @@ public sealed class CpuHuC6280 {
   /// (7.16 MHz vs 1.79 MHz); the core's cycle counts are speed-independent.</summary>
   public bool HighSpeed;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="CpuHuC6280"/>.
+  /// </summary>
   public CpuHuC6280(IBus6502 bus) {
     this._bus = bus;
     this.Reset();

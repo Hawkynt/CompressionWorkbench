@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileFormat.Rarc;
 
+/// <summary>
+/// Writes a Nintendo RARC resource archive, laying out the directory nodes and aligning file data to 32 bytes.
+/// </summary>
 public sealed class RarcWriter : IDisposable {
   private const RarcEntryAttributes LoadMask =
     RarcEntryAttributes.PreloadToMram | RarcEntryAttributes.PreloadToAram | RarcEntryAttributes.LoadFromDvd;
@@ -17,6 +20,9 @@ public sealed class RarcWriter : IDisposable {
   private bool _finished;
   private bool _disposed;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="RarcWriter"/>.
+  /// </summary>
   public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root") {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanWrite)
@@ -28,6 +34,9 @@ public sealed class RarcWriter : IDisposable {
     this._leaveOpen = leaveOpen;
   }
 
+  /// <summary>
+  /// Performs the add entry operation.
+  /// </summary>
   public void AddEntry(
       string path,
       byte[] data,
@@ -63,6 +72,9 @@ public sealed class RarcWriter : IDisposable {
     this._files.Add(new InputFile(normalized, data, attributes));
   }
 
+  /// <summary>
+  /// Performs the finish operation.
+  /// </summary>
   public void Finish() {
     if (this._finished)
       return;
@@ -209,6 +221,9 @@ public sealed class RarcWriter : IDisposable {
     this._stream.Position = fileSize;
   }
 
+  /// <summary>
+  /// Performs the normalize path operation.
+  /// </summary>
   public static string NormalizePath(string path) {
     ArgumentNullException.ThrowIfNull(path);
     var normalized = path.Replace('\\', '/').TrimStart('/');
@@ -304,6 +319,9 @@ public sealed class RarcWriter : IDisposable {
       destination[i] = (byte)char.ToUpperInvariant(directory.Name[i]);
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (this._disposed)
       return;

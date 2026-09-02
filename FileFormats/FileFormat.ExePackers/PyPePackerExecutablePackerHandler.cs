@@ -7,10 +7,22 @@ using Compression.Core.ExecutableUnpacking;
 
 namespace FileFormat.ExePackers;
 
+/// <summary>
+/// Represents a py pe packer executable packer handler.
+/// </summary>
 public sealed class PyPePackerExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "pypepacker";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "PyPePacker Python PE wrapper";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -18,6 +30,9 @@ public sealed class PyPePackerExecutablePackerHandler : IExecutablePackerHandler
     ExecutableUnpackCapabilities.CanRebuildExecutable |
     ExecutableUnpackCapabilities.SupportsPe;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "PyPePacker: not a valid PE wrapper.", true)]);
@@ -27,6 +42,9 @@ public sealed class PyPePackerExecutablePackerHandler : IExecutablePackerHandler
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "PyPePacker zipapp payload was not found or could not be decoded.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -43,6 +61,9 @@ public sealed class PyPePackerExecutablePackerHandler : IExecutablePackerHandler
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var artifacts = new List<UnpackArtifact> {
       new("metadata.json", BuildMetadataJson(packed), "stored"),

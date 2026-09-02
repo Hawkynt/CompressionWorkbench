@@ -63,13 +63,34 @@ namespace FileFormat.AcronisTibx;
 /// </remarks>
 public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "AcronisTibx";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Acronis True Image .tibx";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".tibx";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".tibx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <summary>
@@ -82,10 +103,22 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
     new("ARCH"u8.ToArray(), Offset: 0, Confidence: 0.95),
   ];
 
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored (LSM page store, content opaque)")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Acronis True Image .tibx (2020+ modern container) — Stage 2 R/O metadata + page-frame walk. "
     + "Detected by ASCII 'ARCH' (41 52 43 48) at offset 0 — the page-zero archive header magic "
@@ -125,6 +158,9 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
     + "content-defined chunking) is NOT reproduced, so CanCreate is NOT advertised — pending "
     + "vendor-restore validation (the Acronis app must restore the emitted .tibx).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
     var r = new AcronisTibxReader(stream);
@@ -140,6 +176,9 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
       Kind: null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);

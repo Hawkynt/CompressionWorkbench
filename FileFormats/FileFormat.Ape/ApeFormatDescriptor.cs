@@ -26,25 +26,64 @@ namespace FileFormat.Ape;
 /// </para>
 /// </summary>
 public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ape";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Monkey's Audio (.ape)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ape";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ape", ".mac"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x4D, 0x41, 0x43, 0x20], Confidence: 0.95), // "MAC "
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored"), new("ape", "APE"), new("pcm", "PCM")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Monkey's Audio; WAV header + per-frame blocks + seek table + APEv2 tags.";
 
   private static readonly byte[] ApeTagMagic = "APETAGEX"u8.ToArray();
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -53,6 +92,9 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
@@ -61,6 +103,9 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

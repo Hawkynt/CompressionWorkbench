@@ -23,9 +23,21 @@ public sealed class SiprCodec {
 
   /// <summary>SIPR decode modes (mirrors <c>SiprMode</c> in sipr.h).</summary>
   public enum SiprMode {
+    /// <summary>
+    /// Specifies the mode 16k option.
+    /// </summary>
     Mode16k = 0,
+    /// <summary>
+    /// Specifies the mode 8k 5 option.
+    /// </summary>
     Mode8k5 = 1,
+    /// <summary>
+    /// Specifies the mode 6k 5 option.
+    /// </summary>
     Mode6k5 = 2,
+    /// <summary>
+    /// Specifies the mode 5k 0 option.
+    /// </summary>
     Mode5k0 = 3,
   }
 

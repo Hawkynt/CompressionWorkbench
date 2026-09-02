@@ -4,10 +4,16 @@ using System.Text;
 
 namespace FileSystem.D81;
 
+/// <summary>
+/// Reads the directory of a Commodore 1581 D81 disk image and extracts the files it holds.
+/// </summary>
 public sealed class D81Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<D81Entry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<D81Entry> Entries => _entries;
 
   // Standard D81 size: 80 tracks x 40 sectors
@@ -23,6 +29,9 @@ public sealed class D81Reader : IDisposable {
   private const int Bam2Sector = 2;    // BAM for tracks 41-80
   private const int DirStartSector = 3; // first directory sector
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="D81Reader"/>.
+  /// </summary>
   public D81Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -110,6 +119,9 @@ public sealed class D81Reader : IDisposable {
     return sectorCount * 254;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(D81Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
@@ -140,5 +152,8 @@ public sealed class D81Reader : IDisposable {
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

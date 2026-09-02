@@ -55,6 +55,9 @@ public sealed class SfsBlockMover : IFilesystemBlockMover {
         });
   }
 
+  /// <summary>
+  /// Gets the block size.
+  /// </summary>
   public int BlockSize => this._volume?.BlockSize ?? 512;
 
   /// <summary>First byte a file may occupy: past the structures at the front.</summary>

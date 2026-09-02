@@ -84,15 +84,39 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>The synthetic entry name under which Macrium Reflect X exposes the reconstructed disk-image payload.</summary>
   public const string DiskImageEntryName = "disk-image.raw";
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Macrium";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Macrium Reflect";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".mrimgx";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".mrimgx", ".mrbakx", ".mrimg"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // Reflect X "MACRIUM_FILE" lives at the FOOTER (file_size - 12), not at
     // offset 0 — MagicSignature only supports forward offsets, so we leave
@@ -102,6 +126,9 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new("MR_BACKUP"u8.ToArray(), Offset: 0, Confidence: 0.55),
     new("MACX"u8.ToArray(), Offset: 0, Confidence: 0.40),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("zstd", "Zstd"),
@@ -109,8 +136,17 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new("aes-192-cbc", "AES-192 CBC"),
     new("aes-128-cbc", "AES-128 CBC"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Macrium Reflect (.mrimgx / .mrbakx = Reflect X R/W via MIT-licensed vendor spec; " +
     ".mrimg = legacy Stage 0 detection-only) — proprietary Windows backup / disk-imaging " +
@@ -137,12 +173,18 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     "Legacy .mrimg: no public specification, custom LZ codec (ccooper21/mrimg-tools partial RE only), " +
     "legacy EULA restricts reverse engineering — stays detection-only.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MacriumReader(stream, password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new MacriumReader(stream, password);
     foreach (var e in r.Entries) {

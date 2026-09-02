@@ -18,38 +18,92 @@ namespace FileFormat.Voc;
 public sealed class VocFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Voc";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Creative Voice (.voc)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".voc";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".voc"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("Creative Voice File"u8.ToArray(), Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Creative Voice (.voc) audio; full file + per-channel PCM + text/metadata.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "VOC archive accepts: FULL.voc, LEFT/RIGHT/MONO/… .wav (per-channel), metadata/*.txt, metadata/*.bin";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
@@ -63,6 +117,9 @@ public sealed class VocFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveCreatable: assemble per-channel mono WAVs into one VOC ─────────
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 

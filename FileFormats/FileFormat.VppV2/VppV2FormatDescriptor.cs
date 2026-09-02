@@ -54,30 +54,69 @@ public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "VppV2";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Volition VPP v2 (Saint's Row 2)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".vpp_pc";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".vpp_pc"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(new byte[] { 0xCE, 0x0A, 0x89, 0x51 }, Confidence: 0.93)
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("zlib", "Zlib"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Volition VPP v2 (Saint's Row 2 / SR2 era), zlib-compressible per entry";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new VppV2Reader(stream);
     return r.Entries.Select((e, i) =>
@@ -85,6 +124,9 @@ public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         e.IsCompressed ? "Zlib" : "Stored", false, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new VppV2Reader(stream);
     foreach (var e in r.Entries) {
@@ -124,6 +166,9 @@ public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new VppV2Writer(output, leaveOpen: true);
     foreach (var (name, data) in FilesOnly(inputs))

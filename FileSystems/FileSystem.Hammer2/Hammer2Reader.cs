@@ -326,6 +326,9 @@ public sealed class Hammer2Reader : IDisposable {
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._image.Length;
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() => this._image.Dispose();
 
   private static string ReadInodeName(byte[] inode) {

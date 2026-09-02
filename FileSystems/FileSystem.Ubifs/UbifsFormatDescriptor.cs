@@ -167,25 +167,64 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       description: "Logical erase-block size. Written to the superblock and used to pad each LEB; 64 KB matches common NAND flash."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ubifs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "UBIFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ubifs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ubifs", ".ubi", ".img"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0x06101831 LE = 31 18 10 06
     new([0x31, 0x18, 0x10, 0x06], Offset: 0, Confidence: 0.35),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Unsorted Block Image File System (Linux raw-flash) — linear log scan w/ zlib data nodes; Create emits superblock+master+inode+dentry+data, Add/Replace/Remove append journal-style nodes at the journal head (committed nodes byte-identical; self-round-trip only — full TNC/LPT commit out of scope).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
@@ -225,6 +264,9 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {

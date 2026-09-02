@@ -18,32 +18,80 @@ namespace FileFormat.Dmg;
 public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
   IArchiveModifiable, IArchiveDefragmentable {
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "DMG is an Apple disk image with mish blocks and a trailing block index; defragmentation is not exposed as a generic archive verb.");
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Dmg";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "DMG";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".dmg";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".dmg"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("dmg", "DMG")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Apple disk image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new DmgReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, stream.Length,
       "DMG", false, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new DmgReader(stream);
     foreach (var e in r.Entries) {
@@ -52,6 +100,12 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Opens a single DMG partition as a bounded read-only <see cref="Stream"/>.
+  /// The reader's per-entry extractor reconstructs the partition's raw
+  /// sectors; they are wrapped in a <see cref="BoundedEntryStream"/> sized
+  /// to the entry's size.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -67,6 +121,7 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       0, leaveOpen: false);
   }
 
+  /// <summary>Native in-memory single-entry extraction.</summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var ms = new MemoryStream();
@@ -74,6 +129,9 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new DmgWriter();
     foreach (var i in inputs) {

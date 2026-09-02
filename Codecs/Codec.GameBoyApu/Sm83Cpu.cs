@@ -25,47 +25,104 @@ public sealed class Sm83Cpu {
   /// <summary>Flag bits in the F register (low nibble is always zero on SM83).</summary>
   [Flags]
   public enum Flags : byte {
+    /// <summary>
+    /// Specifies the carry option.
+    /// </summary>
     Carry = 0x10,
+    /// <summary>
+    /// Specifies the half carry option.
+    /// </summary>
     HalfCarry = 0x20,
+    /// <summary>
+    /// Specifies the subtract option.
+    /// </summary>
     Subtract = 0x40,
+    /// <summary>
+    /// Specifies the zero option.
+    /// </summary>
     Zero = 0x80,
   }
 
   private readonly ISm83Bus _bus;
 
+  /// <summary>
+  /// Provides the a value.
+  /// </summary>
   public byte A;
+  /// <summary>
+  /// Provides the f value.
+  /// </summary>
   public byte F;
+  /// <summary>
+  /// Provides the b value.
+  /// </summary>
   public byte B;
+  /// <summary>
+  /// Provides the c value.
+  /// </summary>
   public byte C;
+  /// <summary>
+  /// Provides the d value.
+  /// </summary>
   public byte D;
+  /// <summary>
+  /// Provides the e value.
+  /// </summary>
   public byte E;
+  /// <summary>
+  /// Provides the h value.
+  /// </summary>
   public byte H;
+  /// <summary>
+  /// Provides the l value.
+  /// </summary>
   public byte L;
+  /// <summary>
+  /// Provides the sp value.
+  /// </summary>
   public ushort SP;
+  /// <summary>
+  /// Provides the pc value.
+  /// </summary>
   public ushort PC;
 
   /// <summary>Interrupt-master-enable latch. Tracked for fidelity; no interrupts are delivered.</summary>
   public bool Ime;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Sm83Cpu"/>.
+  /// </summary>
   public Sm83Cpu(ISm83Bus bus) => this._bus = bus;
 
   // ── 16-bit register pairs ─────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Gets or sets the bc.
+  /// </summary>
   public ushort BC {
     get => (ushort)((this.B << 8) | this.C);
     set { this.B = (byte)(value >> 8); this.C = (byte)value; }
   }
 
+  /// <summary>
+  /// Gets or sets the de.
+  /// </summary>
   public ushort DE {
     get => (ushort)((this.D << 8) | this.E);
     set { this.D = (byte)(value >> 8); this.E = (byte)value; }
   }
 
+  /// <summary>
+  /// Gets or sets the hl.
+  /// </summary>
   public ushort HL {
     get => (ushort)((this.H << 8) | this.L);
     set { this.H = (byte)(value >> 8); this.L = (byte)value; }
   }
 
+  /// <summary>
+  /// Gets or sets the af.
+  /// </summary>
   public ushort AF {
     get => (ushort)((this.A << 8) | (this.F & 0xF0));
     set { this.A = (byte)(value >> 8); this.F = (byte)(value & 0xF0); }

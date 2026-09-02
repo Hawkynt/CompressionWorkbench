@@ -10,6 +10,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     //#include "isp_isf.tab"                     /* Look-up table for transformations */

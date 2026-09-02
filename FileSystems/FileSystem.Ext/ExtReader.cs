@@ -18,6 +18,9 @@ public sealed class ExtReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<ExtEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<ExtEntry> Entries => _entries;
 
   // Superblock fields
@@ -48,6 +51,9 @@ public sealed class ExtReader : IDisposable {
   private const ushort ExtentMagic = 0xF30A;
   private const uint RootInode = 2;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ExtReader"/>.
+  /// </summary>
   public ExtReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _data = new ImageAccessor(stream, leaveOpen: true);
@@ -440,6 +446,9 @@ public sealed class ExtReader : IDisposable {
     WriteInodeBlocks(inodeData, destination);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(ExtEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -458,5 +467,8 @@ public sealed class ExtReader : IDisposable {
     return data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

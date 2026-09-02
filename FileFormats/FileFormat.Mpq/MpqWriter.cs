@@ -21,6 +21,9 @@ public sealed class MpqWriter {
 
   private readonly List<(string name, byte[] data)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -31,6 +34,9 @@ public sealed class MpqWriter {
     _files.Add((name, data));
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 

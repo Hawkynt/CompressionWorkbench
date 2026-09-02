@@ -56,6 +56,9 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <inheritdoc/>
   /// <remarks>Empty: outer container is gzip; detection is by extension to avoid
   /// shadowing the gzip / TAR descriptors.</remarks>
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>

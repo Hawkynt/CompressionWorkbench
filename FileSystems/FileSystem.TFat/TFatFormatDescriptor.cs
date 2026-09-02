@@ -52,6 +52,9 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // geometry knobs FAT does: image size, cluster size, FAT type and volume
   // label. TFAT targets embedded / Windows CE devices, so the image-size presets
   // skew towards floppy + small-card sizes rather than optical media.
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.ImageSize(
       sizes: ["1.44 MB (3.5\" HD)", "32 MB", "128 MB", "512 MB", "1 GB", "2 GB", "4 GB"],
@@ -68,16 +71,37 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Description: "Auto selects FAT12/16/32 by cluster count. Force a type when the target device requires it."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "TFat";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Transactional FAT (TFAT)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".tfat";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".tfat"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // Magic signatures: the 4-byte "TFAT" prefix appears at one of two offsets
@@ -85,15 +109,33 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // FAT32. The high confidence (0.92) reflects that the standalone "TFAT"
   // tag is unique to this format. The signatures are checked at fixed
   // offsets by the FormatDetector so detection is O(1).
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("TFAT"u8.ToArray(), Offset: 54, Confidence: 0.92),
     new("TFAT"u8.ToArray(), Offset: 82, Confidence: 0.92),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Windows CE / Embedded Compact Transactional FAT (dual-FAT atomic commit)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new TFatReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -101,6 +143,9 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new TFatReader(stream);
     foreach (var e in r.Entries) {
@@ -110,6 +155,9 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new TFatWriter();
     // Streaming inputs: only a length is needed to lay the volume out, and the
@@ -215,6 +263,9 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     combined.BuildTo(archive, totalSectors);
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in — and where it can still edit, it has no room
@@ -256,6 +307,9 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -283,6 +337,9 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);

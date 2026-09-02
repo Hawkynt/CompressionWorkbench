@@ -16,9 +16,15 @@ public sealed class Mp4Demuxer {
   /// <summary>A single sample (video frame or audio packet).</summary>
   public sealed record SampleEntry(byte[] Data);
 
+  /// <summary>
+  /// Represents a track.
+  /// </summary>
   public sealed record Track(int Id, string HandlerType, string CodecFourCc, byte[] Data, long DurationTicks, int Timescale,
                              IReadOnlyList<SampleEntry> Samples);
 
+  /// <summary>
+  /// Performs the demux operation.
+  /// </summary>
   public IReadOnlyList<Track> Demux(byte[] file) {
     var parser = new BoxParser();
     var boxes = parser.Parse(file);

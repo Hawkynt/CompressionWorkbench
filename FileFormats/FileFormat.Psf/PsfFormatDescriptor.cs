@@ -16,41 +16,89 @@ namespace FileFormat.Psf;
 /// </summary>
 public sealed class PsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "PSF is a fixed-section sound container (header + reserved + program + tags) — " +
       "section order is part of the format spec; defragmentation isn't meaningful.");
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Psf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Portable Sound Format";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".psf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [
     ".psf", ".psf2", ".minipsf", ".minipsf2",
     ".ssf", ".dsf", ".gsf", ".usf", ".2sf", ".ncsf", ".snsf", ".qsf",
   ];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
   // Confidence is intentionally moderate: "PSF" is a short and common ASCII trigram. The
   // platform-specific 4th byte (0x01..0x4x) further narrows detection but isn't part of
   // the magic since it varies across the dozen PSF variants.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("PSF"u8.ToArray(), Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("psf-zlib", "PSF zlib")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Portable Sound Format (game music archival container)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new PsfReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Data.LongLength, e.Data.LongLength, "psf-zlib", false, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new PsfReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -59,6 +107,9 @@ public sealed class PsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new PsfWriter(output, leaveOpen: true);
 

@@ -22,25 +22,64 @@ public sealed class NetCdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   private static readonly byte[] Magic2 = [(byte)'C', (byte)'D', (byte)'F', 0x02];
   private static readonly byte[] Magic5 = [(byte)'C', (byte)'D', (byte)'F', 0x05];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "NetCdf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NetCDF (Classic)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".nc";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".nc", ".cdf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(Magic1, Confidence: 0.95),
     new(Magic2, Confidence: 0.95),
     new(Magic5, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Network Common Data Form (classic CDF-1/2/5)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = BuildEntries(stream);
     var result = new List<ArchiveEntryInfo>(entries.Count);
@@ -55,6 +94,9 @@ public sealed class NetCdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return result;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var entries = BuildEntries(stream);
     foreach (var e in entries) {

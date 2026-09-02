@@ -51,6 +51,9 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // cluster size, and the volume label (plumbed through to the inner FatWriter).
   // FAT type / root-entry count are NOT exposed — FAT+ is fixed to FAT32 and the
   // writer does not accept those parameters.
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.ImageSize(
       ["512 MB", "1 GB", "2 GB", "4 GB", "16 GB", "64 GB"],
@@ -61,37 +64,76 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     FilesystemSchemaPresets.VolumeLabel(),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "FatPlus";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "FAT+ Filesystem Image (large-file extension)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: Add/Remove edit the FAT, clusters and directory in place
   // (FatPlusInPlaceAdder reusing FatModifier/FatRemover, plus the FAT+
   // extended-size dirent patch); existing files and the boot sector stay
   // byte-identical. A verified FatPlusWriter rebuild is only a
   // structural-edge-case fallback.
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".img";
 
   // Empty extensions list: FAT+ shares .img with FAT/exFAT. Detection is
   // strictly by the BPB OEM signature so we don't grab unrelated .img files.
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // Magic: OEM signature "FAT+    " at offset 3 of the boot sector.
   // High confidence — this is the defining mark of a FAT+ volume.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new MagicSignature(FatPlusReader.OemSignature, Offset: 3, Confidence: 0.95),
   ];
 
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "FAT32/FAT16 image with the FAT+ 256 GiB-file extension (FATPLUS.TXT draft rev 2/3).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new FatPlusReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -99,6 +141,9 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new FatPlusReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -216,6 +261,9 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   private const long MaxBufferedImageBytes = 1L << 31;
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var items = FormatHelpers.FilesOnly(inputs).ToList();
     try {

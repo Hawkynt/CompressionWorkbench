@@ -21,33 +21,78 @@ namespace FileFormat.Hcom;
 public sealed class HcomFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Hcom";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HCOM (Macintosh)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".hcom";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".hcom"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // The raw Mac sound data fork starts with "FSSD"; HCOM-compressed forks start with
   // "HCOM" (at offset 0, or at offset 65 inside a MacBinary header).
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("FSSD"u8.ToArray(), Offset: 0, Confidence: 0.85),
     new("HCOM"u8.ToArray(), Offset: 0, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Macintosh HCOM sound; full file + decoded mono WAV (Huffman delta tree walk).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
@@ -181,6 +226,9 @@ public sealed class HcomFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   // ── IArchiveCreatable: encode a single mono WAV to a delta-Huffman HCOM fork ──
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
@@ -233,10 +281,19 @@ public sealed class HcomFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "HCOM archive accepts: FULL.hcom or one mono WAV (delta-Huffman encoded)";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name == "full.hcom" || name.EndsWith(".wav")) { reason = null; return true; }

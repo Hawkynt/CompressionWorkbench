@@ -39,34 +39,76 @@ public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       });
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Cab";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "CAB";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract -> edit ->
   // re-create rebuild (default IArchiveModifiable); CAB folders are solid-compressed, so
   // the data blocks are rewritten — moving data is acceptable for a read-write archive.
   // See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".cab";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".cab"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'M', (byte)'S', (byte)'C', (byte)'F'], Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("mszip", "MS-ZIP"), new("lzx", "LZX"), new("quantum", "Quantum"), new("none", "Store")
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Microsoft Cabinet archive, used in Windows installers";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CabReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.UncompressedSize, -1,
       "CAB", false, false, e.LastModified)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new CabReader(stream);
     foreach (var e in r.Entries) {
@@ -104,6 +146,9 @@ public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var compType = options.MethodName switch {
       "lzx" => CabCompressionType.Lzx,

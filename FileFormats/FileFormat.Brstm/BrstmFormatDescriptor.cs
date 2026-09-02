@@ -17,34 +17,82 @@ namespace FileFormat.Brstm;
 public sealed class BrstmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Brstm";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "BRSTM (Wii stream)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".brstm";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".brstm"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("RSTM"u8.ToArray(), Confidence: 0.90),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "BRSTM (Wii RSTM stream); full file + per-channel decoded WAVs + metadata.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveCreatable: FULL passthrough OR per-channel mono WAVs → DSP-ADPCM BRSTM ──
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
@@ -92,10 +140,19 @@ public sealed class BrstmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "BRSTM archive accepts: FULL.brstm, or LEFT/RIGHT/CENTER/… .wav (per-channel mono 16-bit)";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";

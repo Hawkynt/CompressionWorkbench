@@ -45,17 +45,29 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class PePackerExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "pepacker_czs108";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "PE-Packer (czs108)";
 
   private const string ShellSectionName = ".shell";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "PE-Packer: not a valid PE.", true)]);
@@ -76,6 +88,9 @@ public sealed class PePackerExecutablePackerHandler : IExecutablePackerHandler {
     return new(true, this.Id, confidence, []);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -92,6 +107,9 @@ public sealed class PePackerExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     var diagnostics = new List<ExecutableDiagnostic>();

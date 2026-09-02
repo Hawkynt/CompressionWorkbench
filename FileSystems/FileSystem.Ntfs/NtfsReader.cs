@@ -18,6 +18,9 @@ public sealed class NtfsReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<NtfsEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<NtfsEntry> Entries => _entries;
 
   // Boot sector fields
@@ -30,6 +33,9 @@ public sealed class NtfsReader : IDisposable {
   // Parsed MFT records: record number -> parsed info
   private readonly Dictionary<uint, MftRecord> _mftRecords = [];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="NtfsReader"/>.
+  /// </summary>
   public NtfsReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _data = new ImageAccessor(stream, leaveOpen: true);
@@ -723,6 +729,9 @@ public sealed class NtfsReader : IDisposable {
     return result;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 
   private sealed class MftRecord {

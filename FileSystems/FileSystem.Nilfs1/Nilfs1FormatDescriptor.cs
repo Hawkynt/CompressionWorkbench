@@ -36,16 +36,40 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   private static readonly HashSet<string> SyntheticEntries =
     new(StringComparer.Ordinal) { "FULL.nilfs", "metadata.ini", "superblock.bin" };
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Nilfs1";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NILFS v1";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".nilfs1";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".nilfs1", ".nilfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // NILFS_SUPER_MAGIC == 0x3434 at superblock+6 (file offset 1030) is shared with
     // NILFS2, so on its own it made every v1 image detect as NILFS2 — whose reader
@@ -58,11 +82,26 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // Bare magic, below NILFS2's confidence so a v2 volume still goes there.
     new([0x34, 0x34], Offset: 1030, Confidence: 0.80),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "NILFS v1 log-structured filesystem (precursor to NILFS2) — minimal writer + reader.";
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.PowerOfTwoSize(
       key: "BlockSize",
@@ -90,12 +129,18 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       Description: "Sets s_flags bit 0 advertising that segments carry per-segment checksums (informational only — our writer does not compute them)."),
   ];
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new Nilfs1Reader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new Nilfs1Reader(stream);
     foreach (var e in r.Entries) {
@@ -108,6 +153,9 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -163,9 +211,15 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     Nilfs1InPlaceModifier.Remove(archive, entryNames);
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Nilfs1ExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -233,6 +287,9 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
@@ -303,6 +360,9 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
+  /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

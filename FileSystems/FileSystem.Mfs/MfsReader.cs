@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileSystem.Mfs;
 
+/// <summary>
+/// Reads the flat directory of a Classic Macintosh MFS volume and extracts the files it holds.
+/// </summary>
 public sealed class MfsReader : IDisposable {
   private const ushort MfsMagic = 0xD2D7;
   private const int MdbOffset = 1024;
@@ -13,8 +16,14 @@ public sealed class MfsReader : IDisposable {
   private uint _blockSize;
   private int _firstBlockOffset;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<MfsEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="MfsReader"/>.
+  /// </summary>
   public MfsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -83,6 +92,9 @@ public sealed class MfsReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(MfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
@@ -92,5 +104,8 @@ public sealed class MfsReader : IDisposable {
     return _data.AsSpan(offset, len).ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

@@ -22,26 +22,65 @@ namespace FileFormat.Vhdx;
 /// </list>
 /// </summary>
 public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Vhdx";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "VHDX";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".vhdx";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".vhdx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("vhdxfile"u8.ToArray(), Offset: 0, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Microsoft Hyper-V VHDX virtual hard disk (MS-VHDX v1)";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
       using (vhdxStream) {
@@ -67,6 +106,9 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
       using (vhdxStream) {
@@ -320,6 +362,9 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// first write, so callers should ensure the host stream has enough room
   /// for any new partitions before adding them.
   /// </remarks>
+  /// <summary>
+  /// Performs the open guest disk stream operation.
+  /// </summary>
   public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)

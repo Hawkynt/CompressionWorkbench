@@ -5,6 +5,9 @@ using System.Text;
 
 namespace FileSystem.Xfs;
 
+/// <summary>
+/// Reads the directory tree of an SGI XFS filesystem image and extracts the files it holds.
+/// </summary>
 public sealed class XfsReader : IDisposable {
   private const uint XfsMagic = 0x58465342; // "XFSB"
   private const ushort InodeMagic = 0x494E; // "IN"
@@ -26,8 +29,14 @@ public sealed class XfsReader : IDisposable {
   private const uint XfsFeatIncompatFtype = 0x1;
   private bool HasFtype => (this._featuresIncompat & XfsFeatIncompatFtype) != 0;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<XfsEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="XfsReader"/>.
+  /// </summary>
   public XfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -300,6 +309,9 @@ public sealed class XfsReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(XfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var size = entry.Size;
@@ -370,5 +382,8 @@ public sealed class XfsReader : IDisposable {
     return written;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() => this._img.Dispose();
 }

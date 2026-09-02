@@ -38,13 +38,28 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class ExpressorExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "expressor";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "EXpressor";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     name.Contains("exp", StringComparison.OrdinalIgnoreCase) ||
     name.Contains("ex_", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "EXpressor"u8;
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public override ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -55,6 +70,9 @@ public sealed class ExpressorExecutablePackerHandler : MinorExecutablePackerHand
   /// <summary>Smallest stream chain worth believing: a single stream this size or larger.</summary>
   private const int MinimumStreamOutput = 64;
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     var artifacts = new List<UnpackArtifact> {

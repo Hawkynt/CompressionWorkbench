@@ -53,6 +53,14 @@ the bytes that actually move rather than the whole volume.
 
 Descriptor for Gothic-engine VDFS archives (magic "PSVDSC_V2.00", .vdf) — the virtual-disk container used by Piranha Bytes' ZenGin games. References:
 
+### VdfsReader
+
+Reads the entry table of a Gothic-engine VDFS archive and extracts the files it holds.
+
+### VdfsWriter
+
+Builds a Gothic-engine VDFS archive from a set of files, writing the entry table and the file data behind it.
+
 ## Storage methods
 
 - `stored` — Stored

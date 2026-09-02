@@ -16,23 +16,62 @@ namespace FileFormat.FontCollection;
 /// </list>
 /// </summary>
 public sealed class OtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Otf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "OTF (OpenType font — glyphs)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".otf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".otf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("OTTO"u8.ToArray(), Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "OpenType font; FULL + metadata + per-glyph SVG (TrueType outlines).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     TtfFormatDescriptor.BuildEntries(Read(stream), defaultExt: ".otf")
       .Select((e, i) => new ArchiveEntryInfo(
@@ -41,6 +80,9 @@ public sealed class OtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         Method: "stored", IsDirectory: false, IsEncrypted: false,
         LastModified: null)).ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var entry in TtfFormatDescriptor.BuildEntries(Read(stream), defaultExt: ".otf")) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(entry.EntryName, files))

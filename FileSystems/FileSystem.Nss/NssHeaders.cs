@@ -55,18 +55,45 @@ public sealed class NssHeaders {
   /// <summary>Scan limit — the first 1 MB of the image. Larger pools may exist but signatures cluster near the start.</summary>
   public const int ScanLimit = 1024 * 1024;
 
+  /// <summary>
+  /// Gets a value indicating whether pool found.
+  /// </summary>
   public bool PoolFound { get; private init; }
+  /// <summary>
+  /// Gets or sets the pool found offset.
+  /// </summary>
   public long PoolFoundOffset { get; private init; } = -1;
 
+  /// <summary>
+  /// Gets a value indicating whether volume found.
+  /// </summary>
   public bool VolumeFound { get; private init; }
+  /// <summary>
+  /// Gets or sets the volume found offset.
+  /// </summary>
   public long VolumeFoundOffset { get; private init; } = -1;
 
+  /// <summary>
+  /// Gets a value indicating whether superblock found.
+  /// </summary>
   public bool SuperblockFound { get; private init; }
+  /// <summary>
+  /// Gets or sets the superblock found offset.
+  /// </summary>
   public long SuperblockFoundOffset { get; private init; } = -1;
 
+  /// <summary>
+  /// Gets a value indicating whether novell found.
+  /// </summary>
   public bool NovellFound { get; private init; }
+  /// <summary>
+  /// Gets a value indicating whether net ware found.
+  /// </summary>
   public bool NetWareFound { get; private init; }
 
+  /// <summary>
+  /// Gets or sets the header raw.
+  /// </summary>
   public byte[] HeaderRaw { get; private init; } = [];
 
   /// <summary>True iff at least one primary NSS signature (Pool/Volume/SuperBlk) was located.</summary>

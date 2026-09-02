@@ -2,6 +2,9 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Haraka v2 256-bit fixed-input hash.</summary>
 public static class Haraka256 {
+  /// <summary>
+  /// Computes the Haraka-256 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     if (data.Length != 32)
       throw new ArgumentException("Haraka-256 requires exactly 32 input bytes.", nameof(data));
@@ -45,6 +48,9 @@ public static class Haraka256 {
 
 /// <summary>Haraka v2 512-to-256 fixed-input hash.</summary>
 public static class Haraka512 {
+  /// <summary>
+  /// Computes the Haraka-512 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     if (data.Length != 64)
       throw new ArgumentException("Haraka-512 requires exactly 64 input bytes.", nameof(data));

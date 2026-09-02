@@ -13,11 +13,23 @@ namespace FileFormat.Nsf;
 /// </summary>
 public static class NsfDecomposer {
 
+  /// <summary>
+  /// Represents an entry kinds.
+  /// </summary>
   public static class EntryKinds {
+    /// <summary>
+    /// Defines the track constant value.
+    /// </summary>
     public const string Track = "Track";
+    /// <summary>
+    /// Defines the tag constant value.
+    /// </summary>
     public const string Tag = "Tag";
   }
 
+  /// <summary>
+  /// Represents an entry.
+  /// </summary>
   public readonly record struct Entry(string Name, byte[] Data, string Kind);
 
   // Expansion-chip bit → name (header byte 0x7B).
@@ -26,6 +38,9 @@ public static class NsfDecomposer {
     (4, "Namco163"), (5, "Sunsoft 5B"), (6, "VT02+"),
   ];
 
+  /// <summary>
+  /// Performs the decompose operation.
+  /// </summary>
   public static List<Entry> Decompose(byte[] file) {
     var entries = new List<Entry> { new("FULL.nsf", file, EntryKinds.Track) };
     var meta = new IniBuilder("nsf");

@@ -9,6 +9,9 @@ namespace FileFormat.Gettext;
 /// (<c>#</c>, <c>#.</c>, <c>#:</c>, <c>#,</c>) are ignored.
 /// </summary>
 public sealed class PoReader {
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public List<CatalogEntry> Read(ReadOnlySpan<byte> data) {
     var text = Encoding.UTF8.GetString(data);
     // Normalise line endings; keep empty lines as entry separators.

@@ -23,6 +23,9 @@ public static class D81ExtentMap {
   private const int DirStartSector = 3;
   private const int StandardSize = 819200;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

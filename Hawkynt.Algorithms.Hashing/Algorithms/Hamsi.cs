@@ -7,6 +7,9 @@ namespace Hawkynt.Algorithms.Hashing;
 /// implementation; digest selection changes only the IV and the standardized output truncation.
 /// </summary>
 public static class Hamsi {
+  /// <summary>
+  /// Gets the new value.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [new(384, 512, 128)];
 
   private static readonly uint[] Iv384 = [
@@ -101,6 +104,9 @@ public static class Hamsi {
 
   private static readonly int[] Output384 = [0,1,3,4,5,6,8,9,10,12,13,15];
 
+  /// <summary>
+  /// Computes the Hamsi hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512) {
     if (!SupportedHashSizes.Supports(hashSizeBits))
       throw new ArgumentOutOfRangeException(nameof(hashSizeBits));

@@ -17,23 +17,53 @@ namespace FileFormat.Onnx;
 /// </remarks>
 public ref struct ProtobufReader {
 
+  /// <summary>
+  /// Defines the wire varint constant value.
+  /// </summary>
   public const int WireVarint = 0;
+  /// <summary>
+  /// Defines the wire fixed 64 constant value.
+  /// </summary>
   public const int WireFixed64 = 1;
+  /// <summary>
+  /// Defines the wire length delimited constant value.
+  /// </summary>
   public const int WireLengthDelimited = 2;
+  /// <summary>
+  /// Defines the wire start group constant value.
+  /// </summary>
   public const int WireStartGroup = 3;   // proto2 groups, deprecated
+  /// <summary>
+  /// Defines the wire end group constant value.
+  /// </summary>
   public const int WireEndGroup = 4;     // proto2 groups, deprecated
+  /// <summary>
+  /// Defines the wire fixed 32 constant value.
+  /// </summary>
   public const int WireFixed32 = 5;
 
   private ReadOnlySpan<byte> _data;
   private int _pos;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ProtobufReader"/>.
+  /// </summary>
   public ProtobufReader(ReadOnlySpan<byte> data) {
     this._data = data;
     this._pos = 0;
   }
 
+  /// <summary>
+  /// Gets the position.
+  /// </summary>
   public readonly int Position => this._pos;
+  /// <summary>
+  /// Gets the remaining.
+  /// </summary>
   public readonly int Remaining => this._data.Length - this._pos;
+  /// <summary>
+  /// Gets a value indicating whether at end.
+  /// </summary>
   public readonly bool AtEnd => this._pos >= this._data.Length;
 
   /// <summary>Reads a tag (field number + wire type); returns false at EOF.</summary>
@@ -59,9 +89,18 @@ public ref struct ProtobufReader {
     throw new InvalidDataException("protobuf: truncated varint.");
   }
 
+  /// <summary>
+  /// Reads the int 32 from the supplied input.
+  /// </summary>
   public int ReadInt32() => (int)this.ReadVarint();
+  /// <summary>
+  /// Reads the int 64 from the supplied input.
+  /// </summary>
   public long ReadInt64() => (long)this.ReadVarint();
 
+  /// <summary>
+  /// Reads the fixed 32 from the supplied input.
+  /// </summary>
   public uint ReadFixed32() {
     if (this._pos + 4 > this._data.Length) throw new InvalidDataException("protobuf: truncated fixed32.");
     var v = BinaryPrimitives.ReadUInt32LittleEndian(this._data[this._pos..]);
@@ -69,6 +108,9 @@ public ref struct ProtobufReader {
     return v;
   }
 
+  /// <summary>
+  /// Reads the fixed 64 from the supplied input.
+  /// </summary>
   public ulong ReadFixed64() {
     if (this._pos + 8 > this._data.Length) throw new InvalidDataException("protobuf: truncated fixed64.");
     var v = BinaryPrimitives.ReadUInt64LittleEndian(this._data[this._pos..]);
@@ -86,6 +128,9 @@ public ref struct ProtobufReader {
     return s;
   }
 
+  /// <summary>
+  /// Reads the string from the supplied input.
+  /// </summary>
   public string ReadString() => System.Text.Encoding.UTF8.GetString(this.ReadBytes());
 
   /// <summary>Skips one wire-format value (tag already consumed).</summary>

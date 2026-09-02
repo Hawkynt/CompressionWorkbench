@@ -37,6 +37,9 @@ public static class AdfsExtentMap {
   private const int DirectoryEntrySize = 26;
   private const int MaxDirectoryEntries = 47;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 

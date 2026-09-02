@@ -53,6 +53,9 @@ public sealed class BcacheFsReader : IDisposable {
     public long FirstSector => this.Extents.Count == 0 ? 0 : this.Extents[0].FirstSector;
   }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="BcacheFsReader"/>.
+  /// </summary>
   public BcacheFsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
@@ -184,6 +187,9 @@ public sealed class BcacheFsReader : IDisposable {
     return buffer.ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (!this._leaveOpen) this._stream.Dispose();
   }

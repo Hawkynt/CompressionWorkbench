@@ -38,11 +38,26 @@ public sealed class BeeGfsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<BeeGfsEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<BeeGfsEntry> Entries => _entries;
+  /// <summary>
+  /// Gets or sets the tag.
+  /// </summary>
   public string Tag { get; private set; } = "";
+  /// <summary>
+  /// Gets or sets the trailing word.
+  /// </summary>
   public uint TrailingWord { get; private set; }
+  /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
   public bool ValidHeader { get; private set; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="BeeGfsReader"/>.
+  /// </summary>
   public BeeGfsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -89,10 +104,16 @@ public sealed class BeeGfsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(BeeGfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

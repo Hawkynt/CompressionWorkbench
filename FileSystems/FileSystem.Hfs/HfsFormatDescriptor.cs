@@ -94,9 +94,21 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new HfsBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Hfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HFS (Classic)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
@@ -141,13 +153,34 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     });
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".hfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".hfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x42, 0x44], Offset: 1024, Confidence: 0.80)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Classic Macintosh HFS filesystem image (pre-HFS+). Writer emits a
@@ -158,6 +191,9 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public string Description => "Classic Macintosh HFS filesystem image (pre-HFS+)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new HfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -197,6 +233,9 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HfsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
@@ -206,6 +245,9 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(w.Build());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new HfsReader(stream);
     foreach (var e in r.Entries) {

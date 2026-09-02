@@ -39,23 +39,59 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "AmigaPfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Amiga Professional FS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".pfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".pfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'F', (byte)'S', 0x02], Offset: 0, Confidence: 0.95),
     new([(byte)'P', (byte)'F', (byte)'S', 0x03], Offset: 0, Confidence: 0.95),
     new([(byte)'P', (byte)'F', (byte)'S', (byte)'a'], Offset: 0, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Amiga Professional File System (PFS3/PFS3aio) image — Stage 1 R/W " +
     "(boot block + root + linear dirblock chain + contiguous file extents; anode-as-direct-block " +
     "convention; in-place Add/Remove against the same shape; full anode-table/bitmap emission " +
@@ -121,12 +157,18 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     w.BuildTo(output, label);
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new AmigaPfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new AmigaPfsReader(stream);
     foreach (var e in r.Entries) {
@@ -139,6 +181,9 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -155,6 +200,9 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memoryStream = new MemoryStream();
@@ -164,6 +212,9 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

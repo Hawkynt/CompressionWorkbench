@@ -22,24 +22,63 @@ namespace FileFormat.Vib;
 /// </list>
 /// </summary>
 public sealed class VibFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Vib";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "vSphere Installation Bundle";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".vib";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".vib"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
   // VIB shares the ar global magic "!<arch>\n"; extension + descriptor.xml member
   // distinguish it, so no generic ar magic is claimed here.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("tgz", "TGZ payload")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "VMware vSphere Installation Bundle (CommunitySupported creation, AR + descriptor + empty signature + TGZ payload)";
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Name", "Package name", FormatOptionKind.String, VibWriterOptions.DefaultName,
       Description: "VIB package identifier; ASCII letters, digits, dot, underscore and hyphen."),
@@ -67,6 +106,9 @@ public sealed class VibFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Description: "Unix mode for payload directories, written as an octal value."),
   ];
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new VibReader(stream);
     var entries = new List<ArchiveEntryInfo>();
@@ -87,6 +129,9 @@ public sealed class VibFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new VibReader(stream);
 
@@ -105,6 +150,9 @@ public sealed class VibFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);

@@ -25,6 +25,9 @@ public sealed class ExFatWriter {
   private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
   private const uint EocMarker = 0xFFFFFFFFu;
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
 
   /// <summary>

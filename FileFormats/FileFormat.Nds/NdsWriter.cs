@@ -17,6 +17,9 @@ public sealed class NdsWriter {
 
   private readonly List<(string name, byte[] data)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -27,6 +30,9 @@ public sealed class NdsWriter {
     _files.Add((leaf, data));
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     var n = _files.Count;
 

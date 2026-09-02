@@ -24,16 +24,40 @@ namespace FileSystem.Qnx4;
 /// </list>
 /// </summary>
 public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Qnx4";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "QNX4 FS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".qnx4";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".qnx4", ".qnx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // QNX4 has no fixed superblock magic. Detection looks for any of the
     // recognised "live inode" status bytes at offset 0x23D (= block 1, first
@@ -45,17 +69,35 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     new([0x08], Offset: 0x23D, Confidence: 0.35),
     new([0x09], Offset: 0x23D, Confidence: 0.40),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "QNX4 filesystem image (1991-2001, QNX Software Systems) — R/W (flat root, max 29 user files).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new Qnx4Reader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new Qnx4Reader(stream);
     foreach (var e in r.Entries) {
@@ -67,6 +109,9 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -81,6 +126,9 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memoryStream = new MemoryStream();
@@ -89,6 +137,9 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   // ── IArchiveCreatable ───────────────────────────────────────────────────
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -161,6 +212,9 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>The first block a file may occupy: past the volume's own structures.</summary>
   private const uint FirstDataBlock = 8;
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();

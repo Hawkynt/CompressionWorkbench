@@ -21,24 +21,63 @@ namespace FileFormat.Pkcs12;
 /// </list>
 /// </summary>
 public sealed class Pkcs12FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Pkcs12";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "PKCS#12 (PFX)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".p12";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".p12", ".pfx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
   // ASN.1 SEQUENCE tag is universally 0x30 — very weak on its own, so we keep
   // the confidence low.  Extension is what really disambiguates.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x30], Confidence: 0.10)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "PKCS#12 certificate + key bundle (RFC 7292), shallow SafeBag extraction.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -74,6 +113,9 @@ public sealed class Pkcs12FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
@@ -81,6 +123,9 @@ public sealed class Pkcs12FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

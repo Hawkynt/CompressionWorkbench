@@ -17,6 +17,9 @@ public static class RefsExtentMap {
   private sealed record NamedRun(string Name, ClusterRun Run);
   private sealed record FileRun(string Path, ClusterRun Run, bool Movable);
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanRead || !image.CanSeek || image.Length < 512) yield break;

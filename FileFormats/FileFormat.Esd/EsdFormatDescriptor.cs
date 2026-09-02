@@ -87,6 +87,9 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Empty: ESD shares the WIM <c>"MSWIM\0\0\0"</c> magic. Detection is by
   /// extension to avoid first-match conflicts with the WIM descriptor.
   /// </remarks>
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
@@ -146,6 +149,9 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in this.BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))

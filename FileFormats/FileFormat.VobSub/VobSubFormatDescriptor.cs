@@ -25,24 +25,63 @@ namespace FileFormat.VobSub;
 /// </remarks>
 public sealed class VobSubFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "VobSub";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "VobSub DVD Subtitles";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".idx";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".idx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "# VobSub index file" — first 19 bytes of the .idx text header.
     new("# VobSub index file"u8.ToArray(), Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "VobSub DVD subtitle index (.idx) plus sibling MPEG-PS subtitle stream (.sub).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var (idxBytes, subBytes) = ReadIndexAndSibling(stream);
     return BuildEntries(idxBytes, subBytes).Select((e, i) => new ArchiveEntryInfo(
@@ -52,6 +91,9 @@ public sealed class VobSubFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       LastModified: null, Kind: e.Kind)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var (idxBytes, subBytes) = ReadIndexAndSibling(stream);
     foreach (var e in BuildEntries(idxBytes, subBytes)) {
@@ -89,6 +131,9 @@ public sealed class VobSubFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     var (idxBytes, subBytes) = ReadIndexAndSibling(input);
     foreach (var e in BuildEntries(idxBytes, subBytes))

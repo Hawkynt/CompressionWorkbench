@@ -31,6 +31,9 @@ public static class Whirlpool {
 
   private static readonly ulong[] Table = BuildTable();
 
+  /// <summary>
+  /// Computes the Whirlpool hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     Span<ulong> state = stackalloc ulong[8];
     var offset = 0;

@@ -16,9 +16,18 @@ namespace FileFormat.ExePackers;
 /// recovered byte-for-byte by carving the injected note region.
 /// </summary>
 public sealed class WardExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "ward";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Ward ELF PT_NOTE packer";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -30,6 +39,9 @@ public sealed class WardExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsArm32 |
     ExecutableUnpackCapabilities.SupportsArm64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (TryLocatePayload(image.ToArray(), out _, out _))
       return new(true, this.Id, 1.0, []);
@@ -38,6 +50,9 @@ public sealed class WardExecutablePackerHandler : IExecutablePackerHandler {
         "No Ward PT_NOTE segment pointing at an appended ELF payload was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var bytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -48,6 +63,9 @@ public sealed class WardExecutablePackerHandler : IExecutablePackerHandler {
     });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     if (image.LongLength > options.MaximumInputSize)

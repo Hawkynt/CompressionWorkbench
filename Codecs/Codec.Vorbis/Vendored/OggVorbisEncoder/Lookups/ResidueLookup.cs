@@ -3,6 +3,9 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents a residue lookup.
+/// </summary>
 public class ResidueLookup
 {
     private readonly CodeBook[][] _partitionBooks;
@@ -10,6 +13,9 @@ public class ResidueLookup
     private readonly ResidueEntry _residue;
     private readonly int _stages;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="ResidueLookup"/>.
+    /// </summary>
     public ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)
     {
         _residue = residue;
@@ -40,6 +46,9 @@ public class ResidueLookup
         _stages = maxstage;
     }
 
+    /// <summary>
+    /// Performs the forward operation.
+    /// </summary>
     public int Forward(
         EncodeBuffer buffer,
         int pcmend,
@@ -225,6 +234,9 @@ public class ResidueLookup
         return index;
     }
 
+    /// <summary>
+    /// Performs the class operation.
+    /// </summary>
     public int[][] Class(int[][] couples, bool[] nonzero, int channels)
     {
         for (var channel = 0; channel < channels; channel++)

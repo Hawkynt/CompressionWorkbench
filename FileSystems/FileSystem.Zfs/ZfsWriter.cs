@@ -24,6 +24,9 @@ public sealed class ZfsWriter {
   private string _poolName = "compworkbench";
   private string _datasetName = "data";
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -40,7 +43,13 @@ public sealed class ZfsWriter {
     this._files.Add((name, FilePayload.FromStream(size, openStream)));
   }
 
+  /// <summary>
+  /// Sets the pool name.
+  /// </summary>
   public void SetPoolName(string name) { this._poolName = name; }
+  /// <summary>
+  /// Sets the dataset name.
+  /// </summary>
   public void SetDatasetName(string name) { this._datasetName = name; }
 
   /// <summary>
@@ -70,6 +79,9 @@ public sealed class ZfsWriter {
     return Math.Max(total, 64L * 1024 * 1024);
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output, long imageSize = 64L * 1024 * 1024) {
     const int labelSize = ZfsConstants.LabelSize;
     if (imageSize < 4L * labelSize + 1024 * 1024)

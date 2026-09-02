@@ -169,6 +169,9 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   ///   frees the orphan bits.</item>
   /// </list></para>
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     using var cache = new SectorCache(image);
 

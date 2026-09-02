@@ -4,6 +4,9 @@ using OggVorbisEncoder.Setup.Templates;
 
 namespace OggVorbisEncoder;
 
+/// <summary>
+/// Represents a vorbis info.
+/// </summary>
 public class VorbisInfo
 {
     private static readonly Mode[] ModeTemplate = { new Mode(0, 0, 0, 0), new Mode(1, 0, 0, 1) };
@@ -20,14 +23,29 @@ public class VorbisInfo
         BitRateNominal = bitRateNominal;
     }
 
+    /// <summary>
+    /// Gets the channels.
+    /// </summary>
     public int Channels { get; }
 
+    /// <summary>
+    /// Gets the sample rate.
+    /// </summary>
     public int SampleRate { get; }
 
+    /// <summary>
+    /// Gets the bit rate nominal.
+    /// </summary>
     public int BitRateNominal { get; }
 
+    /// <summary>
+    /// Gets the codec setup.
+    /// </summary>
     public CodecSetup CodecSetup { get; }
 
+    /// <summary>
+    /// Performs the init variable bit rate operation.
+    /// </summary>
     public static VorbisInfo InitVariableBitRate(int channels, int sampleRate, float baseQuality)
     {
         var encodeSetup = GetEncodeSetup(channels, sampleRate, baseQuality);

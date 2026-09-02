@@ -4,8 +4,14 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents an envelope lookup.
+/// </summary>
 public class EnvelopeLookup
 {
+    /// <summary>
+    /// Defines the envelope post constant value.
+    /// </summary>
     public const int EnvelopePost = 2;
     private const int SearchStep = 64;
     private const int WindowLength = 128;
@@ -26,6 +32,9 @@ public class EnvelopeLookup
     private int[] _mark;
     private int _stretch;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="EnvelopeLookup"/>.
+    /// </summary>
     public EnvelopeLookup(PsyGlobal psyGlobal, VorbisInfo info)
     {
         _psyGlobal = psyGlobal;
@@ -61,6 +70,9 @@ public class EnvelopeLookup
         _mark = new int[WindowLength];
     }
 
+    /// <summary>
+    /// Performs the shift operation.
+    /// </summary>
     public void Shift(int shift)
     {
         var smallsize = _current / SearchStep + EnvelopePost;
@@ -74,6 +86,9 @@ public class EnvelopeLookup
         _cursor -= shift;
     }
 
+    /// <summary>
+    /// Performs the mark operation.
+    /// </summary>
     public bool Mark(int beginWindow, int endWindow)
     {
         if ((_currentMark >= beginWindow) && (_currentMark < endWindow))
@@ -89,6 +104,9 @@ public class EnvelopeLookup
         return false;
     }
 
+    /// <summary>
+    /// Performs the search operation.
+    /// </summary>
     public int Search(
         float[][] pcm,
         int pcmCurrent,

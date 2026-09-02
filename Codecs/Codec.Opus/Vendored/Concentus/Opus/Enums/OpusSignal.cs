@@ -35,8 +35,14 @@
 
 namespace Concentus.Enums
 {
+    /// <summary>
+    /// Specifies opus signal values.
+    /// </summary>
     public enum OpusSignal
     {
+        /// <summary>
+        /// Specifies the opus signal auto option.
+        /// </summary>
         OPUS_SIGNAL_AUTO = -1000,
 
         /// <summary>

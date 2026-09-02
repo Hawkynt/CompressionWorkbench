@@ -3,15 +3,30 @@ using Compression.Core.ExecutableUnpacking;
 
 namespace FileFormat.ExePackers;
 
+/// <summary>
+/// Represents a gzexe executable packer handler.
+/// </summary>
 public sealed class GzexeExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "gzexe";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "gzexe executable wrapper";
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
     ExecutableUnpackCapabilities.CanRebuildExecutable;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = GzexeFormatDescriptor.LocateEmbeddedGzip(bytes) >= 0;
@@ -19,9 +34,15 @@ public sealed class GzexeExecutablePackerHandler : IExecutablePackerHandler {
       match ? [] : [new(ExecutableDiagnosticCode.NotPackedExecutable, "No gzexe shell wrapper with embedded gzip payload was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) =>
     ShellWrapperHandlerSupport.Parse(this.Id, image, detection, this.Capabilities);
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = GzexeFormatDescriptor.BuildArtifacts(packed.OriginalImage)
@@ -36,15 +57,30 @@ public sealed class GzexeExecutablePackerHandler : IExecutablePackerHandler {
   }
 }
 
+/// <summary>
+/// Represents a bzexe executable packer handler.
+/// </summary>
 public sealed class BzexeExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "bzexe";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "bzexe executable wrapper";
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
     ExecutableUnpackCapabilities.CanRebuildExecutable;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = BzexeFormatDescriptor.LocateEmbeddedBzip2(bytes) >= 0;
@@ -52,9 +88,15 @@ public sealed class BzexeExecutablePackerHandler : IExecutablePackerHandler {
       match ? [] : [new(ExecutableDiagnosticCode.NotPackedExecutable, "No bzexe shell wrapper with embedded BZip2 payload was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) =>
     ShellWrapperHandlerSupport.Parse(this.Id, image, detection, this.Capabilities);
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = BzexeFormatDescriptor.BuildArtifacts(packed.OriginalImage)
@@ -69,9 +111,21 @@ public sealed class BzexeExecutablePackerHandler : IExecutablePackerHandler {
   }
 }
 
+/// <summary>
+/// Represents a papaw executable packer handler.
+/// </summary>
 public sealed class PapawExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "papaw";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Papaw executable wrapper";
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -83,6 +137,9 @@ public sealed class PapawExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsArm32 |
     ExecutableUnpackCapabilities.SupportsArm64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = PapawFormatDescriptor.LocatePayload(bytes) != null;
@@ -90,6 +147,9 @@ public sealed class PapawExecutablePackerHandler : IExecutablePackerHandler {
       match ? [] : [new(ExecutableDiagnosticCode.NotPackedExecutable, "No Papaw ELF wrapper with appended XZ/LZMA2 payload was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
@@ -106,6 +166,9 @@ public sealed class PapawExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = PapawFormatDescriptor.BuildArtifacts(packed.OriginalImage)
@@ -120,9 +183,21 @@ public sealed class PapawExecutablePackerHandler : IExecutablePackerHandler {
   }
 }
 
+/// <summary>
+/// Represents a go packer executable packer handler.
+/// </summary>
 public sealed class GoPackerExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "gopacker";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "GoPacker executable wrapper";
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -135,6 +210,9 @@ public sealed class GoPackerExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsArm32 |
     ExecutableUnpackCapabilities.SupportsArm64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = GoPackerFormatDescriptor.LocatePayload(bytes) != null;
@@ -142,6 +220,9 @@ public sealed class GoPackerExecutablePackerHandler : IExecutablePackerHandler {
       match ? [] : [new(ExecutableDiagnosticCode.NotPackedExecutable, "No GoPacker wrapper with appended Zstandard payload was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
@@ -158,6 +239,9 @@ public sealed class GoPackerExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = GoPackerFormatDescriptor.BuildArtifacts(packed.OriginalImage)
@@ -172,9 +256,21 @@ public sealed class GoPackerExecutablePackerHandler : IExecutablePackerHandler {
   }
 }
 
+/// <summary>
+/// Represents an origami executable packer handler.
+/// </summary>
 public sealed class OrigamiExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "origami";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Origami .NET executable wrapper";
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -182,6 +278,9 @@ public sealed class OrigamiExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.CanRebuildExecutable |
     ExecutableUnpackCapabilities.SupportsPe;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = OrigamiFormatDescriptor.LocatePayload(bytes) != null;
@@ -189,6 +288,9 @@ public sealed class OrigamiExecutablePackerHandler : IExecutablePackerHandler {
       match ? [] : [new(ExecutableDiagnosticCode.NotPackedExecutable, "No Origami managed PE payload metadata was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
@@ -205,6 +307,9 @@ public sealed class OrigamiExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = OrigamiFormatDescriptor.BuildArtifacts(packed.OriginalImage)
@@ -219,9 +324,21 @@ public sealed class OrigamiExecutablePackerHandler : IExecutablePackerHandler {
   }
 }
 
+/// <summary>
+/// Represents a silent packer executable packer handler.
+/// </summary>
 public sealed class SilentPackerExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "silent_packer";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Silent_Packer ELF XOR wrapper";
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -230,6 +347,9 @@ public sealed class SilentPackerExecutablePackerHandler : IExecutablePackerHandl
     ExecutableUnpackCapabilities.SupportsElf |
     ExecutableUnpackCapabilities.SupportsX64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = SilentPackerFormatDescriptor.LocatePayload(bytes) != null;
@@ -237,6 +357,9 @@ public sealed class SilentPackerExecutablePackerHandler : IExecutablePackerHandl
       match ? [] : [new(ExecutableDiagnosticCode.NotPackedExecutable, "No Silent_Packer ELF64 XOR section-insertion metadata was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
@@ -253,6 +376,9 @@ public sealed class SilentPackerExecutablePackerHandler : IExecutablePackerHandl
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = SilentPackerFormatDescriptor.BuildArtifacts(packed.OriginalImage)
@@ -267,9 +393,21 @@ public sealed class SilentPackerExecutablePackerHandler : IExecutablePackerHandl
   }
 }
 
+/// <summary>
+/// Represents a huan executable packer handler.
+/// </summary>
 public sealed class HuanExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "huan";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Huan PE64 encrypted loader";
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -278,6 +416,9 @@ public sealed class HuanExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = HuanFormatDescriptor.LocatePayload(bytes) != null;
@@ -285,6 +426,9 @@ public sealed class HuanExecutablePackerHandler : IExecutablePackerHandler {
       match ? [] : [new(ExecutableDiagnosticCode.NotPackedExecutable, "No Huan .huan AES payload section was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
@@ -301,6 +445,9 @@ public sealed class HuanExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = HuanFormatDescriptor.BuildArtifacts(packed.OriginalImage)

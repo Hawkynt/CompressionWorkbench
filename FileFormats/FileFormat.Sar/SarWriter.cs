@@ -15,6 +15,9 @@ namespace FileFormat.Sar;
 public sealed class SarWriter {
   private readonly List<(string name, byte[] data)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     if (string.IsNullOrEmpty(name))
       throw new ArgumentException("Name must be non-empty.", nameof(name));
@@ -23,6 +26,9 @@ public sealed class SarWriter {
     _files.Add((name, data ?? throw new ArgumentNullException(nameof(data))));
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     if (_files.Count > ushort.MaxValue)
       throw new InvalidOperationException($"SAR supports at most {ushort.MaxValue} entries.");

@@ -4,16 +4,28 @@ using System.Text;
 
 namespace FileFormat.T64;
 
+/// <summary>
+/// Reads a Commodore 64 T64 tape container and exposes the program entries recorded in its directory.
+/// </summary>
 public sealed class T64Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<T64Entry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<T64Entry> Entries => _entries;
+  /// <summary>
+  /// Gets or sets the tape name.
+  /// </summary>
   public string TapeName { get; private set; } = "";
 
   private const int HeaderSize = 64;
   private const int EntrySize = 32;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="T64Reader"/>.
+  /// </summary>
   public T64Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -70,6 +82,9 @@ public sealed class T64Reader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(T64Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
@@ -81,5 +96,8 @@ public sealed class T64Reader : IDisposable {
     return _data.AsSpan(offset, length).ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

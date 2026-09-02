@@ -6,6 +6,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     private unsafe short voice_factor(                       /* (o) Q15   : factor (-1=unvoiced to 1=voiced) */

@@ -209,36 +209,78 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "SevenZip";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "7z";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract -> edit ->
   // re-create rebuild (default IArchiveModifiable); 7z is solid-compressed, so the packed
   // streams are rewritten — moving data is acceptable for a read-write archive. See
   // FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".7z";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".7z"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'7', (byte)'z', 0xBC, 0xAF, 0x27, 0x1C], Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("lzma2", "LZMA2"), new("lzma", "LZMA"), new("ppmd", "PPMd"),
     new("bzip2", "BZip2"), new("deflate", "Deflate"), new("copy", "Store")
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "7-Zip archive with LZMA2, high compression ratio";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SevenZipReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
       string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new SevenZipReader(stream, password: password);
     for (var i = 0; i < r.Entries.Count; ++i) {
@@ -380,6 +422,9 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < SevenZipConstants.SignatureHeaderSize) {
@@ -421,6 +466,9 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       Level = ValidationLevel.Header, Issues = issues };
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
@@ -457,6 +505,9 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {

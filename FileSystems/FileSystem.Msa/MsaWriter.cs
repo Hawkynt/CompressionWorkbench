@@ -10,6 +10,9 @@ namespace FileSystem.Msa;
 public static class MsaWriter {
   private const int SectorSize = 512;
 
+  /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
   public static void Write(Stream output, byte[] diskData,
       ushort sectorsPerTrack = 9, ushort sides = 1) {
     var trackSize = sectorsPerTrack * SectorSize;

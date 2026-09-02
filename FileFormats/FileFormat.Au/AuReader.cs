@@ -20,6 +20,9 @@ namespace FileFormat.Au;
 /// annotation string.
 /// </summary>
 public sealed class AuReader {
+  /// <summary>
+  /// Represents a parsed au.
+  /// </summary>
   public sealed record ParsedAu(
     uint Encoding,
     int SampleRate,
@@ -27,6 +30,9 @@ public sealed class AuReader {
     byte[] SoundData,
     string Annotation);
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedAu Read(ReadOnlySpan<byte> data) {
     if (data.Length < 24)
       throw new InvalidDataException(".au too short for 24-byte header.");

@@ -24,53 +24,110 @@ public sealed class RefsFormatDescriptor :
   IFilesystemDriverProvider,
   IFilesystemDriverReadinessProvider {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Refs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "ReFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // CanModify covers the offline-quiescent image editor only. A mounted ReFS
   // driver's transactional write path is a separate readiness tier and is not
   // what this flag reports — see DRIVER_READINESS.md.
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".refs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".refs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x52, 0x65, 0x46, 0x53, 0x00, 0x00, 0x00, 0x00], Offset: 3, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("resident", "Resident / inline"),
     new("extent", "Extent-backed"),
     new("stored", "Raw image"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Microsoft ReFS 3.x volume image with native read-only driver projection, namespace/allocation parsing, and offline-quiescent existing-file replace/remove plus metadata placement. Native mounted-driver transactions remain a separate readiness tier.";
 
+  /// <summary>
+  /// Probes the image and reports the filesystem driver profile.
+  /// </summary>
   public FilesystemDriverProfile ProbeFilesystem(Stream image)
     => RefsFilesystemDriver.Probe(image);
 
+  /// <summary>
+  /// Opens a filesystem session over the image.
+  /// </summary>
   public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)
     => RefsFilesystemDriver.Open(image, options);
 
+  /// <summary>
+  /// Describes how ready the filesystem driver is for the requested access.
+  /// </summary>
   public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
       Stream image,
       FilesystemDriverTarget target)
     => RefsFilesystemDriver.Readiness(image, target);
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => RefsExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions());
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
     new RefsPlacementManager(archive).Execute(options);
   }
 
+  /// <summary>
+  /// Performs the analyze layout operation.
+  /// </summary>
   public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     try {
@@ -114,6 +171,9 @@ public sealed class RefsFormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     try {
@@ -139,6 +199,9 @@ public sealed class RefsFormatDescriptor :
     return ListDiagnosticSurface(stream);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     try {
       var metadata = RefsMetadataReader.Open(stream);

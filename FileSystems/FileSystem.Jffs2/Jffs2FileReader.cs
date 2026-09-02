@@ -59,12 +59,18 @@ public sealed class Jffs2FileReader {
   // Highest version seen per inode while scanning, so later passes can compare.
   private readonly Dictionary<uint, uint> _inodeMaxVersion = new();
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Jffs2FileReader"/>.
+  /// </summary>
   public Jffs2FileReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     this._accessor = new ImageAccessor(stream);
     this.Parse();
   }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Jffs2FileReader"/>.
+  /// </summary>
   public Jffs2FileReader(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
     this._accessor = ImageAccessor.FromBytes(image);

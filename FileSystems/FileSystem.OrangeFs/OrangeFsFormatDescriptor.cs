@@ -18,25 +18,64 @@ namespace FileSystem.OrangeFs;
 /// </summary>
 public sealed class OrangeFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "OrangeFs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "OrangeFS / PVFS2 DBPF";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".orangefs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".orangefs", ".pvfs", ".bstream"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("PVFS"u8.ToArray(), Offset: 0, Confidence: 0.90),
     new("OGFP"u8.ToArray(), Offset: 0, Confidence: 0.90),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "OrangeFS / PVFS2 DBPF storage object — opaque object payload R/W; cluster namespace resolution requires fs.conf.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (stream.CanSeek) stream.Position = 0;
     using var r = new OrangeFsReader(stream);
@@ -44,6 +83,9 @@ public sealed class OrangeFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (stream.CanSeek) stream.Position = 0;
     using var r = new OrangeFsReader(stream);
@@ -54,6 +96,9 @@ public sealed class OrangeFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -62,6 +107,9 @@ public sealed class OrangeFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     OrangeFsWriter.Create(output, payload);
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
     var payload = FilesOnly(inputs).LastOrDefault(f => !IsSynthetic(f.Name)).Data;
@@ -69,13 +117,22 @@ public sealed class OrangeFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       OrangeFsWriter.ReplacePayload(archive, payload);
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(entryNames);
     if (entryNames.Any(n => string.Equals(Path.GetFileName(n), "object.bin", StringComparison.OrdinalIgnoreCase)))
       OrangeFsWriter.ReplacePayload(archive, []);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive) { }
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) { }
 
   private static bool IsSynthetic(string name) {

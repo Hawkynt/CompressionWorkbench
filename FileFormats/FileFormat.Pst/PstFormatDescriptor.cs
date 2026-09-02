@@ -28,24 +28,63 @@ namespace FileFormat.Pst;
 public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   private const int HeaderSize = 512;
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Pst";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "PST / OST (Outlook mailbox)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".pst";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".pst", ".ost"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "!BDN" at offset 0 — 21 42 44 4E.
     new([0x21, 0x42, 0x44, 0x4E], Offset: 0, Confidence: 0.98),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Outlook PST/OST mailbox; header surfacing only (no message enumeration).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.pst", stream.Length, stream.Length, "stored", false, false, null, "Container"),
@@ -57,6 +96,9 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // Stream FULL.pst directly — never buffer the whole file.
     if (files == null || files.Length == 0 || MatchesFilter("FULL.pst", files)) {

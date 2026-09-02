@@ -27,6 +27,8 @@ BLAKE2b cryptographic hash function (RFC 7693). Produces digests of 1–64 bytes
 
 #### `Blake2bHashSizeExtensions`
 
+Provides supported hash-output size metadata for `Blake2b`.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
@@ -40,6 +42,8 @@ MD5 hash function (RFC 1321). Produces 16-byte (128-bit) message digests. Used f
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the MD5 hash of the given data. |
 
 #### `Md5HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Md5`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -62,6 +66,8 @@ FIPS 180-4 SHA-1 cryptographic hash function. Provides both batch (`Compute`) an
 
 #### `Sha1HashSizeExtensions`
 
+Provides supported hash-output size metadata for `Sha1`.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
@@ -82,6 +88,8 @@ FIPS 180-4 SHA-256 cryptographic hash function. Provides both batch (`Compute`) 
 
 #### `Sha256HashSizeExtensions`
 
+Provides supported hash-output size metadata for `Sha256`.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
@@ -99,6 +107,8 @@ xxHash 32-bit non-cryptographic hash function. Provides both batch (`Compute`) a
 | `Update` | `void Update(ReadOnlySpan<byte> data)` | Updates the hash with additional data. |
 
 #### `XxHash32HashSizeExtensions`
+
+Provides supported hash-output size metadata for `XxHash32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -118,6 +128,8 @@ xxHash 64-bit non-cryptographic hash function. Provides both batch (`Compute`) a
 
 #### `XxHash64HashSizeExtensions`
 
+Provides supported hash-output size metadata for `XxHash64`.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
@@ -132,9 +144,11 @@ ASCON-HASH / Ascon-Hash256 variant carried by the JavaScript registry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Ascon Hash hash of the supplied data. |
 
 #### `AsconHashSizeExtensions`
+
+Provides supported hash-output size metadata for `AsconHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -146,7 +160,7 @@ ASCON-XOF variant carried by the JavaScript registry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes)` | Computes the Ascon Xof hash of the supplied data. |
 
 #### `Blake`
 
@@ -154,10 +168,10 @@ Original BLAKE SHA-3 finalist family.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data)` |  |
-| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` |  |
-| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` |  |
-| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` |  |
+| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data)` | Computes the 224-bit Blake hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` | Computes the 256-bit Blake hash of the supplied data. |
+| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` | Computes the 384-bit Blake hash of the supplied data. |
+| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` | Computes the 512-bit Blake hash of the supplied data. |
 
 #### `Blake2s`
 
@@ -165,9 +179,11 @@ BLAKE2s-256.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Blake-2 s hash of the supplied data. |
 
 #### `Blake2sHashSizeExtensions`
+
+Provides supported hash-output size metadata for `Blake2s`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -179,7 +195,7 @@ BLAKE2xs extendable-output function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes)` | Computes the Blake-2 xs hash of the supplied data. |
 
 #### `Blake3`
 
@@ -187,7 +203,7 @@ BLAKE3 hash and XOF.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32)` | Computes the Blake-3 hash of the supplied data. |
 
 #### `Blake3Enhanced`
 
@@ -195,9 +211,11 @@ Registry-compatible BLAKE3-Enhanced surface, backed by the same complete BLAKE3 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32)` | Computes the Blake-3 Enhanced hash of the supplied data. |
 
 #### `BlakeHashSizeExtensions`
+
+Provides supported hash-output size metadata for `Blake`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -209,8 +227,8 @@ cSHAKE customizable XOF functions from NIST SP 800-185.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int outputBytes, ReadOnlySpan<byte> functionName = null, ReadOnlySpan<byte> customization = null)` |  |
-| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int outputBytes, ReadOnlySpan<byte> functionName = null, ReadOnlySpan<byte> customization = null)` |  |
+| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int outputBytes, ReadOnlySpan<byte> functionName = null, ReadOnlySpan<byte> customization = null)` | Computes the 128-bit C Shake hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int outputBytes, ReadOnlySpan<byte> functionName = null, ReadOnlySpan<byte> customization = null)` | Computes the 256-bit C Shake hash of the supplied data. |
 
 #### `ChcHash`
 
@@ -218,9 +236,11 @@ Cipher Hash Construction using the source registry's default AES-128 Matyas-Meye
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Chc Hash hash of the supplied data. |
 
 #### `ChcHashSizeExtensions`
+
+Provides supported hash-output size metadata for `ChcHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -237,6 +257,8 @@ Google's CityHash64.
 
 #### `CityHashSizeExtensions`
 
+Provides supported hash-output size metadata for `CityHash`.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
@@ -247,9 +269,11 @@ COMB4P(MD4, MD5) hash combiner.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Comb-4 P Md-4 Md-5 hash of the supplied data. |
 
 #### `Comb4PMd4Md5HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Comb4PMd4Md5`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -261,9 +285,11 @@ COMB4P(SHA-1, RIPEMD-160) hash combiner.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Comb-4 P Sha-1 Ripemd-160 hash of the supplied data. |
 
 #### `Comb4PSha1Ripemd160HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Comb4PSha1Ripemd160`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -275,9 +301,11 @@ CubeHash16+16/32+16-256.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Cube Hash-256 hash of the supplied data. |
 
 #### `CubeHash256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `CubeHash256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -289,9 +317,11 @@ CubeHash16+16/32+16-512.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Cube Hash-512 hash of the supplied data. |
 
 #### `CubeHash512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `CubeHash512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -303,9 +333,11 @@ Keccak variant used by the DarkCrypt Total Commander plugin.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Dark Crypt Keccak hash of the supplied data. |
 
 #### `DarkCryptKeccakHashSizeExtensions`
+
+Provides supported hash-output size metadata for `DarkCryptKeccak`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -317,9 +349,11 @@ MD6-512 variant emitted by the DarkCrypt Total Commander plugin.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Dark Crypt Md-6 hash of the supplied data. |
 
 #### `DarkCryptMd6HashSizeExtensions`
+
+Provides supported hash-output size metadata for `DarkCryptMd6`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -331,9 +365,11 @@ Skein-512-512 variant used by the DarkCrypt Total Commander plugin.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Dark Crypt Skein hash of the supplied data. |
 
 #### `DarkCryptSkeinHashSizeExtensions`
+
+Provides supported hash-output size metadata for `DarkCryptSkein`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -345,8 +381,8 @@ DryGASCON hash family from the NIST lightweight-cryptography finalist.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the Dry Gascon Hash hash of the supplied data. |
 
 #### `Echo`
 
@@ -354,16 +390,20 @@ ECHO SHA-3 candidate family facade over the shared ECHO core.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the Echo hash of the supplied data. |
 
 #### `Echo224`
 
+Provides the Echo-224 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-224 hash of the supplied data. |
 
 #### `Echo224HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Echo224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -371,11 +411,15 @@ ECHO SHA-3 candidate family facade over the shared ECHO core.
 
 #### `Echo256`
 
+Provides the Echo-256 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-256 hash of the supplied data. |
 
 #### `Echo256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Echo256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -383,11 +427,15 @@ ECHO SHA-3 candidate family facade over the shared ECHO core.
 
 #### `Echo384`
 
+Provides the Echo-384 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-384 hash of the supplied data. |
 
 #### `Echo384HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Echo384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -395,11 +443,15 @@ ECHO SHA-3 candidate family facade over the shared ECHO core.
 
 #### `Echo512`
 
+Provides the Echo-512 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Echo-512 hash of the supplied data. |
 
 #### `Echo512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Echo512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -411,9 +463,11 @@ Esch256 based on SPARKLE-384.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Esch-256 hash of the supplied data. |
 
 #### `Esch256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Esch256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -425,9 +479,11 @@ Esch384 based on SPARKLE-512.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Esch-384 hash of the supplied data. |
 
 #### `Esch384HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Esch384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -439,12 +495,14 @@ Fowler-Noll-Vo hash family.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute1A_32` | `static uint Compute1A_32(ReadOnlySpan<byte> data, uint offsetBasis = 2166136261)` |  |
-| `Compute1A_64` | `static ulong Compute1A_64(ReadOnlySpan<byte> data, ulong offsetBasis = 14695981039346656037)` |  |
-| `Compute1_32` | `static uint Compute1_32(ReadOnlySpan<byte> data, uint offsetBasis = 2166136261)` |  |
-| `Compute1_64` | `static ulong Compute1_64(ReadOnlySpan<byte> data, ulong offsetBasis = 14695981039346656037)` |  |
+| `Compute1A_32` | `static uint Compute1A_32(ReadOnlySpan<byte> data, uint offsetBasis = 2166136261)` | Performs the compute-1 a 32 operation provided by `Fnv`. |
+| `Compute1A_64` | `static ulong Compute1A_64(ReadOnlySpan<byte> data, ulong offsetBasis = 14695981039346656037)` | Performs the compute-1 a 64 operation provided by `Fnv`. |
+| `Compute1_32` | `static uint Compute1_32(ReadOnlySpan<byte> data, uint offsetBasis = 2166136261)` | Performs the compute-1 32 operation provided by `Fnv`. |
+| `Compute1_64` | `static ulong Compute1_64(ReadOnlySpan<byte> data, ulong offsetBasis = 14695981039346656037)` | Performs the compute-1 64 operation provided by `Fnv`. |
 
 #### `FnvHashSizeExtensions`
+
+Provides supported hash-output size metadata for `Fnv`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -456,8 +514,8 @@ Fugue SHA-3 candidate family. All digest sizes share the same state-machine impl
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the Fugue hash of the supplied data. |
 
 #### `Gimli24Hash`
 
@@ -465,15 +523,19 @@ GIMLI-24-HASH lightweight 256-bit hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Gimli-24 Hash hash of the supplied data. |
 
 #### `Gimli24HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Gimli24Hash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `Gost3411HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Gost3411_94`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -485,7 +547,7 @@ GOST R 34.11-94 using the D-A GOST 28147-89 S-box.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the GOST-3411 94 hash of the supplied data. |
 
 #### `Groestl`
 
@@ -493,16 +555,20 @@ Grøstl hash family with a single implementation selected by output size.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the Groestl hash of the supplied data. |
 
 #### `Groestl224`
 
+Provides the Groestl-224 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-224 hash of the supplied data. |
 
 #### `Groestl224HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Groestl224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -510,11 +576,15 @@ Grøstl hash family with a single implementation selected by output size.
 
 #### `Groestl256`
 
+Provides the Groestl-256 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-256 hash of the supplied data. |
 
 #### `Groestl256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Groestl256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -522,11 +592,15 @@ Grøstl hash family with a single implementation selected by output size.
 
 #### `Groestl384`
 
+Provides the Groestl-384 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-384 hash of the supplied data. |
 
 #### `Groestl384HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Groestl384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -534,11 +608,15 @@ Grøstl hash family with a single implementation selected by output size.
 
 #### `Groestl512`
 
+Provides the Groestl-512 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Groestl-512 hash of the supplied data. |
 
 #### `Groestl512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Groestl512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -550,8 +628,8 @@ Hamsi big-state family. Hamsi-384 and Hamsi-512 share the same 512-bit-state com
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the new value. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` | Computes the Hamsi hash of the supplied data. |
 
 #### `HamsiFamily`
 
@@ -559,8 +637,8 @@ Hamsi SHA-3 candidate family. The standardized output sizes are exposed as two e
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the Hamsi Family hash of the supplied data. |
 
 #### `Haraka256`
 
@@ -568,9 +646,11 @@ Haraka v2 256-bit fixed-input hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Haraka-256 hash of the supplied data. |
 
 #### `Haraka256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Haraka256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -582,9 +662,11 @@ Haraka v2 512-to-256 fixed-input hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Haraka-512 hash of the supplied data. |
 
 #### `Haraka512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Haraka512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -599,31 +681,35 @@ Implements `IEnumerable`, `IEnumerable<int>`, `IEquatable<HashSizeRange>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HashSizeRange` | `HashSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1)` | Describes a contiguous arithmetic range of supported hash-output sizes, in bits. |
-| `MaximumBits` | `int MaximumBits { get; init; }` |  |
-| `MinimumBits` | `int MinimumBits { get; init; }` |  |
-| `StepBits` | `int StepBits { get; init; }` |  |
-| `Contains` | `bool Contains(int bits)` |  |
-| `Exact` | `static HashSizeRange Exact(int bits)` |  |
-| `GetEnumerator` | `Enumerator GetEnumerator()` |  |
+| `MaximumBits` | `int MaximumBits { get; init; }` | Gets the largest supported hash output size, in bits. |
+| `MinimumBits` | `int MinimumBits { get; init; }` | Gets the smallest supported hash output size, in bits. |
+| `StepBits` | `int StepBits { get; init; }` | Gets the increment, in bits, between supported sizes in the range. |
+| `Contains` | `bool Contains(int bits)` | Determines whether the range contains the specified bit size. |
+| `Exact` | `static HashSizeRange Exact(int bits)` | Creates a `HashSizeRange` containing exactly one bit size. |
+| `GetEnumerator` | `Enumerator GetEnumerator()` | Returns an enumerator over the bit sizes represented by the range. |
 
 #### `HashSizeRange.Enumerator`
+
+Enumerates the bit sizes represented by `HashSizeRange`.
 
 Implements `IDisposable`, `IEnumerator`, `IEnumerator<int>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerator` | `Enumerator(HashSizeRange range)` |  |
-| `Current` | `int Current { get; }` |  |
-| `Dispose` | `void Dispose()` |  |
-| `MoveNext` | `bool MoveNext()` |  |
-| `Reset` | `void Reset()` |  |
+| `Enumerator` | `Enumerator(HashSizeRange range)` | Enumerates the bit sizes represented by `HashSizeRange`. |
+| `Current` | `int Current { get; }` | Gets the current bit size in the enumeration. |
+| `Dispose` | `void Dispose()` | Releases resources associated with the enumerator. |
+| `MoveNext` | `bool MoveNext()` | Advances the enumerator to the next supported bit size. |
+| `Reset` | `void Reset()` | Resets the enumerator to its initial position. |
 
 #### `HashSizeRangeExtensions`
 
+Provides helpers for collections of `HashSizeRange` values.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnumerateSizes` | `static IEnumerable<int> EnumerateSizes(this IReadOnlyList<HashSizeRange> ranges)` |  |
-| `Supports` | `static bool Supports(this IReadOnlyList<HashSizeRange> ranges, int bits)` |  |
+| `EnumerateSizes` | `static IEnumerable<int> EnumerateSizes(this IReadOnlyList<HashSizeRange> ranges)` | Enumerates every supported bit size represented by the supplied ranges. |
+| `Supports` | `static bool Supports(this IReadOnlyList<HashSizeRange> ranges, int bits)` | Determines whether any range in the collection contains the specified bit size. |
 
 #### `Haval`
 
@@ -631,14 +717,16 @@ HAVAL variable-pass, variable-output cryptographic hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int passes = 3)` |  |
-| `Compute160` | `static byte[] Compute160(ReadOnlySpan<byte> data, int passes = 4)` |  |
-| `Compute192` | `static byte[] Compute192(ReadOnlySpan<byte> data, int passes = 4)` |  |
-| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data, int passes = 4)` |  |
-| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int passes = 5)` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int passes = 5, int outputBits = 256)` |  |
+| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int passes = 3)` | Computes the 128-bit Haval hash of the supplied data. |
+| `Compute160` | `static byte[] Compute160(ReadOnlySpan<byte> data, int passes = 4)` | Computes the 160-bit Haval hash of the supplied data. |
+| `Compute192` | `static byte[] Compute192(ReadOnlySpan<byte> data, int passes = 4)` | Computes the 192-bit Haval hash of the supplied data. |
+| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data, int passes = 4)` | Computes the 224-bit Haval hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int passes = 5)` | Computes the 256-bit Haval hash of the supplied data. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int passes = 5, int outputBits = 256)` | Computes the Haval hash of the supplied data. |
 
 #### `HavalHashSizeExtensions`
+
+Provides supported hash-output size metadata for `Haval`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -650,8 +738,8 @@ Google HighwayHash portable 64-, 128-, and 256-bit keyed hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, int hashSizeBits = 64)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, int hashSizeBits = 64)` | Computes the Highway Hash hash of the supplied data. |
 
 #### `IsapHash`
 
@@ -659,9 +747,11 @@ ISAP Hash. The registry's ISAP digest uses the same precomputed Ascon-Hash state
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Isap Hash hash of the supplied data. |
 
 #### `IsapHashSizeExtensions`
+
+Provides supported hash-output size metadata for `IsapHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -673,8 +763,8 @@ JH variant carried by the JavaScript algorithm registry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` | Computes the Jh hash of the supplied data. |
 
 #### `KangarooTwelve`
 
@@ -682,7 +772,7 @@ KangarooTwelve extendable-output function using Keccak-p[1600,12].
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32, ReadOnlySpan<byte> personalization = null)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32, ReadOnlySpan<byte> personalization = null)` | Computes the Kangaroo Twelve hash of the supplied data. |
 
 #### `Keccak`
 
@@ -691,10 +781,10 @@ Keccak-f[1600] sponge primitives and standard Keccak/SHA-3/SHAKE variants.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | The four standard Keccak digest sizes. |
-| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data)` |  |
-| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` |  |
-| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` |  |
-| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` |  |
+| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data)` | Computes the 224-bit Keccak hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` | Computes the 256-bit Keccak hash of the supplied data. |
+| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` | Computes the 384-bit Keccak hash of the supplied data. |
+| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` | Computes the 512-bit Keccak hash of the supplied data. |
 
 #### `KnotHash`
 
@@ -702,8 +792,8 @@ KNOT-HASH family with explicit parameter-set selection.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, KnotHashVariant variant = 0)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, KnotHashVariant variant = 0)` | Computes the Knot Hash hash of the supplied data. |
 
 #### `KnotHashVariant`
 
@@ -722,8 +812,8 @@ DSTU 7564:2014 (Kupyna) hash family. The 256-, 384- and 512-bit digests share on
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the new value. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the Kupyna hash of the supplied data. |
 
 #### `Lsh224`
 
@@ -731,9 +821,11 @@ Korean LSH-224 hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the LSH-224 hash of the supplied data. |
 
 #### `Lsh224HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Lsh224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -745,7 +837,7 @@ Korean LSH-256 hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the LSH-256 hash of the supplied data. |
 
 #### `Lsh256Family`
 
@@ -753,10 +845,12 @@ LSH-256 word-size family; output size selects the standard IV/truncation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the new value. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the LSH-256 Family hash of the supplied data. |
 
 #### `Lsh256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Lsh256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -768,9 +862,11 @@ Korean LSH-384 hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the LSH-384 hash of the supplied data. |
 
 #### `Lsh384HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Lsh384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -782,7 +878,7 @@ Korean LSH-512 hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the LSH-512 hash of the supplied data. |
 
 #### `Lsh512Family`
 
@@ -790,10 +886,12 @@ LSH-512 word-size family; output size selects the standard IV/truncation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the new value. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` | Computes the LSH-512 Family hash of the supplied data. |
 
 #### `Lsh512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Lsh512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -805,9 +903,11 @@ Korean LSH-512/256 hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the LSH-512 256 hash of the supplied data. |
 
 #### `Lsh512_256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Lsh512_256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -819,16 +919,20 @@ Luffa SHA-3 candidate family facade over the shared Luffa core.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256)` | Computes the Luffa hash of the supplied data. |
 
 #### `Luffa224`
 
+Provides the Luffa-224 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-224 hash of the supplied data. |
 
 #### `Luffa224HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Luffa224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -836,11 +940,15 @@ Luffa SHA-3 candidate family facade over the shared Luffa core.
 
 #### `Luffa256`
 
+Provides the Luffa-256 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-256 hash of the supplied data. |
 
 #### `Luffa256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Luffa256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -848,11 +956,15 @@ Luffa SHA-3 candidate family facade over the shared Luffa core.
 
 #### `Luffa384`
 
+Provides the Luffa-384 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-384 hash of the supplied data. |
 
 #### `Luffa384HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Luffa384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -860,11 +972,15 @@ Luffa SHA-3 candidate family facade over the shared Luffa core.
 
 #### `Luffa512`
 
+Provides the Luffa-512 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Luffa-512 hash of the supplied data. |
 
 #### `Luffa512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Luffa512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -876,9 +992,11 @@ MD2 from RFC 1319.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Md-2 hash of the supplied data. |
 
 #### `Md2HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Md2`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -890,9 +1008,11 @@ MD4 from RFC 1320.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Md-4 hash of the supplied data. |
 
 #### `Md4HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Md4`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -904,9 +1024,11 @@ Modification Detection Code 2 (MDC-2), including both OpenSSL padding modes carr
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int paddingType = 1)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int paddingType = 1)` | Computes the Mdc-2 hash of the supplied data. |
 
 #### `Mdc2HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Mdc2`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -918,11 +1040,13 @@ MurmurHash3 x86-32 and x64-128 variants.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute128Bytes` | `static byte[] Compute128Bytes(ReadOnlySpan<byte> data, ulong seed = 0)` |  |
-| `Compute128` | `static ValueTuple<ulong, ulong> Compute128(ReadOnlySpan<byte> data, ulong seed = 0)` |  |
-| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data, uint seed = 0)` |  |
+| `Compute128Bytes` | `static byte[] Compute128Bytes(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 128-bit Murmur Hash-3 hash and returns its encoded bytes. |
+| `Compute128` | `static ValueTuple<ulong, ulong> Compute128(ReadOnlySpan<byte> data, ulong seed = 0)` | Performs the static operation provided by `MurmurHash3`. |
+| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data, uint seed = 0)` | Computes the 32-bit Murmur Hash-3 hash of the supplied data. |
 
 #### `MurmurHash3HashSizeExtensions`
+
+Provides supported hash-output size metadata for `MurmurHash3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -934,9 +1058,11 @@ Big-endian Panama hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Panama BE hash of the supplied data. |
 
 #### `PanamaBEHashSizeExtensions`
+
+Provides supported hash-output size metadata for `PanamaBE`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -948,7 +1074,7 @@ Panama-BE hermetic MAC used by the registry implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key)` | Computes the Panama BE Mac hash of the supplied data. |
 
 #### `PanamaLE`
 
@@ -956,9 +1082,11 @@ Little-endian Panama hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Panama LE hash of the supplied data. |
 
 #### `PanamaLEHashSizeExtensions`
+
+Provides supported hash-output size metadata for `PanamaLE`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -970,7 +1098,7 @@ Panama-LE hermetic MAC used by the registry implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key)` | Computes the Panama LE Mac hash of the supplied data. |
 
 #### `ParallelHash`
 
@@ -978,8 +1106,8 @@ ParallelHash from NIST SP 800-185.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = null)` |  |
-| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = null)` |  |
+| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = null)` | Computes the 128-bit Parallel Hash hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int blockBytes, int outputBytes, ReadOnlySpan<byte> customization = null)` | Computes the 256-bit Parallel Hash hash of the supplied data. |
 
 #### `PhotonBeetleHash`
 
@@ -987,9 +1115,11 @@ PhotonBeetle 256-bit hash from the NIST lightweight-cryptography finalist.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Photon Beetle Hash hash of the supplied data. |
 
 #### `PhotonBeetleHashSizeExtensions`
+
+Provides supported hash-output size metadata for `PhotonBeetleHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1001,7 +1131,7 @@ RadioGatún[32] belt-and-mill hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int outputBytes = 32)` | Computes the Radio Gatun-32 hash of the supplied data. |
 
 #### `Ripemd`
 
@@ -1009,16 +1139,20 @@ RIPEMD family facade over the shared RIPEMD core.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 160)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 160)` | Computes the RIPEMD hash of the supplied data. |
 
 #### `Ripemd128`
 
+Provides the RIPEMD-128 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-128 hash of the supplied data. |
 
 #### `Ripemd128HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Ripemd128`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1026,11 +1160,15 @@ RIPEMD family facade over the shared RIPEMD core.
 
 #### `Ripemd160`
 
+Provides the RIPEMD-160 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-160 hash of the supplied data. |
 
 #### `Ripemd160HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Ripemd160`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1038,11 +1176,15 @@ RIPEMD family facade over the shared RIPEMD core.
 
 #### `Ripemd256`
 
+Provides the RIPEMD-256 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-256 hash of the supplied data. |
 
 #### `Ripemd256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Ripemd256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1050,11 +1192,15 @@ RIPEMD family facade over the shared RIPEMD core.
 
 #### `Ripemd320`
 
+Provides the RIPEMD-320 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the RIPEMD-320 hash of the supplied data. |
 
 #### `Ripemd320HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Ripemd320`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1066,12 +1212,14 @@ SHA-3 family from FIPS 202.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data)` |  |
-| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` |  |
-| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` |  |
-| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` |  |
+| `Compute224` | `static byte[] Compute224(ReadOnlySpan<byte> data)` | Computes the 224-bit Sha-3 hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data)` | Computes the 256-bit Sha-3 hash of the supplied data. |
+| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` | Computes the 384-bit Sha-3 hash of the supplied data. |
+| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` | Computes the 512-bit Sha-3 hash of the supplied data. |
 
 #### `Sha3HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Sha3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1083,20 +1231,24 @@ SHA-384, SHA-512, SHA-512/224 and SHA-512/256 from FIPS 180-4.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` |  |
-| `Compute512_224` | `static byte[] Compute512_224(ReadOnlySpan<byte> data)` |  |
-| `Compute512_256` | `static byte[] Compute512_256(ReadOnlySpan<byte> data)` |  |
-| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute384` | `static byte[] Compute384(ReadOnlySpan<byte> data)` | Computes the 384-bit Sha-512 Family hash of the supplied data. |
+| `Compute512_224` | `static byte[] Compute512_224(ReadOnlySpan<byte> data)` | Performs the compute-512 224 operation provided by `Sha512Family`. |
+| `Compute512_256` | `static byte[] Compute512_256(ReadOnlySpan<byte> data)` | Performs the compute-512 256 operation provided by `Sha512Family`. |
+| `Compute512` | `static byte[] Compute512(ReadOnlySpan<byte> data)` | Computes the 512-bit Sha-512 Family hash of the supplied data. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` | Computes the Sha-512 Family hash of the supplied data. |
 
 #### `Shabal192`
 
+Provides the Shabal-192 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-192 hash of the supplied data. |
 
 #### `Shabal192HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Shabal192`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1104,11 +1256,15 @@ SHA-384, SHA-512, SHA-512/224 and SHA-512/256 from FIPS 180-4.
 
 #### `Shabal224`
 
+Provides the Shabal-224 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-224 hash of the supplied data. |
 
 #### `Shabal224HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Shabal224`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1116,11 +1272,15 @@ SHA-384, SHA-512, SHA-512/224 and SHA-512/256 from FIPS 180-4.
 
 #### `Shabal256`
 
+Provides the Shabal-256 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-256 hash of the supplied data. |
 
 #### `Shabal256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Shabal256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1128,11 +1288,15 @@ SHA-384, SHA-512, SHA-512/224 and SHA-512/256 from FIPS 180-4.
 
 #### `Shabal384`
 
+Provides the Shabal-384 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-384 hash of the supplied data. |
 
 #### `Shabal384HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Shabal384`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1140,11 +1304,15 @@ SHA-384, SHA-512, SHA-512/224 and SHA-512/256 from FIPS 180-4.
 
 #### `Shabal512`
 
+Provides the Shabal-512 hash implementation.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Shabal-512 hash of the supplied data. |
 
 #### `Shabal512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Shabal512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1156,8 +1324,8 @@ SHAKE extendable-output functions from FIPS 202.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int outputBytes)` |  |
-| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int outputBytes)` |  |
+| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, int outputBytes)` | Computes the 128-bit Shake hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(ReadOnlySpan<byte> data, int outputBytes)` | Computes the 256-bit Shake hash of the supplied data. |
 
 #### `SipHash24`
 
@@ -1165,9 +1333,11 @@ SipHash-2-4 keyed 64-bit hash.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static ulong Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key)` |  |
+| `Compute` | `static ulong Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key)` | Computes the Sip Hash-24 hash of the supplied data. |
 
 #### `SipHash24HashSizeExtensions`
+
+Provides supported hash-output size metadata for `SipHash24`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1179,9 +1349,11 @@ Skein-512-512 from the Skein 1.3 specification.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Skein-512 hash of the supplied data. |
 
 #### `Skein512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Skein512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1193,8 +1365,8 @@ SKINNY-HASH lightweight hash family based on SKINNY-128.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, SkinnyHashVariant variant = 0)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Creates a `SkinnyHash` containing exactly one bit size. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, SkinnyHashVariant variant = 0)` | Computes the Skinny Hash hash of the supplied data. |
 
 #### `SkinnyHashVariant`
 
@@ -1211,9 +1383,11 @@ SM3 Chinese national cryptographic hash standard (GB/T 32905).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Sm-3 hash of the supplied data. |
 
 #### `Sm3HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Sm3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1225,9 +1399,11 @@ Registry name for the Esch256/SPARKLE-384 construction. The JavaScript registry 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Sparkle Hash hash of the supplied data. |
 
 #### `SparkleHashSizeExtensions`
+
+Provides supported hash-output size metadata for `SparkleHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1239,8 +1415,8 @@ Streebog (GOST R 34.11-2012) hash family with one implementation for both standa
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512)` | Computes the Streebog hash of the supplied data. |
 
 #### `Streebog256`
 
@@ -1248,9 +1424,11 @@ Streebog-256 (GOST R 34.11-2012) hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Streebog-256 hash of the supplied data. |
 
 #### `Streebog256HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Streebog256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1262,9 +1440,11 @@ Streebog-512 (GOST R 34.11-2012) hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Streebog-512 hash of the supplied data. |
 
 #### `Streebog512HashSizeExtensions`
+
+Provides supported hash-output size metadata for `Streebog512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1276,9 +1456,11 @@ Subterranean-Hash, a 256-bit lightweight hash based on the 257-bit Subterranean 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Subterranean Hash hash of the supplied data. |
 
 #### `SubterraneanHashSizeExtensions`
+
+Provides supported hash-output size metadata for `SubterraneanHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1290,8 +1472,8 @@ Tiger, the 192-bit hash by Ross Anderson and Eli Biham.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` |  |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 192)` |  |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Creates a `Tiger` containing exactly one bit size. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 192)` | Computes the Tiger hash of the supplied data. |
 
 #### `TupleHash`
 
@@ -1299,8 +1481,8 @@ TupleHash from NIST SP 800-185.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute128` | `static byte[] Compute128(IEnumerable<ReadOnlyMemory<byte>> tuple, int outputBytes, ReadOnlySpan<byte> customization = null)` |  |
-| `Compute256` | `static byte[] Compute256(IEnumerable<ReadOnlyMemory<byte>> tuple, int outputBytes, ReadOnlySpan<byte> customization = null)` |  |
+| `Compute128` | `static byte[] Compute128(IEnumerable<ReadOnlyMemory<byte>> tuple, int outputBytes, ReadOnlySpan<byte> customization = null)` | Computes the 128-bit Tuple Hash hash of the supplied data. |
+| `Compute256` | `static byte[] Compute256(IEnumerable<ReadOnlyMemory<byte>> tuple, int outputBytes, ReadOnlySpan<byte> customization = null)` | Computes the 256-bit Tuple Hash hash of the supplied data. |
 
 #### `Whirlpool`
 
@@ -1308,9 +1490,11 @@ Whirlpool as standardized in ISO/IEC 10118-3.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Whirlpool hash of the supplied data. |
 
 #### `WhirlpoolHashSizeExtensions`
+
+Provides supported hash-output size metadata for `Whirlpool`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1322,9 +1506,11 @@ Xoodyak hash mode from the JavaScript registry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Xoodyak Hash hash of the supplied data. |
 
 #### `XoodyakHashSizeExtensions`
+
+Provides supported hash-output size metadata for `XoodyakHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1336,8 +1522,8 @@ Generic xxHash registry facade. The registry defaults to xxHash32 and optionally
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data, uint seed = 0)` |  |
-| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data, ulong seed = 0)` |  |
+| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data, uint seed = 0)` | Computes the 32-bit xxHash hash of the supplied data. |
+| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 64-bit xxHash hash of the supplied data. |
 
 #### `XxHash3`
 
@@ -1345,17 +1531,21 @@ xxHash3 registry implementation, including its 64- and 128-bit output modes.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, ulong seed = 0)` |  |
-| `Compute64Bytes` | `static byte[] Compute64Bytes(ReadOnlySpan<byte> data, ulong seed = 0)` |  |
-| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data, ulong seed = 0)` |  |
+| `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 128-bit xxHash-3 hash of the supplied data. |
+| `Compute64Bytes` | `static byte[] Compute64Bytes(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 64-bit xxHash-3 hash and returns its encoded bytes. |
+| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 64-bit xxHash-3 hash of the supplied data. |
 
 #### `XxHash3HashSizeExtensions`
+
+Provides supported hash-output size metadata for `XxHash3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `XxHashHashSizeExtensions`
+
+Provides supported hash-output size metadata for `XxHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileSystem.D71;
 
+/// <summary>
+/// Builds a double-sided Commodore 1571 D71 disk image from a set of files, filling in both BAM sides and the directory.
+/// </summary>
 public sealed class D71Writer {
   private const int StandardSize = 349696;
   private const int SectorSize = 256;
@@ -30,8 +33,14 @@ public sealed class D71Writer {
 
   private readonly List<(string Name, byte FileType, byte[] Data)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte fileType, byte[] data) => _files.Add((name, fileType, data));
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
 
   /// <summary>

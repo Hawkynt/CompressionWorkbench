@@ -17,22 +17,61 @@ namespace FileFormat.JpegArchive;
 /// </para>
 /// </summary>
 public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap, IArchiveDefragmentable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "JpegArchive";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "JPEG (archive view)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Image;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsOptimize;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".jpg";
   // Empty — extension collides with the primary JPEG reader; only addressable by explicit --format.
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "JPEG sub-image extraction: full image + EXIF thumbnail + XMP/IPTC metadata.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -40,6 +79,9 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
       Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
@@ -48,6 +90,9 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

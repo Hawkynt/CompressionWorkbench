@@ -28,22 +28,58 @@ namespace FileFormat.Dpx;
 /// </list>
 /// </summary>
 public sealed class DpxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Dpx";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "DPX (SMPTE film)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".dpx";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".dpx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("SDPX"u8.ToArray(), Confidence: 0.95), // big-endian
     new("XPDS"u8.ToArray(), Confidence: 0.95), // little-endian
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "DPX (SMPTE 268M) film frame: file/image headers + raw image data region as pixels.bin.";
 
@@ -60,6 +96,9 @@ public sealed class DpxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     string Creator,
     bool Valid);
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
     var data = ReadAll(stream);
@@ -75,6 +114,9 @@ public sealed class DpxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     if (Wants(files, "FULL.dpx"))

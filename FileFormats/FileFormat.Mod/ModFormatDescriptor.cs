@@ -20,15 +20,39 @@ namespace FileFormat.Mod;
 /// </summary>
 public sealed class ModFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Mod";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "MOD (ProTracker / SoundTracker)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".mod";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".mod"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("M.K."u8.ToArray(), Offset: 1080, Confidence: 0.95),
     new("M!K!"u8.ToArray(), Offset: 1080, Confidence: 0.95),
@@ -40,11 +64,26 @@ public sealed class ModFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("CD81"u8.ToArray(), Offset: 1080, Confidence: 0.95),
     new("OKTA"u8.ToArray(), Offset: 1080, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Amiga MOD tracker module; full file + patterns + raw 8-bit PCM samples.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -52,6 +91,9 @@ public sealed class ModFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Method: e.Method, IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
@@ -60,6 +102,9 @@ public sealed class ModFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

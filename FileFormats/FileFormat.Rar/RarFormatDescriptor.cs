@@ -17,32 +17,57 @@ namespace FileFormat.Rar;
 /// </summary>
 public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "RAR defragmentation is not supported — solid blocks, recovery records, and per-archive signatures " +
       "would all need to be regenerated, which is not safe via a generic rebuild path.");
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => RarLayoutMap.Enumerate(archive);
 
+  /// <summary>Gets the id.</summary>
   public string Id => "Rar";
+  /// <summary>Gets the display name.</summary>
   public string DisplayName => "RAR";
+  /// <summary>Gets the category.</summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: supported RAR5 mutations go directly through the random-access block
   // editors. Profiles those editors cannot preserve safely use verified rebuild.
+  /// <summary>Gets the capabilities.</summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".rar";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".rar"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'R', (byte)'a', (byte)'r', (byte)'!', 0x1A, 0x07, 0x00], Confidence: 0.95),
     new([(byte)'R', (byte)'a', (byte)'r', (byte)'!', 0x1A, 0x07, 0x01, 0x00], Confidence: 0.95)
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("rar5", "RAR 5"), new("rar4", "RAR 4"), new("store", "Store")
   ];
@@ -55,12 +80,18 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "recovery/quick-open, solid-dependent, RAR4, directory-add, and same-name update " +
     "cases fall back to verified rebuild.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RarReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
       $"Method {e.CompressionMethod}", e.IsDirectory, e.IsEncrypted, e.ModifiedTime?.DateTime)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new RarReader(stream, password: password);
     for (var i = 0; i < r.Entries.Count; ++i) {

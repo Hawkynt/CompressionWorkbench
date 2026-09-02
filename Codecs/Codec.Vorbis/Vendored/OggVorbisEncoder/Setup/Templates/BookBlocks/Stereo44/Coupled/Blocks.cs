@@ -16,10 +16,19 @@ using MC1 = OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Managed
 
 namespace OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled;
 
+/// <summary>
+/// Represents a blocks.
+/// </summary>
 public class Blocks
 {
+    /// <summary>
+    /// Represents a block neg 1.
+    /// </summary>
     public class BlockNeg1 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new CN1.Page1_0()},
@@ -33,8 +42,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 0.
+    /// </summary>
     public class Block0 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C0.Page1_0()},
@@ -48,8 +63,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 1.
+    /// </summary>
     public class Block1 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C1.Page1_0()},
@@ -63,8 +84,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 2.
+    /// </summary>
     public class Block2 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C2.Page1_0()},
@@ -79,8 +106,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 3.
+    /// </summary>
     public class Block3 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C3.Page1_0()},
@@ -95,8 +128,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 4.
+    /// </summary>
     public class Block4 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C4.Page1_0()},
@@ -111,8 +150,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 5.
+    /// </summary>
     public class Block5 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C5.Page1_0()},
@@ -127,8 +172,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 6.
+    /// </summary>
     public class Block6 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C6.Page1_0()},
@@ -143,8 +194,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 7.
+    /// </summary>
     public class Block7 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C7.Page1_0()},
@@ -159,8 +216,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 8.
+    /// </summary>
     public class Block8 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C8.Page1_0()},
@@ -175,8 +238,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a block 9.
+    /// </summary>
     public class Block9 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C9.Page1_0()},
@@ -194,8 +263,14 @@ public class Blocks
 
 
 
+    /// <summary>
+    /// Represents a managed block neg 1.
+    /// </summary>
     public class ManagedBlockNeg1 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new MCN1.Page1_0()},
@@ -209,8 +284,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a managed block 0.
+    /// </summary>
     public class ManagedBlock0 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new MC0.Page1_0()},
@@ -224,8 +305,14 @@ public class Blocks
         };
     }
 
+    /// <summary>
+    /// Represents a managed block 1.
+    /// </summary>
     public class ManagedBlock1 : IStaticBookBlock
     {
+        /// <summary>
+        /// Gets the books.
+        /// </summary>
         public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new MC1.Page1_0()},

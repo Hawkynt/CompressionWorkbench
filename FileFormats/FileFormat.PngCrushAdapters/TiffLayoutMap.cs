@@ -18,6 +18,9 @@ public static class TiffLayoutMap {
   private const ushort TagTileOffsets = 0x0144;
   private const ushort TagTileByteCounts = 0x0145;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
     ArgumentNullException.ThrowIfNull(file);
     if (file.Length < 8)

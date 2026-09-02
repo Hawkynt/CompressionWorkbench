@@ -33,27 +33,66 @@ public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
 
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Npz";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NumPy NPZ";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".npz";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".npz"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // NPZ has no distinct magic; a PK signature with a .npz extension wins on extension-first
   // detection. We keep the MagicSignatures empty so the plain ZIP descriptor beats us by
   // default for generic .zip files.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "NumPy NPZ — a ZIP archive containing one or more .npy arrays (typically arr_0.npy, arr_1.npy, …).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var result = new List<ArchiveEntryInfo>();
     var metaBytes = this.CollectEntries(stream, out var zipEntries);
@@ -68,6 +107,9 @@ public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return result;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var metaBytes = this.CollectEntries(stream, out var zipEntries);
     if (files == null || files.Length == 0 || MatchesFilter("metadata.ini", files))

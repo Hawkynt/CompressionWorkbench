@@ -36,6 +36,9 @@ public sealed record OpusEncoderOptions(
   IReadOnlyList<string>? Comments = null
 );
 
+/// <summary>
+/// Represents an opus codec.
+/// </summary>
 public static partial class OpusCodec {
 
   /// <summary>

@@ -65,6 +65,9 @@ public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <inheritdoc/>
   /// <remarks>Empty: outer container is ZIP; detection is by extension to avoid
   /// shadowing the ZIP descriptor.</remarks>
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>

@@ -53,6 +53,9 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   public string DefaultExtension => ".cvf";
   /// <inheritdoc />
   // Extension-shared with DoubleSpace; detection routes by MS_DSP3 magic.
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [];
   /// <inheritdoc />
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -65,6 +68,9 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // base / + / ++ are routed through MsLzhCompressor.Compress(data, effort),
   // with the per-cluster shrink-or-store fallback inside DsCompression
   // applying at every tier.
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored",   "Stored (no compression)"),
     new("ms-lzh",   "MS LZH"),

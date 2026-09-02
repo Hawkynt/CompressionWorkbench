@@ -13,18 +13,36 @@ namespace FileFormat.ExePackers;
 /// container layout.
 /// </summary>
 public sealed class MewExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "mew";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "MEW";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public override ExecutableUnpackCapabilities Capabilities =>
     base.Capabilities | ExecutableUnpackCapabilities.CanDecompressPayload;
 
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     name.StartsWith("MEW", StringComparison.OrdinalIgnoreCase) ||
     name.StartsWith(".MEW", StringComparison.OrdinalIgnoreCase);
 
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => [];
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
@@ -36,6 +54,9 @@ public sealed class MewExecutablePackerHandler : MinorExecutablePackerHandlerBas
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "MEW section marker was not found.", true)]);
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (!MewImage.TryRead(packed.OriginalImage, options.MaximumDecompressedSize, out var layout) || layout is null)
       return this.UnpackLocatedOnly(packed, options);

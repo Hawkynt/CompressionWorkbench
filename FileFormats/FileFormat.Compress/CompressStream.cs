@@ -71,6 +71,7 @@ public sealed class CompressStream : CompressionStream {
   }
 
   /// <inheritdoc />
+  /// <summary>Writes the compress header and the LZW-coded payload for the buffered input.</summary>
   protected override void FinishCompression() {
     var compressed = LzcCodec.Compress(this._compressBuffer!.ToArray(), this._maxBits, this._blockMode);
     InnerStream.Write(compressed);

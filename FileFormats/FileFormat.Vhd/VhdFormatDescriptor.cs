@@ -16,26 +16,65 @@ namespace FileFormat.Vhd;
 /// </list>
 /// </summary>
 public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable, IRandomAccessBlockDeviceProvider {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Vhd";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "VHD";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".vhd";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".vhd"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("conectix"u8.ToArray(), Offset: 0, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Microsoft VHD virtual hard disk";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpenVhdStream(stream) is { } vhdStream) {
       using (vhdStream) {
@@ -65,6 +104,9 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new VhdWriter();
@@ -72,6 +114,9 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(w.Build());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (TryOpenVhdStream(stream) is { } vhdStream) {
       using (vhdStream) {
@@ -257,6 +302,9 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// freshly-created dynamic VHD requires the virtual size to be large
   /// enough to hold any new partitions.
   /// </remarks>
+  /// <summary>
+  /// Performs the open guest disk stream operation.
+  /// </summary>
   public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)

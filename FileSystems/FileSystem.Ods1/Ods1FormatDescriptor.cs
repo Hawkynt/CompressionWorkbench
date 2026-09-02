@@ -33,34 +33,76 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ods1";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "ODS-1 (VAX/VMS Files-11 L1)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ods1";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ods1", ".vms"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "DECFILE11A" at file offset 0x200 + 0x1F0 = 0x3F0
     new([(byte)'D', (byte)'E', (byte)'C', (byte)'F', (byte)'I', (byte)'L', (byte)'E', (byte)'1', (byte)'1', (byte)'A'], Offset: 0x3F0, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "DEC ODS-1 (RSX-11/VAX-VMS Files-11 Level 1) volume — read + R/W create + in-place " +
     "Add/Remove (Stage 1: single-extent retrieval pointers, ASCII filenames, ≤ 9.3 chars, " +
     "64-slot INDEXF window, home-block additive checksums recomputed on every mutation).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new Ods1Reader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new Ods1Reader(stream);
     foreach (var e in r.Entries) {
@@ -145,6 +187,9 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Ods1Modifier.RemoveFile(archive, name);
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -159,6 +204,9 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memoryStream = new MemoryStream();

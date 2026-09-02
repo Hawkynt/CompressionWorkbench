@@ -27,26 +27,65 @@ namespace FileFormat.Qoi;
 /// </list>
 /// </summary>
 public sealed class QoiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Qoi";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Quite OK Image (QOI)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".qoi";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".qoi"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("qoif"u8.ToArray(), Confidence: 0.92),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Quite OK Image (QOI): header + decoded RGBA pixels; round-trip encoder/decoder.";
 
   private sealed record QoiHeader(uint Width, uint Height, byte Channels, byte Colorspace, bool Valid);
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
     var data = ReadAll(stream);
@@ -63,6 +102,9 @@ public sealed class QoiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     if (Wants(files, "FULL.qoi"))
@@ -80,6 +122,9 @@ public sealed class QoiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   // Re-encode a raw RGBA pixels.bin into a QOI using geometry from metadata.ini.
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);

@@ -32,13 +32,31 @@ public sealed class SmartFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<SmartFsEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<SmartFsEntry> Entries => _entries;
 
+  /// <summary>
+  /// Gets or sets the format version.
+  /// </summary>
   public byte FormatVersion { get; private set; }
+  /// <summary>
+  /// Gets or sets the sector size.
+  /// </summary>
   public uint SectorSize { get; private set; }
+  /// <summary>
+  /// Gets or sets the root sector count.
+  /// </summary>
   public ushort RootSectorCount { get; private set; }
+  /// <summary>
+  /// Gets a value indicating whether valid format sector.
+  /// </summary>
   public bool ValidFormatSector { get; private set; }
 
+  /// <summary>
+  /// Provides the format signature value.
+  /// </summary>
   public static readonly byte[] FormatSignature = "SMRT"u8.ToArray();
   // Scan a small window around the documented offset (10) for the signature —
   // some NuttX builds pad the per-sector header differently depending on
@@ -46,6 +64,9 @@ public sealed class SmartFsReader : IDisposable {
   // always within the first 32 bytes of the format sector.
   private const int SignatureScanWindow = 32;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="SmartFsReader"/>.
+  /// </summary>
   public SmartFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -187,10 +208,16 @@ public sealed class SmartFsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(SmartFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

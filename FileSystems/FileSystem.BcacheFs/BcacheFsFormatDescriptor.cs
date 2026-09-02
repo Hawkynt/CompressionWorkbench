@@ -17,38 +17,89 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     IArchiveWriteConstraints, IFormatOptionsSchema, ILayoutOptimizable,
     IFilesystemExtentMap, IWipeEmpty {
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
     FilesystemSchemaPresets.ImageSize(["128 MB", "256 MB", "512 MB"],
       description: "Total image capacity. Must be at least 128 MB so the superblock copies fit."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "BcacheFs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "BcacheFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsOptimize |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".bcachefs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".bcachefs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(BcacheFsSuperblock.MagicUuid, Offset: BcacheFsSuperblock.MagicOffset, Confidence: 0.85f),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "BcacheFS Linux filesystem image — native b-tree R/W with true in-place add/replace/remove, "
     + "purge, defragment, optimize/layout maintenance and free-space/slack wiping.";
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => BcacheFsWriter.MinImageSize;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "Regular files and nested directories; each UTF-8 path component is limited to 255 bytes.";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     ArgumentNullException.ThrowIfNull(input);
     var path = input.ArchiveName.Replace('\\', '/').Trim('/');
@@ -76,6 +127,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return true;
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] header;
@@ -128,6 +182,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] header;
     try {
@@ -178,6 +235,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     if (sb.Valid) WriteIfMatch(outputDir, "superblock.bin", sb.RawBytes, files);
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -204,6 +264,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var entry = this.OpenEntry(archive, entryName, password);
     using var output = new MemoryStream();
@@ -211,6 +274,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return output.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -237,6 +303,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     WriteVolume(writer, output);
   }
 
+  /// <summary>
+  /// Performs the create from streams operation.
+  /// </summary>
   public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs,
       FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -320,6 +389,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       input.CopyTo(output);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -367,6 +439,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     };
   }
 
+  /// <summary>
+  /// Performs the patch in place operation.
+  /// </summary>
   public void PatchInPlace(Stream image, LayoutPatch patch) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
@@ -455,6 +530,9 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       "complete", 1, -1, -1, archive.Length, post, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();

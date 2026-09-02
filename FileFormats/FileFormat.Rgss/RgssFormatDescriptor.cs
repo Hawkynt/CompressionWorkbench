@@ -95,30 +95,69 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Rgss";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "RPG Maker RGSSAD";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (with the synthetic metadata.ini view filtered);
   // relayouting the container on edit is honest R/W. See FormatCapabilities.cs
   // (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".rgssad";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".rgssad", ".rgss2a", ".rgss3a"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'R', (byte)'G', (byte)'S', (byte)'S', (byte)'A', (byte)'D', 0, 1], Confidence: 0.95),
     new([(byte)'R', (byte)'G', (byte)'S', (byte)'S', (byte)'A', (byte)'D', 0, 2], Confidence: 0.95),
     new([(byte)'R', (byte)'G', (byte)'S', (byte)'S', (byte)'A', (byte)'D', 0, 3], Confidence: 0.95)
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rgss", "RGSSAD")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "RPG Maker XP/VX/VX Ace encrypted resource archive";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RgssReader(stream);
     var list = new List<ArchiveEntryInfo> {
@@ -172,12 +211,18 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var entries = FormatHelpers.FilesOnly(inputs).ToList();
     var w = new RgssWriter(output);
     w.Write(entries);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new RgssReader(stream);
 

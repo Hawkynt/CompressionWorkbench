@@ -37,14 +37,32 @@ public sealed class Tux2Reader : IDisposable {
   private readonly long _len;
   private readonly List<Tux2Entry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<Tux2Entry> Entries => _entries;
 
+  /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
   public uint Version { get; private set; }
+  /// <summary>
+  /// Gets or sets the file count.
+  /// </summary>
   public uint FileCount { get; private set; }
+  /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
   public bool ValidHeader { get; private set; }
 
+  /// <summary>
+  /// Provides the magic value.
+  /// </summary>
   public static readonly byte[] Magic = "TUX2FS\0\0"u8.ToArray();
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Tux2Reader"/>.
+  /// </summary>
   public Tux2Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -109,6 +127,9 @@ public sealed class Tux2Reader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(Tux2Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset < 0) return entry.Data;
@@ -132,5 +153,8 @@ public sealed class Tux2Reader : IDisposable {
     return take;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() => this._img.Dispose();
 }

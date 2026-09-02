@@ -48,6 +48,9 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
   /// Crash mid-3: file reachable via new pointers, old zones still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     // Parse superblock from disk (only 32 bytes needed).
     Span<byte> sb = stackalloc byte[32];

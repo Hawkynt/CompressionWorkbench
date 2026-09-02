@@ -16,7 +16,13 @@ public sealed class UnityBundleReader {
   private const uint BlocksInfoAtEnd = 0x80;
   private const uint DataAligned16 = 0x200;
 
+  /// <summary>
+  /// Represents a storage block.
+  /// </summary>
   public sealed record StorageBlock(uint UncompressedSize, uint CompressedSize, ushort Flags);
+  /// <summary>
+  /// Represents a node.
+  /// </summary>
   public sealed record Node(long Offset, long Size, uint Flags, string Path);
 
   private readonly byte[] _source;
@@ -24,18 +30,54 @@ public sealed class UnityBundleReader {
   private readonly long _dataStreamOffset;
   private byte[]? _dataStream;
 
+  /// <summary>
+  /// Gets the signature.
+  /// </summary>
   public string Signature { get; }
+  /// <summary>
+  /// Gets the format version.
+  /// </summary>
   public uint FormatVersion { get; }
+  /// <summary>
+  /// Gets the unity version.
+  /// </summary>
   public string UnityVersion { get; }
+  /// <summary>
+  /// Gets the unity revision.
+  /// </summary>
   public string UnityRevision { get; }
+  /// <summary>
+  /// Gets the total size.
+  /// </summary>
   public long TotalSize { get; }
+  /// <summary>
+  /// Gets the compressed blocks info size.
+  /// </summary>
   public uint CompressedBlocksInfoSize { get; }
+  /// <summary>
+  /// Gets the uncompressed blocks info size.
+  /// </summary>
   public uint UncompressedBlocksInfoSize { get; }
+  /// <summary>
+  /// Gets the flags.
+  /// </summary>
   public uint Flags { get; }
+  /// <summary>
+  /// Gets the blocks.
+  /// </summary>
   public IReadOnlyList<StorageBlock> Blocks { get; }
+  /// <summary>
+  /// Gets the nodes.
+  /// </summary>
   public IReadOnlyList<Node> Nodes { get; }
+  /// <summary>
+  /// Gets a value indicating whether can extract.
+  /// </summary>
   public bool CanExtract { get; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="UnityBundleReader"/>.
+  /// </summary>
   public UnityBundleReader(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     this._source = data;
@@ -127,6 +169,9 @@ public sealed class UnityBundleReader {
     this.CanExtract = blocks.All(block => (block.Flags & 0x3F) is 0 or 1 or 2 or 3);
   }
 
+  /// <summary>
+  /// Performs the extract node operation.
+  /// </summary>
   public byte[] ExtractNode(Node node) {
     ArgumentNullException.ThrowIfNull(node);
     if (this.Nodes.Count == 0)
@@ -144,6 +189,9 @@ public sealed class UnityBundleReader {
     return result;
   }
 
+  /// <summary>
+  /// Gets the data stream.
+  /// </summary>
   public byte[] GetDataStream() {
     if (this._dataStream != null)
       return this._dataStream;

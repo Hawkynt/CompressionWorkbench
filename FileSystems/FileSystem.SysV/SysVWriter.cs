@@ -104,6 +104,9 @@ public sealed class SysVWriter : IDisposable {
   internal const ushort ModeRegularFile = 0x81A4;// S_IFREG | 0644
   private const int RootInode = 2;               // Inode 1 reserved per AT&T convention
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="SysVWriter"/>.
+  /// </summary>
   public SysVWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
@@ -634,6 +637,9 @@ public sealed class SysVWriter : IDisposable {
     // remaining bytes [512..1023] zero
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }

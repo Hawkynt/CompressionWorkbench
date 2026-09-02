@@ -53,6 +53,10 @@ the bytes that actually move rather than the whole volume.
 
 References:
 
+### HfsReader
+
+Reads the catalog of a Classic Macintosh HFS volume and extracts the files it holds.
+
 ### HfsWriter
 
 Builds a spec-compliant Classic HFS disk image per Inside Macintosh: Files (1992), chapter 2 "File Manager".

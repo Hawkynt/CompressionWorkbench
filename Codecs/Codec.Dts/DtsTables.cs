@@ -12,10 +12,16 @@ namespace Codec.Dts;
 /// </summary>
 public static class DtsTables {
 
+  /// <summary>
+  /// Provides the sample rates value.
+  /// </summary>
   public static readonly int[] SampleRates = [
     0, 8000, 16000, 32000, 0, 0, 11025, 22050, 44100, 0, 0, 12000, 24000, 48000, 96000, 192000,
   ];
 
+  /// <summary>
+  /// Provides the bit rates value.
+  /// </summary>
   public static readonly int[] BitRates = [
     32000, 56000, 64000, 96000, 112000, 128000, 192000, 224000,
     256000, 320000, 384000, 448000, 512000, 576000, 640000, 768000,
@@ -23,14 +29,23 @@ public static class DtsTables {
     1536000, 1920000, 2048000, 3072000, 3840000, 1, 2, 3,
   ];
 
+  /// <summary>
+  /// Provides the channels value.
+  /// </summary>
   public static readonly int[] Channels = [
     1, 2, 2, 2, 2, 3, 3, 4, 4, 5, 6, 6, 6, 7, 8, 8,
   ];
 
+  /// <summary>
+  /// Provides the lfe index value.
+  /// </summary>
   public static readonly int[] LfeIndex = [
     1, 2, 2, 2, 2, 3, 2, 3, 2, 3, 2, 3, 1, 3, 2, 3,
   ];
 
+  /// <summary>
+  /// Provides the scale factor quant 6 value.
+  /// </summary>
   public static readonly uint[] ScaleFactorQuant6 = [
     1, 2, 2, 3, 3, 4, 6, 7,
     10, 12, 16, 20, 26, 34, 44, 56,
@@ -42,6 +57,9 @@ public static class DtsTables {
     1819701, 2344229, 3019952, 3890451, 5011872, 6456542, 8317638, 0,
   ];
 
+  /// <summary>
+  /// Provides the scale factor quant 7 value.
+  /// </summary>
   public static readonly uint[] ScaleFactorQuant7 = [
     1, 1, 2, 2, 2, 2, 3, 3,
     3, 4, 4, 5, 6, 7, 7, 8,
@@ -61,6 +79,9 @@ public static class DtsTables {
     5011872, 5688529, 6456542, 7328245, 8317638, 0, 0, 0,
   ];
 
+  /// <summary>
+  /// Provides the lossy quant value.
+  /// </summary>
   public static readonly float[] LossyQuant = [
     0f, 1.6f, 1.0f, 0.8f, 0.59f, 0.50f, 0.42f, 0.34f,
     0.19f, 0.11f, 0.06f, 0.035f, 0.019f, 0.011f, 0.0065f, 0.0040f,
@@ -68,6 +89,9 @@ public static class DtsTables {
     0.00002f, 0.00001f, 0.000005f, 0f, 0f, 0f, 0f, 0f,
   ];
 
+  /// <summary>
+  /// Provides the lossless quant value.
+  /// </summary>
   public static readonly float[] LosslessQuant = [
     0f, 1.0f, 0.5f, 0.33f, 0.25f, 0.166f, 0.125f, 0.083f,
     0.0625f, 0.03125f, 0.0156f, 7.874E-3f, 3.922E-3f, 1.957E-3f, 9.775E-4f, 4.885E-4f,
@@ -76,6 +100,9 @@ public static class DtsTables {
   ];
 
   private static short[][]? _adpcmVb;
+  /// <summary>
+  /// Gets the adpcm vb.
+  /// </summary>
   public static short[][] AdpcmVb => _adpcmVb ??= BuildAdpcmVb();
   private static short[][] BuildAdpcmVb() {
     var flat = AdpcmVbFlat;
@@ -84,6 +111,9 @@ public static class DtsTables {
     return r;
   }
 
+  /// <summary>
+  /// Provides the adpcm vb flat value.
+  /// </summary>
   public static readonly short[] AdpcmVbFlat = [
     9928, -2618, -1093, -1263, 11077, -2876, -1747, -308, 10503, -1082, -1426, -1167, 9337, -2403, -1495, 274,
     10698, -2529, -532, -1122, 10368, -3974, -1264, -750, 10070, -3667, 346, 863, 10278, -3093, 311, -576,
@@ -1112,6 +1142,9 @@ public static class DtsTables {
   ];
 
   private static sbyte[][]? _highFreqVq;
+  /// <summary>
+  /// Gets the high freq vq.
+  /// </summary>
   public static sbyte[][] HighFreqVq => _highFreqVq ??= BuildHighFreqVq();
   private static sbyte[][] BuildHighFreqVq() {
     var flat = HighFreqVqFlat;
@@ -1120,6 +1153,9 @@ public static class DtsTables {
     return r;
   }
 
+  /// <summary>
+  /// Provides the high freq vq flat value.
+  /// </summary>
   public static readonly sbyte[] HighFreqVqFlat = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     -4, -2, 2, 1, -16, -10, 1, 3, 1, 0, 6, 1, -3, 7, 1, -22, 2, -4, -3, 11, 14, 6, -1, 1, -13, 29, -28, 10, 10, -8, 0, -9,
@@ -2147,6 +2183,9 @@ public static class DtsTables {
     5, 0, -6, 5, 6, 3, 3, -10, -5, 1, -1, 4, 3, -11, -8, 5, 4, -5, 5, -5, -7, -5, 11, 5, 20, -8, -16, 21, -4, 27, 23, -5,
   ];
 
+  /// <summary>
+  /// Provides the fir 32 perfect value.
+  /// </summary>
   public static readonly float[] Fir32Perfect = [
     +1.135985195E-010f, +7.018770981E-011f, -1.608403011E-008f, -5.083275667E-008f, -1.543309907E-007f, -3.961981463E-007f, -7.342250683E-007f, -3.970030775E-007f,
     -4.741137047E-007f, -6.022448247E-007f, -6.628192182E-007f, -6.982898526E-007f, -7.020648809E-007f, -6.767839409E-007f, -6.262345096E-007f, -5.564140224E-007f,
@@ -2214,6 +2253,9 @@ public static class DtsTables {
     +3.970030775E-007f, +7.342250683E-007f, +3.961981463E-007f, +1.543309907E-007f, +5.083275667E-008f, +1.608403011E-008f, -7.018770981E-011f, -1.135985195E-010f,
   ];
 
+  /// <summary>
+  /// Provides the fir 32 non perfect value.
+  /// </summary>
   public static readonly float[] Fir32NonPerfect = [
     -1.390191784E-007f, -1.693738625E-007f, -2.030677564E-007f, -2.404238444E-007f, -2.818143514E-007f, -3.276689142E-007f, -3.784752209E-007f, -4.347855338E-007f,
     -4.972276315E-007f, -5.665120852E-007f, -6.434325428E-007f, -7.288739425E-007f, -8.238164355E-007f, -9.293416952E-007f, -1.046637067E-006f, -1.176999604E-006f,
@@ -2281,6 +2323,9 @@ public static class DtsTables {
     +4.347855338E-007f, +3.784752209E-007f, +3.276689142E-007f, +2.818143514E-007f, +2.404238444E-007f, +2.030677564E-007f, +1.693738625E-007f, +1.390191784E-007f,
   ];
 
+  /// <summary>
+  /// Provides the lfe fir 64 value.
+  /// </summary>
   public static readonly float[] LfeFir64 = [
     3.169100745714637e-11f, 1.0763800961655079e-09f, 9.464339534304145e-09f, 2.8910145388749694e-08f, 4.089092442427499e-08f, 2.8589116851662766e-08f, 9.234480735642592e-09f, 1.027860796476432e-09f,
     9.750563204069529e-12f, 1.1266414468025232e-09f, 9.697536107466931e-09f, 2.9229388687213038e-08f, 4.08839859744603e-08f, 2.8266427420930995e-08f, 9.007973922336987e-09f, 9.810484646877171e-10f,
@@ -2316,6 +2361,9 @@ public static class DtsTables {
     1.700990043262962e-10f, 3.649616830969648e-09f, 1.8080587693702913e-08f, 3.737578424534149e-08f, 3.758063016334746e-08f, 1.8397818379867197e-08f, 3.7741418879022595e-09f, 1.8213150432266903e-10f,
   ];
 
+  /// <summary>
+  /// Provides the lfe fir 128 value.
+  /// </summary>
   public static readonly float[] LfeFir128 = [
     6.338187575340271e-11f, 1.8928641765117647e-08f, 8.178167831778526e-08f, 1.846892416834831e-08f, 1.9501079320907594e-11f, 1.9395033135414125e-08f, 8.176780141830444e-08f, 1.8015910540819166e-08f,
     2.2505055665969848e-11f, 1.9868060973882675e-08f, 8.174006893515587e-08f, 1.7569631083011627e-08f, 2.5800899267196656e-11f, 2.0347689754962922e-08f, 8.169848086953163e-08f, 1.713010533452034e-08f,
@@ -2351,6 +2399,9 @@ public static class DtsTables {
     1.9620927107334136e-09f, 5.653273404955864e-08f, 5.8458656581640244e-08f, 2.2532782304286955e-09f, 2.0557171523571015e-09f, 5.717811646342278e-08f, 5.782016998529434e-08f, 2.152755751609802e-09f,
   ];
 
+  /// <summary>
+  /// Provides the channel reorder no lfe value.
+  /// </summary>
   public static readonly sbyte[][] ChannelReorderNoLfe = [
     [0, -1, -1, -1, -1, -1, -1, -1, -1],
     [0, 1, -1, -1, -1, -1, -1, -1, -1],
@@ -2370,6 +2421,9 @@ public static class DtsTables {
     [3, 2, 4, 0, 1, 5, 7, 6, -1],
   ];
 
+  /// <summary>
+  /// Provides the channel reorder lfe value.
+  /// </summary>
   public static readonly sbyte[][] ChannelReorderLfe = [
     [0, -1, -1, -1, -1, -1, -1, -1, -1],
     [0, 1, -1, -1, -1, -1, -1, -1, -1],

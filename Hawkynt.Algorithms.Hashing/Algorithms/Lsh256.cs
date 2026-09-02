@@ -5,11 +5,17 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Korean LSH-224 hash function.</summary>
 public static class Lsh224 {
+  /// <summary>
+  /// Computes the LSH-224 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => Lsh256Core.Compute(data, Lsh256Core.Iv224, 28);
 }
 
 /// <summary>Korean LSH-256 hash function.</summary>
 public static class Lsh256 {
+  /// <summary>
+  /// Computes the LSH-256 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => Lsh256Core.Compute(data, Lsh256Core.Iv256, 32);
 }
 

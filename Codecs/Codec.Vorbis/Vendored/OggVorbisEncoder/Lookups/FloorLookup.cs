@@ -5,6 +5,9 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents a floor lookup.
+/// </summary>
 public class FloorLookup
 {
     private const int Posit = 63;
@@ -19,6 +22,9 @@ public class FloorLookup
     private readonly int[] _reverseIndex = new int[Posit + 2];
     private readonly int[] _sortedIndex = new int[Posit + 2];
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="FloorLookup"/>.
+    /// </summary>
     public FloorLookup(Floor floor)
     {
         _floor = floor;
@@ -101,6 +107,9 @@ public class FloorLookup
         }
     }
 
+    /// <summary>
+    /// Performs the fit operation.
+    /// </summary>
     public int[] Fit(in Span<float> logmdct, float[] logmask)
     {
         var n = _n;
@@ -484,6 +493,9 @@ public class FloorLookup
         return i;
     }
 
+    /// <summary>
+    /// Encodes the supplied input.
+    /// </summary>
     public bool Encode(
         EncodeBuffer buffer,
         IList<IStaticCodeBook> staticBooks,

@@ -25,27 +25,63 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // IArchiveShrinkable uses the interface default: a verified extract →
   // re-create rebuild that only replaces the image when the result round-trips
   // AND is smaller; otherwise the original bytes are copied through unchanged.
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Stacker";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Stacker CVF";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
   // so the verb works via rebuild but nothing is modified in place. CanModify
   // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract
     | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".sta";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".sta", ".stk"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ASCII "STACKER" at offset 0 — the start of the STACVOL banner sector
     // ("STACKER  version  N    volume:  <path>"), verified against a STACVOL
     // produced by the genuine Stacker 3.10 CREATE tool.
     new([0x53, 0x54, 0x41, 0x43, 0x4B, 0x45, 0x52], Offset: 0, Confidence: 0.90),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stacker-lzs", "Stacker LZS")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Stacker STACVOL (Stac Electronics, MS-DOS) — banner + Stacker Control Block parsed, "
     + "inner FAT12 directory walked, STORED and Stac-LZS clusters read/written. "
@@ -53,6 +89,9 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     + "driver / dmsdos, or 'Extended' for CompressionWorkbench-only LZS compression.";
 
   // ── IFormatOptionsSchema ──────────────────────────────────────────────────
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "Compatibility",
@@ -119,6 +158,9 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
   };
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
     if (TryGenuine(data, out var g))
@@ -129,6 +171,9 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       i, e.Name, e.Size, e.Size, "Stacker-LZS", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     if (TryGenuine(data, out var g)) {
@@ -147,6 +192,9 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -204,19 +252,31 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   // ── Modify / defrag / purge (rebuild) ─────────────────────────────────────
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
     WriteBack(archive, Rebuild(ReadAll(archive), inputs, null));
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(entryNames);
     WriteBack(archive, Rebuild(ReadAll(archive), null, entryNames));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => WriteBack(archive, Rebuild(ReadAll(archive), null, null));
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options)
     => this.Defragment(archive);
 

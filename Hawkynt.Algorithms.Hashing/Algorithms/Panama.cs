@@ -5,21 +5,33 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Little-endian Panama hash.</summary>
 public static class PanamaLE {
+  /// <summary>
+  /// Computes the Panama LE hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => PanamaCore.Compute(data, true);
 }
 
 /// <summary>Big-endian Panama hash.</summary>
 public static class PanamaBE {
+  /// <summary>
+  /// Computes the Panama BE hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => PanamaCore.Compute(data, false);
 }
 
 /// <summary>Panama-LE hermetic MAC used by the registry implementation.</summary>
 public static class PanamaLEMac {
+  /// <summary>
+  /// Computes the Panama LE Mac hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key) => PanamaCore.ComputeMac(data, key, true);
 }
 
 /// <summary>Panama-BE hermetic MAC used by the registry implementation.</summary>
 public static class PanamaBEMac {
+  /// <summary>
+  /// Computes the Panama BE Mac hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key) => PanamaCore.ComputeMac(data, key, false);
 }
 

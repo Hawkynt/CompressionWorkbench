@@ -33,8 +33,17 @@ public sealed class XenixReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<XenixEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<XenixEntry> Entries => this._entries;
+  /// <summary>
+  /// Gets or sets the magic.
+  /// </summary>
   public uint Magic { get; private set; }
+  /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
   public int BlockSize { get; private set; } = 1024;
 
   internal const int SuperblockOffset = 1024;
@@ -47,6 +56,9 @@ public sealed class XenixReader : IDisposable {
   internal const int TypeOffset = 0x3FC;
   private const int RootInode = 2;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="XenixReader"/>.
+  /// </summary>
   public XenixReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -369,6 +381,9 @@ public sealed class XenixReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(XenixEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -380,5 +395,8 @@ public sealed class XenixReader : IDisposable {
     return data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

@@ -32,6 +32,9 @@ public static class HfsExtentMap {
   /// <summary>Bytes a catalog file record occupies.</summary>
   private const int FileRecordLength = 102;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

@@ -23,6 +23,9 @@ public static class Gost3411_94 {
     0xFF,0x00,0x00,0x00,0xFF,0xFF,0x00,0xFF
   ];
 
+  /// <summary>
+  /// Computes the GOST-3411 94 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     var hash = new byte[32];
     var sum = new byte[32];

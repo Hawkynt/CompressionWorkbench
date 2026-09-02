@@ -5,9 +5,15 @@ using Compression.Core.DiskImage;
 
 namespace FileSystem.Vdfs;
 
+/// <summary>
+/// Builds a Gothic-engine VDFS archive from a set of files, writing the entry table and the file data behind it.
+/// </summary>
 public sealed class VdfsWriter {
   private readonly List<(string Name, FilePayload Payload)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, FilePayload.FromBytes(data)));
 
   /// <summary>

@@ -33,9 +33,18 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class MidgetPackExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "midgetpack";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "MidgetPack ELF crypter (AES-CBC, runtime key)";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -44,6 +53,9 @@ public sealed class MidgetPackExecutablePackerHandler : IExecutablePackerHandler
     ExecutableUnpackCapabilities.SupportsX64 |
     ExecutableUnpackCapabilities.SupportsArm32;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (TryParseDescriptor(image.ToArray(), out _))
       return new(true, this.Id, 1.0, []);
@@ -52,6 +64,9 @@ public sealed class MidgetPackExecutablePackerHandler : IExecutablePackerHandler
         "No MidgetPack payload segment (RWX PT_LOAD reaching end-of-file, with its address and length echoed in stub data) was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var bytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -63,6 +78,9 @@ public sealed class MidgetPackExecutablePackerHandler : IExecutablePackerHandler
     });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     if (image.LongLength > options.MaximumInputSize)

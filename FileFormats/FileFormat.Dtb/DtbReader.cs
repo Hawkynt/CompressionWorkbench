@@ -23,9 +23,21 @@ public sealed class DtbReader {
 
   /// <summary>Structure-block tokens.</summary>
   public const uint FDT_BEGIN_NODE = 0x1;
+  /// <summary>
+  /// Defines the fdt end node constant value.
+  /// </summary>
   public const uint FDT_END_NODE = 0x2;
+  /// <summary>
+  /// Defines the fdt prop constant value.
+  /// </summary>
   public const uint FDT_PROP = 0x3;
+  /// <summary>
+  /// Defines the fdt nop constant value.
+  /// </summary>
   public const uint FDT_NOP = 0x4;
+  /// <summary>
+  /// Defines the fdt end constant value.
+  /// </summary>
   public const uint FDT_END = 0x9;
 
   /// <summary>Parsed FDT header (v17 fields; older versions leave trailing fields at 0).</summary>

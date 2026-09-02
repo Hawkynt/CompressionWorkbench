@@ -20,6 +20,9 @@ public sealed record Ac3EncoderOptions(
   bool PadFinalFrame = true
 );
 
+/// <summary>
+/// Represents an ac 3 codec.
+/// </summary>
 public static partial class Ac3Codec {
 
   /// <summary>Long-block AC-3 analysis delay in samples per channel.</summary>

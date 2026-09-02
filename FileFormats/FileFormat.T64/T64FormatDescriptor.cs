@@ -14,22 +14,61 @@ namespace FileFormat.T64;
 /// </list>
 /// </summary>
 public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemBlockMover {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "T64";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "T64";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".t64";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".t64"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("C64"u8.ToArray(), Confidence: 0.70)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Commodore 64 tape container";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new T64Reader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -37,6 +76,9 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new T64Reader(stream);
     foreach (var e in r.Entries) {
@@ -45,6 +87,9 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new T64Writer();
     foreach (var (name, data) in FlatFiles(inputs))
@@ -95,6 +140,9 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveDefragmentable ───────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

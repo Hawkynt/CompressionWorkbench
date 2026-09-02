@@ -49,6 +49,9 @@ public sealed class WarcWriter {
     AddRecord(entry, payload);
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     foreach (var (entry, payload) in _records) {
       // Mirror Content-Length to the actual payload to avoid mismatches.

@@ -27,29 +27,68 @@ public sealed class EwfFormatDescriptor :
   ILayoutOptimizable,
   IFormatOptionsSchema {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ewf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "EnCase EWF (E01)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".e01";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".e01", ".ewf", ".l01"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95),
     new([0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored chunks", SupportsOptimize: true),
     new("zlib", "Zlib-compressed chunks", SupportsOptimize: true),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "EnCase EWF forensic media image with logical-media R/W, canonical repack and chunk compression optimization.";
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "CompressChunks",
@@ -59,6 +98,9 @@ public sealed class EwfFormatDescriptor :
       Description: "Zlib-compress each 32 KiB EWF media chunk when compression makes that chunk smaller."),
   ];
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var image = ReadImage(stream);
     var result = new List<ArchiveEntryInfo>();
@@ -84,6 +126,9 @@ public sealed class EwfFormatDescriptor :
     return result;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var image = ReadImage(stream);
     if (!image.IsLogical && MatchesRequested("media.raw", files)) {
@@ -103,6 +148,9 @@ public sealed class EwfFormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     var image = ReadImage(archive);
     byte[] data;
@@ -124,6 +172,9 @@ public sealed class EwfFormatDescriptor :
       new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var entry = this.OpenEntry(archive, entryName, password);
     using var result = new MemoryStream();
@@ -131,6 +182,12 @@ public sealed class EwfFormatDescriptor :
     return result.ToArray();
   }
 
+  /// <summary>
+  /// Creates a single-segment .E01 image wrapping the supplied input(s) as raw
+  /// media. EWF is a media-wrapper format, so file inputs are concatenated into
+  /// one contiguous raw image (the common case is a single disk-image input).
+  /// The produced image is accepted by libewf's <c>ewfverify</c>.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -140,6 +197,9 @@ public sealed class EwfFormatDescriptor :
     output.Write(writer.Build(media));
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -154,6 +214,9 @@ public sealed class EwfFormatDescriptor :
     RewriteMedia(archive, files[0].ReadContent(), existing, HasCompressedChunks(existing));
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
@@ -168,6 +231,9 @@ public sealed class EwfFormatDescriptor :
     RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
   }
 
+  /// <summary>
+  /// Removes every entry from the target container.
+  /// </summary>
   public void Purge(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     var existing = ReadImage(archive);
@@ -176,9 +242,15 @@ public sealed class EwfFormatDescriptor :
     RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions());
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     var existing = ReadImage(archive);
@@ -204,6 +276,9 @@ public sealed class EwfFormatDescriptor :
       "EWF canonicalization complete"));
   }
 
+  /// <summary>
+  /// Performs the shrink operation.
+  /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
@@ -220,6 +295,9 @@ public sealed class EwfFormatDescriptor :
     output.Write(best);
   }
 
+  /// <summary>
+  /// Performs the analyze layout operation.
+  /// </summary>
   public LayoutAnalysis AnalyzeLayout(Stream image) {
     var parsed = ReadImage(image);
     long mediaBytes = 0;
@@ -239,6 +317,9 @@ public sealed class EwfFormatDescriptor :
     };
   }
 
+  /// <summary>
+  /// Rebuilds the container into the target stream using the supplied layout options.
+  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.MakeSparse || options.DeduplicateWithLinks)
@@ -256,6 +337,9 @@ public sealed class EwfFormatDescriptor :
     options.OnProgress?.Invoke(media.LongLength, media.LongLength);
   }
 
+  /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var image = ReadImage(archive);
     yield return new DefragBlockInfo(0, Math.Min(EwfReader.FileHeaderSize, image.TotalFileSize),

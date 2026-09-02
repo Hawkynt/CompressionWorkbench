@@ -23,29 +23,75 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable,
   IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
+  /// <summary>
+  /// The one tunable the uncompressed writer honours: the volume label written
+  /// into the superblock <c>volume_name</c> field (16 bytes) via
+  /// <see cref="ErofsWriter.VolumeName"/> and read back as
+  /// <c>ErofsReader.VolumeName</c>. The 4&#160;KB block size is fixed by the
+  /// FLAT_PLAIN/FLAT_INLINE layout, so it is not exposed.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Erofs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "EROFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".erofs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".erofs", ".img"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0xE2, 0xE1, 0xF5, 0xE0], Offset: 1024, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored / flat inode")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Android/Linux read-only-on-mount filesystem; FLAT_PLAIN/FLAT_INLINE profile supports offline R/W and maintenance.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var reader = OpenReader(stream);
     var result = new List<ArchiveEntryInfo>(reader.Entries.Count);
@@ -66,6 +112,9 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return SymlinkResolver.Resolve(result);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var reader = OpenReader(stream);
     foreach (var e in reader.Entries) {
@@ -83,6 +132,12 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
+  /// <summary>
+  /// Opens a single EROFS file as a bounded read-only stream. The reader
+  /// produces the decoded file bytes; the matched bytes are wrapped in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to the entry's logical length.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -99,6 +154,7 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       new MemoryStream(Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
   }
 
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memory = new MemoryStream();
@@ -106,6 +162,9 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return memory.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -129,6 +188,9 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       buildImage: files => BuildImage(files, label));
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
@@ -146,9 +208,19 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return new ErofsReader(ms.ToArray());
   }
 
+
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Lays the image out again. Moving what is out of place beats writing the
+  /// image out anew: EROFS lays a file's blocks out contiguously from the raw
+  /// block address in its inode, so a move is the copy plus four bytes. The
+  /// default this replaces offered start-packing only, through a rebuild.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
@@ -175,6 +247,7 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         }));
   }
 
+  /// <summary>Plans the moves the layout needs and commits them in place.</summary>
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
     var mover = new ErofsBlockMover();

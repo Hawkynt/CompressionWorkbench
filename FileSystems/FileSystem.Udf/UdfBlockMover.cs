@@ -24,6 +24,9 @@ public sealed class UdfBlockMover : IFilesystemBlockMover {
   private const int SectorSize = 2048;
   private const int AvdpLba = 256;
 
+  /// <summary>
+  /// Gets the first data byte.
+  /// </summary>
   public long FirstDataByte => 0;
 
   /// <summary>A sector. An allocation descriptor names one, not a byte.</summary>
@@ -189,6 +192,9 @@ public sealed class UdfBlockMover : IFilesystemBlockMover {
   /// <see cref="Stream.Flush"/>. No full-image load — multi-GB DVD/BD images
   /// require only a handful of sector reads/writes per move.
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);

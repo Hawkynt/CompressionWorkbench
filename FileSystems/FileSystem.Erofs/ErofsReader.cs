@@ -21,6 +21,9 @@ namespace FileSystem.Erofs;
 /// </para>
 /// </summary>
 public sealed class ErofsReader {
+  /// <summary>
+  /// Represents an entry.
+  /// </summary>
   public sealed record Entry(string Path, long Size, bool IsDirectory, ulong Nid,
     bool IsSymlink = false, string? LinkTarget = null);
 
@@ -42,6 +45,9 @@ public sealed class ErofsReader {
   private readonly List<Entry> _entries = [];
   private readonly HashSet<ulong> _visited = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<Entry> Entries => this._entries;
 
   /// <summary>Volume label from the superblock <c>volume_name</c> field (16 bytes, NUL-trimmed ASCII).</summary>
@@ -55,6 +61,9 @@ public sealed class ErofsReader {
     this.Parse();
   }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ErofsReader"/>.
+  /// </summary>
   public ErofsReader(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     this._data = ImageAccessor.FromBytes(data);

@@ -14,7 +14,13 @@ public sealed class IcoWriter {
   /// <summary>Single image to embed.</summary>
   public sealed record Image(byte[] Data);
 
+  /// <summary>
+  /// Performs the build ico operation.
+  /// </summary>
   public static byte[] BuildIco(IReadOnlyList<Image> images) => Build(images, isCursor: false);
+  /// <summary>
+  /// Performs the build cur operation.
+  /// </summary>
   public static byte[] BuildCur(IReadOnlyList<Image> images) => Build(images, isCursor: true);
 
   private static byte[] Build(IReadOnlyList<Image> images, bool isCursor) {

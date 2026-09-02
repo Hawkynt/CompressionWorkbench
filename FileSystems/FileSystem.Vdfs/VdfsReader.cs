@@ -5,6 +5,9 @@ using System.Text;
 
 namespace FileSystem.Vdfs;
 
+/// <summary>
+/// Reads the entry table of a Gothic-engine VDFS archive and extracts the files it holds.
+/// </summary>
 public sealed class VdfsReader : IDisposable {
   private static readonly byte[] Magic = "PSVDSC_V2.00\n\r\n\r"u8.ToArray();
   private const int HeaderSize = 16;
@@ -29,8 +32,14 @@ public sealed class VdfsReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<VdfsEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<VdfsEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="VdfsReader"/>.
+  /// </summary>
   public VdfsReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -87,6 +96,9 @@ public sealed class VdfsReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(VdfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -106,5 +118,8 @@ public sealed class VdfsReader : IDisposable {
     _data.CopyTo(entry.DataOffset, destination, entry.Size);
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

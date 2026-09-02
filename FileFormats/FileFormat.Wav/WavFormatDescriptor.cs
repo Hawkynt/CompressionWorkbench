@@ -11,28 +11,73 @@ namespace FileFormat.Wav;
 /// </summary>
 public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable, IArchiveDefragmentable, IFileInternalLayoutMap, IFileInternalChunkMover {
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "WAV is a single-blob audio file (RIFF chunks + PCM data) — defragmentation isn't meaningful; use WavOptimizer instead.");
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Wav";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "WAV (RIFF audio)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".wav";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".wav", ".wave"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("RIFF"u8.ToArray(), Confidence: 0.55),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "WAV audio; full file + per-channel PCM + RIFF metadata chunks.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = BuildEntries(stream, out var parsed);
     var fullMethod = WavCodecName(parsed.FormatCode);
@@ -74,6 +119,9 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     _ => $"format_0x{formatCode:X4}",
   };
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream, out _)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
@@ -82,6 +130,9 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input, out _)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
@@ -94,6 +145,9 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveCreatable: remux per-channel WAVs (LEFT/RIGHT/…) into one multi-channel WAV ──
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // If FULL.wav is provided, passthrough it verbatim (archive-view semantics).
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
@@ -141,10 +195,19 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "WAV archive accepts: FULL.wav, LEFT/RIGHT/CENTER/… .wav (per-channel), metadata/*.bin";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = System.IO.Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = System.IO.Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";

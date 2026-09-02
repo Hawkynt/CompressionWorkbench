@@ -13,9 +13,18 @@ public sealed class NssReader {
   private readonly byte[] _image;
   private readonly List<NssEntry> _entries = new();
 
+  /// <summary>
+  /// Gets the headers.
+  /// </summary>
   public NssHeaders Headers { get; }
+  /// <summary>
+  /// Gets or sets the volume name.
+  /// </summary>
   public string VolumeName { get; private set; } = "";
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<NssEntry> Entries => this._entries;
 
   /// <summary>Bytes captured at the most useful anchor (pool / superblock / volume), 4 KB.</summary>
@@ -24,8 +33,14 @@ public sealed class NssReader {
   /// <summary>True iff at least one primary NSS anchor was located.</summary>
   public bool AnyValid => this.Headers.AnyValid;
 
+  /// <summary>
+  /// Gets the image length.
+  /// </summary>
   public long ImageLength => this._image.LongLength;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="NssReader"/>.
+  /// </summary>
   public NssReader(Stream stream) {
     using var ms = new MemoryStream();
     var buf = new byte[8192];

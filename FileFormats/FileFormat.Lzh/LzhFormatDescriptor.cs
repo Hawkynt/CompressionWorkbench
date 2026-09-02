@@ -39,9 +39,21 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       });
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Lzh";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "LZH";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
@@ -64,25 +76,55 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       LhaModifier.RemoveFile(archive, name, wipeData: true);
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".lzh";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".lzh", ".lha"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'-', (byte)'l'], Offset: 2, Confidence: 0.70)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("lh5", "LH5"), new("lh0", "LH0 (Store)"), new("lh1", "LH1"), new("lh4", "LH4"),
     new("lh6", "LH6"), new("lh7", "LH7"), new("lzs", "LZS"), new("lz5", "LZ5"),
     new("pm0", "PM0"), new("pm1", "PM1"), new("pm2", "PM2")
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "LHA/LZH archive, popular in Japan, Amiga";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LhaReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
       e.Method, false, false, e.LastModified)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new LhaReader(stream);
     foreach (var e in r.Entries) {
@@ -120,6 +162,9 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var lzhMethod = options.MethodName switch {
       "lh0" or "store" => LhaConstants.MethodLh0,

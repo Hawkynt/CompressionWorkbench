@@ -43,10 +43,25 @@ public sealed class TFatReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<TFatEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<TFatEntry> Entries => _entries;
+  /// <summary>
+  /// Gets or sets the fat type.
+  /// </summary>
   public int FatType { get; private set; }
+  /// <summary>
+  /// Gets or sets the active fat index.
+  /// </summary>
   public int ActiveFatIndex { get; private set; } // 0 or 1
+  /// <summary>
+  /// Gets or sets the active sequence.
+  /// </summary>
   public uint ActiveSequence { get; private set; }
+  /// <summary>
+  /// Gets or sets the inactive sequence.
+  /// </summary>
   public uint InactiveSequence { get; private set; }
 
   private int _bytesPerSector;
@@ -62,6 +77,9 @@ public sealed class TFatReader : IDisposable {
   private int _rootCluster;
   private int _fatOffsetBytes; // byte offset of the active FAT
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="TFatReader"/>.
+  /// </summary>
   public TFatReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _data = new ImageAccessor(stream, leaveOpen: true);
@@ -326,6 +344,9 @@ public sealed class TFatReader : IDisposable {
     _ => true
   };
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(TFatEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -337,5 +358,8 @@ public sealed class TFatReader : IDisposable {
     return data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

@@ -338,7 +338,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        [Obsolete("Use Span<> overrides if possible")]
+[Obsolete("Use Span<> overrides if possible")]
         public int DecodeMultistream(
               byte[] data,
               int data_offset,
@@ -381,7 +381,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        [Obsolete("Use Span<> overrides if possible")]
+[Obsolete("Use Span<> overrides if possible")]
         public int DecodeMultistream(byte[] data, int data_offset,
           int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)
         {

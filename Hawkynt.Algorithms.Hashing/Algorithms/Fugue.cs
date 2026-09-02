@@ -7,6 +7,9 @@ namespace Hawkynt.Algorithms.Hashing;
 /// the selected digest size chooses the Fugue-2, Fugue-3 or Fugue-4 round schedule.
 /// </summary>
 public static class Fugue {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
     new(224, 256, 32),
     new(384, 512, 128)
@@ -40,6 +43,9 @@ public static class Fugue {
   // of the same AES-derived table, so generate the base table once and rotate at lookup time.
   private static readonly uint[] Mix0 = BuildMixTable();
 
+  /// <summary>
+  /// Computes the Fugue hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 256) {
     if (!SupportedHashSizes.Supports(hashSizeBits))
       throw new ArgumentOutOfRangeException(nameof(hashSizeBits));

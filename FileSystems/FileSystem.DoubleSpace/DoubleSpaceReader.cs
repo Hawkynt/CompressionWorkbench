@@ -34,6 +34,9 @@ public sealed class DoubleSpaceReader : IDisposable {
   /// </summary>
   public bool IsDriveSpace3 => this.Signature.StartsWith("MS_DSP3", StringComparison.Ordinal);
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<DoubleSpaceEntry> Entries => this._entries;
 
   // MDBPB fields
@@ -62,6 +65,9 @@ public sealed class DoubleSpaceReader : IDisposable {
   //   bits 28..31  flags: 1 = stored, 2 = compressed, 0 = free
   private uint[]? _mdfat;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="DoubleSpaceReader"/>.
+  /// </summary>
   public DoubleSpaceReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -359,5 +365,8 @@ public sealed class DoubleSpaceReader : IDisposable {
     return new byte[clusterBytes];
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

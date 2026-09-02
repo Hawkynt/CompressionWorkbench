@@ -53,6 +53,10 @@ the bytes that actually move rather than the whole volume.
 
 R/W descriptor for Classic Macintosh MFS (Macintosh File System) 400 KB floppy volumes — the flat-directory predecessor of HFS, MDB magic 0xD2D7. References:
 
+### MfsReader
+
+Reads the flat directory of a Classic Macintosh MFS volume and extracts the files it holds.
+
 ### MfsWriter
 
 Builds a minimal MFS disk image.

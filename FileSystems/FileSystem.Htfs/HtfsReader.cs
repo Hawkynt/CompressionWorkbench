@@ -21,6 +21,9 @@ public sealed class HtfsReader {
   private readonly int _inodesPerBlock;
   private readonly List<HtfsEntry> _entries = [];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="HtfsReader"/>.
+  /// </summary>
   public HtfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;

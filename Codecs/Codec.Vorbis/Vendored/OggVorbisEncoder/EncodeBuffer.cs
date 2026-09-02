@@ -3,6 +3,9 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder;
 
+/// <summary>
+/// Represents an encode buffer.
+/// </summary>
 public class EncodeBuffer
 {
     private const int BufferIncrement = 256;
@@ -22,11 +25,17 @@ public class EncodeBuffer
     private int _endBit;
     private int _endByte;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="EncodeBuffer"/>.
+    /// </summary>
     public EncodeBuffer()
         : this(BufferIncrement)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="EncodeBuffer"/>.
+    /// </summary>
     public EncodeBuffer(int initialBufferSize)
     {
         _buffer = new byte[initialBufferSize];
@@ -34,6 +43,9 @@ public class EncodeBuffer
 
     private int Bytes => _endByte + (_endBit + 7) / 8;
 
+    /// <summary>
+    /// Writes the book to the supplied output.
+    /// </summary>
     public void WriteBook(CodeBook book, int a)
     {
         if ((a < 0) || (a >= book.Entries))
@@ -42,12 +54,18 @@ public class EncodeBuffer
         Write(book.CodeList[a], book.StaticBook.LengthList[a]);
     }
 
+    /// <summary>
+    /// Writes the string to the supplied output.
+    /// </summary>
     public void WriteString(string str)
     {
         foreach (var c in str)
             Write(c, 8);
     }
 
+    /// <summary>
+    /// Writes the value to the supplied output.
+    /// </summary>
     public void Write(uint value, int bits)
     {
         if ((bits < 0) || (bits > 32))
@@ -88,6 +106,9 @@ public class EncodeBuffer
         _endBit = bits & 7;
     }
 
+    /// <summary>
+    /// Gets the bytes.
+    /// </summary>
     public byte[] GetBytes()
     {
         Array.Resize(ref _buffer, Bytes);

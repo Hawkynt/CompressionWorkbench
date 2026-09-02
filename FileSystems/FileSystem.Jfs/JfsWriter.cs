@@ -27,6 +27,9 @@ namespace FileSystem.Jfs;
 public sealed class JfsWriter {
   // ── spec constants ────────────────────────────────────────────────────────
   internal const int SuperblockOffset = 0x8000;   // 64 × 512 = 32768
+  /// <summary>
+  /// Defines the block size constant value.
+  /// </summary>
   public const int BlockSize = 4096;
 
   // Aggregate flags. The log superblock records the same set, so they are
@@ -247,6 +250,9 @@ public sealed class JfsWriter {
   private readonly byte[] _logUuid = Guid.NewGuid().ToByteArray(bigEndian: true);
   private uint _writeTimestamp;                                                           // captured at WriteTo() start so primary/secondary copies match byte-for-byte
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -345,6 +351,9 @@ public sealed class JfsWriter {
     return ordered;
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek) {

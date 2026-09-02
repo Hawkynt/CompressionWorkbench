@@ -15,9 +15,15 @@ namespace FileFormat.DiskDoubler;
 /// </summary>
 public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "DiskDoubler wraps a single Macintosh file (data fork + resource fork) — defragmentation isn't meaningful.");
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
 
@@ -31,23 +37,62 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "DiskDoubler";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "DiskDoubler";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".dd";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".dd", ".sea"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
   // DiskDoubler has no universally reliable magic bytes; detection is primarily by extension.
   // The header version identifier at offset 0 varies by version so we use a low-confidence hint.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("diskdoubler", "DiskDoubler")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "DiskDoubler compressed Macintosh file (Salient Software, 1989-1993)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new DiskDoublerReader(stream, leaveOpen: true);
     return r.Entries
@@ -63,6 +108,9 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
       .ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new DiskDoublerReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -100,6 +148,9 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // WORM: store the first input as a DiskDoubler data fork (method 0 = stored).
     // DiskDoubler wraps a single Macintosh file, not a multi-file archive.

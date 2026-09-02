@@ -60,9 +60,21 @@ public static class Blake {
     0x1F83D9ABFB41BD6BUL,0x5BE0CD19137E2179UL
   ];
 
+  /// <summary>
+  /// Computes the 224-bit Blake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute224(ReadOnlySpan<byte> data) => Compute32(data, Iv224, 28, 0x00);
+  /// <summary>
+  /// Computes the 256-bit Blake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(ReadOnlySpan<byte> data) => Compute32(data, Iv256, 32, 0x01);
+  /// <summary>
+  /// Computes the 384-bit Blake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute384(ReadOnlySpan<byte> data) => Compute64(data, Iv384, 48, 0x00);
+  /// <summary>
+  /// Computes the 512-bit Blake hash of the supplied data.
+  /// </summary>
   public static byte[] Compute512(ReadOnlySpan<byte> data) => Compute64(data, Iv512, 64, 0x01);
 
   private static byte[] Compute32(ReadOnlySpan<byte> data, uint[] initial, int outputBytes, byte marker) {

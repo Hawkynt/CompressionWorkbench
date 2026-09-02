@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileFormat.Rarc;
 
+/// <summary>
+/// Reads a Nintendo RARC resource archive, walking its directory nodes to enumerate the files it holds.
+/// </summary>
 public sealed class RarcReader {
   private readonly Stream _stream;
   private readonly long _baseOffset;
@@ -15,6 +18,9 @@ public sealed class RarcReader {
   private readonly List<FileRecord> _fileRecords;
   private readonly List<RarcEntry> _entries = [];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="RarcReader"/>.
+  /// </summary>
   public RarcReader(Stream stream) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanRead)
@@ -112,8 +118,14 @@ public sealed class RarcReader {
     VisitDirectory(0, string.Empty, stack);
   }
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<RarcEntry> Entries => this._entries;
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(RarcEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
@@ -127,6 +139,9 @@ public sealed class RarcReader {
     return result;
   }
 
+  /// <summary>
+  /// Computes the name hash for the supplied data.
+  /// </summary>
   public static ushort CalculateNameHash(string name) {
     ArgumentNullException.ThrowIfNull(name);
     ushort hash = 0;

@@ -4,10 +4,16 @@ using System.Text;
 
 namespace FileSystem.D64;
 
+/// <summary>
+/// Reads the directory of a Commodore 1541 D64 disk image and extracts the files it holds.
+/// </summary>
 public sealed class D64Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<D64Entry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<D64Entry> Entries => _entries;
 
   // Standard D64 sizes
@@ -29,6 +35,9 @@ public sealed class D64Reader : IDisposable {
     17, 17, 17, 17, 17 // 31-35
   ];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="D64Reader"/>.
+  /// </summary>
   public D64Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -132,6 +141,9 @@ public sealed class D64Reader : IDisposable {
     return sectorCount * 254;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(D64Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
@@ -163,5 +175,8 @@ public sealed class D64Reader : IDisposable {
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

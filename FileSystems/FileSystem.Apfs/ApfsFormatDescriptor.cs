@@ -27,21 +27,54 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FilesystemSchemaPresets.VolumeLabel(maxChars: 255),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Apfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "APFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".apfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".apfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("NXSB"u8.ToArray(), Offset: 32, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// APFS container image. The writer emits real NXSB/APSB superblocks,
@@ -62,14 +95,29 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     "Apple File System container image (full-scope in-place mutation: omap + FS-tree splits, nested paths, tree height growth; structural validator).";
 
   // WORM write constraints.
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => ApfsConstants.MIN_APFS_IMAGE_SIZE;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription => "APFS volume image; any files, flat root directory.";
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     reason = null;
     return true;
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ApfsReader(stream, leaveOpen: true);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -79,6 +127,9 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return SymlinkResolver.Resolve(entries);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ApfsReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -122,6 +173,9 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ApfsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
@@ -196,6 +250,9 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

@@ -2084,6 +2084,9 @@ namespace Concentus.Structs
             return CodecHelpers.GetVersionString();
         }
 
+        /// <summary>
+        /// Releases resources held by this instance.
+        /// </summary>
         public void Dispose() { }
 
         #endregion

@@ -17,6 +17,9 @@ public sealed class DiskDoublerWriter {
   private string _name = "file";
   private byte[] _data = [];
 
+  /// <summary>
+  /// Sets the file.
+  /// </summary>
   public void SetFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -24,6 +27,9 @@ public sealed class DiskDoublerWriter {
     _data = data;
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 

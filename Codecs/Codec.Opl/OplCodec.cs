@@ -57,6 +57,9 @@ public sealed class OplCodec {
 
   /// <param name="chip">Which OPL variant to emulate.</param>
   /// <param name="clock">Chip clock in Hz (3.58 MHz typical for OPL/OPL2/Y8950, 14.32 MHz OPL3).</param>
+  /// <summary>
+  /// Initializes a new instance of <see cref="OplCodec"/>.
+  /// </summary>
   public OplCodec(Chip chip = Chip.Opl2, double clock = 3579545.0) {
     this._chip = chip;
     this._nativeRate = clock / Prescale;

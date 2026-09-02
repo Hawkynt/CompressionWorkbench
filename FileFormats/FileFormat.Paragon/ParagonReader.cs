@@ -214,6 +214,9 @@ public sealed class ParagonReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<ParagonEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<ParagonEntry> Entries => _entries;
 
   /// <summary>Detected magic variant; always <c>"PImg"</c> when <see cref="ValidHeader"/> is true.</summary>
@@ -247,6 +250,9 @@ public sealed class ParagonReader : IDisposable {
   /// </summary>
   public ushort FormatVersion { get; private set; }
 
+  /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
   public bool ValidHeader { get; private set; }
 
   /// <summary>
@@ -287,6 +293,9 @@ public sealed class ParagonReader : IDisposable {
   public IReadOnlyList<ParagonChunkInfo> ChunkTable => this._chunkTable;
   private readonly List<ParagonChunkInfo> _chunkTable = [];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ParagonReader"/>.
+  /// </summary>
   public ParagonReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -574,10 +583,16 @@ public sealed class ParagonReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(ParagonEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

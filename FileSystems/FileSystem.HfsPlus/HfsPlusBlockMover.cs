@@ -34,6 +34,9 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
   private uint _totalBlocks;
   private long _imageLength;
 
+  /// <summary>
+  /// Gets the first data byte.
+  /// </summary>
   public long FirstDataByte => 0;
 
   /// <summary>Block size in bytes (allocation unit).</summary>

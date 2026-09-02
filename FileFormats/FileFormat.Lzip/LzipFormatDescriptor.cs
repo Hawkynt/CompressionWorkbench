@@ -4,20 +4,59 @@ using Compression.Registry;
 
 namespace FileFormat.Lzip;
 
+/// <summary>
+/// Describes lzip format.
+/// </summary>
 public sealed class LzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Lzip";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Lzip";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Stream;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".lz";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".lz", ".lzip"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x4C, 0x5A, 0x49, 0x50], Confidence: 0.90)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma", "LZMA", SupportsOptimize: true)];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "LZMA with CRC32, designed for long-term archival";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
@@ -81,10 +120,22 @@ public sealed class LzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       : DefaultDictionarySize;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Decompress(Stream input, Stream output) => LzipStream.Decompress(input, output);
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public void Compress(Stream input, Stream output) => LzipStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
     LzipStream.Compress(input, output, ParseDictionarySize(options), ParseLevel(options));
+  /// <summary>
+  /// Performs the compress optimal operation.
+  /// </summary>
   public void CompressOptimal(Stream input, Stream output) =>
     LzipStream.Compress(input, output, DefaultDictionarySize, LzmaCompressionLevel.Best);
 }

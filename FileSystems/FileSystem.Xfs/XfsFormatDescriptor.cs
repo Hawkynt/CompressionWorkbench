@@ -58,6 +58,9 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -115,6 +118,9 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     // Moving what is out of place beats writing the volume out again. A file's
     // extent record names the block it starts at, and the free space each
@@ -168,9 +174,21 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   // WORM write constraints — XFS has no inherent ceiling; real mkfs.xfs minimum ≈ 16 MB.
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => 16 * 1024 * 1024;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription => "XFS v5 (CRC) filesystem image; nested directory trees with short-form, single-block and leaf-form dir2 directories.";
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
   // ── IWipeEmpty ─────────────────────────────────────────────────────────
@@ -213,26 +231,65 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Xfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "XFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
   // implementation re-packs the volume, so existing data may move — acceptable for
   // a conceptually read-write container. See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".xfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".xfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("XFSB"u8.ToArray(), Offset: 0, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "XFS filesystem image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new XfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -240,6 +297,9 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new XfsReader(stream);
     foreach (var e in r.Entries) {
@@ -293,6 +353,9 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);

@@ -108,6 +108,9 @@ public sealed class UfsBlockMover : IFilesystemBlockMover {
   /// Crash mid-3: file reachable via new pointers, old frags still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var oldFrag = OffsetToFrag(oldOffset);
     var newFrag = OffsetToFrag(newOffset);

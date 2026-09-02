@@ -5,6 +5,9 @@ namespace OggVorbisEncoder;
 /// </summary>
 public class OggPacket
 {
+    /// <summary>
+    /// Initializes a new instance of <see cref="OggPacket"/>.
+    /// </summary>
     public OggPacket(
         byte[] packetData,
         bool endOfStream,

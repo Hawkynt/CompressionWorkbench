@@ -57,24 +57,60 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Description: "s5fs volume name stored in s_fname (max 6 ASCII chars)."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "SysV";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "UNIX System V FS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".s5";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".s5", ".sysv"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0xFD187E20 little-endian at file offset 512+504 = 1016 (0x3F8) — the
     // superblock sits at block 0 + BLOCK_SIZE/2, where the Linux sysv driver reads it.
     new([0x20, 0x7E, 0x18, 0xFD], Offset: 1016, Confidence: 0.90),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "AT&T UNIX System V s5fs filesystem image — true in-place R/W " +
     "(spec-audited writer + SysVInPlaceModifier mutating inode table and " +
@@ -82,12 +118,18 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     "cache + s_inode[100] cache with re-scan refill; Linux sysv kernel " +
     "driver mountable when host ships sysv.ko).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SysVReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new SysVReader(stream);
     foreach (var e in r.Entries) {
@@ -97,6 +139,9 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
@@ -111,6 +156,9 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memoryStream = new MemoryStream();
@@ -213,6 +261,9 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -315,6 +366,9 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     options.OnProgress?.Invoke(target.Length, target.Length);
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => SysVExtentMap.Enumerate(image);
 

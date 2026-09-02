@@ -1,5 +1,8 @@
 namespace Compression.Core.Dictionary.Lzx;
 
+/// <summary>
+/// Represents a lzx compressor.
+/// </summary>
 public sealed partial class LzxCompressor {
   private readonly record struct LzxToken {
     public bool IsLiteral { get; private init; }

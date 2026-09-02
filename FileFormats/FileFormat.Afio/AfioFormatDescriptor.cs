@@ -29,24 +29,60 @@ namespace FileFormat.Afio;
 /// </list>
 /// </summary>
 public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Afio";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "afio";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".afio";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".afio"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("070707"u8.ToArray(), Confidence: 0.55), // shared with portable-ASCII cpio; extension disambiguates
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("gzip", "Gzip (per-file)"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "afio cpio-derivative: portable-ASCII (070707) headers with optional per-file gzip compression.";
 
@@ -58,6 +94,9 @@ public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     public bool IsGzip => this.StoredData.Length >= 2 && this.StoredData[0] == 0x1F && this.StoredData[1] == 0x8B;
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var members = TryReadMembers(stream, out _);
     var entries = new List<ArchiveEntryInfo>(members.Count);
@@ -69,6 +108,9 @@ public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var members = TryReadMembers(stream, out _);
     foreach (var m in members) {

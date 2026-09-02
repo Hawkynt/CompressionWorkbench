@@ -23,6 +23,9 @@ namespace FileFormat.Bfstm;
 /// </summary>
 public sealed class BfstmReader {
 
+  /// <summary>
+  /// Represents a stream info.
+  /// </summary>
   public sealed record StreamInfo(
     int Codec,
     bool Loop,
@@ -39,6 +42,9 @@ public sealed class BfstmReader {
     int FinalBlockSizePadded,
     bool BigEndian);
 
+  /// <summary>
+  /// Represents a parsed stream.
+  /// </summary>
   public sealed record ParsedStream(
     StreamInfo Info,
     short[][] Coefs,
@@ -47,6 +53,9 @@ public sealed class BfstmReader {
   private const int SectionInfo = 0x4000;
   private const int SectionData = 0x4002;
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedStream Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x40)
       throw new InvalidDataException("Stream too short for FSTM header.");

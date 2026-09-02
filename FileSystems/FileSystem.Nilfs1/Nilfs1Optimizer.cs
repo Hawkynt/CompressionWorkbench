@@ -9,11 +9,17 @@ namespace FileSystem.Nilfs1;
 /// </summary>
 public static class Nilfs1Optimizer {
 
+  /// <summary>
+  /// Represents a nilfs 1 geometry.
+  /// </summary>
   public sealed record Nilfs1Geometry(int BlockSize, int SegmentSize);
 
   // NILFS v1 supports 1024 .. 65536 byte blocks (power of two).
   private static readonly int[] BlockSizes = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
 
+  /// <summary>
+  /// Performs the find operation.
+  /// </summary>
   public static Nilfs1Geometry Find(System.Collections.Generic.IReadOnlyList<long> fileSizes) {
     System.ArgumentNullException.ThrowIfNull(fileSizes);
     var totalBytes = 0L;

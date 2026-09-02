@@ -43,6 +43,9 @@ public readonly struct BrFileHead {
   /// Field layout is TODO per spec §10.1.</summary>
   public readonly byte[] BodyRaw;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="BrFileHead"/>.
+  /// </summary>
   public BrFileHead(uint flag, uint size, uint crc32, byte[] bodyRaw) {
     this.Flag = flag;
     this.Size = size;

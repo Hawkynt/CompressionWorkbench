@@ -47,15 +47,39 @@ namespace FileSystem.Nss;
 /// file's bytes are.</para>
 /// </remarks>
 public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Nss";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NSS (Novell Storage Services)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
     | FormatCapabilities.CanCreate;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".nss";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".nss"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "NSS Pool" — 8 ASCII bytes; offset 0 with a free-form-scan tolerance.
     // Confidence 0.70 reflects the RE-derived layout caveat. This finds a real
@@ -65,9 +89,21 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // it is never taken for a pool. Its own magic is what identifies it.
     new(NssLayout.ContainerMagic, Offset: (int)NssLayout.ContainerMagicOffset, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "NSS (Novell Storage Services) — best-effort anchor detection from publicly " +
     "available reverse-engineered material; object tree contents cannot be reconstructed. " +
@@ -78,6 +114,9 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "would require a real instance to validate, which we don't have. Pinned at " +
     "read-only with anchor-detection metadata.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     NssReader r;
@@ -107,6 +146,9 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     NssReader r;
     try {
@@ -133,6 +175,9 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       WriteIfMatch(outputDir, file.Name, volume.Read(file), files);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

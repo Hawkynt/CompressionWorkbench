@@ -35,6 +35,9 @@ public sealed class DmgReader : IDisposable {
   internal bool IsWorkbenchRawProfile =>
     _partitions.All(p => p.HasLogicalSizeMarker && IsRawMish(p.Mish));
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="DmgReader"/>.
+  /// </summary>
   public DmgReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -246,6 +249,9 @@ public sealed class DmgReader : IDisposable {
     _ = block; _ = destOffset; _ = destLength; _ = output;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 
   internal sealed record PartitionInfo(string Name, byte[] Mish, long LogicalSize, bool HasLogicalSizeMarker);

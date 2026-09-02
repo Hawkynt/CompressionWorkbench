@@ -64,6 +64,9 @@ public sealed class CoherentWriter : IDisposable {
   private const int DoubleIndirectSlot = 11;
   private const int PointersPerBlock   = BlockSize / 3; // 170 (24-bit pointers)
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="CoherentWriter"/>.
+  /// </summary>
   public CoherentWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
@@ -365,6 +368,9 @@ public sealed class CoherentWriter : IDisposable {
     "nopack"u8.CopyTo(sb.Slice(CohFpackOffset, 6));             // s_fpack @0x1EA
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }

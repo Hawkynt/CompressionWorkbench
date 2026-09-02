@@ -42,6 +42,9 @@ public static class DarkCryptMd6 {
     0xC878C1DD04C4B633UL,0x3B72066C7A1552ACUL,0x0D6F3522631EFFCBUL
   ];
 
+  /// <summary>
+  /// Computes the Dark Crypt Md-6 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     var state = new State();
     state.Update(data);
@@ -108,11 +111,17 @@ public static class DarkCryptMd6 {
     private ulong[]? _hashValue;
     private byte[]? _digest;
 
+    /// <summary>
+    /// Performs the state operation provided by <see cref="DarkCryptMd6"/>.
+    /// </summary>
     public State() {
       for (var i = 0; i < _blocks.Length; ++i)
         _blocks[i] = new ulong[BlockWords];
     }
 
+    /// <summary>
+    /// Adds the supplied data to the current Dark Crypt Md-6 hash computation.
+    /// </summary>
     public void Update(ReadOnlySpan<byte> data) {
       var source = 0;
       while (source < data.Length) {
@@ -126,6 +135,9 @@ public static class DarkCryptMd6 {
       }
     }
 
+    /// <summary>
+    /// Performs the final operation provided by <see cref="DarkCryptMd6"/>.
+    /// </summary>
     public byte[] Final() {
       if (_digest is not null)
         return _digest.ToArray();

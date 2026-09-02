@@ -38,6 +38,9 @@ public static class MinixFsExtentMap {
 
   private enum Version { V1_14, V1_30, V2_14, V2_30, V3 }
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

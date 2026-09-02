@@ -16,6 +16,9 @@ public sealed partial class SplitFileReader {
   private readonly string _baseName;
   private readonly long _totalSize;
 
+  /// <summary>
+  /// Gets the entry.
+  /// </summary>
   public SplitFileEntry Entry { get; }
 
   /// <summary>

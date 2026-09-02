@@ -18,20 +18,53 @@ namespace FileSystem.Gpfs;
 /// </summary>
 public sealed class GpfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Gpfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "IBM Spectrum Scale / GPFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".gpfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".gpfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0x4347465C NSD descriptor magic at offset 0.
     new([0x43, 0x47, 0x46, 0x5C], Offset: 0, Confidence: 0.90),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   // Stage-0 deferral rationale (per CONTRIBUTING.md "Promotion rule"):
   //
@@ -61,6 +94,9 @@ public sealed class GpfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // List surfaces metadata.ini + the raw image. Promotion deferred until
   // IBM publishes the on-disk format or a sole-disk reverse-engineered
   // reader-with-validator emerges (neither exists as of 2026-06).
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "IBM Spectrum Scale / GPFS — Stage-0 detection-only — proprietary IBM on-disk format; " +
     "magic 0x4347465C at offset 0 of NSD descriptor. Promotion to R/O deferred: full inode/" +
@@ -68,12 +104,18 @@ public sealed class GpfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     "across multiple NSDs (no single-image surface), and no fsck-equivalent oracle exists " +
     "off-cluster. See descriptor source comment for the full deferral rationale.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new GpfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new GpfsReader(stream);
     foreach (var e in r.Entries) {

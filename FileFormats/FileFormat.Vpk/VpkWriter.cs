@@ -8,6 +8,9 @@ public sealed class VpkWriter : IDisposable {
   private readonly bool _leaveOpen;
   private readonly List<(VpkEntry Entry, byte[] Data)> _pendingEntries = [];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="VpkWriter"/>.
+  /// </summary>
   public VpkWriter(Stream stream, bool leaveOpen = false) {
     _stream = stream;
     _leaveOpen = leaveOpen;
@@ -85,6 +88,9 @@ public sealed class VpkWriter : IDisposable {
     datMs.CopyTo(_stream);
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (!_leaveOpen) _stream.Dispose();
   }

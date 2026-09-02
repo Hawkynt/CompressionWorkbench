@@ -16,9 +16,18 @@ public sealed class VpkReader {
   /// <summary>Gets the byte offset where embedded file data begins.</summary>
   public long DataOffset => _dataOffset;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<VpkEntry> Entries => _entries;
+  /// <summary>
+  /// Gets the version.
+  /// </summary>
   public int Version => _version;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="VpkReader"/>.
+  /// </summary>
   public VpkReader(Stream stream) {
     _stream = stream;
     using var br = new BinaryReader(stream, System.Text.Encoding.UTF8, leaveOpen: true);

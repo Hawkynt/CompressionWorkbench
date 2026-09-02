@@ -3,11 +3,17 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder;
 
+/// <summary>
+/// Represents a header packet builder.
+/// </summary>
 public static class HeaderPacketBuilder
 {
     private const string VorbisString = "vorbis";
     private const string VendorString = "OggVorbisEncoder";
 
+    /// <summary>
+    /// Performs the build info packet operation.
+    /// </summary>
     public static OggPacket BuildInfoPacket(VorbisInfo info)
     {
         var buffer = new EncodeBuffer();
@@ -18,6 +24,9 @@ public static class HeaderPacketBuilder
         return new OggPacket(bytes, false, 0, 0);
     }
 
+    /// <summary>
+    /// Performs the build comments packet operation.
+    /// </summary>
     public static OggPacket BuildCommentsPacket(Comments comments)
     {
         var buffer = new EncodeBuffer();
@@ -28,6 +37,9 @@ public static class HeaderPacketBuilder
         return new OggPacket(bytes, false, 0, 1);
     }
 
+    /// <summary>
+    /// Performs the build books packet operation.
+    /// </summary>
     public static OggPacket BuildBooksPacket(VorbisInfo info)
     {
         var buffer = new EncodeBuffer(4096);

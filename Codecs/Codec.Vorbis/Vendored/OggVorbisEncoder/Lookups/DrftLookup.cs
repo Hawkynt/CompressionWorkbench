@@ -2,11 +2,17 @@ using System;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents a drft lookup.
+/// </summary>
 public class DrftLookup
 {
     private readonly int[] _splitCache;
     private readonly float[] _trigCache;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="DrftLookup"/>.
+    /// </summary>
     public DrftLookup(int n)
     {
         N = n;
@@ -17,6 +23,9 @@ public class DrftLookup
         Fdrffti(n);
     }
 
+    /// <summary>
+    /// Gets the n.
+    /// </summary>
     public int N { get; }
 
     private void Fdrffti(int n)
@@ -106,6 +115,9 @@ public class DrftLookup
         }
     }
 
+    /// <summary>
+    /// Performs the forward operation.
+    /// </summary>
     public void Forward(float[] data)
     {
         if (N == 1)

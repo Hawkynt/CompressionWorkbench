@@ -144,9 +144,21 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Tar";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "TAR";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
@@ -174,15 +186,42 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       TarModifier.RemoveFile(archive, name, wipeData: true);
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".tar";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".tar"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x75, 0x73, 0x74, 0x61, 0x72], Offset: 257, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", "TAR")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Unix tape archive, no compression, container only";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new TarReader(stream);
     var entries = new List<ArchiveEntryInfo>();
@@ -194,6 +233,9 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new TarReader(stream);
     while (r.GetNextEntry() is { } e) {
@@ -244,6 +286,9 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var blockingFactor = options.GetOptionInt("BlockingFactor", 20);
     var formatName = options.GetOption("Format", "ustar").ToLowerInvariant();
@@ -299,6 +344,9 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < TarConstants.BlockSize) {
@@ -350,6 +398,9 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Level = ValidationLevel.Header, Issues = issues };
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
@@ -371,6 +422,9 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {

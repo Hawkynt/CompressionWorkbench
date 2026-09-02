@@ -38,6 +38,9 @@ public static class Haval {
      0x25D479D8U,0xF6E8DEF7U,0xE3FE501AU,0xB6794C3BU,0x976CE0BDU,0x04C006BAU,0xC1A94FB6U,0x409F60C4U]
   ];
 
+  /// <summary>
+  /// Computes the Haval hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int passes = 5, int outputBits = 256) {
     if (passes is < 3 or > 5)
       throw new ArgumentOutOfRangeException(nameof(passes), "HAVAL uses 3, 4, or 5 passes.");
@@ -68,10 +71,25 @@ public static class Haval {
     return Tailor(state, outputBits);
   }
 
+  /// <summary>
+  /// Computes the 128-bit Haval hash of the supplied data.
+  /// </summary>
   public static byte[] Compute128(ReadOnlySpan<byte> data, int passes = 3) => Compute(data, passes, 128);
+  /// <summary>
+  /// Computes the 160-bit Haval hash of the supplied data.
+  /// </summary>
   public static byte[] Compute160(ReadOnlySpan<byte> data, int passes = 4) => Compute(data, passes, 160);
+  /// <summary>
+  /// Computes the 192-bit Haval hash of the supplied data.
+  /// </summary>
   public static byte[] Compute192(ReadOnlySpan<byte> data, int passes = 4) => Compute(data, passes, 192);
+  /// <summary>
+  /// Computes the 224-bit Haval hash of the supplied data.
+  /// </summary>
   public static byte[] Compute224(ReadOnlySpan<byte> data, int passes = 4) => Compute(data, passes, 224);
+  /// <summary>
+  /// Computes the 256-bit Haval hash of the supplied data.
+  /// </summary>
   public static byte[] Compute256(ReadOnlySpan<byte> data, int passes = 5) => Compute(data, passes, 256);
 
   private static void ProcessBlock(uint[] state, ReadOnlySpan<byte> block, int passes) {

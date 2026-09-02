@@ -33,9 +33,18 @@ public sealed class M0dernP4ckerExecutablePackerHandler : IExecutablePackerHandl
 
   private enum Cipher { None, Xor, Not, Compound }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "m0dern_p4cker";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "m0dern_p4cker ELF64 stub packer";
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -44,6 +53,9 @@ public sealed class M0dernP4ckerExecutablePackerHandler : IExecutablePackerHandl
     ExecutableUnpackCapabilities.SupportsElf |
     ExecutableUnpackCapabilities.SupportsX64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     if (ClassifyCipher(bytes) != Cipher.None)
@@ -53,6 +65,9 @@ public sealed class M0dernP4ckerExecutablePackerHandler : IExecutablePackerHandl
         "No m0dern_p4cker decrypt-loop stub was found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var bytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -63,6 +78,9 @@ public sealed class M0dernP4ckerExecutablePackerHandler : IExecutablePackerHandl
     });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     if (image.LongLength > options.MaximumInputSize)

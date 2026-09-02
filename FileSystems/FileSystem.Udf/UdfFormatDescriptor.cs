@@ -98,14 +98,38 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => new UdfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
   // WORM write constraints — UDF has no inherent ceiling; minimum viable image ~1 MB.
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => 1 * 1024 * 1024;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription => "UDF 2.01 disc image; any files, flat directory.";
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Udf";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "UDF";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
@@ -135,9 +159,21 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       UdfModifier.RemoveFile(archive, name, wipeData: true);
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".udf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".udf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // The volume recognition sequence starts at 32 KB, one 2048-byte descriptor
     // per sector: BEA01, then NSR02/NSR03, then TEA01. Registering NSR at the
@@ -149,11 +185,26 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("NSR02"u8.ToArray(), Offset: 0x8001, Confidence: 0.90),
     new("NSR03"u8.ToArray(), Offset: 0x8001, Confidence: 0.90),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Universal Disk Format";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new UdfReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -161,6 +212,9 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new UdfReader(stream);
     foreach (var e in r.Entries) {
@@ -208,6 +262,9 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new UdfWriter {
       VolumeIdentifier = options?.GetOption("VolumeLabel", "UDF Volume") ?? "UDF Volume",
@@ -240,6 +297,9 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     w.WriteTo(output);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

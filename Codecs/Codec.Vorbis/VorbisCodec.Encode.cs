@@ -13,6 +13,9 @@ public sealed record VorbisEncoderOptions(
   IReadOnlyDictionary<string, string>? Comments = null
 );
 
+/// <summary>
+/// Encodes vorbis data.
+/// </summary>
 public static partial class VorbisEncoder {
   private const int WriteBlock = 1024;
 

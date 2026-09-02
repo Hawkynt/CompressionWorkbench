@@ -32,20 +32,47 @@ namespace FileSystem.Cromemco;
 /// </para>
 /// </summary>
 public sealed class CromemcoReader : IDisposable {
+  /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
   public const int SectorSize = 128;
+  /// <summary>
+  /// Defines the directory offset constant value.
+  /// </summary>
   public const int DirectoryOffset = 0x100;
+  /// <summary>
+  /// Defines the entry size constant value.
+  /// </summary>
   public const int EntrySize = 32;
+  /// <summary>
+  /// Defines the max entries constant value.
+  /// </summary>
   public const int MaxEntries = 64;
 
   private readonly byte[] _data;
   private readonly List<CromemcoEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<CromemcoEntry> Entries => _entries;
+  /// <summary>
+  /// Gets a value indicating whether valid volume.
+  /// </summary>
   public bool ValidVolume { get; private set; }
+  /// <summary>
+  /// Gets or sets the signature offset.
+  /// </summary>
   public int SignatureOffset { get; private set; }
 
+  /// <summary>
+  /// Provides the signature value.
+  /// </summary>
   public static readonly byte[] Signature = "CROMEMCO"u8.ToArray();
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="CromemcoReader"/>.
+  /// </summary>
   public CromemcoReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -119,6 +146,9 @@ public sealed class CromemcoReader : IDisposable {
     return new string(chars[..len]);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(CromemcoEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -128,6 +158,9 @@ public sealed class CromemcoReader : IDisposable {
     return size <= 0 ? [] : _data.AsSpan(offset, size).ToArray();
   }
 
+  /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
   public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidVolume ? "ok" : "invalid").Append('\n');
@@ -137,5 +170,8 @@ public sealed class CromemcoReader : IDisposable {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

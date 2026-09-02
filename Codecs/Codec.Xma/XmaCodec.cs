@@ -34,6 +34,9 @@ public sealed class XmaCodec {
   /// <summary>Output sample rate in Hz.</summary>
   public int SampleRate => this._sampleRate;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="XmaCodec"/>.
+  /// </summary>
   public XmaCodec(ReadOnlySpan<byte> extradata, bool isXma2, int sampleRate, int declaredChannels) {
     this._config = XmaPacket.ParseStreamConfig(extradata, isXma2, declaredChannels);
     this._sampleRate = sampleRate;

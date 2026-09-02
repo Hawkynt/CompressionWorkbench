@@ -41,9 +41,21 @@ public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => MfsExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Mfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "MFS (Macintosh File System)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
@@ -91,6 +103,9 @@ public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -165,16 +180,43 @@ public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       });
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".mfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".mfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0xD2, 0xD7], Offset: 1024, Confidence: 0.80)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Classic Macintosh MFS filesystem image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -182,6 +224,9 @@ public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new MfsWriter {
       VolumeName = string.IsNullOrEmpty(options?.GetOption("VolumeLabel", ""))
@@ -192,6 +237,9 @@ public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(w.Build());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new MfsReader(stream);
     foreach (var e in r.Entries) {

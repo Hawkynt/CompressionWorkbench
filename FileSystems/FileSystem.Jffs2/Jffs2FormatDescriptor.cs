@@ -40,26 +40,65 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       description: "Flash erase-block size. The image is padded to a whole multiple of it; common NOR flash uses 128 KB."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Jffs2";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "JFFS2";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".jffs2";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".jffs2", ".jffs", ".img"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0x1985 LE = 85 19 at start of an erase block
     new([0x85, 0x19], Offset: 0, Confidence: 0.35),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Journaling Flash File System v2 — log-structured flash filesystem.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     ImageAccessor image;
@@ -101,6 +140,9 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ImageAccessor image;
     try {
@@ -183,6 +225,9 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   // ── IArchiveCreatable ─────────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Jffs2Writer(ResolveEraseBlockSize(options));
     foreach (var input in inputs) {
@@ -264,9 +309,15 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
@@ -385,6 +436,9 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     try {

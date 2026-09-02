@@ -28,15 +28,39 @@ namespace FileSystem.Lustre;
 /// </summary>
 public sealed class LustreFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Lustre";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Lustre";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".lustre";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".lustre", ".ost", ".mdt"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ASCII "LUSTRE" (6 bytes) at offset 0 — legacy OST object-header dump.
     new("LUSTRE"u8.ToArray(), Offset: 0, Confidence: 0.90),
@@ -46,9 +70,21 @@ public sealed class LustreFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // here — it would steal detection from generic ext4 images. ldiskfs MDT/OST
     // images surface through Lustre only via the .lustre/.ost/.mdt extension.
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Lustre R/O via ldiskfs (ext4) reader delegation. Surfaces the ldiskfs view of one " +
     "MDT or OST backing store (file walk over the ext4-compatible block layout); Lustre " +
@@ -57,12 +93,18 @@ public sealed class LustreFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "multiple OSTs) requires live cluster metadata and is out of scope. Legacy 'LUSTRE'/'LUst' " +
     "object-header dumps still surface as raw bytes + metadata.ini.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LustreReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new LustreReader(stream);
     foreach (var e in r.Entries) {
