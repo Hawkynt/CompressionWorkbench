@@ -65,9 +65,13 @@ The 719 GSpot rows are **identifiers, not 719 independent codecs**. Raw pixel fo
 
 The full 719-row GSpot page remains the factual alias baseline. A future machine-readable alias registry should import/canonicalize those tags and let tests calculate coverage automatically rather than hand-counting Markdown rows.
 
-## GSpot-style frame/GOP analyzer target
+## GSpot-style frame/GOP analyzer
 
 GSpot's Visual GOP Structure is worth copying as a **capability**, not as code. CompressionWorkbench already treats analysis as a first-class surface, so video parsers should expose enough metadata for a codec-independent `Compression.Analysis` layer to compute structure without requiring full pixel reconstruction.
+
+**The analyzer half of that is done.** `Compression.Analysis/Video/VideoFrameStructureAnalyzer.cs` takes a sequence of `VideoFrameSample` metadata and returns I→I, P→P, B→B and random-access spacing statistics, the longest consecutive-B run, reorder depth, GOP patterns, and the two disagreement counts that catch a mislabelled stream — intra pictures that are not random-access points, and random-access points that are not intra. It reconstructs no pixels.
+
+What is missing is the other half: **producers**. No elementary-stream parser emits `VideoFrameSample` yet, so the analyzer currently has nothing to consume from a real file. The per-frame model below is therefore still the specification each parser has to meet, not a description of what any of them do today.
 
 ### Per-frame data model
 

@@ -55,7 +55,11 @@ Alongside it, add the explicit ISO-BMFF brand registry from MP4RA plus the ftyps
 
 GSpot's Visual GOP Structure is the behavioural target here, and it is reachable long before a decoder is.
 
-The analyzer belongs in `Compression.Analysis`, stays codec-neutral, and consumes frame metadata supplied by elementary-stream parsers — full pixel decoding must not be required merely to inspect GOP structure. MPEG-1/2 picture headers come first: I/P/B and GOP semantics are simple, normative, and MPEG-TS already exists to feed them.
+The analyzer belongs in `Compression.Analysis`, stays codec-neutral, and consumes frame metadata supplied by elementary-stream parsers — full pixel decoding must not be required merely to inspect GOP structure.
+
+**The codec-neutral half already exists**: `Compression.Analysis/Video/VideoFrameStructureAnalyzer.cs` turns a sequence of `VideoFrameSample` records into spacing statistics, GOP patterns, B-run and reorder depth, and the intra-versus-random-access disagreement counts. Nothing produces those records yet, so the remaining work in this phase is entirely on the parser side.
+
+MPEG-1/2 picture headers come first: I/P/B and GOP semantics are simple, normative, and MPEG-TS already exists to feed them. AVC and HEVC follow, and each parser is done when it emits `VideoFrameSample` for a real file rather than when it merely recognises the stream.
 
 The detailed target — spacing histograms, GOP patterns, maximum B-runs, frame-size statistics, bitrate windows, timestamp cadence, reorder depth, random-access truth, and decode- versus presentation-order views — is specified in the video ledger and is not restated here.
 
