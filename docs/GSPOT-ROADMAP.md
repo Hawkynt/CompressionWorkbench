@@ -57,9 +57,14 @@ GSpot's Visual GOP Structure is the behavioural target here, and it is reachable
 
 The analyzer belongs in `Compression.Analysis`, stays codec-neutral, and consumes frame metadata supplied by elementary-stream parsers — full pixel decoding must not be required merely to inspect GOP structure.
 
-**The codec-neutral half already exists**: `Compression.Analysis/Video/VideoFrameStructureAnalyzer.cs` turns a sequence of `VideoFrameSample` records into spacing statistics, GOP patterns, B-run and reorder depth, and the intra-versus-random-access disagreement counts. Nothing produces those records yet, so the remaining work in this phase is entirely on the parser side.
+**The codec-neutral half already exists**: `Compression.Analysis/Video/VideoFrameStructureAnalyzer.cs` turns a sequence of `VideoFrameSample` records into spacing statistics, GOP patterns, B-run and reorder depth, and the intra-versus-random-access disagreement counts.
 
-MPEG-1/2 picture headers come first: I/P/B and GOP semantics are simple, normative, and MPEG-TS already exists to feed them. AVC and HEVC follow, and each parser is done when it emits `VideoFrameSample` for a real file rather than when it merely recognises the stream.
+**MPEG-1/2 is done and is the first producer.** `Compression.Analysis/Video/Mpeg12VideoFrameParser.cs` walks a video elementary stream, reads `sequence_header_code`, `group_start_code` and the picture header's `temporal_reference`/`picture_coding_type`, and emits a `VideoFrameSample` per coded frame with derived display order, coded size, byte offset, reference flag and a random-access flag kept strictly separate from "intra coded". It pairs complementary field pictures into frames; per-field detail, the sequence-header body and everything slice-level are out.
+
+Remaining parser work in this phase:
+
+- **AVC and HEVC**, still unwritten, and the reason each is done when it emits `VideoFrameSample` for a real file rather than when it merely recognises the stream.
+- **A PES depacketizer**, so a container can feed the MPEG-1/2 parser. `FileFormat.MpegTs` reassembles per-PID PES, not elementary streams; the same layer would supply the PTS/DTS that an elementary stream cannot carry, which is why the parser leaves both timestamps null today.
 
 The detailed target — spacing histograms, GOP patterns, maximum B-runs, frame-size statistics, bitrate windows, timestamp cadence, reorder depth, random-access truth, and decode- versus presentation-order views — is specified in the video ledger and is not restated here.
 
