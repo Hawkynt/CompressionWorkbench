@@ -18,9 +18,6 @@ namespace FileFormat.Rpa;
 public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     RpaReader r;
     try {

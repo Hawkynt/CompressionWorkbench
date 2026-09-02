@@ -46,9 +46,6 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     MpqReader r;
     try {

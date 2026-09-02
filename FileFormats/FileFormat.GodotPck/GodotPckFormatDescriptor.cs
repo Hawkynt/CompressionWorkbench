@@ -16,9 +16,6 @@ namespace FileFormat.GodotPck;
 public sealed class GodotPckFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new PckReader(archive);

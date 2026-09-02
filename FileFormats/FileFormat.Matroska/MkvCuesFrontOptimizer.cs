@@ -16,15 +16,9 @@ public sealed class MkvCuesFrontOptimizer : IFileInternalChunkMover {
   private const ulong Id_Cluster = 0x1F43B675;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file) => Optimize(file, null);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
     ArgumentNullException.ThrowIfNull(file);
     if (!file.CanRead || !file.CanWrite || !file.CanSeek)

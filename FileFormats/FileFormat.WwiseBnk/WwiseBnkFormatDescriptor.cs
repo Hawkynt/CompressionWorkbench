@@ -153,9 +153,6 @@ public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the extract entry operation.
-  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     using var s = this.OpenEntry(input, entryName, password);
     s.CopyTo(output);

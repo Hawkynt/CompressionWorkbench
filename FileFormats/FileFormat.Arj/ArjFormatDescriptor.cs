@@ -18,9 +18,6 @@ namespace FileFormat.Arj;
 public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ArjLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the ARJ archive in listing order.</summary>

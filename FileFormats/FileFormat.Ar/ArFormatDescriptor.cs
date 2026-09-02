@@ -38,9 +38,6 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     // 8-byte global header "!<arch>\n"

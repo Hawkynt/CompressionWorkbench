@@ -37,9 +37,6 @@ public sealed class Wad2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new Wad2Reader(archive);

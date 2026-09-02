@@ -163,9 +163,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Performs the reset state operation.
-        /// </summary>
         public void ResetState()
         {
             EncControlState dummy = new EncControlState();
@@ -2082,9 +2079,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc/>
-        /// <summary>
-        /// Gets the version string.
-        /// </summary>
         public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();

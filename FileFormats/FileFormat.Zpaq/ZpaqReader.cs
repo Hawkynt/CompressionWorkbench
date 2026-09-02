@@ -342,9 +342,6 @@ public sealed class ZpaqReader : IDisposable {
   // ── IDisposable ───────────────────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() {
     if (!_disposed) {
       _disposed = true;

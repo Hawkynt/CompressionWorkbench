@@ -213,16 +213,10 @@ public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new MinixFsBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new MinixFsBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
@@ -292,9 +286,6 @@ public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the rebuild streaming operation.
-  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);

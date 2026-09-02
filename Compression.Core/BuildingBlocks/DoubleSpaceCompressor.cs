@@ -68,41 +68,23 @@ public sealed class DoubleSpaceCompressor : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_DoubleSpace";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "DoubleSpace JM";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description =>
     "Microsoft DoubleSpace (DBLS) LZ77 — variable-bit length/distance encoding with 4 KiB window";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data)
     => CompressCore(data, this._maxDistance);
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data)
     => DecompressCore(data);
 

@@ -9,30 +9,15 @@ namespace Compression.Core.Dictionary.Lz78;
 /// </summary>
 public sealed class Lz78BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Lz78";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "LZ78";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "Dictionary compression building phrases from input, predecessor to LZW";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressor = new Lz78Compressor(12);
     var tokens = compressor.Compress(data);
@@ -40,9 +25,6 @@ public sealed class Lz78BuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var tokens = DeserializeTokens(data);
     return Lz78Decompressor.Decompress(tokens, 12);

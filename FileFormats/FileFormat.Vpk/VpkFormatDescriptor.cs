@@ -38,9 +38,6 @@ public sealed class VpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     VpkReader r;
     try {

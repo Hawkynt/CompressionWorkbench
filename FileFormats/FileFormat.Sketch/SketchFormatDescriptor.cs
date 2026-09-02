@@ -21,9 +21,6 @@ namespace FileFormat.Sketch;
 public sealed class SketchFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
 
   /// <summary>

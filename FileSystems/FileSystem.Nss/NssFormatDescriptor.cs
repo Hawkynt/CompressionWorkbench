@@ -198,9 +198,6 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

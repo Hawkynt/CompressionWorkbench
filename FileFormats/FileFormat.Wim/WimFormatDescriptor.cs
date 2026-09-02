@@ -31,9 +31,6 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     if (archive.Length < WimConstants.HeaderSize)
       yield break;

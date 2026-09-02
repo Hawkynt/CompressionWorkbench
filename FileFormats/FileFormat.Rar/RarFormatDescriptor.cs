@@ -30,9 +30,6 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => RarLayoutMap.Enumerate(archive);
 
   /// <summary>Gets the id.</summary>

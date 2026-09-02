@@ -30,9 +30,6 @@ public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);
 
   /// <summary>

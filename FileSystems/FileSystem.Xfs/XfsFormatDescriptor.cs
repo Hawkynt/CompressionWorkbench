@@ -43,9 +43,6 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new XfsBlockMover();
     image.Position = 0;
@@ -54,9 +51,6 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new XfsBlockMover();
     image.Position = 0;

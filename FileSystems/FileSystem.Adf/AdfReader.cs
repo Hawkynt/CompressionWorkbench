@@ -259,9 +259,6 @@ public sealed class AdfReader : IDisposable {
     (uint)((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() {
     if (!this._disposed) {
       this._disposed = true;

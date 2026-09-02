@@ -31,33 +31,18 @@ namespace Compression.Core.Dictionary.SuffixTree;
 /// </summary>
 public sealed class SuffixTreeBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_SuffixTree";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Suffix Tree Compression";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "LZ factorization driven by a suffix-array dictionary index";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinMatchLength = 3;
   private const int MaxMatchLength = 255; // Fits a single control byte.
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
@@ -146,9 +131,6 @@ public sealed class SuffixTreeBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalLength = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalLength == 0)

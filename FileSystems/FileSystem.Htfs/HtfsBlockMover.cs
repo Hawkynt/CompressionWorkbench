@@ -52,9 +52,6 @@ public sealed class HtfsBlockMover : IFilesystemBlockMover {
   private int _inodeTableBlocks;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -67,9 +64,6 @@ public sealed class HtfsBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);

@@ -44,9 +44,6 @@ public sealed class CompressStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the decompress block operation.
-  /// </summary>
   protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (this._finished)
       return 0;
@@ -69,9 +66,6 @@ public sealed class CompressStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the compress block operation.
-  /// </summary>
   protected override void CompressBlock(byte[] buffer, int offset, int count) {
     this._compressBuffer!.Write(buffer, offset, count);
   }

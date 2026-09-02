@@ -93,8 +93,5 @@ public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       StructuralArchiveHelper.DecomposeTiff(StructuralArchiveHelper.ReadAllBytes(input)), entryName, output);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the chunks.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => TiffLayoutMap.Enumerate(file);
 }

@@ -25,9 +25,6 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
   private const int V3InodeSize = 64;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 

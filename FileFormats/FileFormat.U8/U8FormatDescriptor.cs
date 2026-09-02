@@ -37,9 +37,6 @@ public sealed class U8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new U8Reader(archive);

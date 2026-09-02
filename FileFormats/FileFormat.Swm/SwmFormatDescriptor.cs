@@ -34,9 +34,6 @@ namespace FileFormat.Swm;
 public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     if (archive.Length < WimConstants.HeaderSize)
       yield break;
@@ -57,48 +54,27 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "Swm";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Split WIM";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
   public string DefaultExtension => ".swm";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions =>
     [".swm", ".swm2", ".swm3", ".swm4", ".swm5", ".swm6", ".swm7", ".swm8", ".swm9"];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
@@ -112,34 +88,19 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("wim", "WIM (split)")];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description =>
     "Split Windows Imaging Format — WIM volume of an N-part .swm/.swmN set.";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = BuildEntries(stream);
     return entries.Select((e, i) => new ArchiveEntryInfo(

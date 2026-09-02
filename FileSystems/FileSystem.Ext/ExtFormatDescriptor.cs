@@ -109,9 +109,6 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new ExtBlockMover();
     image.Position = 0;
@@ -122,9 +119,6 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new ExtBlockMover();
     image.Position = 0;
@@ -507,9 +501,6 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // block-size change is a structural rebuild, not an in-place patch.
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the analyze layout operation.
-  /// </summary>
   public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
@@ -547,9 +538,6 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the patch in place operation.
-  /// </summary>
   public void PatchInPlace(Stream image, LayoutPatch patch) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
@@ -571,9 +559,6 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the rebuild streaming operation.
-  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);

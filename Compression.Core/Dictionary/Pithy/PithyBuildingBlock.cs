@@ -59,24 +59,12 @@ namespace Compression.Core.Dictionary.Pithy;
 /// </remarks>
 public sealed class PithyBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Pithy";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Pithy";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "Engelhart's real Pithy tag scheme: Snappy-shaped literals plus a 3-byte-offset copy tier with 62/63 length-escape values in place of Snappy's 4-byte tier";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const byte TagLiteral = 0;
@@ -99,9 +87,6 @@ public sealed class PithyBuildingBlock : IBuildingBlock {
   private const int MaxChainSteps = 64;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     WriteVarInt(ms, (uint)data.Length);
@@ -146,9 +131,6 @@ public sealed class PithyBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var i = 0;
     var originalSize = (int)ReadVarInt(data, ref i);

@@ -29,9 +29,6 @@ public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new UmxReader(archive);

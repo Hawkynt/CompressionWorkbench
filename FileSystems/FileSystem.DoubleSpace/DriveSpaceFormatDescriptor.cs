@@ -183,9 +183,6 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new DoubleSpaceBlockMover();
     image.Position = 0;
@@ -196,9 +193,6 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new DoubleSpaceBlockMover();
     image.Position = 0;

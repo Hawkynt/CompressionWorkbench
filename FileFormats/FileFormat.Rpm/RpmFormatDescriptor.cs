@@ -47,9 +47,6 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     // RPM layout: Lead (96 B) + Signature header + Main header + Payload
     // Walk the RPM header structures to find where the payload starts.

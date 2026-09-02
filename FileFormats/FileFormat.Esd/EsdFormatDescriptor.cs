@@ -40,9 +40,6 @@ namespace FileFormat.Esd;
 public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     if (archive.Length < WimConstants.HeaderSize)
       yield break;
@@ -63,47 +60,26 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "Esd";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "ESD";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
   public string DefaultExtension => ".esd";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".esd"];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
@@ -117,35 +93,20 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("wim", "WIM/ESD")];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description =>
     "Microsoft Electronic Software Download — encrypted-LZMS WIM variant used by " +
     "Windows Update for OS install images.";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = this.BuildEntries(stream);
     return entries.Select((e, i) => new ArchiveEntryInfo(

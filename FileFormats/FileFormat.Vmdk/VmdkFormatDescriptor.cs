@@ -144,17 +144,11 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => VmdkLayoutMap.Enumerate(archive);
 
   // ── IFilesystemExtentMap ────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     if (VmdkStream.TryOpen(image) is { } vmdkStream) {
       using (vmdkStream) {
@@ -172,9 +166,6 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveModifiable (inner-FS-aware) ────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Adds the supplied entry to the target container.
-  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (VmdkStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
@@ -206,9 +197,6 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Removes the specified entry from the target container.
-  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     if (VmdkStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
@@ -242,16 +230,10 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     if (VmdkStream.TryOpen(archive) is { } vmdkStream) {
       using (vmdkStream) {

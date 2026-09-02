@@ -72,9 +72,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Performs the reset state operation.
-        /// </summary>
         public void ResetState()
         {
             int s;
@@ -845,9 +842,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Encodes the supplied input.
-        /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
         public int EncodeMultistream(
             short[] pcm,
@@ -861,9 +855,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Encodes the supplied input.
-        /// </summary>
         public int EncodeMultistream(
             ReadOnlySpan<short> pcm,
             int frame_size,
@@ -885,9 +876,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Encodes the supplied input.
-        /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
         public int EncodeMultistream(
             float[] pcm,
@@ -901,9 +889,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Encodes the supplied input.
-        /// </summary>
         public int EncodeMultistream(
             ReadOnlySpan<float> pcm,
             int frame_size,
@@ -929,9 +914,6 @@ namespace Concentus.Structs
         #region Getters and Setters
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the bitrate.
-        /// </summary>
         public int Bitrate
         {
             get
@@ -957,9 +939,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the application.
-        /// </summary>
         public OpusApplication Application
         {
             get
@@ -976,9 +955,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the force channels.
-        /// </summary>
         public int ForceChannels
         {
             get
@@ -995,9 +971,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the num channels.
-        /// </summary>
         public int NumChannels
         {
             get
@@ -1007,9 +980,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the max bandwidth.
-        /// </summary>
         public OpusBandwidth MaxBandwidth
         {
             get
@@ -1026,9 +996,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the bandwidth.
-        /// </summary>
         public OpusBandwidth Bandwidth
         {
             get
@@ -1045,9 +1012,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets a value indicating whether use dtx.
-        /// </summary>
         public bool UseDTX
         {
             get
@@ -1064,9 +1028,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the complexity.
-        /// </summary>
         public int Complexity
         {
             get
@@ -1083,9 +1044,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the force mode.
-        /// </summary>
         public OpusMode ForceMode
         {
             get
@@ -1102,9 +1060,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets a value indicating whether use inband fec.
-        /// </summary>
         public bool UseInbandFEC
         {
             get
@@ -1121,9 +1076,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the packet loss percent.
-        /// </summary>
         public int PacketLossPercent
         {
             get
@@ -1140,9 +1092,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets a value indicating whether use vbr.
-        /// </summary>
         public bool UseVBR
         {
             get
@@ -1159,9 +1108,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets a value indicating whether use constrained vbr.
-        /// </summary>
         public bool UseConstrainedVBR
         {
             get
@@ -1193,9 +1139,6 @@ namespace Concentus.Structs
         //}
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the signal type.
-        /// </summary>
         public OpusSignal SignalType
         {
             get
@@ -1212,9 +1155,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the lookahead.
-        /// </summary>
         public int Lookahead
         {
             get
@@ -1224,9 +1164,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the sample rate.
-        /// </summary>
         public int SampleRate
         {
             get
@@ -1236,9 +1173,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the final range.
-        /// </summary>
         public uint FinalRange
         {
             get
@@ -1255,9 +1189,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the lsb depth.
-        /// </summary>
         public int LSBDepth
         {
             get
@@ -1274,9 +1205,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets a value indicating whether prediction disabled.
-        /// </summary>
         public bool PredictionDisabled
         {
             get
@@ -1293,9 +1221,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the expert frame duration.
-        /// </summary>
         public OpusFramesize ExpertFrameDuration
         {
             get
@@ -1321,9 +1246,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc/>
-        /// <summary>
-        /// Gets the version string.
-        /// </summary>
         public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();

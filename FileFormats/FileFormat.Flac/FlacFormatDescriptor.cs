@@ -15,9 +15,6 @@ public sealed class FlacFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FlacLayoutMap.Enumerate(archive);
 
   /// <summary>

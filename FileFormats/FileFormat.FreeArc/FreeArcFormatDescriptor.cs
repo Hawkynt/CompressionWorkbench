@@ -35,9 +35,6 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new FreeArcReader(archive);
@@ -48,21 +45,12 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "FreeArc";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "FreeArc";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
@@ -78,21 +66,12 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
   public string DefaultExtension => ".arc";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".arc"];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
@@ -106,33 +85,18 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     [new([(byte)'A', (byte)'r', (byte)'C', 0x01], Confidence: 0.95)];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("freearc", "FreeArc")];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "FreeArc compressed archive";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new FreeArcReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) =>
@@ -141,9 +105,6 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new FreeArcReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -153,9 +114,6 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Performs the create operation.
-  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new FreeArcWriter();
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))

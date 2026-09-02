@@ -16,9 +16,6 @@ namespace FileFormat.Epub;
 public sealed class EpubFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag delegating to ZIP (EPUB is a ZIP variant).</summary>

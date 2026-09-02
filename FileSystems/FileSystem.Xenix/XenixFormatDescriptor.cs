@@ -282,9 +282,6 @@ public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the rebuild streaming operation.
-  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);

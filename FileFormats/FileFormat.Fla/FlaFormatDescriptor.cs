@@ -25,9 +25,6 @@ namespace FileFormat.Fla;
 public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var sig = new byte[8];

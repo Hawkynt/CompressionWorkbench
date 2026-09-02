@@ -172,23 +172,14 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
   // ── IArchiveLayoutMap ───────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => JpegLayoutMap.Enumerate(archive);
 
   // ── IArchiveDefragmentable ────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive) => JpegOptimizer.Optimize(archive);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     // JPEG optimization is a single fixed strategy: move EXIF to front.
     // All defrag modes converge to the same operation, unless a metadata

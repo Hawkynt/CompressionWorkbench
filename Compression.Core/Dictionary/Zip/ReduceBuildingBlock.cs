@@ -15,30 +15,15 @@ public sealed class ReduceBuildingBlock : IBuildingBlock {
   private const int Factor = 4; // methods 2-5 == factor 1-4; 4 is the strongest.
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Reduce";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Reduce";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "PKWARE ZIP Reduce (methods 2-5) - probabilistic follower-set predictor plus RLE expansion";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     var body = data.Length == 0 ? [] : ReduceEncoder.Encode(data, Factor);
     var output = new byte[5 + body.Length];
@@ -49,9 +34,6 @@ public sealed class ReduceBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 5) throw new InvalidDataException("Reduce: input smaller than 5-byte header.");
     var size = BinaryPrimitives.ReadInt32LittleEndian(data);

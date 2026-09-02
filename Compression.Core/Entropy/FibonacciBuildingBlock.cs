@@ -8,24 +8,12 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class FibonacciBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Fibonacci";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Fibonacci Coding";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "Universal code using Zeckendorf representation with '11' terminators";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   // Pre-compute Fibonacci numbers. F(2)=1, F(3)=2, F(4)=3, F(5)=5, ...
@@ -65,9 +53,6 @@ public sealed class FibonacciBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
@@ -94,9 +79,6 @@ public sealed class FibonacciBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 

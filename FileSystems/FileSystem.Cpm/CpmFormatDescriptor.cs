@@ -271,16 +271,10 @@ public sealed class CpmFormatDescriptor :
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new CpmBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new CpmBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 

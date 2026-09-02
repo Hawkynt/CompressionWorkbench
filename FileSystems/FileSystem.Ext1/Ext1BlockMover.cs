@@ -66,9 +66,6 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
   private uint OffsetToBlock(long offset) => (uint)(offset / _blockSize);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -348,15 +345,9 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
   // ── Scattered relink ──────────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the allocation block size.
-  /// </summary>
   public int AllocationBlockSize => _blockSize;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether supports scattered relink.
-  /// </summary>
   public bool SupportsScatteredRelink => true;
 
   /// <summary>

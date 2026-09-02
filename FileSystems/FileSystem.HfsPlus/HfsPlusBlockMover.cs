@@ -71,9 +71,6 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -108,9 +105,6 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
   public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     if (_blockSize == 0)
       Init(image);
@@ -223,9 +217,6 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
     ForkOffsets.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update metadata after move operation.
-  /// </summary>
   public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {

@@ -29,9 +29,6 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => PdfLayoutMap.Enumerate(archive);
 
   /// <summary>

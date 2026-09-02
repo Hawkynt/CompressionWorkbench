@@ -35,57 +35,36 @@ public interface IBitOrder {
 /// </summary>
 public readonly struct LsbBitOrder : IBitOrder {
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the insert byte operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static ulong InsertByte(ulong buffer, int bitsInBuffer, int b) =>
     buffer | ((ulong)b << bitsInBuffer);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the extract bit operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static (int Bit, int Buffer) ExtractBit(int buffer) =>
     (buffer & 1, buffer >> 1);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the peek operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static uint Peek(ulong buffer, int bitsInBuffer, int count) =>
     (uint)(buffer & ((1UL << count) - 1));
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the drop operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static ulong Drop(ulong buffer, int bitsInBuffer, int count) =>
     buffer >> count;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the place bit operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static int PlaceBit(int buffer, int bitsInBuffer, int bit) =>
     buffer | ((bit & 1) << bitsInBuffer);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the accumulate bits operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static uint AccumulateBits(uint result, int bit, int index) =>
     result | ((uint)bit << index);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Writes the bit index to the supplied output.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static int WriteBitIndex(int count, int index) => index;
 }
@@ -96,57 +75,36 @@ public readonly struct LsbBitOrder : IBitOrder {
 /// </summary>
 public readonly struct MsbBitOrder : IBitOrder {
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the insert byte operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static ulong InsertByte(ulong buffer, int bitsInBuffer, int b) =>
     (buffer << 8) | (uint)(byte)b;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the extract bit operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static (int Bit, int Buffer) ExtractBit(int buffer) =>
     ((buffer >> 7) & 1, (buffer << 1) & 0xFF);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the peek operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static uint Peek(ulong buffer, int bitsInBuffer, int count) =>
     (uint)(buffer >> (bitsInBuffer - count)) & (uint)((1UL << count) - 1);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the drop operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static ulong Drop(ulong buffer, int bitsInBuffer, int count) =>
     buffer & ((1UL << (bitsInBuffer - count)) - 1);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the place bit operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static int PlaceBit(int buffer, int bitsInBuffer, int bit) =>
     buffer | ((bit & 1) << (7 - bitsInBuffer));
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the accumulate bits operation.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static uint AccumulateBits(uint result, int bit, int index) =>
     (result << 1) | (uint)bit;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Writes the bit index to the supplied output.
-  /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public static int WriteBitIndex(int count, int index) => count - 1 - index;
 }

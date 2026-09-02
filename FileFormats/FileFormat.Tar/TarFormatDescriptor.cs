@@ -18,9 +18,6 @@ namespace FileFormat.Tar;
 public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the options schema.
-  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("BlockingFactor", "Blocking factor", FormatOptionKind.Integer, "20",
       AllowedValues: ["1", "10", "20"],
@@ -61,9 +58,6 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
 
   /// <summary>

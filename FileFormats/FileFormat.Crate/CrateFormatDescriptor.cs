@@ -30,48 +30,27 @@ namespace FileFormat.Crate;
 /// </remarks>
 public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "Crate";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Rust Crate";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
   public string DefaultExtension => ".crate";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".crate"];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
@@ -83,35 +62,20 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("gzip", "Gzip")];
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => "Gzip";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description =>
     "Rust crate package — TAR.GZ with a single name-version/ directory containing " +
     "Cargo.toml and source files.";
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = BuildEntries(stream);
     return entries.Select((e, i) => new ArchiveEntryInfo(
@@ -265,9 +229,6 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))

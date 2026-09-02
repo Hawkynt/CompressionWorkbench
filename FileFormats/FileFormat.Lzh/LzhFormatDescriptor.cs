@@ -17,9 +17,6 @@ namespace FileFormat.Lzh;
 public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => LzhLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the LHA archive in listing order.</summary>

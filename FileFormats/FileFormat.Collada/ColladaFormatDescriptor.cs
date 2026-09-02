@@ -58,9 +58,6 @@ public sealed class ColladaFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string Description => "Collada (.dae) XML 3D asset; surfaces per-library fragments.";
 
   /// <inheritdoc />
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -69,9 +66,6 @@ public sealed class ColladaFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       Kind: e.Kind)).ToList();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
@@ -81,9 +75,6 @@ public sealed class ColladaFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the extract entry operation.
-  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

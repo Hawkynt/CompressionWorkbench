@@ -185,9 +185,6 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
     new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update metadata after move operation.
-  /// </summary>
   public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
@@ -489,9 +486,6 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   public int AllocationBlockSize => _clusterSize;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether supports scattered relink.
-  /// </summary>
   public bool SupportsScatteredRelink => true;
 
   /// <summary>

@@ -341,9 +341,6 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   private static readonly int[] BlockCandidates = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the analyze layout operation.
-  /// </summary>
   public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
@@ -371,9 +368,6 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the patch in place operation.
-  /// </summary>
   public void PatchInPlace(Stream image, LayoutPatch patch) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
@@ -397,9 +391,6 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the rebuild streaming operation.
-  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
@@ -473,9 +464,6 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the wipe unused space operation.
-  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();

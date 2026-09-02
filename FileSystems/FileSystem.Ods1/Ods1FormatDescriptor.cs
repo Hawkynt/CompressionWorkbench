@@ -266,9 +266,6 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

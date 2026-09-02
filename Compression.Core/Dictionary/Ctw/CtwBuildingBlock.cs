@@ -21,32 +21,17 @@ namespace Compression.Core.Dictionary.Ctw;
 /// </remarks>
 public sealed class CtwBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_CTW";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Context Predictor (order-2/1/0)";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "Most-frequent-symbol predictor over an order-2/1/0 byte context hierarchy with a hit/miss bitmap; not the Context Tree Weighting (CTW) method despite the legacy block name";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   private const int MaxDepth = 2;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
@@ -66,9 +51,6 @@ public sealed class CtwBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 

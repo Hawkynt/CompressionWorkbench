@@ -217,9 +217,6 @@ public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => DragonFsExtentMap.Enumerate(image);
 

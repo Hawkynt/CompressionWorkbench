@@ -31,9 +31,6 @@ public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => CfbLayoutMap.Enumerate(archive);
 
   /// <summary>

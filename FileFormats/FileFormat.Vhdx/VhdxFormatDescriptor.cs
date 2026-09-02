@@ -148,9 +148,6 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     // Simple: emit the entire file as metadata + payload
     yield return new DefragBlockInfo(0, Math.Min(0x100000, archive.Length),
@@ -163,9 +160,6 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IFilesystemExtentMap ────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     if (VhdxStream.TryOpen(image) is { } vhdxStream) {
       using (vhdxStream) {
@@ -183,9 +177,6 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveModifiable (inner-FS-aware) ────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Adds the supplied entry to the target container.
-  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (VhdxStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
@@ -217,9 +208,6 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Removes the specified entry from the target container.
-  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     if (VhdxStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
@@ -253,16 +241,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     if (VhdxStream.TryOpen(archive) is { } vhdxStream) {
       using (vhdxStream) {

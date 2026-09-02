@@ -81,9 +81,6 @@ public sealed class FatxBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);
@@ -120,9 +117,6 @@ public sealed class FatxBlockMover : IFilesystemBlockMover {
   public int AllocationBlockSize => this._clusterSize;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation scattered operation.
-  /// </summary>
   public void UpdateAllocationScattered(Stream image, string fileName,
       IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets,
       IReadOnlySet<long>? blocksLiveElsewhere) {

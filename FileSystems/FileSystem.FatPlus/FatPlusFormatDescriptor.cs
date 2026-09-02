@@ -452,9 +452,6 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     => FileSystem.Fat.FatExtentMap.Enumerate(image);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the wipe unused space operation.
-  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var imageSize = image.Length;

@@ -14,24 +14,12 @@ namespace Compression.Core.Dictionary.Lz4;
 /// </summary>
 public sealed class Lz4FrameBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Lz4Frame";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "LZ4 Frame";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "LZ4 frame format with content size, checksums, and multi-block support";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const uint FrameMagic = 0x184D2204;
@@ -39,9 +27,6 @@ public sealed class Lz4FrameBuildingBlock : IBuildingBlock {
   private const int BlockMaxSizeBits = 7; // 4 MB
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     WriteFrameHeader(output, data.Length);
@@ -68,9 +53,6 @@ public sealed class Lz4FrameBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var pos = 0;
 

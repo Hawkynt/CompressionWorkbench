@@ -9,30 +9,15 @@ namespace Compression.Core.Dictionary.Brotli;
 /// </summary>
 public sealed class BrotliBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Brotli";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Brotli";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "Modern LZ77 and Huffman compression designed by Google (RFC 7932), with literal context modelling, distance ring-buffer reuse, cost-driven meta-block splitting and static dictionary references coded with the RFC's word transforms. Block-switch commands, distance context modelling and an optimal parse are not implemented, so output is smaller than a plain LZ77 and Huffman pass but still larger than the reference encoder at its highest quality.";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     // CompressLz77 already falls back to an uncompressed meta-block per
     // meta-block whenever entropy coding would not pay, so no second whole-stream
@@ -46,9 +31,6 @@ public sealed class BrotliBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     _ = originalSize; // Brotli is self-terminating, but we store size for validation

@@ -92,9 +92,6 @@ public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     MultiImageArchiveHelper.Extract(stream, outputDir, files, "frame", ReadAll);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the chunks.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => GifLayoutMap.Enumerate(file);
 
   /// <summary>Decodes <paramref name="s"/> to a list of <see cref="RawImage"/> RGBA32 frames.</summary>

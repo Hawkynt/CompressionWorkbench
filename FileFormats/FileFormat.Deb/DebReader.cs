@@ -130,9 +130,6 @@ public sealed class DebReader : IDisposable {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() {
     if (!_disposed) {
       _ar.Dispose();

@@ -12,30 +12,15 @@ namespace Compression.Core.Dictionary.Zip;
 /// </summary>
 public sealed class ShrinkBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Shrink";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Shrink";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "PKWARE ZIP Shrink (method 1) - LZW with 9-13 bit codes and partial dictionary clear";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     var body = data.Length == 0 ? [] : ShrinkEncoder.Encode(data);
     var output = new byte[4 + body.Length];
@@ -45,9 +30,6 @@ public sealed class ShrinkBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4) throw new InvalidDataException("Shrink: input smaller than 4-byte header.");
     var size = BinaryPrimitives.ReadInt32LittleEndian(data);

@@ -14,15 +14,9 @@ namespace FileFormat.Mp4;
 public sealed class Mp4FastStart : IFileInternalChunkMover {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file) => Optimize(file, null);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
     ArgumentNullException.ThrowIfNull(file);
     if (!file.CanRead || !file.CanWrite || !file.CanSeek)

@@ -32,9 +32,6 @@ public sealed class Tux2BlockMover : IFilesystemBlockMover {
   public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 

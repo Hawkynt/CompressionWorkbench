@@ -44,9 +44,6 @@ public sealed class ZstdStream : CompressionStream {
     : this(stream, mode, (int)level, leaveOpen, dictionary) { }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the decompress block operation.
-  /// </summary>
   protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (!this._initialized) {
       this._decompressor = new ZstdDecompressor(InnerStream, this._dictionary);
@@ -69,9 +66,6 @@ public sealed class ZstdStream : CompressionStream {
   private long _pendingFrameBytes;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the compress block operation.
-  /// </summary>
   protected override void CompressBlock(byte[] buffer, int offset, int count) {
     if (!this._initialized) {
       this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);
@@ -92,9 +86,6 @@ public sealed class ZstdStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the finish compression operation.
-  /// </summary>
   protected override void FinishCompression() {
     if (!this._initialized) {
       this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);

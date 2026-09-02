@@ -40,24 +40,12 @@ namespace Compression.Core.Dictionary.Nrv2b;
 public sealed class Nrv2bBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Nrv2b";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "NRV2B";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "UCL NRV2B LE32 — LZ77 + interleaved variable-length integer bit stream (UPX core)";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinEmittedLen = 3;
@@ -65,9 +53,6 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
   private const int OffsetLargeThreshold = 0xD00;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
@@ -154,9 +139,6 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4) throw new InvalidDataException("NRV2B: input smaller than 4-byte header.");
     var targetSize = BinaryPrimitives.ReadInt32LittleEndian(data);

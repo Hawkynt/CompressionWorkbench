@@ -368,9 +368,6 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Mfs1ExtentMap.Enumerate(image);
 

@@ -49,9 +49,6 @@ public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new WarcReader(archive);

@@ -36,9 +36,6 @@ public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     if (archive.Length < 2) yield break;

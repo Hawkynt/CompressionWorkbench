@@ -72,9 +72,6 @@ public sealed class GzipStream : CompressionStream {
   private bool _allMembersDone;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the decompress block operation.
-  /// </summary>
   protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (this._allMembersDone)
       return 0;
@@ -159,9 +156,6 @@ public sealed class GzipStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the compress block operation.
-  /// </summary>
   protected override void CompressBlock(byte[] buffer, int offset, int count) {
     if (!this._headerWritten) {
       Header.Write(InnerStream);
@@ -178,9 +172,6 @@ public sealed class GzipStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the finish compression operation.
-  /// </summary>
   protected override void FinishCompression() {
     if (!this._headerWritten) {
       Header.Write(InnerStream);

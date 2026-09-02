@@ -32,42 +32,24 @@ public abstract class CompressionStream : Stream {
   public CompressionStreamMode Mode { get; }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether can read.
-  /// </summary>
   public override bool CanRead => this.Mode == CompressionStreamMode.Decompress;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether can write.
-  /// </summary>
   public override bool CanWrite => this.Mode == CompressionStreamMode.Compress;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether can seek.
-  /// </summary>
   public override bool CanSeek => false;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the length.
-  /// </summary>
   public override long Length => throw new NotSupportedException();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets or sets the position.
-  /// </summary>
   public override long Position {
     get => throw new NotSupportedException();
     set => throw new NotSupportedException();
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Reads the value from the supplied input.
-  /// </summary>
   public override int Read(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
 
@@ -79,9 +61,6 @@ public abstract class CompressionStream : Stream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Writes the value to the supplied output.
-  /// </summary>
   public override void Write(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
 
@@ -92,24 +71,15 @@ public abstract class CompressionStream : Stream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the flush operation.
-  /// </summary>
   public override void Flush() {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     this.InnerStream.Flush();
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the seek operation.
-  /// </summary>
   public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Sets the length.
-  /// </summary>
   public override void SetLength(long value) => throw new NotSupportedException();
 
   /// <summary>
@@ -137,9 +107,6 @@ public abstract class CompressionStream : Stream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   protected override void Dispose(bool disposing) {
     if (!this._disposed) {
       if (disposing) {

@@ -144,9 +144,6 @@ public sealed class NsisReader : IDisposable {
   // -------------------------------------------------------------------------
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() {
     if (_disposed) return;
     _disposed = true;

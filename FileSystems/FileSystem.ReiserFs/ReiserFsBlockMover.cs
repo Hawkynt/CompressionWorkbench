@@ -93,16 +93,10 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
       long length, bool releaseOldSpace) {
     ArgumentNullException.ThrowIfNull(image);

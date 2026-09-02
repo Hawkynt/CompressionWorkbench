@@ -139,9 +139,6 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -223,9 +220,6 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
     };
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the relocatable metadata.
-  /// </summary>
   public IReadOnlySet<string> RelocatableMetadata { get; } =
     SystemFileRecords.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 

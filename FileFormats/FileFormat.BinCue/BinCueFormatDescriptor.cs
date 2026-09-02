@@ -151,8 +151,5 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => BinCueLayoutMap.Enumerate(archive);
 }

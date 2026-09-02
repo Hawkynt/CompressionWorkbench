@@ -55,9 +55,6 @@ public sealed class StlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Description => "STL 3D model (ASCII or binary); surfaces triangle block + metadata.";
 
   /// <inheritdoc />
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -106,9 +103,6 @@ public sealed class StlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the extract entry operation.
-  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

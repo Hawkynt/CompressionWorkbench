@@ -87,21 +87,12 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Description => "MP3 audio; ID3v1/v2 surfaced as metadata.ini + cover.*";
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the chunks.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => Mp3LayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file) => Mp3Optimizer.Optimize(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file, MetadataPlacementProfile? profile) => Mp3Optimizer.Optimize(file, profile);
 
   /// <summary>

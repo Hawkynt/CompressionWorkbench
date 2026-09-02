@@ -18,9 +18,6 @@ namespace FileFormat.SevenZip;
 public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the options schema.
-  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Method", "Compression method", FormatOptionKind.Enum, "lzma2",
       AllowedValues: ["lzma2", "lzma", "ppmd", "bzip2", "deflate", "copy"]),
@@ -195,9 +192,6 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipLayoutMap.Enumerate(archive);
 
   /// <summary>

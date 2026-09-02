@@ -103,20 +103,11 @@ public sealed class PngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       StructuralArchiveHelper.DecomposePng(StructuralArchiveHelper.ReadAllBytes(input)), entryName, output);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the chunks.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => PngLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file) => PngOptimizer.Optimize(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file, MetadataPlacementProfile? profile) => PngOptimizer.Optimize(file, profile);
 }

@@ -253,9 +253,6 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the wipe unused space operation.
-  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
@@ -285,9 +282,6 @@ public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

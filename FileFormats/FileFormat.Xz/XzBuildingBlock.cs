@@ -18,33 +18,18 @@ namespace FileFormat.Xz;
 /// </remarks>
 public sealed class XzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Xz";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "XZ/LZMA2";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "LZMA2 range coding wrapped in the .xz container with CRC-64 integrity checking";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <summary>LZMA2 dictionary size used for the benchmark stream (1 MB).</summary>
   private const int DictionarySize = 1 << 20;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     using (var xz = new XzStream(output, CompressionStreamMode.Compress, DictionarySize, leaveOpen: true))
@@ -54,9 +39,6 @@ public sealed class XzBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     using var xz = new XzStream(input, CompressionStreamMode.Decompress);

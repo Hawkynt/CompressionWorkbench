@@ -109,21 +109,12 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private readonly AviOptimizer _optimizer = new();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the chunks.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => AviLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file) => _optimizer.Optimize(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
 
   /// <summary>Maximum number of individual frame entries to list per video track to keep List() responsive.</summary>

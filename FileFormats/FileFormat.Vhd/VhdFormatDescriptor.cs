@@ -148,17 +148,11 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => VhdLayoutMap.Enumerate(archive);
 
   // ── IFilesystemExtentMap ────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     if (TryOpenVhdStream(image) is { } vhdStream) {
       using (vhdStream) {
@@ -178,9 +172,6 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveModifiable (inner-FS-aware) ────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Adds the supplied entry to the target container.
-  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (TryOpenVhdStream(archive) is { } guestForPart) {
       using (guestForPart) {
@@ -215,9 +206,6 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Removes the specified entry from the target container.
-  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     if (TryOpenVhdStream(archive) is { } guestForPart) {
       using (guestForPart) {
@@ -254,16 +242,10 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     if (TryOpenVhdStream(archive) is { } vhdStream) {
       using (vhdStream) {

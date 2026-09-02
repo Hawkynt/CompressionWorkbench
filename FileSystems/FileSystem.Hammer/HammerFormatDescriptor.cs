@@ -355,9 +355,6 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => HammerExtentMap.Enumerate(image);
 

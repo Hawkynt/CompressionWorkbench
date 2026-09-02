@@ -126,9 +126,6 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   private static string InodeTableName(uint group) => $"ext inode table (group {group})";
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update metadata after move operation.
-  /// </summary>
   public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
@@ -260,9 +257,6 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   // understood a fragmented owner goes through the rebuild, as it always did.
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -292,9 +286,6 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
     => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
       long length, bool releaseOldSpace) {
     var blockCount = (int)((length + _blockSize - 1) / _blockSize);

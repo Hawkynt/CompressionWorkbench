@@ -34,9 +34,6 @@ public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     List<FitsHdu> hdus;
     try {

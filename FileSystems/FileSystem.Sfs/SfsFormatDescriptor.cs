@@ -187,9 +187,6 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => SfsExtentMap.Enumerate(image);
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {

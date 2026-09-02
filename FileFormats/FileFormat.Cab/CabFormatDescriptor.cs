@@ -17,9 +17,6 @@ namespace FileFormat.Cab;
 /// </summary>
 public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => CabLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the CAB in listing order.</summary>

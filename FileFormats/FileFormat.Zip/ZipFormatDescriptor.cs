@@ -18,9 +18,6 @@ namespace FileFormat.Zip;
 public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the options schema.
-  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Method", "Compression method", FormatOptionKind.Enum, "deflate",
       AllowedValues: ["deflate", "store", "deflate64", "bzip2", "lzma", "zstd"]),
@@ -34,9 +31,6 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
 
   /// <summary>

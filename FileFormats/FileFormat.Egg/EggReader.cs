@@ -338,9 +338,6 @@ public sealed class EggReader : IDisposable {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() {
     _reader.Dispose();
     if (!_leaveOpen)

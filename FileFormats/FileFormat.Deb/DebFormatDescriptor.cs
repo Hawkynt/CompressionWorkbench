@@ -39,9 +39,6 @@ public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     // Deb is an ar archive; delegate to the ar layout walker.
     archive.Position = 0;

@@ -338,9 +338,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Decodes the supplied input.
-        /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
         public int DecodeMultistream(
               byte[] data,
@@ -362,9 +359,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Decodes the supplied input.
-        /// </summary>
         public int DecodeMultistream(
               ReadOnlySpan<byte> data,
               Span<short> out_pcm,
@@ -387,9 +381,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Decodes the supplied input.
-        /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
         public int DecodeMultistream(byte[] data, int data_offset,
           int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)
@@ -405,9 +396,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Decodes the supplied input.
-        /// </summary>
         public int DecodeMultistream(
               ReadOnlySpan<byte> data,
               Span<float> out_pcm,
@@ -433,9 +421,6 @@ namespace Concentus.Structs
         #region Getters and setters
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the bandwidth.
-        /// </summary>
         public OpusBandwidth Bandwidth
         {
             get
@@ -447,9 +432,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the sample rate.
-        /// </summary>
         public int SampleRate
         {
             get
@@ -461,9 +443,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the num channels.
-        /// </summary>
         public int NumChannels
         {
             get
@@ -473,9 +452,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets or sets the gain.
-        /// </summary>
         public int Gain
         {
             get
@@ -494,9 +470,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the last packet duration.
-        /// </summary>
         public int LastPacketDuration
         {
             get
@@ -508,9 +481,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Gets the final range.
-        /// </summary>
         public uint FinalRange
         {
             get
@@ -525,9 +495,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Performs the reset state operation.
-        /// </summary>
         public void ResetState()
         {
             for (int s = 0; s < layout.nb_streams; s++)
@@ -537,9 +504,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc/>
-        /// <summary>
-        /// Gets the version string.
-        /// </summary>
         public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();
@@ -556,9 +520,6 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        /// <summary>
-        /// Releases resources held by this instance.
-        /// </summary>
         public void Dispose() { }
 
         #endregion

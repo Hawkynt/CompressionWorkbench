@@ -489,9 +489,6 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the wipe unused space operation.
-  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();

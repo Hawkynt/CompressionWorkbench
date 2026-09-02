@@ -31,9 +31,6 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new StuffItXReader(archive);

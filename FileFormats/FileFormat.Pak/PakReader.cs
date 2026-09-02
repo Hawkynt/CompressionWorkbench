@@ -21,8 +21,5 @@ public sealed class PakReader : IDisposable {
   public byte[] ReadEntryData() => this._inner.ReadEntryData();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() => this._inner.Dispose();
 }

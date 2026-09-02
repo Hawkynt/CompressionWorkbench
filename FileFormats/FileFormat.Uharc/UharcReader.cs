@@ -169,9 +169,6 @@ public sealed class UharcReader : IDisposable {
     throw new InvalidDataException(message);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() {
     if (!this._disposed) {
       this._disposed = true;

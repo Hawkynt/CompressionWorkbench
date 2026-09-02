@@ -99,21 +99,12 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private readonly MkvCuesFrontOptimizer _optimizer = new();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the chunks.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => MkvLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file) => _optimizer.Optimize(file);
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the optimize operation.
-  /// </summary>
   public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
 
   /// <summary>Maximum number of individual frame entries per video track.</summary>

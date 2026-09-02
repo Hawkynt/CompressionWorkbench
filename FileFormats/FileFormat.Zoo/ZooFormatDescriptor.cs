@@ -38,9 +38,6 @@ public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     if (archive.Length < ZooConstants.ArchiveHeaderSize) yield break;

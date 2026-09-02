@@ -34,9 +34,6 @@ public sealed class Bzip2Stream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the decompress block operation.
-  /// </summary>
   protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (!this._headerRead) {
       ReadHeader();
@@ -50,9 +47,6 @@ public sealed class Bzip2Stream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the compress block operation.
-  /// </summary>
   protected override void CompressBlock(byte[] buffer, int offset, int count) {
     if (!this._headerWritten) {
       WriteHeader();
@@ -63,9 +57,6 @@ public sealed class Bzip2Stream : CompressionStream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the finish compression operation.
-  /// </summary>
   protected override void FinishCompression() {
     if (!this._headerWritten) {
       WriteHeader();

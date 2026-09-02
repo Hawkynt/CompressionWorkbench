@@ -250,9 +250,6 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // cluster-size change is routed to RebuildStreaming.
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the analyze layout operation.
-  /// </summary>
   public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
@@ -287,9 +284,6 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the patch in place operation.
-  /// </summary>
   public void PatchInPlace(Stream image, LayoutPatch patch) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
@@ -304,9 +298,6 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the rebuild streaming operation.
-  /// </summary>
   public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
@@ -394,9 +385,6 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the wipe unused space operation.
-  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
@@ -429,9 +417,6 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

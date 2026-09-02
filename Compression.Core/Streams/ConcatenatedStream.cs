@@ -37,33 +37,18 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether can read.
-  /// </summary>
   public override bool CanRead => true;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether can seek.
-  /// </summary>
   public override bool CanSeek => true;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether can write.
-  /// </summary>
   public override bool CanWrite => false;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the length.
-  /// </summary>
   public override long Length => this._totalLength;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets or sets the position.
-  /// </summary>
   public override long Position {
     get => this._position;
     set {
@@ -75,9 +60,6 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Reads the value from the supplied input.
-  /// </summary>
   public override int Read(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     var totalRead = 0;
@@ -108,9 +90,6 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the seek operation.
-  /// </summary>
   public override long Seek(long offset, SeekOrigin origin) {
     var newPos = origin switch {
       SeekOrigin.Begin => offset,
@@ -124,28 +103,16 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Sets the length.
-  /// </summary>
   public override void SetLength(long value) => throw new NotSupportedException();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Writes the value to the supplied output.
-  /// </summary>
   public override void Write(byte[] buffer, int offset, int count) =>
     throw new NotSupportedException();
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the flush operation.
-  /// </summary>
   public override void Flush() { }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   protected override void Dispose(bool disposing) {
     if (!this._disposed && disposing && !this._leaveOpen) {
       foreach (var seg in this._segments)

@@ -166,9 +166,6 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
     new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "<bitmap>", "<upcase>" };
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update metadata after move operation.
-  /// </summary>
   public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
@@ -275,15 +272,9 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
   // ── Scattered relink ──────────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets the allocation block size.
-  /// </summary>
   public int AllocationBlockSize => _clusterSize;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Gets a value indicating whether supports scattered relink.
-  /// </summary>
   public bool SupportsScatteredRelink => true;
 
   /// <summary>

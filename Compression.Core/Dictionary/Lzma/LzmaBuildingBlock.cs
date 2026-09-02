@@ -9,30 +9,15 @@ namespace Compression.Core.Dictionary.Lzma;
 /// </summary>
 public sealed class LzmaBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Lzma";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "LZMA";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "Lempel-Ziv-Markov chain Algorithm with range coding and sophisticated matching";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     var encoder = new LzmaEncoder(dictionarySize: 1 << 20); // 1 MB dictionary for BB
     using var ms = new MemoryStream();
@@ -50,9 +35,6 @@ public sealed class LzmaBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var properties = data[..5].ToArray();
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data[5..]);

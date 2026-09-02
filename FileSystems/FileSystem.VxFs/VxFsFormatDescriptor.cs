@@ -198,9 +198,6 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the extents.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => VxFsExtentMap.Enumerate(image);
 
   /// <summary>

@@ -126,9 +126,6 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 

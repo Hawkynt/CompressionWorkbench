@@ -72,24 +72,12 @@ public enum AplibDialect {
 public sealed class AplibBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Aplib";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "aPLib";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "aPLib (Ibsen) — byte-oriented LZ77 with interleaved tag-bit stream, the core of FSG/PECompact/RLPack";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinNormalMatch = 2;
@@ -97,9 +85,6 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
   private const int MaxMatch = 0x10000;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
@@ -113,9 +98,6 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4) throw new InvalidDataException("aPLib: input smaller than 4-byte header.");
     var targetSize = BinaryPrimitives.ReadInt32LittleEndian(data);

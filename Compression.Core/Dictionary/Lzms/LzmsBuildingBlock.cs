@@ -17,30 +17,15 @@ public sealed class LzmsBuildingBlock : IBuildingBlock {
   private const int ChunkSize = 128 * 1024;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "BB_Lzms";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "LZMS";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description => "LZ+Markov+Shannon compression with delta matching, used in Windows WIM";
   /// <inheritdoc/>
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
   public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     Span<byte> header = stackalloc byte[8];
@@ -66,9 +51,6 @@ public sealed class LzmsBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
     var total = BinaryPrimitives.ReadInt32LittleEndian(data);
     var chunkSize = BinaryPrimitives.ReadInt32LittleEndian(data[4..]);

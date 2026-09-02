@@ -182,9 +182,6 @@ public sealed class VibReader : IDisposable {
        d[3] == 0x58 && d[4] == 0x5A && d[5] == 0x00;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() {
     if (this._disposed)
       return;

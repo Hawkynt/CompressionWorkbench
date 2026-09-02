@@ -99,9 +99,6 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Enumerates the layout.
-  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Rar.RarLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag delegating to RAR (CBR is a RAR variant).</summary>

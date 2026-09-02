@@ -23,9 +23,6 @@ public sealed class Atari8BlockMover : IFilesystemBlockMover {
   private const int TotalSectors = 720;
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the move extent operation.
-  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
     // Overlap-safe: a run shifted forward by less than its own length
@@ -37,9 +34,6 @@ public sealed class Atari8BlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  /// <summary>
-  /// Performs the update allocation after move operation.
-  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     image.Position = 0;
     using var ms = new MemoryStream();
