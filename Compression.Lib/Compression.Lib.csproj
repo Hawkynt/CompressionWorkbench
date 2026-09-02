@@ -225,6 +225,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Epub\FileFormat.Epub.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Erofs\FileSystem.Erofs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.ExFat\FileSystem.ExFat.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Ps1MemoryCard\FileSystem.Ps1MemoryCard.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ext\FileSystem.Ext.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.F2fs\FileSystem.F2fs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Fat\FileSystem.Fat.csproj" />

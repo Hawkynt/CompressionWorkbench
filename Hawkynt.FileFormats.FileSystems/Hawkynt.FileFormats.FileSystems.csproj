@@ -48,6 +48,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.DoubleSpace\FileSystem.DoubleSpace.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Erofs\FileSystem.Erofs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.ExFat\FileSystem.ExFat.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Ps1MemoryCard\FileSystem.Ps1MemoryCard.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ext\FileSystem.Ext.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ext1\FileSystem.Ext1.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.F2fs\FileSystem.F2fs.csproj" PrivateAssets="all" />
