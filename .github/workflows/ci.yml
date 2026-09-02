@@ -127,7 +127,7 @@ jobs:
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop&Category!=Performance"
+          --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
           --logger "trx;LogFileName=core-tests.trx"
 
       # Interop tools for E2E tests.
