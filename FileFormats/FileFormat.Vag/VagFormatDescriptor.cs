@@ -117,7 +117,7 @@ public sealed class VagFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (wavInput.Data == null)
       throw new InvalidOperationException("VAG archive create needs either FULL.vag or a mono WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels != 1)
       throw new InvalidOperationException("VAG is mono; supply a single-channel WAV.");
     if (wav.BitsPerSample != 16)

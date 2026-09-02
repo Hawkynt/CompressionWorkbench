@@ -114,7 +114,7 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// <summary>Parses the LZ4 encoder level from the format-specific options;
   /// falls back to <see cref="Lz4CompressionLevel.Fast"/> when absent or unknown.</summary>
   internal static Lz4CompressionLevel ParseLevel(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("Level");
+    var raw = options.GetString("Level");
     return Enum.TryParse<Lz4CompressionLevel>(raw, ignoreCase: true, out var level)
       ? level
       : Lz4CompressionLevel.Fast;
@@ -122,7 +122,7 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
 
   /// <summary>Parses the max-block-size label into bytes; falls back to the 4 MiB default.</summary>
   internal static int ParseBlockSize(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("BlockSize");
+    var raw = options.GetString("BlockSize");
     return raw is not null && BlockSizesByLabel.TryGetValue(raw, out var bytes)
       ? bytes
       : Lz4Constants.MaxBlockSize;
@@ -130,7 +130,7 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
 
   /// <summary>Parses a boolean knob, falling back to <paramref name="fallback"/> when absent/unparseable.</summary>
   private static bool ParseBool(FormatCreateOptions options, string key, bool fallback) {
-    var raw = options.FormatSpecific?.GetValueOrDefault(key);
+    var raw = options.GetString(key);
     return raw is not null && bool.TryParse(raw, out var value) ? value : fallback;
   }
 

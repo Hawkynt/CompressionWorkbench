@@ -122,7 +122,7 @@ public sealed class AdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var channels = new List<WavReader.ParsedWav>();
     foreach (var (_, data) in channelBlobs)
-      channels.Add(new WavReader().Read(data));
+      channels.Add(new WavReader().ReadCanonicalPcm(data));
 
     var first = channels[0];
     if (channels.Any(c => c.NumChannels != 1))

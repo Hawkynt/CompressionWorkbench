@@ -641,6 +641,8 @@
     <Project Path="FileFormats/FileFormat.Bonk/FileFormat.Bonk.csproj" />
     <Project Path="FileFormats/FileFormat.WavArc/FileFormat.WavArc.csproj" />
     <Project Path="FileFormats/FileFormat.Amr/FileFormat.Amr.csproj" />
+    <Project Path="FileFormats/FileFormat.AmrNb/FileFormat.AmrNb.csproj" />
+    <Project Path="FileFormats/FileFormat.AmrWb/FileFormat.AmrWb.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

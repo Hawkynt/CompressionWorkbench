@@ -269,7 +269,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
     // "BlockSize" → bytes (0 = Auto). The writer's optimizer confirms or bumps.
     var blockSize = FilesystemSchemaPresets.ParseSize(
-      options.FormatSpecific?.GetValueOrDefault("BlockSize"));
+      options.GetString("BlockSize"));
     if (output.CanSeek) w.BuildToStreamingAutoSized(output, blockSize);
     else output.Write(w.BuildAutoSized(blockSize));
   }
@@ -298,7 +298,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
     }
     var blockSize = FilesystemSchemaPresets.ParseSize(
-      options.FormatSpecific?.GetValueOrDefault("BlockSize"));
+      options.GetString("BlockSize"));
     if (output.CanSeek) {
       w.BuildToStreamingAutoSized(output, blockSize);
       return;

@@ -123,7 +123,14 @@ public static class RebuildVerb {
         "writing", 0.45, -1, 0, visualSize, targetLayout,
         "Building staged target — original container is still unchanged"));
 
-      var options = new FormatCreateOptions { FormatSpecific = formatSpecific };
+      // FormatSpecific is a mutable, case-insensitive map; the caller hands in a read-only view,
+      // so copy it and keep the comparer the default initializer uses.
+      var options = new FormatCreateOptions {
+        FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+      };
+      if (formatSpecific != null)
+        foreach (var pair in formatSpecific)
+          options.FormatSpecific[pair.Key] = pair.Value;
       output.Position = 0;
       output.SetLength(0);
       using (var progressOutput = new ProgressWriteStream(output, cancellationToken, maxPosition => {

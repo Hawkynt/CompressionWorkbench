@@ -231,13 +231,13 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // Honour an explicit volume size if the user picked one; otherwise use the
     // smaller floppy and auto-promote to 800 KB when the 140 KB floppy won't fit.
     var floppyCap = (ProDosWriter.FloppyTotalBlocks - 10) * 512L;  // rough free-space cap
-    var totalBlocks = (options.FormatSpecific?.GetValueOrDefault("ImageSize")?.Trim()) switch {
+    var totalBlocks = (options.GetString("ImageSize")?.Trim()) switch {
       "140 KB (5.25\")" => ProDosWriter.FloppyTotalBlocks,
       "800 KB (3.5\")"  => ProDosWriter.Disk800KTotalBlocks,
       _ => total > floppyCap ? ProDosWriter.Disk800KTotalBlocks : ProDosWriter.FloppyTotalBlocks,
     };
 
-    var label = options.FormatSpecific?.GetValueOrDefault("VolumeLabel");
+    var label = options.GetString("VolumeLabel");
     var volumeName = string.IsNullOrWhiteSpace(label) ? "WORM" : label!;
     output.Write(w.Build(volumeName, totalBlocks));
   }

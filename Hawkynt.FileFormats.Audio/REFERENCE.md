@@ -7,6 +7,24 @@
 > Every public and protected type and member, read from the built assembly and merged
 > with its XML documentation. Generated — edit the XML docs in source, not this file.
 
+### Namespace `AmrWbLib`
+
+[`AmrWb`](#amrwb)
+
+#### `AmrWb`
+
+Represents an amr wb.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateAsDecoder` | `static AmrWb CreateAsDecoder()` | Creates a new AmrWb object that can be used to decode AMR-WB encoded data into voice data. |
+| `CreateAsEncoder` | `static AmrWb CreateAsEncoder(short Mode, short AllowDtx)` | Creates a new AmrWb object that can be used to encode voice data into AMR-WB encoded data. |
+| `DecodeCodFile` | `List<short> DecodeCodFile(string InputCodFile)` | Reads a *.cod file containing AMR-WB encoded audio data, decodes it and returns a list of audio samples. A *.cod file is a binary file containing AMR-WB encoded binary parameter data. The file format is the default file format for the decoder test files provided by the 3GPP organization for the AMR-WB codec. This function is for testing only. |
+| `DecodePacketPayload` | `short[] DecodePacketPayload(byte[] PacketPayloadBytes)` | Decodes the AMR-WB encoded bytes from the payload of a RTP packet into an array of linear 16-bit PCM samples with a sample rate of 16k samples/sec. Each RTP packet contains 20 millseconds of audio data. |
+| `EncodePacketSamples` | `byte[] EncodePacketSamples(short[] Samples)` | Encodes an array of 16-bit PCM samples into an AMR-WB encoded packet payload that can be sent as the payload of a RTP packet. The input samples sample rate must be 16k samples/second and the sample period must be 20 milliseconds. This means that the input array must be 320 16-bit words in length. The output format is octet aligned with a payload header and a Table of Contents (TOC) byte as specified in Section 4.4.1 of RFC 4867. |
+| `EncodeToPacketParams` | `short[] EncodeToPacketParams(short[] Samples)` | Converts an array of audio samples to an array of AMR-WB parameter values. This method is for testing only. |
+| `GetPacketSize` | `int GetPacketSize(short Mode)` | Gets the packed size of the encoded data given the encoding mode. |
+
 ### Namespace `Codec.ALaw`
 
 [`ALawCodec`](#alawcodec)
@@ -195,6 +213,132 @@ Implements `IEquatable<AdtsHeader>`.
 | `ProtectionAbsent` | `bool ProtectionAbsent { get; init; }` |  |
 | `SampleRateIndex` | `int SampleRateIndex { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `Codec.AmrNb`
+
+[`AmrNbCodec`](#amrnbcodec) · [`AmrNbCodec.FrameInfo`](#amrnbcodecframeinfo) · [`AmrNbEncoderOptions`](#amrnbencoderoptions) · [`AmrNbMode`](#amrnbmode)
+
+#### `AmrNbCodec`
+
+AMR narrowband (GSM-AMR, 3GPP TS 26.090) speech decoder. Eight active ACELP modes (4.75 / 5.15 / 5.90 / 6.70 / 7.40 / 7.95 / 10.2 / 12.2 kbit/s) plus the SID comfort-noise and NO_DATA frame types. Each 20 ms frame decodes to exactly 160 samples of 16-bit PCM at 8 kHz mono. The decode pipeline is a faithful float port of ffmpeg `libavcodec/amrnbdec.c`: per-mode bit unpacking via the `order_*` reordering tables, split-vector LSF dequantisation → LSP → interpolated LPC, fractional-pitch adaptive codebook, the mode-specific algebraic fixed codebook (2/3/4/8/10 pulses), pitch/fixed gain VQ with MA prediction, LP synthesis, the AMR adaptive postfilter (formant + tilt + AGC) and the order-2 high-pass. The IF1/.amr storage layout (mode byte then sorted payload bits) is what the descriptor feeds in. The implementation uses floats, so it is not bit-exact with the 3GPP fixed-point reference (ffmpeg measures PSNR 30..80 dB versus the reference), but the algorithm is reproduced structurally. SID/NO_DATA frames emit 160 samples of silence (DTX comfort-noise synthesis is not modelled); this is surfaced honestly in the container metadata.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SampleRate` | `const int SampleRate` | The AMR-NB sample rate. |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Samples produced per frame (160 @ 8 kHz = 20 ms). |
+| `CountFrames` | `static int CountFrames(ReadOnlySpan<byte> stream)` | Counts fully-present frames (a trailing truncated frame is not counted). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> stream)` | Decodes an IF1 AMR-NB storage stream (magic already stripped) to 16-bit PCM at 8 kHz mono. Output length is `frameCount × 160` samples. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm, AmrNbEncoderOptions options = null)` | Encodes mono 8 kHz PCM16 to the AMR-NB IF1/storage byte layout consumed by `Decode`. The encoder performs signal-derived LPC/LSF analysis, searches the normative split-LSF codebooks, inverts the decoder's mode-specific fractional-pitch mapping, performs algebraic fixed-codebook analysis by synthesis, and selects the standard gain VQ tables while carrying the gain/LSF/pitch prediction state between frames. |
+| `ModeFromFrameType` | `static AmrNbMode ModeFromFrameType(int frameType)` | Maps a 4-bit frame type to its mode, or `NoData` for any reserved/lost/no-data type. Provenance: 3GPP TS 26.101 Table 1a. |
+| `PayloadBytes` | `static int PayloadBytes(int frameType)` | The payload byte count (excluding the 1-byte header) for a 4-bit frame type. |
+| `ReadInfo` | `static IReadOnlyList<FrameInfo> ReadInfo(ReadOnlySpan<byte> stream)` | Walks an IF1 storage-format byte stream (no `#!AMR\n` magic), where each frame begins with a header byte whose bits 3..6 are the frame type, sizing each frame from the mode's byte table. A trailing fragment too short for its declared payload is ignored. |
+
+#### `AmrNbCodec.FrameInfo`
+
+Per-frame walk result: the frame index, its decoded mode and its total byte size (header byte + payload).
+
+Implements `IEquatable<FrameInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrameInfo` | `FrameInfo(int Index, AmrNbMode Mode, int SizeBytes)` | Per-frame walk result: the frame index, its decoded mode and its total byte size (header byte + payload). |
+| `Index` | `int Index { get; init; }` |  |
+| `Mode` | `AmrNbMode Mode { get; init; }` |  |
+| `SizeBytes` | `int SizeBytes { get; init; }` |  |
+
+#### `AmrNbEncoderOptions`
+
+Controls the managed AMR-NB encoder.
+
+Implements `IEquatable<AmrNbEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AmrNbEncoderOptions` | `AmrNbEncoderOptions(AmrNbMode Mode = 7, bool EnableDtx = false, bool PadFinalFrame = true)` | Controls the managed AMR-NB encoder. |
+| `EnableDtx` | `bool EnableDtx { get; init; }` | Emit NO_DATA frames for digital silence / very-low-energy input. |
+| `Mode` | `AmrNbMode Mode { get; init; }` | One of the eight active AMR-NB speech modes. |
+| `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete 160-sample final frame with its last sample. |
+
+#### `AmrNbMode`
+
+AMR narrowband coding modes. The eight active speech modes plus the comfort-noise (SID) and untransmitted frame types, matching the 3GPP TS 26.090 / ffmpeg `libavcodec/amrnbdata.h``enum Mode`. The numeric value is the 4-bit Frame Type field stored in the IF1/.amr storage-format mode byte (bits 3..6).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mr475` | `0` | 4.75 kbit/s. |
+| `Mr515` | `1` | 5.15 kbit/s. |
+| `Mr59` | `2` | 5.90 kbit/s. |
+| `Mr67` | `3` | 6.70 kbit/s. |
+| `Mr74` | `4` | 7.40 kbit/s. |
+| `Mr795` | `5` | 7.95 kbit/s. |
+| `Mr102` | `6` | 10.2 kbit/s. |
+| `Mr122` | `7` | 12.2 kbit/s. |
+| `MrdtxSid` | `8` | Comfort noise (Silence Insertion Descriptor). |
+| `NoData` | `15` | No data / untransmitted frame (speech lost or DTX no-transmission). |
+
+### Namespace `Codec.AmrWb`
+
+[`AmrWbCodec`](#amrwbcodec) · [`AmrWbCodec.FrameInfo`](#amrwbcodecframeinfo) · [`AmrWbEncoderOptions`](#amrwbencoderoptions) · [`AmrWbMode`](#amrwbmode)
+
+#### `AmrWbCodec`
+
+AMR wideband (G.722.2 / 3GPP TS 26.190) speech codec. Nine active ACELP modes (6.60 / 8.85 / 12.65 / 14.25 / 15.85 / 18.25 / 19.85 / 23.05 / 23.85 kbit/s) plus the SID and NO_DATA frame types. Each 20 ms frame decodes to exactly 320 samples of 16-bit PCM at 16 kHz mono. The decoder is a faithful float port of ffmpeg `libavcodec/amrwbdec.c`: ISF dequantisation → ISP → 16th-order LPC, four subframes of fractional-pitch adaptive codebook + the 5-track algebraic codebook, gain VQ, then the full wideband post-processing — high-band synthesis (white-noise excitation via the seeded lagged-Fibonacci PRNG, ISF extrapolation for 6k60), de-emphasis, the 31/400 Hz high-pass pair and the 5/4 upsampling chain. The high band is fully synthesised here; only DTX/SID comfort noise is left as silence.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SampleRate` | `const int SampleRate` | The AMR-WB sample rate. |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Samples produced per frame (320 @ 16 kHz = 20 ms). |
+| `CountFrames` | `static int CountFrames(ReadOnlySpan<byte> stream)` | Counts fully-present frames (a trailing truncated frame is not counted). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> stream)` | Decodes an AMR-WB storage stream (magic already stripped) to 16-bit PCM at 16 kHz mono. Output length is `frameCount × 320` samples. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm, AmrWbEncoderOptions options = null)` | Encodes mono PCM16 at 16 kHz into concatenated AMR-WB storage/MIME frames. Each input frame spans 20 ms (320 samples). The underlying encoder is the BSD-3-Clause, pure-managed 3GPP fixed-point port shipped by SipLib; no native codec library is invoked. |
+| `FrameBytes` | `static int FrameBytes(int frameType)` | Total frame byte size (header + payload) for a 4-bit frame type. |
+| `ModeFromFrameType` | `static AmrWbMode ModeFromFrameType(int frameType)` | Maps a 4-bit frame type to its mode (reserved/lost/no-data → NoData). |
+| `ReadInfo` | `static IReadOnlyList<FrameInfo> ReadInfo(ReadOnlySpan<byte> stream)` | Walks an AMR-WB IF1/MIME storage byte stream (magic already stripped). Each frame begins with a header byte whose bits 3..6 are the frame type. A trailing truncated frame is ignored. |
+
+#### `AmrWbCodec.FrameInfo`
+
+Per-frame walk result.
+
+Implements `IEquatable<FrameInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrameInfo` | `FrameInfo(int Index, AmrWbMode Mode, int SizeBytes)` | Per-frame walk result. |
+| `Index` | `int Index { get; init; }` |  |
+| `Mode` | `AmrWbMode Mode { get; init; }` |  |
+| `SizeBytes` | `int SizeBytes { get; init; }` |  |
+
+#### `AmrWbEncoderOptions`
+
+AMR-WB encoder controls.
+
+Implements `IEquatable<AmrWbEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AmrWbEncoderOptions` | `AmrWbEncoderOptions(AmrWbMode Mode = 2, bool EnableDtx = false, bool PadFinalFrame = true)` | AMR-WB encoder controls. |
+| `EnableDtx` | `bool EnableDtx { get; init; }` | Enable VAD/DTX so silence may be encoded as SID/NO_DATA frames. |
+| `Mode` | `AmrWbMode Mode { get; init; }` | One of the nine active AMR-WB speech modes. |
+| `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete 320-sample final frame with the last input sample. |
+
+#### `AmrWbMode`
+
+AMR wideband (G.722.2 / 3GPP TS 26.190) coding modes. Nine active ACELP modes plus the comfort-noise SID, "speech lost" and NO_DATA frame types. The numeric value is the 4-bit Frame Type field stored in the .amr (AMR-WB IF1/MIME) storage mode byte (bits 3..6). Matches ffmpeg `libavcodec/amrwbdata.h``enum Mode`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mr660` | `0` | 6.60 kbit/s. |
+| `Mr885` | `1` | 8.85 kbit/s. |
+| `Mr1265` | `2` | 12.65 kbit/s. |
+| `Mr1425` | `3` | 14.25 kbit/s. |
+| `Mr1585` | `4` | 15.85 kbit/s. |
+| `Mr1825` | `5` | 18.25 kbit/s. |
+| `Mr1985` | `6` | 19.85 kbit/s. |
+| `Mr2305` | `7` | 23.05 kbit/s. |
+| `Mr2385` | `8` | 23.85 kbit/s. |
+| `Sid` | `9` | Comfort-noise (SID) frame. |
+| `SpeechLost` | `14` | Speech lost. |
+| `NoData` | `15` | No data / untransmitted. |
 
 ### Namespace `Codec.Bonk`
 
@@ -1485,6 +1629,74 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.AmrNb`
+
+[`AmrNbFormatDescriptor`](#amrnbformatdescriptor)
+
+#### `AmrNbFormatDescriptor`
+
+3GPP AMR-NB single-channel storage format (`#!AMR\n` + IF1 storage frames).
+
+Implements `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AmrNbFormatDescriptor` | `AmrNbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+
+### Namespace `FileFormat.AmrWb`
+
+[`AmrWbFormatDescriptor`](#amrwbformatdescriptor)
+
+#### `AmrWbFormatDescriptor`
+
+3GPP AMR-WB single-channel storage format (`#!AMR-WB\n` + storage frames).
+
+Implements `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AmrWbFormatDescriptor` | `AmrWbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+
 ### Namespace `FileFormat.Ape`
 
 [`ApeFormatDescriptor`](#apeformatdescriptor)
@@ -1757,13 +1969,14 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `FlacFormatDescriptor`
 
-Format descriptor and stream operations for the FLAC (Free Lossless Audio Codec) format. Also surfaces an archive view: `FULL.flac` plus one mono WAV per channel (`LEFT.wav`/`RIGHT.wav`/...) so multi-channel FLAC files can be decomposed in the archive browser.
+Native FLAC stream descriptor with archive, canonical PCM decode/encode and channel-WAV creation surfaces.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IStreamFormatOperations`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayoutMap`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`, `IStreamFormatOperations`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FlacFormatDescriptor` | `FlacFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -1774,10 +1987,17 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayou
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -2067,13 +2287,14 @@ Compacts oversized ID3v2 padding in an MP3 file. If the ID3v2 tag has more than 
 
 #### `OggFormatDescriptor`
 
-Surfaces an OGG container as an archive of the full file + per-logical-stream raw packet blobs + the Vorbis/Opus comment block. When the primary audio stream decodes (Vorbis via `Codec.Vorbis`, Opus via `Codec.Opus`) the archive also surfaces one mono `<CHANNEL>.wav` per channel; streams the decoder can't handle fall back to the raw packet blobs only.
+Ogg container with packet inspection, PCM decode, and managed Vorbis/Opus creation.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OggFormatDescriptor` | `OggFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -2084,8 +2305,15 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -2375,11 +2603,12 @@ Implements `IFileInternalChunkMover`.
 
 #### `WavReader`
 
-RIFF/WAVE header + per-channel PCM extraction. Supports format codes: 1 — linear PCM (8/16/24/32-bit).3 — IEEE float (32-bit / 64-bit).6 — G.711 A-law (decoded to 16-bit LE PCM via `Codec.ALaw`).7 — G.711 μ-law (decoded to 16-bit LE PCM via `Codec.MuLaw`).0x0002 — Microsoft ADPCM (decoded via `Codec.MsAdpcm`).0x0011 — IMA ADPCM (decoded via `Codec.ImaAdpcm`).0x0022 — DSP Group TrueSpeech (decoded to mono 16-bit PCM via `Codec.TrueSpeech`).0x0031 — GSM 06.10 full-rate (decoded via `Codec.Gsm610`).0xFFFE — WAVEFORMAT_EXTENSIBLE, real sub-format at +24 in `fmt` body. After decoding, `InterleavedPcm` always holds little-endian integer samples and `BitsPerSample` reflects the decoded width, so downstream callers (e.g. `WavFormatDescriptor`) see PCM regardless of the on-wire compression. `FormatCode` also reflects the post-decode code (always 1 when we decoded). Reads only the `fmt` and `data` chunks; skips metadata chunks but leaves them addressable via `MetadataChunks`.
+RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float, G.711, IMA/MS ADPCM, TrueSpeech and GSM 06.10. Block-based codecs are decoded to canonical little-endian PCM and trimmed to the optional `fact` sample count so codec block padding never leaks into downstream transcoding. G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so `Read` surfaces them verbatim under their own format code and container remuxing can hand them on without a lossy decode/re-encode cycle. Callers that want samples rather than packets use `ReadCanonicalPcm`, which decodes them like every other codec.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavReader` | `WavReader()` |  |
+| `ReadCanonicalPcm` | `ParsedWav ReadCanonicalPcm(ReadOnlySpan<byte> data)` | Reads and, on top of `Read`, decodes the G.711 payloads that survive verbatim for remuxing, so callers wanting linear samples never have to know which codec carried them. |
 | `Read` | `ParsedWav Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
 
 #### `WavReader.ParsedWav`
@@ -15241,3 +15470,34 @@ Implements `IStaticCodeBook`.
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
 | `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
 | `Quant` | `int Quant { get; }` | Gets the quant. |
+
+### Namespace `SipLib.Media`
+
+[`AmrWbEncoder`](#amrwbencoder) · [`IAudioEncoder`](#iaudioencoder)
+
+#### `AmrWbEncoder`
+
+Class for encoding linear 16-bit PCM samples into AMR-WB data.
+
+Implements `IAudioEncoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AmrWbEncoder` | `AmrWbEncoder(int Mode = 2, bool AllowDtx = false)` | Constructor. Initializes the encoder. |
+| `ClockRate` | `int ClockRate { get; }` | Gets the RTP clock rate in samples/second |
+| `SampleRate` | `int SampleRate { get; }` | Gets the audio sample rate in samples/second |
+| `TimeStampIncrement` | `uint TimeStampIncrement { get; }` | Amount to increment the RTP packet Time Stamp field by for each new packet. |
+| `CloseEncoder` | `void CloseEncoder()` | Closes the encoder |
+| `Encode` | `byte[] Encode(short[] InputSamples)` | Encodes linear 16-bit PCM samples into AMR-WB data to send in an RTP packet. |
+
+#### `IAudioEncoder`
+
+Interface definition for an audio encoder
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ClockRate` | `int ClockRate { get; }` | Gets the clock rate (samples/second) |
+| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate in samples/second. |
+| `TimeStampIncrement` | `uint TimeStampIncrement { get; }` | Amount to increment the RTP packet Time Stamp field by for each new packet. |
+| `CloseEncoder` | `void CloseEncoder()` | Closes the encoder so that it can release any memory or resources it has been using. |
+| `Encode` | `byte[] Encode(short[] InputSamples)` | Encodes an input sample array of 16-bit PCMU audio samples into a byte array that can be sent as the payload of an RTP packet. |

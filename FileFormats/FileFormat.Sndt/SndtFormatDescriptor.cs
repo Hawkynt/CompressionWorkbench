@@ -126,7 +126,7 @@ public sealed class SndtFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (wavInput.Data == null)
       throw new InvalidOperationException("SoundTool create needs FULL.sndt or a mono WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels != 1)
       throw new InvalidOperationException("SoundTool is mono; supply a single-channel WAV.");
 

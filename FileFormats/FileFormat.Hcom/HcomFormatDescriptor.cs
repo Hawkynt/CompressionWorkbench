@@ -244,7 +244,7 @@ public sealed class HcomFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (wavInput.Data == null)
       throw new InvalidOperationException("HCOM archive create needs FULL.hcom or one mono WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels != 1)
       throw new InvalidOperationException("HCOM assembly accepts a single mono WAV.");
 

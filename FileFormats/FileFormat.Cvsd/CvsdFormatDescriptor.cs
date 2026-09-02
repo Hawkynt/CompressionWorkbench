@@ -117,7 +117,7 @@ public sealed class CvsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (wav.Data == null)
       throw new InvalidOperationException("Raw CVSD create needs either FULL.cvsd or a single mono 16-bit WAV.");
 
-    var parsed = new WavReader().Read(wav.Data);
+    var parsed = new WavReader().ReadCanonicalPcm(wav.Data);
     if (parsed.NumChannels != 1)
       throw new InvalidOperationException("Raw CVSD is mono; the source WAV must have exactly one channel.");
     if (parsed.BitsPerSample != 16)

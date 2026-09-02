@@ -182,7 +182,7 @@ public sealed class AudFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (wavInput.Data == null)
       throw new InvalidOperationException("AUD archive create needs either FULL.aud or a WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels is not (1 or 2))
       throw new InvalidOperationException("AUD create supports mono or stereo WAV.");
     if (wav.BitsPerSample != 16)

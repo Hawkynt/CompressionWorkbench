@@ -79,7 +79,7 @@ public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>Parses the Zstd compression level from the format-specific options,
   /// clamped to the supported 1..9 range; falls back to the default (3).</summary>
   internal static int ParseLevel(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("Level");
+    var raw = options.GetString("Level");
     if (raw is not null && int.TryParse(raw, out var lvl)) return Math.Clamp(lvl, 1, 9);
     return options.Level is { } l ? Math.Clamp(l, 1, 9) : 3;
   }
