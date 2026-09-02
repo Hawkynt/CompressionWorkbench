@@ -320,7 +320,11 @@ public class PyInstallerTests {
         "--distpath", dist, "--workpath", build, "--specpath", work, script
       ], work, TimeSpan.FromMinutes(4), out var stdout, out var stderr);
 
-      var exe = Path.Combine(dist, "app.exe");
+      // PyInstaller names the onefile output after the script and only appends .exe on Windows;
+      // on Linux it is dist/app. Hard-coding .exe meant a build that had just succeeded (exit 0,
+      // and it takes about 87 seconds) was declared absent and the test ignored itself -- paying
+      // the full cost of the thing it was checking and then throwing the result away.
+      var exe = Path.Combine(dist, OperatingSystem.IsWindows() ? "app.exe" : "app");
       if (exit != 0 || !File.Exists(exe))
         Assert.Ignore($"PyInstaller build did not produce an exe (exit {exit}).\n{stdout}\n{stderr}");
 
