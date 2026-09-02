@@ -50,13 +50,61 @@ public sealed class WadFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Wad";
   public string DisplayName => "WAD";
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
-  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
-  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
+  // R/W: canonical trailing-directory WADs use changed-byte mutation; unusual
+  // layouts fall back to the verified rebuild path rather than guessing.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds or replaces lumps. Canonical WADs keep all payloads before a trailing
+  /// directory, so new data overwrites the old directory and a fresh directory
+  /// is appended. Untouched payload bytes stay at their original offsets.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    try {
+      WadInPlaceModifier.Add(archive, inputs);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
+    RebuildVerb.EditViaRebuild(archive, this, this, temporaryDirectory => {
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName))
+          continue;
+        var destination = Path.Combine(temporaryDirectory, Path.GetFileName(input.ArchiveName));
+        File.WriteAllBytes(destination, input.ReadContent());
+      }
+    });
+  }
+
+  /// <summary>
+  /// Removes lumps by rewriting only the trailing directory and wiping the
+  /// removed payload ranges. Shared/overlapping or non-canonical layouts fall
+  /// back to verified rebuild because destructive wiping would not be safe.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    try {
+      WadInPlaceModifier.Remove(archive, entryNames);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
+    var remove = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, temporaryDirectory => {
+      foreach (var file in Directory.GetFiles(temporaryDirectory, "*", SearchOption.AllDirectories)) {
+        var relative = Path.GetRelativePath(temporaryDirectory, file).Replace('\\', '/');
+        if (remove.Contains(relative) || remove.Contains(Path.GetFileName(relative)))
+          File.Delete(file);
+      }
+    });
+  }
+
   public string DefaultExtension => ".wad";
   public IReadOnlyList<string> Extensions => [".wad"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -89,8 +137,8 @@ public sealed class WadFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// reader produces the entry's bytes (decoded if the format compresses
   /// per-entry); the returned stream is a
   /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
-  /// to the entry's logical length so adjacent entries and any trailing
-  /// padding are physically unreachable through this view.
+  /// to the entry's logical length so adjacent entries and trailing padding
+  /// are physically unreachable.
   /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
