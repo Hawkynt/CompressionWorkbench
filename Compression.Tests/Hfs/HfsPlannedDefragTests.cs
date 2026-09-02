@@ -52,9 +52,27 @@ public class HfsPlannedDefragTests {
 
   /// <summary>Writes a payload to a scratch file, since Add takes paths.</summary>
   private static string InlineSource(byte[] data) {
-    var path = Path.Combine(Path.GetTempPath(), "cwb_hfs_" + Guid.NewGuid().ToString("N")[..8]);
+    var path = Path.Combine(_Scratch.Value, "cwb_hfs_" + Guid.NewGuid().ToString("N")[..8]);
     File.WriteAllBytes(path, data);
     return path;
+  }
+
+  // One directory per fixture run, removed in OneTimeTearDown. These used to be written straight
+  // into the temp directory and never deleted; on a tmpfs /tmp that is leaked RAM, and a run left
+  // 608 of them behind.
+  private static readonly Lazy<string> _Scratch = new(() => {
+    var dir = Path.Combine(Path.GetTempPath(), "cwb_hfs_scratch_" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(dir);
+    return dir;
+  });
+
+  [OneTimeTearDown]
+  public void RemoveScratchDirectory() {
+    if (!_Scratch.IsValueCreated)
+      return;
+
+    try { Directory.Delete(_Scratch.Value, recursive: true); }
+    catch { /* scratch cleanup is best-effort. */ }
   }
 
   [Test]
