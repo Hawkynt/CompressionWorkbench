@@ -15,6 +15,7 @@ namespace Compression.Tests.Ntfs;
 /// kilobytes, where $MFTMirr sits past everything and a run never reaches it.</para>
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class NtfsVolumeCapacityTests {
 
   /// <summary>A large file, some mid-sized ones, and some below a cluster.</summary>

@@ -13,6 +13,7 @@ namespace Compression.Tests.ReiserFs;
 /// resulting images is checked in <c>ReiserFsPostMutationExternalTests</c>.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class ReiserFsFullScopeMutationTests {
 
   private static MemoryStream BuildSeed(params (string Name, byte[] Data)[] files) {

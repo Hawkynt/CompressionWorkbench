@@ -32,6 +32,7 @@ namespace Compression.Tests.Operations;
 /// </remarks>
 [TestFixture]
 [Category("ExternalFsInterop")]
+[Category("Slow")]
 public class FragmentationLifecycleTests {
 
   /// <summary>Payload of one file. Small enough to keep the run quick, large

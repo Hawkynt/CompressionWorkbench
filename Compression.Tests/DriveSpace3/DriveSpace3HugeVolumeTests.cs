@@ -12,6 +12,7 @@ namespace Compression.Tests.DriveSpace3;
 /// the geometry (inner FAT16 + MDFAT) sized dynamically to the cluster count.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class DriveSpace3HugeVolumeTests {
 
   // Many files spanning multiple 32 KB clusters → well over 512 clusters total.

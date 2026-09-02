@@ -6,6 +6,7 @@ using FileFormat.Nsf;
 namespace Compression.Tests.Nsf;
 
 [TestFixture]
+[Category("Slow")]
 public class NsfTests {
 
   private static byte[] BuildNesm(byte chipFlags = 0x01) {

@@ -15,6 +15,7 @@ namespace Compression.Tests.Operations;
 /// per-format wipe tests give for individual formats, applied registry-wide.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class WipeForensicEfficacyTests {
 
   // 16-byte signature unlikely to occur naturally; the marker file repeats it.

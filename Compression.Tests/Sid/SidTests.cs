@@ -6,6 +6,7 @@ using FileFormat.Sid;
 namespace Compression.Tests.Sid;
 
 [TestFixture]
+[Category("Slow")]
 public class SidTests {
 
   // Builds a PSID/RSID header (big-endian). v2 adds flags + page bytes (header = 0x7C).

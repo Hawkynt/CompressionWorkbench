@@ -18,6 +18,7 @@ namespace Compression.Tests.Nilfs2;
 /// it had unclaimed.
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class Nilfs2PlannedDefragTests {
 
   private static byte[] Payload(int seed, int length) {

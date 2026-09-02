@@ -21,6 +21,7 @@ namespace Compression.Tests.Ext;
 /// </para>
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class ExtSparseRebuildTests {
 
   /// <summary>Files whose bulk is zeros, plus one that is solid throughout.</summary>

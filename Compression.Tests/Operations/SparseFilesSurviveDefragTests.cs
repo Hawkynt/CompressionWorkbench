@@ -22,6 +22,7 @@ namespace Compression.Tests.Operations;
 /// parts nobody looks at.</para>
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class SparseFilesSurviveDefragTests {
 
   private static IEnumerable<string> DefragmentableFormats() {

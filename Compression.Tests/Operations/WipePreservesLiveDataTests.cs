@@ -22,6 +22,7 @@ namespace Compression.Tests.Operations;
 /// that sequence.</para>
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class WipePreservesLiveDataTests {
 
   private static IEnumerable<string> WipeableFormats() {

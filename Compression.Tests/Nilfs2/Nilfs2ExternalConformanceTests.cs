@@ -37,6 +37,7 @@ namespace Compression.Tests.Nilfs2;
 [TestFixture]
 [Category("ExternalFsInterop")]
 [Category("Nilfs2External")]
+[Category("Slow")]
 public class Nilfs2ExternalConformanceTests {
   private string _tmpDir = null!;
 

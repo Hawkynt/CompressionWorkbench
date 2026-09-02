@@ -18,6 +18,7 @@ namespace Compression.Tests.Apfs;
 /// why the map has to name them wherever they ended up.
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class ApfsPlannedDefragTests {
 
   private static byte[] Payload(int seed, int length) {

@@ -11,6 +11,7 @@ namespace Compression.Tests.F2fs;
 /// <c>fsck.f2fs</c> validation lives in <see cref="F2fsPostMutationExternalTests"/>.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class F2fsFullScopeMutationTests {
 
   private static MemoryStream BuildImage(params (string Name, byte[] Data)[] files) {

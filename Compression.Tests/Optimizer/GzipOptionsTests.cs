@@ -13,6 +13,7 @@ namespace Compression.Tests.Optimizer;
 /// round-trips).
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class GzipOptionsTests {
 
   private static byte[] CompressibleSample() {

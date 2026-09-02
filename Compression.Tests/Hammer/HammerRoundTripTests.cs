@@ -10,6 +10,7 @@ namespace Compression.Tests.Hammer;
 /// walks that B-Tree back to byte-exact names and contents.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class HammerRoundTripTests {
 
   // HAMMER's UNDO-FIFO floor forces a ~1 GB volume, larger than a MemoryStream can

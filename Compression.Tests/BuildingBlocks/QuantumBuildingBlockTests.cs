@@ -4,6 +4,7 @@ using Compression.Core.Dictionary.Quantum;
 namespace Compression.Tests.BuildingBlocks;
 
 [TestFixture]
+[Category("Slow")]
 public class QuantumBuildingBlockTests {
 
   private static readonly QuantumBuildingBlock Bb = new();

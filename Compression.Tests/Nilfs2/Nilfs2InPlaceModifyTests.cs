@@ -12,6 +12,7 @@ namespace Compression.Tests.Nilfs2;
 /// the byte-identical-old-segment invariant intact (continuous-snapshot).
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class Nilfs2InPlaceModifyTests {
 
   private const int SuperblockOffset = 1024;

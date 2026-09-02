@@ -22,6 +22,7 @@ namespace Compression.Tests.Operations;
 /// bytes belong to somebody else.</para>
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class SameSizedFilesKeepTheirOwnBytesTests {
 
   private const int Length = 20_000;
