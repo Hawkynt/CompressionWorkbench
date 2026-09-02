@@ -6186,7 +6186,7 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IStreamFormatOperations`](#istreamformatoperations) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PlacementZone`](#placementzone) · [`RebuildVerb`](#rebuildverb) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
+[`AlgorithmFamily`](#algorithmfamily) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IStreamFormatOperations`](#istreamformatoperations) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PlacementZone`](#placementzone) · [`RebuildVerb`](#rebuildverb) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
 
 #### `AlgorithmFamily`
 
@@ -6253,6 +6253,73 @@ Generic shrink driver for any archive whose descriptor implements `IArchiveCreat
 | `ChooseTargetSize` | `static long ChooseTargetSize(IReadOnlyList<long> canonicalSizes, long payloadBytes)` | Smallest size in `canonicalSizes` that is >= `payloadBytes`. If no size is large enough, returns the largest available. |
 | `ShrinkViaRebuild` | `static void ShrinkViaRebuild(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyList<long> canonicalSizes)` | Rebuilds `input` into `output`, choosing the smallest size from `canonicalSizes` that still holds the payload. |
 
+#### `AudioEncodedStream`
+
+Container-neutral encoded audio stream.
+
+Implements `IEquatable<AudioEncodedStream>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioEncodedStream` | `AudioEncodedStream(AudioStreamFormat Format, IReadOnlyList<AudioPacket> Packets, byte[] CodecPrivateData = null)` | Container-neutral encoded audio stream. |
+| `CodecPrivateData` | `byte[] CodecPrivateData { get; init; }` |  |
+| `Format` | `AudioStreamFormat Format { get; init; }` |  |
+| `Packets` | `IReadOnlyList<AudioPacket> Packets { get; init; }` |  |
+
+#### `AudioPacket`
+
+One encoded access unit/packet suitable for packet-preserving remux.
+
+Implements `IEquatable<AudioPacket>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioPacket` | `AudioPacket(byte[] Data, long DurationSamples = 0, long? GranulePosition = null, bool IsHeader = false)` | One encoded access unit/packet suitable for packet-preserving remux. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `DurationSamples` | `long DurationSamples { get; init; }` |  |
+| `GranulePosition` | `long? GranulePosition { get; init; }` |  |
+| `IsHeader` | `bool IsHeader { get; init; }` |  |
+
+#### `AudioPcmBuffer`
+
+Materialized interleaved PCM together with its format.
+
+Implements `IEquatable<AudioPcmBuffer>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioPcmBuffer` | `AudioPcmBuffer(AudioPcmFormat Format, byte[] InterleavedData)` | Materialized interleaved PCM together with its format. |
+| `Format` | `AudioPcmFormat Format { get; init; }` |  |
+| `FrameCount` | `long FrameCount { get; }` |  |
+| `InterleavedData` | `byte[] InterleavedData { get; init; }` |  |
+
+#### `AudioPcmEncoding`
+
+Canonical PCM sample representation used by the cross-format audio pipeline.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `UnsignedInteger` | `0` |  |
+| `SignedInteger` | `1` |  |
+| `IeeeFloat` | `2` |  |
+
+#### `AudioPcmFormat`
+
+Describes interleaved PCM independently of any particular container.
+
+Implements `IEquatable<AudioPcmFormat>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioPcmFormat` | `AudioPcmFormat(int SampleRate, int Channels, int BitsPerSample, AudioPcmEncoding Encoding = 1, ulong? ChannelMask = null)` | Describes interleaved PCM independently of any particular container. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `BytesPerFrame` | `int BytesPerFrame { get; }` |  |
+| `BytesPerSample` | `int BytesPerSample { get; }` |  |
+| `ChannelMask` | `ulong? ChannelMask { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Encoding` | `AudioPcmEncoding Encoding { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
 #### `AudioPseudoArchive`
 
 Shared plumbing for audio containers surfaced as pseudo-archives. The model separates the CONTAINER from the DATA it carries: the pseudo-archive is the container format itself, and every listed entry is a pseudo-file of carried data. Kinds encode that distinction — `Container` — the byte-exact original container (`FULL.<ext>`); round-trips the file unchanged.`Stream` — a carried elementary bitstream (e.g. an Ogg logical stream's packets) still in its coded form.`Track` — a carried audio/video track in multi-track containers, or one rendered subtune of a multi-song chiptune.`Channel` — one decoded speaker as a playable mono PCM WAV (named per `Codec.Pcm.ChannelLayout`, mono through 22.2 and beyond).`Tag` — carried metadata (comments, ID3, bext, …). A descriptor builds the `Entry` list (the format-specific part) and delegates listing, on-disk extraction and single-entry streaming here. Eager vs. lazy entries. An entry's payload may be supplied eagerly as a `Byte`[] (the common case for already-parsed blobs) or lazily through a producing factory plus a declared byte size (for expensive renders such as emulated chiptune subtunes). For a lazy entry the declared size is exact and deterministic — a render's WAV byte count is fully predictable — so listing reports it without ever invoking the factory; the factory runs only when that specific entry is extracted, and its result is cached so a repeat extraction does not re-render.
@@ -6277,6 +6344,21 @@ One surfaced pseudo-archive entry with its display `Kind` and codec `Method`. Th
 | `Name` | `string Name { get; }` | The display name (path-like; may contain `/` separators). |
 | `Lazy` | `static Entry Lazy(string name, string kind, Func<byte[]> factory, long declaredSize, string method = "stored")` | Builds a lazy entry: `factory` produces the payload only when the entry is extracted, and `declaredSize` is the exact byte count the factory will yield (used for listing without invoking the factory). The produced bytes are cached on first materialisation so a second extraction reuses them. |
 | `Materialize` | `byte[] Materialize()` | Returns the payload, invoking and caching the factory on first access for a lazy entry. |
+
+#### `AudioStreamFormat`
+
+Codec-level description of an encoded audio stream.
+
+Implements `IEquatable<AudioStreamFormat>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioStreamFormat` | `AudioStreamFormat(string CodecId, int SampleRate, int Channels, int BitsPerSample = 0, IReadOnlyDictionary<string, string> Properties = null)` | Codec-level description of an encoded audio stream. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `CodecId` | `string CodecId { get; init; }` |  |
+| `Properties` | `IReadOnlyDictionary<string, string> Properties { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
 
 #### `BuildingBlockRegistry`
 
@@ -6492,24 +6574,28 @@ Options for archive/stream creation, passed from the orchestration layer to form
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FormatCreateOptions` | `FormatCreateOptions()` |  |
+| `FormatCreateOptions` | `FormatCreateOptions(string Method = null)` | Creates options with an optional compression/codec method. |
 | `DictSize` | `long DictSize { get; init; }` | Dictionary size in bytes, or 0 for format default. |
 | `EncryptFilenames` | `bool EncryptFilenames { get; init; }` | When true, encrypt file names/headers. |
 | `EncryptionMethod` | `string EncryptionMethod { get; init; }` | Encryption method override (e.g. "aes256", "zipcrypto"). |
 | `ForceCompress` | `bool ForceCompress { get; init; }` | Whether to compress all files regardless of entropy detection. |
-| `FormatSpecific` | `IReadOnlyDictionary<string, string> FormatSpecific { get; init; }` | Format-specific tunable knobs collected from a `IFormatOptionsSchema`. Keys come from `Key`; values are in canonical string form (the format's writer parses them per its schema). Writers should call `GetOption` or `GetOptionInt` rather than reading the dict directly, so a missing entry falls back to the schema default. |
+| `FormatSpecific` | `Dictionary<string, string> FormatSpecific { get; init; }` | Format-specific tunable knobs collected from an `IFormatOptionsSchema`. The collection is initialized so callers can use collection/index initializers without allocating a dictionary explicitly. |
 | `IncompressiblePaths` | `HashSet<string> IncompressiblePaths { get; init; }` | Set of file paths detected as incompressible (null = not computed). |
 | `Level` | `int? Level { get; init; }` | Compression level (0-9), or null for format default. |
-| `MethodName` | `string MethodName { get; init; }` | Compression method name (e.g. "deflate", "lzma"). |
+| `MethodName` | `string MethodName { get; init; }` | Compression method name (e.g. "deflate", "lzma", "aac", "opus"). |
+| `Method` | `string Method { get; init; }` | Alias for `MethodName` used by codec/container creation paths. Both properties share the same backing value. |
 | `Optimize` | `bool Optimize { get; init; }` | Whether "+" optimization was requested. |
 | `Password` | `string Password { get; init; }` | Encryption password. |
 | `SolidSize` | `long SolidSize { get; init; }` | Maximum solid block size in bytes. |
 | `Threads` | `int Threads { get; init; }` | Number of parallel threads. |
 | `WordSize` | `int? WordSize { get; init; }` | Word size / fast bytes, or null for format default. |
-| `GetOptionBool` | `bool GetOptionBool(string key, bool fallback)` | Reads a format-specific boolean option. Accepts "true"/"false"/"1"/"0" (case-insensitive). |
+| `FormatSpecificFrom` | `static Dictionary<string, string> FormatSpecificFrom(IEnumerable<KeyValuePair<string, string>> source)` | Builds a `FormatSpecific` map from an optional source, keeping the case-insensitive comparer the property's own initializer uses. Callers hold read-only or nullable views of the bag, which cannot be assigned to the mutable property directly. |
+| `GetOptionBool` | `bool GetOptionBool(string key, bool fallback)` | Reads a format-specific boolean option. Accepts true/false/1/0 (case-insensitive). |
 | `GetOptionInt` | `int GetOptionInt(string key, int fallback)` | Reads a format-specific integer option. Returns `fallback` if absent or unparsable. |
 | `GetOption` | `string GetOption(string key, string fallback)` | Reads a format-specific string option, returning `fallback` if absent. |
-| `HasOption` | `bool HasOption(string key)` | True when the caller explicitly supplied `key` (with a non-empty value). Writers use this to distinguish "caller pinned a size" from "use the format default / auto-optimise" — an unset size must leave the auto-selection path free, while a pinned size must be honoured byte-for-byte. |
+| `GetString` | `string GetString(string key)` | Reads a string option, returning `null` if absent. |
+| `HasOption` | `bool HasOption(string key)` | True when the caller explicitly supplied a non-empty value for `key`. |
+| `TryGetInt` | `bool TryGetInt(string key, out int value)` | Attempts to read a format-specific invariant-culture integer. |
 
 #### `FormatHealth`
 
@@ -6675,6 +6761,48 @@ Optional interface for archive formats that support lazy, asynchronous entry enu
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ListEntriesAsync` | `IAsyncEnumerable<ArchiveEntryInfo> ListEntriesAsync(Stream stream, string password, CancellationToken ct = null)` | Lazily enumerates archive entries as an async stream. Each entry is yielded as it is discovered, without requiring the full archive to be scanned first. |
+
+#### `IAudioContainerFormat`
+
+Marker for descriptors that are valid participants in audio conversion even when their primary registry category is not `Audio` (for example MP4/MOV).
+
+_No public or protected members._
+
+#### `IAudioDemuxSource`
+
+Capability for exposing encoded packets without decoding them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+
+#### `IAudioMuxTarget`
+
+Capability for muxing already-encoded packets without re-encoding.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+
+#### `IAudioPcmSource`
+
+Capability for lossless/decoded conversion through canonical PCM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+
+#### `IAudioPcmTarget`
+
+Capability for encoding canonical PCM into a target format/container.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
 
 #### `IBuildingBlock`
 
