@@ -1031,13 +1031,13 @@ Implements `IDisposable`, `IResampler`.
 | `OutputLatency` | `TimeSpan OutputLatency { get; }` | Gets the latency introduced by the resampler. |
 | `OutputStride` | `int OutputStride { get; set; }` | Gets or sets the output stride |
 | `Quality` | `int Quality { get; set; }` | Gets or sets the resampling quality between 0 and 10, where 0 has poor quality and 10 has very high quality. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `GetRateFraction` | `void GetRateFraction(out int ratio_num, out int ratio_den)` | Gets the current resampling ratio. This will be reduced to the least common denominator |
 | `GetRates` | `void GetRates(out int in_rate, out int out_rate)` | Get the current input/output sampling rates (integer value). |
-| `ProcessInterleaved` | `void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)` | Performs the process interleaved operation. |
-| `ProcessInterleaved` | `void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)` | Performs the process interleaved operation. |
-| `Process` | `void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)` | Performs the process operation. |
-| `Process` | `void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)` | Performs the process operation. |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)` |  |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)` |  |
+| `Process` | `void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)` |  |
+| `Process` | `void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)` |  |
 | `ResetMem` | `void ResetMem()` | Clears the resampler buffers so a new (unrelated) stream can be processed. |
 | `SetRateFraction` | `void SetRateFraction(int ratio_num, int ratio_den, int in_rate, int out_rate)` | Sets the input/output sampling rates and resampling ration (fractional values in Hz supported) |
 | `SetRates` | `void SetRates(int in_rate, int out_rate)` | Sets the input and output rates |
@@ -1137,7 +1137,7 @@ Implements `IDisposable`, `IOpusDecoder`.
 | --- | --- | --- |
 | `OpusDecoder` | `OpusDecoder(int Fs, int channels)` | Allocates and initializes a decoder state. Internally Opus stores data at 48000 Hz, so that should be the default value for Fs. However, the decoder can efficiently decode to buffers at 8, 12, 16, and 24 kHz so if for some reason the caller cannot use data at the full sample rate, or knows the compressed data doesn't use the full frequency range, it can request decoding at a reduced rate. Likewise, the decoder is capable of filling in either mono or interleaved stereo pcm buffers, at the caller's request. |
 | `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the encoded bandwidth of the last packet decoded. This may be lower than the actual decoding sample rate, and is only an indicator of the encoded audio's quality |
-| `FinalRange` | `uint FinalRange { get; }` | Gets the final range. |
+| `FinalRange` | `uint FinalRange { get; }` |  |
 | `Gain` | `int Gain { get; set; }` | Gets or sets the gain (Q8) to use in decoding |
 | `LastPacketDuration` | `int LastPacketDuration { get; }` | Gets the duration of the last packet, in PCM samples per channel |
 | `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this decoder decodes to. Always constant for the lifetime of the decoder. |
@@ -1147,8 +1147,8 @@ Implements `IDisposable`, `IOpusDecoder`.
 | `Decode` | `int Decode(ReadOnlySpan<byte> in_data, Span<short> out_pcm, int frame_size, bool decode_fec = false)` | Decodes an Opus packet. |
 | `Decode` | `int Decode(byte[] in_data, int in_data_offset, int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec = false)` | Decodes an Opus packet, putting the output data into a floating-point buffer. |
 | `Decode` | `int Decode(byte[] in_data, int in_data_offset, int len, short[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec = false)` | Decodes an Opus packet. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `GetVersionString` | `string GetVersionString()` | Gets the version string. |
+| `Dispose` | `void Dispose()` |  |
+| `GetVersionString` | `string GetVersionString()` |  |
 | `ResetState` | `void ResetState()` | Resets all buffers and prepares this decoder to process a fresh (unrelated) stream |
 
 #### `OpusEncoder`
@@ -1189,8 +1189,8 @@ Implements `IDisposable`, `IOpusEncoder`.
 | `Encode` | `int Encode(ReadOnlySpan<short> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame. |
 | `Encode` | `int Encode(float[] in_pcm, int in_pcm_offset, int frame_size, byte[] out_data, int out_data_offset, int max_data_bytes)` | Encodes an Opus frame using floating point input. |
 | `Encode` | `int Encode(short[] in_pcm, int pcm_offset, int frame_size, byte[] out_data, int out_data_offset, int max_data_bytes)` | Encodes an Opus frame. |
-| `GetVersionString` | `string GetVersionString()` | Gets the version string. |
-| `ResetState` | `void ResetState()` | Performs the reset state operation. |
+| `GetVersionString` | `string GetVersionString()` |  |
+| `ResetState` | `void ResetState()` |  |
 
 #### `OpusMSDecoder`
 
@@ -1201,20 +1201,20 @@ Implements `IDisposable`, `IOpusMultiStreamDecoder`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OpusMSDecoder` | `OpusMSDecoder(int Fs, int channels, int streams, int coupled_streams, byte[] mapping)` | Creates a new multichannel decoder |
-| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the bandwidth. |
-| `FinalRange` | `uint FinalRange { get; }` | Gets the final range. |
-| `Gain` | `int Gain { get; set; }` | Gets or sets the gain. |
-| `LastPacketDuration` | `int LastPacketDuration { get; }` | Gets the last packet duration. |
-| `NumChannels` | `int NumChannels { get; }` | Gets the num channels. |
-| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate. |
-| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<float> out_pcm, int frame_size, bool decode_fec)` | Decodes the supplied input. |
-| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<short> out_pcm, int frame_size, bool decode_fec)` | Decodes the supplied input. |
-| `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` | Decodes the supplied input. |
-| `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, short[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` | Decodes the supplied input. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` |  |
+| `FinalRange` | `uint FinalRange { get; }` |  |
+| `Gain` | `int Gain { get; set; }` |  |
+| `LastPacketDuration` | `int LastPacketDuration { get; }` |  |
+| `NumChannels` | `int NumChannels { get; }` |  |
+| `SampleRate` | `int SampleRate { get; }` |  |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<float> out_pcm, int frame_size, bool decode_fec)` |  |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<short> out_pcm, int frame_size, bool decode_fec)` |  |
+| `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` |  |
+| `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, short[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` |  |
+| `Dispose` | `void Dispose()` |  |
 | `GetMultistreamDecoderState` | `OpusDecoder GetMultistreamDecoderState(int streamId)` | Gets the internal decoder state of one of the multichannel stream's decoders, indicated by stream ID. |
-| `GetVersionString` | `string GetVersionString()` | Gets the version string. |
-| `ResetState` | `void ResetState()` | Performs the reset state operation. |
+| `GetVersionString` | `string GetVersionString()` |  |
+| `ResetState` | `void ResetState()` |  |
 
 #### `OpusMSEncoder`
 
@@ -1224,36 +1224,36 @@ Implements `IDisposable`, `IOpusMultiStreamEncoder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Application` | `OpusApplication Application { get; set; }` | Gets or sets the application. |
-| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` | Gets or sets the bandwidth. |
-| `Bitrate` | `int Bitrate { get; set; }` | Gets or sets the bitrate. |
-| `Complexity` | `int Complexity { get; set; }` | Gets or sets the complexity. |
-| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` | Gets or sets the expert frame duration. |
-| `FinalRange` | `uint FinalRange { get; }` | Gets the final range. |
-| `ForceChannels` | `int ForceChannels { get; set; }` | Gets or sets the force channels. |
-| `ForceMode` | `OpusMode ForceMode { get; set; }` | Gets or sets the force mode. |
-| `LSBDepth` | `int LSBDepth { get; set; }` | Gets or sets the lsb depth. |
-| `Lookahead` | `int Lookahead { get; }` | Gets the lookahead. |
-| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` | Gets or sets the max bandwidth. |
-| `NumChannels` | `int NumChannels { get; }` | Gets the num channels. |
-| `PacketLossPercent` | `int PacketLossPercent { get; set; }` | Gets or sets the packet loss percent. |
-| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` | Gets a value indicating whether prediction disabled. |
-| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate. |
-| `SignalType` | `OpusSignal SignalType { get; set; }` | Gets or sets the signal type. |
-| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` | Gets a value indicating whether use constrained vbr. |
-| `UseDTX` | `bool UseDTX { get; set; }` | Gets a value indicating whether use dtx. |
-| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` | Gets a value indicating whether use inband fec. |
-| `UseVBR` | `bool UseVBR { get; set; }` | Gets a value indicating whether use vbr. |
+| `Application` | `OpusApplication Application { get; set; }` |  |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` |  |
+| `Bitrate` | `int Bitrate { get; set; }` |  |
+| `Complexity` | `int Complexity { get; set; }` |  |
+| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` |  |
+| `FinalRange` | `uint FinalRange { get; }` |  |
+| `ForceChannels` | `int ForceChannels { get; set; }` |  |
+| `ForceMode` | `OpusMode ForceMode { get; set; }` |  |
+| `LSBDepth` | `int LSBDepth { get; set; }` |  |
+| `Lookahead` | `int Lookahead { get; }` |  |
+| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` |  |
+| `NumChannels` | `int NumChannels { get; }` |  |
+| `PacketLossPercent` | `int PacketLossPercent { get; set; }` |  |
+| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` |  |
+| `SampleRate` | `int SampleRate { get; }` |  |
+| `SignalType` | `OpusSignal SignalType { get; set; }` |  |
+| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` |  |
+| `UseDTX` | `bool UseDTX { get; set; }` |  |
+| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` |  |
+| `UseVBR` | `bool UseVBR { get; set; }` |  |
 | `CreateSurround` | `static OpusMSEncoder CreateSurround(int Fs, int channels, int mapping_family, out int streams, out int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a multichannel Opus encoder using the "new API". This constructor allows you to use predefined Vorbis channel mappings, or specify your own. |
 | `Create` | `static OpusMSEncoder Create(int Fs, int channels, int streams, int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a new multichannel Opus encoder using the "old API". |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<float> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` | Encodes the supplied input. |
-| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<short> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` | Encodes the supplied input. |
-| `EncodeMultistream` | `int EncodeMultistream(float[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` | Encodes the supplied input. |
-| `EncodeMultistream` | `int EncodeMultistream(short[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` | Encodes the supplied input. |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<float> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<short> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
+| `EncodeMultistream` | `int EncodeMultistream(float[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` |  |
+| `EncodeMultistream` | `int EncodeMultistream(short[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` |  |
 | `GetMultistreamEncoderState` | `OpusEncoder GetMultistreamEncoderState(int streamId)` | Gets the internal encoder state of one of the multichannel stream's enoders, indicated by stream ID. |
-| `GetVersionString` | `string GetVersionString()` | Gets the version string. |
-| `ResetState` | `void ResetState()` | Performs the reset state operation. |
+| `GetVersionString` | `string GetVersionString()` |  |
+| `ResetState` | `void ResetState()` |  |
 
 #### `OpusPacketInfo`
 
@@ -1413,7 +1413,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -1436,7 +1436,7 @@ Implements `IDisposable`.
 | `LoopStart` | `uint LoopStart { get; }` | Gets the loop start position in samples; 0 if the bank declares no loop. |
 | `SampleRate` | `uint SampleRate { get; }` | Gets the sample rate in Hz declared by the bank header. |
 | `VersionByte` | `byte VersionByte { get; }` | Gets the AKB subformat version byte (1 = single-stream v1, 2 = multi-entry v2). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AkbEntry entry)` | Reads the raw payload bytes for a given entry. The codec is not decoded — these are the raw on-disk bytes between `Offset` and `Offset` + `Size`. |
 
 #### `AkbWriter`
@@ -1453,7 +1453,7 @@ Implements `IDisposable`.
 | `LoopStart` | `uint LoopStart { get; set; }` | Gets or sets the loop start position (samples). 0 means no loop. |
 | `SampleRate` | `uint SampleRate { get; set; }` | Gets or sets the bank-wide sample rate written to the header. Defaults to 44100 Hz. |
 | `AddEntry` | `void AddEntry(string name, byte[] data, uint sampleCount = 0, uint flags = 0)` | Adds an entry to the bank. The supplied bytes are stored verbatim — caller is responsible for any codec encoding (HCA, MSADPCM, etc.). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes the bank to the underlying stream. Called automatically on Dispose. |
 
 ### Namespace `FileFormat.Alac`
@@ -1620,7 +1620,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -1642,7 +1642,7 @@ Implements `IDisposable`.
 | `SubKey` | `uint SubKey { get; }` | Sub-key used by HCA decryption derivation. Preserved verbatim — we do not decrypt. |
 | `Version` | `byte Version { get; }` | Container version byte from the header (1, 2, or 4 are observed in the wild). |
 | `BuildMetadataIni` | `byte[] BuildMetadataIni()` | Returns a UTF-8 INI document describing the wave bank's header values for analyst tooling. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AwbEntry entry)` | Reads the raw payload bytes for a single entry. |
 
 #### `AwbWriter`
@@ -1657,7 +1657,7 @@ Implements `IDisposable`.
 | `Alignment` | `uint Alignment { get; set; }` | Audio-data alignment in bytes. Must be a non-zero power of two. Defaults to 0x20. |
 | `AddEntry` | `void AddEntry(byte[] data)` | Adds an entry with an auto-assigned sequential cue ID (next available, starting from 0 if empty). |
 | `AddEntry` | `void AddEntry(uint cueId, byte[] data)` | Adds an entry with an explicit cue ID. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the AFS2 container and finalizes the stream. |
 
 ### Namespace `FileFormat.Bonk`
@@ -1778,7 +1778,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayou
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2036,12 +2036,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `Mp3LayoutMap`
 
@@ -2086,7 +2086,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2226,7 +2226,7 @@ Implements `IDisposable`.
 | `ReservedData` | `byte[] ReservedData { get; }` | The reserved-area blob (length determined by the header field). May be empty. |
 | `Tags` | `IReadOnlyDictionary<string, string> Tags { get; }` | Parsed tag block (UTF-8 / Latin-1, one `key=value` per line). Empty if the file had no `[TAG]` sentinel. |
 | `VersionByte` | `byte VersionByte { get; }` | Platform/version byte from offset 3 of the header (e.g. 0x01 = PS1, 0x02 = PS2). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 #### `PsfWriter`
 
@@ -2241,7 +2241,7 @@ Implements `IDisposable`.
 | `ReservedData` | `byte[] ReservedData { get; set; }` | Reserved-area blob written verbatim between header and compressed program. |
 | `Tags` | `Dictionary<string, string> Tags { get; }` | Tag key/value pairs serialized as a UTF-8 `[TAG]` block. Empty -> no tag block. |
 | `VersionByte` | `byte VersionByte { get; set; }` | The platform/version byte (default 0x01 = PS1). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes all fields to the underlying stream. Idempotent. |
 
 ### Namespace `FileFormat.Qoa`
@@ -2346,12 +2346,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `WavLayoutMap`
 
@@ -2370,8 +2370,8 @@ Implements `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavOptimizer` | `WavOptimizer()` |  |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `WavReader`
 
@@ -2476,7 +2476,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single bank entry as a bounded read-only stream. Handles the synthetic `FULL.bnk` passthrough, the `metadata.ini` summary, `hirc_objects.txt`, and per-WEM positional slices. All returns are wrapped in `BoundedEntryStream` sized to their logical length so adjacent regions can't leak. |

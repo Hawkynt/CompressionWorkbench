@@ -275,7 +275,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ACE archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ACE archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -295,7 +295,7 @@ Implements `IDisposable`.
 | `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Gets whether this archive has a recovery record. |
 | `IsSolid` | `bool IsSolid { get; }` | Gets whether this is a solid archive. |
 | `Version` | `byte Version { get; }` | Gets the ACE version. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(AceEntry entry)` | Extracts the data for an entry. |
 | `VerifyRecoveryRecord` | `bool VerifyRecoveryRecord()` | Verifies the recovery record against the archive's file data. Returns `true` if the parity matches. |
 
@@ -1110,7 +1110,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -1124,7 +1124,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `AfsReader` | `AfsReader(Stream stream, bool leaveOpen = false)` | Initializes a new `AfsReader` from a stream. |
 | `Entries` | `IReadOnlyList<AfsEntry> Entries { get; }` | Gets all entries discovered in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AfsEntry entry)` | Extracts the raw bytes for a single entry. |
 
 #### `AfsWriter`
@@ -1137,7 +1137,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `AfsWriter` | `AfsWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `AfsWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive to the underlying stream and finalizes the file layout. |
 
 ### Namespace `FileFormat.Akb`
@@ -1181,7 +1181,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -1204,7 +1204,7 @@ Implements `IDisposable`.
 | `LoopStart` | `uint LoopStart { get; }` | Gets the loop start position in samples; 0 if the bank declares no loop. |
 | `SampleRate` | `uint SampleRate { get; }` | Gets the sample rate in Hz declared by the bank header. |
 | `VersionByte` | `byte VersionByte { get; }` | Gets the AKB subformat version byte (1 = single-stream v1, 2 = multi-entry v2). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AkbEntry entry)` | Reads the raw payload bytes for a given entry. The codec is not decoded — these are the raw on-disk bytes between `Offset` and `Offset` + `Size`. |
 
 #### `AkbWriter`
@@ -1221,7 +1221,7 @@ Implements `IDisposable`.
 | `LoopStart` | `uint LoopStart { get; set; }` | Gets or sets the loop start position (samples). 0 means no loop. |
 | `SampleRate` | `uint SampleRate { get; set; }` | Gets or sets the bank-wide sample rate written to the header. Defaults to 44100 Hz. |
 | `AddEntry` | `void AddEntry(string name, byte[] data, uint sampleCount = 0, uint flags = 0)` | Adds an entry to the bank. The supplied bytes are stored verbatim — caller is responsible for any codec encoding (HCA, MSADPCM, etc.). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes the bank to the underlying stream. Called automatically on Dispose. |
 
 ### Namespace `FileFormat.AlZip`
@@ -1270,7 +1270,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ALZ archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ALZ archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -1296,7 +1296,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `AlZipReader` | `AlZipReader(Stream stream, bool leaveOpen = false)` | Creates a new ALZip reader over the given stream. |
 | `Entries` | `IReadOnlyList<AlZipEntry> Entries { get; }` | File entries in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AlZipEntry entry)` | Extracts the raw (decompressed) data for the given entry. |
 
 #### `AlZipWriter`
@@ -1310,7 +1310,7 @@ Implements `IDisposable`.
 | `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false)` | Creates a new ALZip writer over the given stream. |
 | `AddDirectory` | `void AddDirectory(string dirName)` | Adds a directory entry to the archive. |
 | `AddFile` | `void AddFile(string fileName, byte[] data)` | Adds a file to the archive with deflate compression. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.Ampk`
 
@@ -1351,7 +1351,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -1408,7 +1408,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh Android App Bundle (`.aab`) by delegating to `ZipWriter`. Entry paths are written verbatim; callers are responsible for naming entries with the AAB split-aware structure (`base/`, `splits/`, `BundleConfig.pb`). If the caller does not supply a `BundleConfig.pb`, a minimal placeholder protobuf is appended so the produced archive carries the mandatory configuration entry. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (AAB/APKS is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (AAB/APKS is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -1838,7 +1838,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (APK is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (APK is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -1871,7 +1871,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh APK-shaped ZIP containing only the native libraries supplied in `inputs`. Incoming entry paths may use either the underlying `lib/<abi>/*.so` form or the rewritten `native_libs/<abi>/*.so` view — the latter is unrewrap-ed back to `lib/` before being added to the inner ZIP so the produced archive is a standard split-APK fragment loadable by any APK tool. Entries that don't end in `.so` are written verbatim. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -1919,7 +1919,7 @@ Implements `IDisposable`.
 | `StubSize` | `const int StubSize` | Size of the embedded minimal ELF64 stub in bytes. |
 | `AddDirectory` | `void AddDirectory(string path)` | Adds an explicit directory entry to the AppImage's SquashFS payload. |
 | `AddFile` | `void AddFile(string path, byte[] data)` | Adds a file entry to the AppImage's SquashFS payload. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Emits the ELF stub followed by the SquashFS image holding the queued entries. |
 
 ### Namespace `FileFormat.AppleSingle`
@@ -2176,7 +2176,7 @@ Implements `IDisposable`.
 | `BandCount` | `int BandCount { get; }` | Number of bands in the BAT (allocated + sparse). |
 | `SectorsPerBand` | `int SectorsPerBand { get; }` | Sectors per band (each sector = 512 bytes). |
 | `VirtualSize` | `long VirtualSize { get; }` | Total virtual disk size in bytes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractDisk` | `byte[] ExtractDisk()` | Materialises the full virtual disk as a byte array. |
 | `Read` | `int Read(long virtualOffset, Span<byte> destination)` | Reads `destination`.`Length` bytes from virtual offset `virtualOffset` into `destination`. Unallocated bands return zero bytes. Returns the number of bytes actually filled (always the requested length when `virtualOffset + length <= VirtualSize`). |
 
@@ -2242,7 +2242,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (APPX is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (APPX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2311,7 +2311,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the AR archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the AR archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2338,7 +2338,7 @@ Implements `IDisposable`.
 | `ArReader` | `ArReader(Stream stream, bool leaveOpen = false)` | Initializes a new `ArReader` and parses the archive. |
 | `Entries` | `IReadOnlyList<ArEntry> Entries { get; }` | Gets the entries present in the archive. |
 | `CopyEntryTo` | `void CopyEntryTo(ArEntry entry, Stream destination)` | Copies `entry`'s bytes to `destination`, reading them from the archive when the entry was too large to materialise. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 #### `ArWriter`
 
@@ -2349,7 +2349,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ArWriter` | `ArWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `ArWriter`. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `WriteStreaming` | `void WriteStreaming(IReadOnlyList<StreamingMember> members)` | Writes all `members` to the stream as a complete ar archive, streaming each member's payload from its `OpenData` factory in bounded 64 KB chunks rather than buffering it into RAM. The ar header encodes each member's size before its payload, so the pre-known `Size` drives the header; the GNU string table for overlong names is built from the names alone in a first pass. |
 | `Write` | `void Write(IReadOnlyList<ArEntry> entries)` | Writes all `entries` to the stream as a complete ar archive, using the GNU extended filename format for names longer than `MaxInlineNameLength` characters. |
 
@@ -2454,7 +2454,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ARC archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ARC archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ArcModifier`. |
@@ -2477,7 +2477,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ArcReader` | `ArcReader(Stream stream, bool leaveOpen = false)` | Initializes a new `ArcReader` from a stream containing ARC archive data. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `GetNextEntry` | `ArcEntry GetNextEntry()` | Reads the next entry header from the archive. |
 | `ReadEntryData` | `byte[] ReadEntryData()` | Decompresses and returns the data for the current entry. |
 
@@ -2493,7 +2493,7 @@ Implements `IDisposable`.
 | `AddEntry` | `void AddEntry(string fileName, ReadOnlySpan<byte> data, ArcCompressionMethod method, DateTimeOffset lastModified = null)` | Adds a file entry to the archive using a specific compression method. |
 | `AddEntry` | `void AddEntry(string fileName, ReadOnlySpan<byte> data, DateTimeOffset lastModified = null)` | Adds a file entry to the archive using the writer's default compression method. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ArcCompressionMethod method = 2)` | Creates an ARC archive split into multiple volumes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive marker and flushes the stream. |
 
 ### Namespace `FileFormat.Arj`
@@ -2580,7 +2580,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ARJ archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ARJ archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2615,7 +2615,7 @@ Implements `IDisposable`.
 | `ArjReader` | `ArjReader(Stream stream, bool leaveOpen = false)` | Initializes a new `ArjReader` and reads the archive index. |
 | `ArjReader` | `ArjReader(Stream stream, string password, bool leaveOpen = false)` | Opens an ARJ archive with an optional password for garbled (encrypted) entries. |
 | `Entries` | `IReadOnlyList<ArjEntry> Entries { get; }` | Gets the list of entries found in the archive (both files and directories, excluding the main archive comment header). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(ArjEntry entry)` | Extracts the data for the specified entry and verifies its CRC-32. |
 
 #### `ArjWriter`
@@ -2823,12 +2823,12 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `AviLayoutMap`
 
@@ -2847,8 +2847,8 @@ Implements `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AviOptimizer` | `AviOptimizer()` |  |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `AviReader`
 
@@ -2949,7 +2949,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2971,7 +2971,7 @@ Implements `IDisposable`.
 | `SubKey` | `uint SubKey { get; }` | Sub-key used by HCA decryption derivation. Preserved verbatim — we do not decrypt. |
 | `Version` | `byte Version { get; }` | Container version byte from the header (1, 2, or 4 are observed in the wild). |
 | `BuildMetadataIni` | `byte[] BuildMetadataIni()` | Returns a UTF-8 INI document describing the wave bank's header values for analyst tooling. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AwbEntry entry)` | Reads the raw payload bytes for a single entry. |
 
 #### `AwbWriter`
@@ -2986,7 +2986,7 @@ Implements `IDisposable`.
 | `Alignment` | `uint Alignment { get; set; }` | Audio-data alignment in bytes. Must be a non-zero power of two. Defaults to 0x20. |
 | `AddEntry` | `void AddEntry(byte[] data)` | Adds an entry with an auto-assigned sequential cue ID (next available, starting from 0 if empty). |
 | `AddEntry` | `void AddEntry(uint cueId, byte[] data)` | Adds an entry with an explicit cue ID. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the AFS2 container and finalizes the stream. |
 
 ### Namespace `FileFormat.Ba2`
@@ -3033,7 +3033,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -3050,7 +3050,7 @@ Implements `IDisposable`.
 | `Ba2Reader` | `Ba2Reader(Stream stream, bool leaveOpen = false)` | Parses the BA2 header, validates GNRL type, and loads all records and names. |
 | `Entries` | `IReadOnlyList<Ba2Entry> Entries { get; }` | All file records, in archive order. |
 | `Version` | `uint Version { get; }` | BA2 archive version (1 = FO4/SSE; 7/8 are Starfield variants). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(Ba2Entry entry)` | Returns the decompressed payload of the given entry. When `PackedSize` is 0 the file is stored verbatim; otherwise it is a zlib stream of `PackedSize` bytes. |
 
 #### `Ba2Writer`
@@ -3063,7 +3063,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `Ba2Writer` | `Ba2Writer(Stream stream, bool leaveOpen = false, bool compress = true)` | Initializes a new instance of `Ba2Writer`. |
 | `AddEntry` | `void AddEntry(string path, byte[] data)` | Buffers an entry to be written on Finish/Dispose. `path` is normalised to backslash separators. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Flushes all buffered entries to the output stream and writes the BA2 header, records, payloads, and name table. |
 
 #### `BethesdaLookup3`
@@ -3188,7 +3188,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -3205,7 +3205,7 @@ Implements `IDisposable`.
 | `BigReader` | `BigReader(Stream stream, bool leaveOpen = false)` | Initializes a new `BigReader` from a stream. |
 | `Entries` | `IReadOnlyList<BigEntry> Entries { get; }` | Gets all entries in the archive. |
 | `IsBig4` | `bool IsBig4 { get; }` | Gets whether this archive uses the BIG4 (little-endian) variant. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(BigEntry entry)` | Extracts the raw data for a given entry. |
 
 #### `BigWriter`
@@ -3218,7 +3218,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `BigWriter` | `BigWriter(Stream output, bool leaveOpen = false)` | Initializes a new `BigWriter` targeting the given stream. |
 | `AddFile` | `void AddFile(string path, byte[] data)` | Adds a file to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalises and writes the complete BIGF archive to the output stream. |
 
 ### Namespace `FileFormat.BinHex`
@@ -3521,7 +3521,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -3611,12 +3611,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Bzip2BuildingBlock` | `Bzip2BuildingBlock()` |  |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `Bzip2FormatDescriptor`
 
@@ -3659,9 +3659,9 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Bzip2Stream` | `Bzip2Stream(Stream stream, CompressionStreamMode mode, int blockSize100k = 9, bool leaveOpen = false)` | Initializes a new `Bzip2Stream`. |
-| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Performs the compress block operation. |
-| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Performs the decompress block operation. |
-| `FinishCompression` | `protected override void FinishCompression()` | Performs the finish compression operation. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
+| `FinishCompression` | `protected override void FinishCompression()` |  |
 
 ### Namespace `FileFormat.Cab`
 
@@ -3739,7 +3739,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the CAB in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the CAB per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -3763,7 +3763,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `CabReader` | `CabReader(Stream stream, bool leaveOpen = false)` | Opens a CAB archive from a stream. |
 | `Entries` | `IReadOnlyList<CabEntry> Entries { get; }` | Gets the list of file entries in the cabinet. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(CabEntry entry)` | Extracts the content of `entry` and returns it as a byte array. |
 
 #### `CabWriter`
@@ -3808,7 +3808,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to RAR (CBR is a RAR variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to RAR (CBR is a RAR variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes supported non-solid pages directly through the RAR5 block remover. Unsupported encryption, recovery/quick-open, solid dependency and RAR4 cases are rejected before the first byte move and therefore safely fall back to the verified rebuild without an O(total bytes) transaction snapshot. |
@@ -3843,7 +3843,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (CBZ is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (CBZ is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -3890,7 +3890,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the CHM archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the CHM archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -3976,9 +3976,9 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | XML content-sniffing magic: `<COLLADA` anywhere in the first 512 bytes (after the XML prolog). We use a short 0-offset magic for the common case, and rely on extension + List() for documents with BOMs or comments preceding the root. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Stored only. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Not a tar compound format. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.CompactPro`
 
@@ -4030,7 +4030,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the Compact Pro archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the Compact Pro archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -4046,7 +4046,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `CompactProReader` | `CompactProReader(Stream stream, bool leaveOpen = false)` | Opens a Compact Pro archive from the given stream and parses the entry directory. |
 | `Entries` | `IReadOnlyList<CompactProEntry> Entries { get; }` | Gets the list of file entries found in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractResourceFork` | `byte[] ExtractResourceFork(CompactProEntry entry)` | Extracts and decompresses the resource fork of the specified entry. |
 | `Extract` | `byte[] Extract(CompactProEntry entry)` | Extracts and decompresses the data fork of the specified entry. |
 
@@ -4061,7 +4061,7 @@ Implements `IDisposable`.
 | `CompactProWriter` | `CompactProWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `CompactProWriter`. |
 | `AddDirectory` | `void AddDirectory(string name)` | Begins a new directory in the archive. Must be paired with `EndDirectory`. |
 | `AddFile` | `void AddFile(string name, byte[] data, byte[] resourceFork = null, DateTime? modified = null)` | Adds a file entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `EndDirectory` | `void EndDirectory()` | Ends the current directory. Must be paired with a prior `AddDirectory` call. |
 
 ### Namespace `FileFormat.Compress`
@@ -4103,8 +4103,8 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CompressStream` | `CompressStream(Stream stream, CompressionStreamMode mode, int maxBits = 16, bool blockMode = true, bool leaveOpen = false)` | Initializes a new `CompressStream`. |
-| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Performs the compress block operation. |
-| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Performs the decompress block operation. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
 | `FinishCompression` | `protected override void FinishCompression()` | Writes the compress header and the LZW-coded payload for the buffered input. |
 
 ### Namespace `FileFormat.Cpio`
@@ -4161,7 +4161,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the CPIO archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the CPIO archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -4187,7 +4187,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `CpioReader` | `CpioReader(Stream stream, bool leaveOpen = false)` | Initializes a new `CpioReader` from a stream. |
 | `CopyCurrentEntryData` | `void CopyCurrentEntryData(Stream destination)` | Copies the current entry's data to `destination` (or discards it when null) and consumes the 4-byte alignment padding. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ReadAll` | `List<ValueTuple<CpioEntry, byte[]>> ReadAll()` | Reads all entries from the archive. |
 | `ReadEntry` | `CpioEntry ReadEntry(out byte[] data)` | Reads the next entry from the archive. |
 | `ReadNextHeader` | `CpioEntry ReadNextHeader()` | Reads the next entry's header, leaving the stream positioned at its data. Returns null at the trailer. Pair with `CopyCurrentEntryData`, which must be called before the next header even for skipped entries so the reader stays aligned. |
@@ -4204,7 +4204,7 @@ Implements `IDisposable`.
 | `AddDirectory` | `void AddDirectory(string name, uint mode = 16877)` | Adds a directory entry. |
 | `AddFile` | `void AddFile(string name, ReadOnlySpan<byte> data, uint mode = 33188)` | Adds a file entry. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Stream data, uint mode = 33188)` | Adds a file entry whose payload is streamed from `data` in bounded 64 KB chunks rather than buffered into RAM. The cpio "new" header encodes the file size before the payload, so the pre-known `size` is written into the header, then exactly `size` bytes are copied, then the 4-byte alignment pad. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the trailer and finishes the archive. |
 
 ### Namespace `FileFormat.Crate`
@@ -4220,21 +4220,21 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CrateFormatDescriptor` | `CrateFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a Rust crate package (`.crate`) at `output` containing `inputs`. A canonical `<name-version>/` top-level directory is enforced: |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.Crunch`
 
@@ -4287,9 +4287,9 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | --- | --- | --- |
 | `CrunchStream` | `CrunchStream(Stream stream, CompressionStreamMode mode, string originalName = null, bool leaveOpen = false)` | Initializes a new `CrunchStream`. |
 | `OriginalName` | `string OriginalName { get; }` | Gets the original filename stored in the Crunch header (only set during decompression). |
-| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Performs the compress block operation. |
-| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Performs the decompress block operation. |
-| `FinishCompression` | `protected override void FinishCompression()` | Performs the finish compression operation. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
+| `FinishCompression` | `protected override void FinishCompression()` |  |
 
 ### Namespace `FileFormat.Crx`
 
@@ -4319,7 +4319,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: strips the CRX envelope, defrags the inner ZIP, then re-emits. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: strips the CRX envelope, defrags the inner ZIP, then re-emits. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -4453,7 +4453,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts the data.tar entries and rebuilds the .deb package. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts the data.tar entries and rebuilds the .deb package. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -4470,7 +4470,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `DebReader` | `DebReader(Stream stream)` | Opens a .deb package from a seekable stream. |
 | `RawEntries` | `IReadOnlyList<ArEntry> RawEntries { get; }` | Gets the raw ar archive entries. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `GetControlText` | `string GetControlText()` | Gets the control file text (the "control" file inside control.tar.*). |
 | `ReadControlEntries` | `IReadOnlyList<DebEntry> ReadControlEntries()` | Extracts control metadata files from the control.tar.* member. |
 | `ReadDataEntries` | `IReadOnlyList<DebEntry> ReadDataEntries()` | Extracts data files from the data.tar.* member. |
@@ -4556,9 +4556,9 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | DICM at offset 128 (same as DICOM). Detection further refined by List() parsing. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Stored only. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Not a tar compound format. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `DicomFormatDescriptor`
 
@@ -4627,7 +4627,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -4644,7 +4644,7 @@ Implements `IDisposable`.
 | `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
 | `HeaderSize` | `const int HeaderSize` | Size of the fixed-length DiskDoubler file header in bytes. |
 | `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the list of entries parsed from the DiskDoubler file header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Extracts the data for the specified entry. |
 
 #### `DiskDoublerWriter`
@@ -4724,7 +4724,7 @@ Implements `IDisposable`.
 | `DmsReader` | `DmsReader(Stream stream, bool leaveOpen = false)` | Initializes a new `DmsReader` and parses the archive. |
 | `Entries` | `IReadOnlyList<DmsTrack> Entries { get; }` | Gets the track entries present in the archive. |
 | `Header` | `DmsHeader Header { get; }` | Gets the file header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractDisk` | `byte[] ExtractDisk()` | Extracts the entire disk image by concatenating all decompressed tracks in order. |
 | `Extract` | `byte[] Extract(DmsTrack track)` | Extracts and decompresses the data for the given track. |
 
@@ -4753,7 +4753,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DmsWriter` | `DmsWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `DmsWriter`. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `WriteDisk` | `void WriteDisk(byte[] diskImage, int compressionMode = 0, int trackSize = 11264)` | Convenience method: splits a disk image into tracks and writes all of them. |
 | `WriteHeader` | `void WriteHeader(DmsHeader header)` | Writes the 56-byte file header. Must be called before writing any tracks. The header will be updated on dispose with correct track ranges and sizes. |
 | `WriteTrack` | `void WriteTrack(int trackNumber, byte[] data, int compressionMode = 0)` | Compresses and writes one track to the archive. |
@@ -4787,7 +4787,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (DOCX is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (DOCX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -4819,9 +4819,9 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | No reliable binary magic; ASCII DXF starts with a group code (typically " 0") and is extension-primary. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Stored only. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Not a tar compound format. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.Dzip`
 
@@ -4864,7 +4864,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -4886,7 +4886,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `DzipReader` | `DzipReader(Stream stream, bool leaveOpen = false)` | Initializes a new `DzipReader` from a stream. |
 | `Entries` | `IReadOnlyList<DzipEntry> Entries { get; }` | Gets all entries in the DZIP archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(DzipEntry entry)` | Extracts the bytes for a given entry. Decompresses LZSS-compressed entries automatically. |
 
 #### `DzipWriter`
@@ -4899,7 +4899,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `DzipWriter` | `DzipWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `DzipWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds a stored entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive to the stream and finalizes it. |
 
 ### Namespace `FileFormat.Ear`
@@ -4931,7 +4931,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (EAR is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (EAR is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -5147,7 +5147,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (EPUB is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (EPUB is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -5167,23 +5167,23 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EsdFormatDescriptor` | `EsdFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits an ESD-flagged WIM file containing `inputs` as uncompressed resources. The standard `WimWriter` is invoked with `CompressionNone`, after which we patch the header's flags field to set `FlagEsdMarker` so the produced file is recognisable as an ESD variant. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
 
 ### Namespace `FileFormat.ExePackers`
@@ -6804,23 +6804,23 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | --- | --- | --- |
 | `FreeArcFormatDescriptor` | `FreeArcFormatDescriptor()` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the FreeArc archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the FreeArc archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `FreeArcReader`
 
@@ -6833,7 +6833,7 @@ Implements `IDisposable`.
 | `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Initialises a new `FreeArcReader` and parses the archive. |
 | `Magic` | `static readonly byte[] Magic` | Magic bytes at the start of every FreeArc archive. |
 | `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all file entries found in the archive directory. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(FreeArcEntry entry)` | Extracts and returns the raw (uncompressed) bytes for the specified entry. |
 
 #### `FreeArcWriter`
@@ -6923,7 +6923,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -6938,7 +6938,7 @@ Implements `IDisposable`.
 | `GarReader` | `GarReader(Stream stream, bool leaveOpen = false)` | Initializes a new `GarReader` from a stream. |
 | `Entries` | `IReadOnlyList<GarEntry> Entries { get; }` | Gets all entries in the archive. |
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the file-type extension strings indexed by `TypeIndex`. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(GarEntry entry)` | Extracts the raw payload bytes for a given entry. |
 
 #### `GarWriter`
@@ -6951,7 +6951,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `GarWriter` | `GarWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `GarWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds a file to the archive. The full filename (including extension) is stored; the writer groups files of the same extension into a single type entry on `Finish`. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes the archive layout and writes it to the underlying stream. |
 
 ### Namespace `FileFormat.Gem`
@@ -6967,21 +6967,21 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `GemFormatDescriptor` | `GemFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.Gettext`
 
@@ -7337,7 +7337,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -7352,7 +7352,7 @@ Implements `IDisposable`.
 | `GobReader` | `GobReader(Stream stream, bool leaveOpen = false)` | Initializes a new `GobReader` from a stream. |
 | `Entries` | `IReadOnlyList<GobEntry> Entries { get; }` | Gets all entries in the archive, in directory order. |
 | `Version` | `uint Version { get; }` | Gets the GOB version field as written in the header (typically 0x14 or 0x20). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(GobEntry entry)` | Extracts the raw bytes for a given entry. |
 
 #### `GobWriter`
@@ -7365,7 +7365,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `GobWriter` | `GobWriter(Stream stream, bool leaveOpen = false, uint version = 20)` | Initializes a new `GobWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. Names use backslash separators (e.g. "data\\test.bin"). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.GodotPck`
@@ -7396,7 +7396,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -7438,7 +7438,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `PckWriter` | `PckWriter(Stream output, bool leaveOpen = false)` | Creates a new PCK writer that will write to `output`. |
 | `AddFile` | `void AddFile(string path, byte[] data)` | Adds a file to the pack. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalises the PCK and flushes all data to the underlying stream. Must be called exactly once; subsequent calls are no-ops. |
 
 ### Namespace `FileFormat.Grp`
@@ -7480,7 +7480,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -7508,7 +7508,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `GrpWriter` | `GrpWriter(Stream stream, bool leaveOpen = false)` | Initialises the writer targeting `stream`. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Queues a file for inclusion. The name is truncated to 12 characters if longer. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the complete GRP archive to the underlying stream. |
 
 ### Namespace `FileFormat.Gzip`
@@ -7607,9 +7607,9 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `Crc32Value` | `uint Crc32Value { get; }` | Gets the CRC-32 value of the uncompressed data. |
 | `Header` | `GzipHeader Header { get; set; }` | Gets or sets the GZIP header. Set before writing to customize the header. |
 | `OriginalSize` | `uint OriginalSize { get; }` | Gets the original (uncompressed) size mod 2^32. |
-| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Performs the compress block operation. |
-| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Performs the decompress block operation. |
-| `FinishCompression` | `protected override void FinishCompression()` | Performs the finish compression operation. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
+| `FinishCompression` | `protected override void FinishCompression()` |  |
 
 ### Namespace `FileFormat.Ha`
 
@@ -7655,7 +7655,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the HA archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the HA archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `HaModifier`. |
@@ -7679,7 +7679,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `HaReader` | `HaReader(Stream stream, bool leaveOpen = false)` | Initializes a new `HaReader` and parses the archive directory. |
 | `Entries` | `IReadOnlyList<HaEntry> Entries { get; }` | Gets the entries present in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(HaEntry entry)` | Extracts and decompresses the data for the given entry. |
 
 #### `HaWriter`
@@ -7693,7 +7693,7 @@ Implements `IDisposable`.
 | `HaWriter` | `HaWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `HaWriter`. |
 | `AddDirectory` | `void AddDirectory(string name, DateTime? lastModified = null)` | Adds a directory entry to the archive (method 14, zero size). |
 | `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive using Store compression (method 0). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.Hdf4`
 
@@ -7845,7 +7845,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -7873,7 +7873,7 @@ Implements `IDisposable`.
 | `HogReader` | `HogReader(Stream stream, bool leaveOpen = false)` | Initializes a new `HogReader` from a stream. |
 | `Entries` | `IReadOnlyList<HogEntry> Entries { get; }` | Gets all file entries in the HOG archive. |
 | `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The HOG magic bytes at offset 0. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(HogEntry entry)` | Extracts the data for a given entry. |
 
 #### `HogWriter`
@@ -7886,7 +7886,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `HogWriter` | `HogWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `HogWriter`. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the HOG archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.Hpi`
@@ -7949,7 +7949,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -7963,7 +7963,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `HpiReader` | `HpiReader(Stream stream, bool leaveOpen = false)` | Initializes a new `HpiReader` from a stream. |
 | `Entries` | `IReadOnlyList<HpiEntry> Entries { get; }` | Gets all entries discovered in the archive (files and directories), with full forward-slash paths. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(HpiEntry entry)` | Extracts the raw, decompressed bytes of a file entry. Returns `[]` for directories. |
 
 #### `HpiWriter`
@@ -7976,7 +7976,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `HpiWriter` | `HpiWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `HpiWriter`. |
 | `AddFile` | `void AddFile(string path, byte[] data)` | Adds a file to the archive at the given forward-slash path. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Flushes everything to the stream and finalizes the archive. |
 
 ### Namespace `FileFormat.IcePacker`
@@ -8057,7 +8057,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `IffCdafModifier`. |
@@ -8191,7 +8191,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (IPA is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (IPA is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -8227,7 +8227,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (JAR is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (JAR is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -8263,7 +8263,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (KMZ is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (KMZ is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -8378,7 +8378,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -8404,7 +8404,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `LbrReader` | `LbrReader(Stream stream, bool leaveOpen = false)` | Creates a new LBR reader over the given stream. |
 | `Entries` | `IReadOnlyList<LbrEntry> Entries { get; }` | Active file entries in the archive (excludes the directory entry and deleted entries). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(LbrEntry entry)` | Extracts the raw data for the given entry. |
 
 #### `LbrWriter`
@@ -8417,7 +8417,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `LbrWriter` | `LbrWriter(Stream stream, bool leaveOpen = false)` | Creates a new LBR writer that writes to the given stream. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive to the underlying stream. Called automatically on `Dispose`. |
 
 ### Namespace `FileFormat.Lfd`
@@ -8461,7 +8461,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -8475,7 +8475,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `LfdReader` | `LfdReader(Stream stream, bool leaveOpen = false)` | Initializes a new `LfdReader` from a stream. |
 | `Entries` | `IReadOnlyList<LfdEntry> Entries { get; }` | Gets all resource entries discovered in the bundle (including the RMAP, if present). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(LfdEntry entry)` | Extracts the raw payload bytes for a given entry. |
 
 #### `LfdWriter`
@@ -8488,7 +8488,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `LfdWriter` | `LfdWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `LfdWriter`. |
 | `AddEntry` | `void AddEntry(string type, string name, byte[] data)` | Adds a resource to the bundle. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Flushes the RMAP index and all resource records to the underlying stream. |
 
 ### Namespace `FileFormat.LhF`
@@ -8531,7 +8531,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named tracks; uses `LhFModifier`. |
@@ -8655,7 +8655,7 @@ Implements `IDisposable`.
 | `MajorVersion` | `byte MajorVersion { get; }` | Container major version from the header. |
 | `Method` | `byte Method { get; }` | Compression method byte (1 = LZMA, see `LrzipConstants`). |
 | `MinorVersion` | `byte MinorVersion { get; }` | Container minor version from the header (0x06 = lrzip 0.6). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract()` | Decompresses the body and returns the full uncompressed payload. |
 
 #### `LrzipWriter`
@@ -8897,7 +8897,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `LhaReader` | `LhaReader(Stream stream, bool leaveOpen = false)` | Initializes a new `LhaReader` from a stream. |
 | `Entries` | `IReadOnlyList<LhaEntry> Entries { get; }` | Gets the entries in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(LhaEntry entry)` | Extracts the data for an entry. |
 
 #### `LhaWriter`
@@ -8937,7 +8937,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the LHA archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the LHA archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -9243,7 +9243,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the LZX archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the LZX archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
@@ -9258,7 +9258,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `LzxAmigaReader` | `LzxAmigaReader(Stream stream, bool leaveOpen = false)` | Initializes a new `LzxAmigaReader` and reads the archive directory. |
 | `Entries` | `IReadOnlyList<LzxAmigaEntry> Entries { get; }` | Gets the entries present in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(LzxAmigaEntry entry)` | Extracts the uncompressed data for the specified entry. |
 
 #### `LzxAmigaWriter`
@@ -9272,7 +9272,7 @@ Implements `IDisposable`.
 | `LzxAmigaWriter` | `LzxAmigaWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `LzxAmigaWriter`. |
 | `AddFileLzx` | `void AddFileLzx(string name, byte[] data, DateTime? lastModified = null)` | Adds a file to the archive using LZX compression. |
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? lastModified = null)` | Adds a file to the archive using Store method (no compression). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.M3u8`
 
@@ -9631,7 +9631,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (MAFF is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (MAFF is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -9679,8 +9679,8 @@ Implements `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MkvCuesFrontOptimizer` | `MkvCuesFrontOptimizer()` |  |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `MkvDemuxer`
 
@@ -9769,12 +9769,12 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `MkvLayoutMap`
 
@@ -9863,7 +9863,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -9880,7 +9880,7 @@ Implements `IDisposable`.
 | `MhkReader` | `MhkReader(Stream stream, bool leaveOpen = false)` | Initializes a new `MhkReader` from a stream. |
 | `Entries` | `IReadOnlyList<MhkEntry> Entries { get; }` | Gets all resource entries discovered in the archive (one per file-table slot, per (Type, Id) pair). |
 | `Version` | `ushort Version { get; }` | Gets the Mohawk version word from the RSRC header (typically 0x0100). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(MhkEntry entry)` | Extracts the raw payload bytes for a given resource entry. |
 
 #### `MhkWriter`
@@ -9893,7 +9893,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `MhkWriter` | `MhkWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `MhkWriter`. |
 | `AddEntry` | `void AddEntry(string type, ushort id, string name, byte[] data)` | Adds a resource to the archive. Type/id pairs identify resources; names are optional metadata. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Flushes the outer/inner headers, all payloads, and the resource directory to the underlying stream. |
 
 ### Namespace `FileFormat.Mix`
@@ -9936,7 +9936,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -9953,7 +9953,7 @@ Implements `IDisposable`.
 | `MixReader` | `MixReader(Stream stream, bool leaveOpen = false)` | Initializes a new `MixReader` from a stream. |
 | `BodySize` | `long BodySize { get; }` | Gets the total body size declared in the header (sum of all file payload sizes). |
 | `Entries` | `IReadOnlyList<MixEntry> Entries { get; }` | Gets all entries in the MIX archive, in directory order (sorted ascending by Westwood ID). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(MixEntry entry)` | Extracts the raw bytes for a given entry. |
 
 #### `MixWriter`
@@ -9966,7 +9966,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `MixWriter` | `MixWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `MixWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the MIX archive to the stream and finishes writing. |
 
 #### `WestwoodCrc`
@@ -10054,8 +10054,8 @@ Implements `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Mp4FastStart` | `Mp4FastStart()` |  |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 | `PatchChunkOffsets` | `static void PatchChunkOffsets(byte[] data, int start, int end, long delta)` | Recursively patches stco and co64 atoms inside moov. Walks the atom tree looking for compound containers and leaf offset tables. |
 | `WalkTopLevelAtoms` | `static List<AtomInfo> WalkTopLevelAtoms(Stream file)` | Walks top-level atoms in the stream and returns their positions. |
 
@@ -10110,7 +10110,7 @@ Implements `IFileInternalLayoutMap`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Mp4LayoutMap` | `Mp4LayoutMap()` |  |
-| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 
 ### Namespace `FileFormat.MpegTs`
 
@@ -10242,7 +10242,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the MPQ archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the MPQ archive per the requested mode. The auto-generated `(listfile)` is excluded from the extracted set — the writer regenerates it and refuses it as an explicit input. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -10330,7 +10330,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -10379,7 +10379,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a new MSIX package as a plain ZIP archive. The caller is responsible for supplying a valid `AppxManifest.xml` among the inputs. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (MSIX is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (MSIX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts ZIP entries to `outputDir` and also emits `metadata.ini` when no explicit file filter is provided or when the filter explicitly names it. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the synthetic `metadata.ini` entry followed by every ZIP entry in the package. |
@@ -10444,7 +10444,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -10458,7 +10458,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `NarcReader` | `NarcReader(Stream stream, bool leaveOpen = false)` | Opens a NARC archive from a stream. |
 | `Entries` | `IReadOnlyList<NarcEntry> Entries { get; }` | Gets the entries in this archive in the order BTAF lists them (== file ID order). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(NarcEntry entry)` | Reads the raw bytes for a given entry from the stream. |
 
 #### `NarcWriter`
@@ -10471,7 +10471,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `NarcWriter` | `NarcWriter(Stream stream, bool leaveOpen = false)` | Creates a new NARC writer. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds a file to the archive. Names must be 1..127 ASCII bytes (BTNF length byte is 7-bit). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Flushes all sections to the stream. Idempotent. |
 
 ### Namespace `FileFormat.Nds`
@@ -10516,7 +10516,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -10537,7 +10537,7 @@ Implements `IDisposable`.
 | `MakerCode` | `string MakerCode { get; }` | Gets the 2-character maker code. |
 | `RomSize` | `uint RomSize { get; }` | Gets the total ROM size in bytes as declared in the header. |
 | `UnitCode` | `byte UnitCode { get; }` | Gets the unit code byte. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(NdsEntry entry)` | Extracts the raw data for a file entry. |
 
 #### `NdsWriter`
@@ -10674,7 +10674,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -10690,7 +10690,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `NsaReader` | `NsaReader(Stream stream, bool leaveOpen = false)` | Initializes a new `NsaReader` from a stream containing an NSA archive. |
 | `Entries` | `IReadOnlyList<NsaEntry> Entries { get; }` | Gets the entries in this archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(NsaEntry entry)` | Extracts the raw or decompressed data for the given entry. |
 
 #### `NsaWriter`
@@ -10773,7 +10773,7 @@ Implements `IDisposable`.
 | `Compression` | `NsisCompression Compression { get; }` | Gets the compression method used by this installer. |
 | `Entries` | `IReadOnlyList<NsisEntry> Entries { get; }` | Gets the data blocks found in the installer. |
 | `IsSolid` | `bool IsSolid { get; }` | Gets whether the installer uses solid (single-stream) compression. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractSolidStream` | `byte[] ExtractSolidStream()` | Decompresses the entire solid data stream and returns it as a single byte array. Only meaningful when `IsSolid` is `true`. |
 | `Extract` | `byte[] Extract(NsisEntry entry)` | Extracts the raw (decompressed) data for the given entry. |
 
@@ -10861,7 +10861,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (NuPkg is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (NuPkg is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -10958,7 +10958,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | WORM create — emits an NPZ (ZIP archive) where every non-directory input becomes one entry. Inputs whose name ends in `.npy` and whose bytes already carry the NPY magic are stored as-is; other inputs are wrapped in a minimal uint8 NPY frame on the fly and their archive name gets a `.npy` suffix appended when not already present. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -11020,7 +11020,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (ODP is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (ODP is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11056,7 +11056,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (ODS is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (ODS is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11092,7 +11092,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (ODT is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (ODT is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11469,7 +11469,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PackIt archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PackIt archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11496,7 +11496,7 @@ Implements `IDisposable`.
 | `PackItReader` | `PackItReader(Stream stream, bool leaveOpen = false)` | Opens a PackIt archive from the given stream and reads all entries. |
 | `EntryHeaderSize` | `const int EntryHeaderSize` | Size of the fixed per-entry header in bytes (magic + filename field + metadata). |
 | `Entries` | `IReadOnlyList<PackItEntry> Entries { get; }` | Gets the list of entries found in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(PackItEntry entry)` | Extracts the data fork of the specified entry. |
 
 #### `PackItWriter`
@@ -11509,7 +11509,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `PackItWriter` | `PackItWriter(Stream stream, bool leaveOpen = false)` | Initialises a new `PackItWriter`. |
 | `AddFile` | `void AddFile(string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored file entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.Pak`
 
@@ -11540,7 +11540,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PAK archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PAK archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11565,7 +11565,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PakReader` | `PakReader(Stream stream)` | Reads a PAK archive from a stream. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `GetNextEntry` | `ArcEntry GetNextEntry()` | Gets the next entry, or null if no more entries. |
 | `ReadEntryData` | `byte[] ReadEntryData()` | Reads the data of the current entry. |
 
@@ -11579,7 +11579,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `PakWriter` | `PakWriter(Stream stream)` | Creates a new PAK archive writer. |
 | `AddEntry` | `void AddEntry(string fileName, byte[] data)` | Adds a file entry. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive end marker. |
 
 ### Namespace `FileFormat.Paq8`
@@ -11739,7 +11739,7 @@ Implements `IDisposable`.
 | `PImgTag` | `static readonly byte[] PImgTag` | "PImg" tag at `+0x00` — vendor-documented magic. |
 | `SectorSize` | `const int SectorSize` | Default sector size in bytes. |
 | `TombstoneFlag` | `const byte TombstoneFlag` | Sentinel value the in-place modifier writes into the chunk-table entry's `IsCompressed` byte (offset +16 within the entry) to flag the entry as a Remove tombstone. Combined with `ChunkSize = 0` the tombstone suppresses the chunk identified by `ChunkNumber` from the live view. Picked as a non-ASCII value so it can never collide with the vendor-style `'Y'` / `'N'` compress flag. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finalise` | `void Finalise()` | Finalises the file: writes the chunk-offset table at the current body end, patches the header's `ChunkCount` / `ChunkTableOffset` / `TotalLogicalSize` fields, and flushes. Always call this before disposing the writer. |
 | `WriteChunk` | `void WriteChunk(ReadOnlySpan<byte> chunkData)` | Writes a single chunk verbatim — no splitting. Use when the caller already chose the per-chunk granularity (e.g. partition-image emitters that want one chunk per partition). |
 | `WritePayload` | `void WritePayload(ReadOnlySpan<byte> payload)` | Writes a payload as a sequence of chunks. Splits at the configured chunk size; each chunk is either stored verbatim or zlib-compressed per the constructor's `compressChunks` argument. |
@@ -11854,7 +11854,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11871,7 +11871,7 @@ Implements `IDisposable`.
 | `PbpReader` | `PbpReader(Stream stream, bool leaveOpen = false)` | Initializes a new `PbpReader` from a stream. |
 | `Entries` | `IReadOnlyList<PbpEntry> Entries { get; }` | Gets the non-empty entries discovered in the archive, in section order. |
 | `Version` | `uint Version { get; }` | Gets the PBP version field from the header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(PbpEntry entry)` | Extracts the raw bytes for a given entry. |
 
 #### `PbpWriter`
@@ -11885,7 +11885,7 @@ Implements `IDisposable`.
 | `PbpWriter` | `PbpWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `PbpWriter`. |
 | `Version` | `uint Version { get; set; }` | Gets or sets the version word written into the PBP header. Defaults to 0x00010000. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds a section payload by its fixed name. Each section may only be added once. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the PBP archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.PeResources`
@@ -11956,7 +11956,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PFS0 archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PFS0 archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11982,7 +11982,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `Pfs0Reader` | `Pfs0Reader(Stream stream, bool leaveOpen = false)` | Initializes a new `Pfs0Reader` from a stream. |
 | `Entries` | `IReadOnlyList<Pfs0Entry> Entries { get; }` | Gets all entries in the PFS0 archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(Pfs0Entry entry)` | Extracts the raw data for a given entry. |
 
 #### `Pfs0Writer`
@@ -11995,7 +11995,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `Pfs0Writer` | `Pfs0Writer(Stream stream, bool leaveOpen = false)` | Initializes a new `Pfs0Writer`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the PFS0 archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.Ply`
@@ -12023,9 +12023,9 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Magic: `ply\n` at offset 0 (high confidence, unique). |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Stored only. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Not a tar compound format. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.PowerPacker`
 
@@ -12132,7 +12132,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (PPTX is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (PPTX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -12180,7 +12180,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PSARC archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PSARC archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -12198,7 +12198,7 @@ Implements `IDisposable`.
 | `BlockSize` | `int BlockSize { get; }` | Gets the block size used by the archive. |
 | `Compression` | `string Compression { get; }` | Gets the compression algorithm name ("zlib" or "lzma") declared in the header. |
 | `Entries` | `IReadOnlyList<PsarcEntry> Entries { get; }` | Gets all entries in the archive (entry 0 is the path manifest itself, omitted from this list). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(PsarcEntry entry)` | Extracts and decompresses the contents of the given entry. |
 
 #### `PsarcWriter`
@@ -12211,7 +12211,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `PsarcWriter` | `PsarcWriter(Stream stream, bool leaveOpen = false, int blockSize = 65536, string compression = "zlib")` | Initializes a new `PsarcWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. The data is buffered in memory until `Finish` (or `Dispose`) is called. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes the archive: emits header, TOC, block-sizes table, and compressed data. |
 
 ### Namespace `FileFormat.Psf`
@@ -12297,7 +12297,7 @@ Implements `IDisposable`.
 | `ReservedData` | `byte[] ReservedData { get; }` | The reserved-area blob (length determined by the header field). May be empty. |
 | `Tags` | `IReadOnlyDictionary<string, string> Tags { get; }` | Parsed tag block (UTF-8 / Latin-1, one `key=value` per line). Empty if the file had no `[TAG]` sentinel. |
 | `VersionByte` | `byte VersionByte { get; }` | Platform/version byte from offset 3 of the header (e.g. 0x01 = PS1, 0x02 = PS2). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 #### `PsfWriter`
 
@@ -12312,7 +12312,7 @@ Implements `IDisposable`.
 | `ReservedData` | `byte[] ReservedData { get; set; }` | Reserved-area blob written verbatim between header and compressed program. |
 | `Tags` | `Dictionary<string, string> Tags { get; }` | Tag key/value pairs serialized as a UTF-8 `[TAG]` block. Empty -> no tag block. |
 | `VersionByte` | `byte VersionByte { get; set; }` | The platform/version byte (default 0x01 = PS1). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes all fields to the underlying stream. Idempotent. |
 
 ### Namespace `FileFormat.QuickLz`
@@ -12367,7 +12367,7 @@ Implements `IDisposable`.
 | `Rar4Writer` | `Rar4Writer(Stream stream, bool leaveOpen = false, byte method = 51, int windowBits = 20, bool solid = false, string password = null)` | Initializes a new `Rar4Writer`. |
 | `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file entry to the archive. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, byte method = 51, string password = null)` | Creates a RAR4 archive split into multiple volumes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive header and flushes. |
 
 #### `RarEntry`
@@ -12412,7 +12412,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a RAR archive from `inputs`. Selects RAR4 or RAR5 based on `options.MethodName` and resolves dictionary / level from `options.DictSize` / `options.Level`. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction — routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -12458,7 +12458,7 @@ Implements `IDisposable`.
 | `IsRar4` | `bool IsRar4 { get; }` | Gets a value indicating whether this is a RAR4 (or earlier) format archive. |
 | `IsRar5` | `bool IsRar5 { get; }` | Gets a value indicating whether this is a RAR5 format archive. |
 | `Version` | `int Version { get; }` | Gets the RAR version (1-5) for the overall archive format. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(int entryIndex)` | Extracts the data for the entry at the specified index. |
 | `Extract` | `void Extract(int entryIndex, Stream output)` | Extracts the data for the entry at the specified index into the given output stream. |
 | `VerifyRecoveryRecord` | `bool VerifyRecoveryRecord()` | Verifies the recovery record by checking Reed-Solomon parity data against archive contents. Returns `true` if the parity is valid. |
@@ -12474,7 +12474,7 @@ Implements `IDisposable`.
 | `RarWriter` | `RarWriter(Stream stream, bool leaveOpen = false, int method = 3, int dictionarySizeLog = 17, bool solid = false, string password = null, int recoveryPercent = 0, bool encryptHeaders = false)` | Initializes a new `RarWriter`. |
 | `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file entry to the archive. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, int method = 3, string password = null)` | Creates a RAR5 archive split into multiple volumes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive header and flushes. |
 
 ### Namespace `FileFormat.Rarc`
@@ -12721,7 +12721,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the RGSS archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the RGSS archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -12816,7 +12816,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates an RPA-3.0 archive at `output` containing `inputs`. Synthetic entries from the listing layer (`FULL.rpa`, `metadata.ini`) are skipped automatically so round-trips through Extract→Create don't accidentally embed the passthrough copy. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -12847,7 +12847,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `RpaWriter` | `RpaWriter(Stream stream, bool leaveOpen = false, uint xorKey = 3735928559)` | Initializes a new `RpaWriter` targeting `stream`. |
 | `AddEntry` | `void AddEntry(string path, byte[] data, byte[] prefix = null)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Emits the header placeholder, copies each entry's payload to the stream, builds the zlib-compressed pickle index and back-patches the header with the real index offset and XOR key. |
 
 ### Namespace `FileFormat.Rpm`
@@ -12878,7 +12878,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the RPM archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the RPM archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -12926,7 +12926,7 @@ Implements `IDisposable`.
 | `Release` | `string Release { get; }` | Gets the package release from the main header. |
 | `SignatureHeader` | `RpmHeader SignatureHeader { get; }` | Gets the parsed Signature header structure. |
 | `Version` | `string Version { get; }` | Gets the package version from the main header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractFiles` | `IReadOnlyList<ValueTuple<string, byte[]>> ExtractFiles()` | Decompresses the payload, parses the inner cpio archive, and returns all regular file entries. |
 | `GetDecompressedPayloadStream` | `Stream GetDecompressedPayloadStream()` | Returns the payload already decompressed, ready to be handed to a `CpioReader`. |
 | `GetPayloadStream` | `Stream GetPayloadStream()` | Returns a stream positioned at the beginning of the raw compressed payload. |
@@ -12960,12 +12960,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RzipBuildingBlock` | `RzipBuildingBlock()` |  |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `RzipFormatDescriptor`
 
@@ -13039,7 +13039,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the SAR archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the SAR archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -13055,7 +13055,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SarReader` | `SarReader(Stream stream, bool leaveOpen = false)` | Initializes a new `SarReader` from a stream containing a SAR archive. |
 | `Entries` | `IReadOnlyList<SarEntry> Entries { get; }` | Gets the entries in this archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SarEntry entry)` | Extracts the data for the given entry. |
 
 #### `SarWriter`
@@ -13108,7 +13108,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the SARC archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the SARC archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -13135,7 +13135,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<SarcEntry> Entries { get; }` | Gets all entries discovered in the archive, in SFAT order (sorted by NameHash). |
 | `HashKey` | `uint HashKey { get; }` | Gets the hash multiplier (HashKey) declared in the SFAT header. |
 | `IsLittleEndian` | `bool IsLittleEndian { get; }` | Gets whether the archive was stored little-endian. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SarcEntry entry)` | Extracts the raw payload bytes for the given entry. |
 
 #### `SarcWriter`
@@ -13148,7 +13148,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SarcWriter` | `SarcWriter(Stream stream, bool leaveOpen = false, uint hashKey = 101)` | Initializes a new `SarcWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds a file entry to the archive. Path separators should be forward slashes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes the archive layout and writes it to the underlying stream. |
 
 ### Namespace `FileFormat.SevenZip`
@@ -13222,13 +13222,13 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or same-name updates) files in the 7z archive. Pure additions of new names are served as a genuine O(bytes-added) in-place append: the new files are compressed into one fresh solid block written at the old header's byte offset, leaving every existing solid block byte-identical at its original position (`SevenZipInPlaceAdder`). A same-name update is attempted as an in-place remove of the old entry (`SevenZipInPlaceRemover`, only when it removes a whole folder/solid block) followed by an in-place add of the new content — still O(bytes touched), no re-pack of the untouched blocks. Anything that cannot be served byte-additively — an encoded/encrypted header, a non-trivial packed layout (PackPos != 0, a gap, BCJ2 / AES folders), or an update whose old entry is a proper subset of a multi-file solid block — falls back to the verified extract → re-create rebuild. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a 7z archive from `inputs`. Plans solid blocks by extension similarity, segregates incompressible files, and per-block recommends BCJ x86 filter for executables. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the 7z archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the 7z archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly across descriptors. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -13273,7 +13273,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SevenZipReader` | `SevenZipReader(Stream stream, bool leaveOpen = false, string password = null)` | Initializes a new `SevenZipReader` from a seekable stream. |
 | `Entries` | `IReadOnlyList<SevenZipEntry> Entries { get; }` | Gets the entries in the 7z archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(int entryIndex)` | Extracts the decompressed data for an entry by index. |
 | `Extract` | `void Extract(int entryIndex, Stream output)` | Extracts the decompressed data for an entry into a stream. |
 
@@ -13291,7 +13291,7 @@ Implements `IDisposable`.
 | `AddEntry` | `void AddEntry(SevenZipEntry entry, ReadOnlySpan<byte> data)` | Adds a file entry from a byte span. |
 | `AddEntry` | `void AddEntry(SevenZipEntry entry, Stream data)` | Adds a file entry from a stream. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, SevenZipCodec codec = 0, string password = null)` | Creates a 7z archive split into multiple volumes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `FinishWithBlocks` | `void FinishWithBlocks(IReadOnlyList<BlockDescriptor> blockDescs, int maxThreads = 1)` | Finalizes the archive with per-block codec overrides. Each block descriptor specifies which entries go into the block and optionally overrides the codec and filter for that block. Entries not covered by any descriptor are placed into a default block. |
 | `Finish` | `void Finish()` | Finalizes the archive by compressing all data and writing the header. All entries are compressed as a single solid block. |
 | `Finish` | `void Finish(int maxThreads = 1, long maxBlockSize = 0)` | Finalizes the archive with parallel multi-block compression. Entries are split into solid blocks of at most `maxBlockSize` bytes, and each block is compressed on a separate thread. |
@@ -13411,7 +13411,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a stored-mode SFAR archive containing `inputs`. A synthetic `Filenames.txt` manifest is prepended so the round-trip through `SfarReader` preserves the original names. LZX-packed creation is intentionally not supported. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -13429,7 +13429,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<SfarEntry> Entries { get; }` | All entries discovered in this archive. |
 | `IsLzxCompressed` | `bool IsLzxCompressed { get; }` | True when the archive declares `"lzx\0"` in its compression slot. |
 | `MaxBlockSize` | `int MaxBlockSize { get; }` | Maximum block size advertised by the archive header (typically 64 KiB). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SfarEntry entry)` | Decompresses (or copies, for stored blocks) the entry's payload by walking its block list. |
 
 #### `SfarWriter`
@@ -13553,7 +13553,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the SLF archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the SLF archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -13571,7 +13571,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<SlfEntry> Entries { get; }` | Gets the active (non-tombstoned) entries in the archive. |
 | `LibName` | `string LibName { get; }` | Gets the friendly library name embedded in the SLF header (may be empty). |
 | `LibPath` | `string LibPath { get; }` | Gets the virtual path prefix that JA2 mounts entries under (e.g. `"BinaryData\\"`); may be empty. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SlfEntry entry)` | Extracts the raw payload for an entry. |
 
 #### `SlfWriter`
@@ -13584,7 +13584,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SlfWriter` | `SlfWriter(Stream stream, bool leaveOpen = false, string libName = "", string libPath = "")` | Initializes a new `SlfWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes the SLF library to the destination stream. |
 
 ### Namespace `FileFormat.Snap`
@@ -13721,7 +13721,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the Spark archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the Spark archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -13747,7 +13747,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SparkReader` | `SparkReader(Stream stream, bool leaveOpen = false)` | Initializes a new `SparkReader` from a stream containing Spark archive data. |
 | `Entries` | `IReadOnlyList<SparkEntry> Entries { get; }` | Gets all entries in the archive. The archive is parsed on first access. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SparkEntry entry)` | Extracts and decompresses the data for the specified entry. |
 
 #### `SparkWriter`
@@ -13761,7 +13761,7 @@ Implements `IDisposable`.
 | `SparkWriter` | `SparkWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `SparkWriter`. |
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? lastModified = null, uint loadAddress = 0, uint execAddress = 0, uint fileAttributes = 0)` | Adds a file entry to the archive using the Stored method. |
 | `BeginDirectory` | `void BeginDirectory(string name, DateTime? lastModified = null, uint loadAddress = 0, uint execAddress = 0, uint fileAttributes = 0)` | Begins a directory entry in the archive. Subsequent calls to `AddFile` and `BeginDirectory` will add entries inside this directory until `EndDirectory` is called. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `EndDirectory` | `void EndDirectory()` | Ends the current directory by writing an end-of-directory marker (method 0x80). |
 
 ### Namespace `FileFormat.SplitFile`
@@ -13913,7 +13913,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the SQX archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the SQX archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -13929,7 +13929,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive. |
 | `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Gets whether the archive has a recovery record. |
 | `IsSolid` | `bool IsSolid { get; }` | Gets whether this is a solid archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractAll` | `byte[][] ExtractAll()` | Extracts all entries in order. Required for solid archives. |
 | `ExtractEntry` | `byte[] ExtractEntry(SqxEntry entry)` | Extracts the data for an entry. |
 | `VerifyRecoveryRecord` | `bool VerifyRecoveryRecord()` | Verifies the recovery record against the archive data. |
@@ -13972,9 +13972,9 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Stored only. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Not a tar compound format. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
 
 ### Namespace `FileFormat.StuffIt`
@@ -14024,7 +14024,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the StuffIt archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the StuffIt archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -14040,7 +14040,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `StuffItReader` | `StuffItReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt archive from the given stream and parses the entry directory. |
 | `Entries` | `IReadOnlyList<StuffItEntry> Entries { get; }` | Gets the list of entries found in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractResourceFork` | `byte[] ExtractResourceFork(StuffItEntry entry)` | Extracts and decompresses the resource fork of the specified entry. |
 | `Extract` | `byte[] Extract(StuffItEntry entry)` | Extracts and decompresses the data fork of the specified entry. |
 
@@ -14055,7 +14055,7 @@ Implements `IDisposable`.
 | `StuffItWriter` | `StuffItWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `StuffItWriter`. |
 | `AddFileWithResourceFork` | `void AddFileWithResourceFork(string fileName, byte[] dataFork, byte[] resourceFork, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file entry to the archive with both data and resource forks. |
 | `AddFile` | `void AddFile(string fileName, byte[] data, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file entry to the archive with an empty resource fork. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.StuffItX`
 
@@ -14099,7 +14099,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -14115,7 +14115,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt X archive from the given stream and parses its element catalog. |
 | `Entries` | `IReadOnlyList<StuffItXEntry> Entries { get; }` | Gets the list of entries discovered during parsing. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(StuffItXEntry entry)` | Extracts and decompresses the data for the specified entry. |
 
 #### `StuffItXWriter`
@@ -14263,22 +14263,22 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SwmFormatDescriptor` | `SwmFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
 
 ### Namespace `FileFormat.Szdd`
@@ -14360,8 +14360,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `T64BlockMover` | `T64BlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `T64Entry`
 
@@ -14406,9 +14406,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the byte layout of a T64 tape image: 64-byte header as MetadataReserved, N×32-byte directory entries as MetadataReserved, and each file's data region as Used. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing T64 tape image via `T64InPlaceModifier`. Later directory slots shift up by 32 bytes, the removed payload bytes are wiped, the remaining payload region shifts to close the gap (each affected slot's absolute dataOffset is patched), and the stream is truncated. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `T64InPlaceModifier`
 
@@ -14500,14 +14500,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing TAR archive. Uses `TarModifier` for true random-access I/O — Add is O(touched bytes) (append before terminator); Remove is O(image-size-after-target) because TAR has no central directory and trailing entries must be shifted. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Large-file-safe streaming variant of `Create`. TAR encodes each entry's size in its header before any payload byte, so the pre-known `Size` lets the writer emit the header and then copy the payload in 64 KB chunks via `AddStreamingEntry` — peak memory is bounded by the copy buffer regardless of entry size. Output is byte-identical to `Create` for the same inputs. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the TAR archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the TAR archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly across descriptors. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -14556,7 +14556,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `TarReader` | `TarReader(Stream stream, bool leaveOpen = false)` | Initializes a new `TarReader` from a stream. |
 | `CopyEntryDataTo` | `void CopyEntryDataTo(Stream destination)` | Copies the current entry's data straight to `destination` without materialising it, then consumes the block padding. Required for entries larger than a byte[] can hold. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `GetEntryStream` | `Stream GetEntryStream()` | Returns a stream for reading the data of the current entry. |
 | `GetNextEntry` | `TarEntry GetNextEntry()` | Reads the next entry from the archive. |
 | `Skip` | `void Skip()` | Skips past the data of the current entry. |
@@ -14574,7 +14574,7 @@ Implements `IDisposable`.
 | `AddEntry` | `void AddEntry(TarEntry entry, Stream data = null)` | Adds an entry to the archive with data from a stream. |
 | `AddStreamingEntry` | `void AddStreamingEntry(TarEntry entry, long size, Stream data)` | Adds an entry whose payload is streamed from `data` in bounded chunks rather than buffered into RAM. The entry's logical `size` must be known up front (TAR encodes it in the header before any payload byte), so this writes the header with the supplied size, then copies exactly `size` bytes from `data` in 64 KB chunks, then the 512-byte padding. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries)` | Creates a TAR archive split into multiple volumes with GNU multi-volume continuation headers. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive marker (two 512-byte zero blocks) and pads the output to a multiple of `blockingFactor * 512` bytes. |
 
 ### Namespace `FileFormat.Tfc`
@@ -14633,7 +14633,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `TfcReader` | `TfcReader(Stream stream, bool leaveOpen = false)` | Parses bundle headers from `stream`. |
 | `Entries` | `IReadOnlyList<TfcEntry> Entries { get; }` | All bundles discovered while walking the TFC from offset 0. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(TfcEntry entry)` | Reads the bundle's raw payload — the per-block size table followed by all block bytes — into a new buffer. |
 
 #### `TfcWriter`
@@ -14646,7 +14646,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `TfcWriter` | `TfcWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `TfcWriter`. |
 | `AddBundle` | `void AddBundle(byte[] uncompressedData, uint blockSize = 131072)` | Queues a stored bundle to be emitted on flush. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes all queued bundles to the stream and marks the writer as finished. |
 
 ### Namespace `FileFormat.Tnef`
@@ -14770,7 +14770,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the U8 archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the U8 archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -14787,7 +14787,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<U8Entry> Entries { get; }` | Gets the entries in the archive, with full `/`-separated paths. |
 | `FirstNodeOffset` | `uint FirstNodeOffset { get; }` | Gets the offset of the first node, as declared in the header. |
 | `NodeTableSize` | `uint NodeTableSize { get; }` | Gets the combined size of node table + string table, as declared in the header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(U8Entry entry)` | Extracts the raw bytes for a file entry. |
 
 #### `U8Writer`
@@ -14800,7 +14800,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `U8Writer` | `U8Writer(Stream stream, bool leaveOpen = false)` | Initializes a new `U8Writer`. |
 | `AddEntry` | `void AddEntry(string path, byte[] data)` | Adds a file at `path` (using `/` separators). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes and writes the archive. |
 
 ### Namespace `FileFormat.Uharc`
@@ -14846,7 +14846,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the UHARC archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the UHARC archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
@@ -14861,7 +14861,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `UharcReader` | `UharcReader(Stream stream, bool leaveOpen = false)` | Initializes a new `UharcReader` and parses the archive directory. |
 | `Entries` | `IReadOnlyList<UharcEntry> Entries { get; }` | Gets the entries present in the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(UharcEntry entry)` | Extracts and decompresses the data for the given entry. |
 
 #### `UharcWriter`
@@ -14875,7 +14875,7 @@ Implements `IDisposable`.
 | `UharcWriter` | `UharcWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `UharcWriter` and writes the archive header. |
 | `AddDirectory` | `void AddDirectory(string name, DateTime? lastModified = null)` | Adds a directory entry to the archive (zero data). |
 | `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive. Compresses with LZP, falling back to Store if the compressed output is not smaller. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.Umx`
 
@@ -14915,7 +14915,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -15608,7 +15608,7 @@ Implements `IDisposable`.
 | `RawMembers` | `IReadOnlyList<ArEntry> RawMembers { get; }` | Raw `ar` members exactly as stored in the bundle. |
 | `Signature` | `byte[] Signature { get; }` | The `sig.pkcs7` bytes, or null when absent. |
 | `DecompressPayload` | `byte[] DecompressPayload()` | Decompresses the payload member (gzip/xz/stored), verifies any payload size and checksum declarations present in `descriptor.xml`, and returns its bytes. Returns an empty array when there is no payload. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ReadPayloadEntries` | `IReadOnlyList<VibEntry> ReadPayloadEntries()` | Reads the payload's tar tree. Returns an empty list when the payload is absent or is not a tar (best-effort; never throws solely because the payload is non-tar). Descriptor checksum failures remain hard errors because they occur before TAR parsing. |
 
 #### `VibWriter`
@@ -15622,7 +15622,7 @@ Implements `IDisposable`.
 | `VibWriter` | `VibWriter(Stream output, VibWriterOptions options = null, bool leaveOpen = false)` | Creates a writer over `output`. |
 | `PayloadName` | `const string PayloadName` | Canonical name of the single payload AR member. |
 | `AddEntry` | `void AddEntry(string path, byte[] data, bool isDirectory = false)` | Adds a payload path and its bytes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes the TGZ payload, descriptor, empty signature, and outer AR archive. |
 
 #### `VibWriterOptions`
@@ -15780,7 +15780,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the VPK archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the VPK archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
@@ -15850,7 +15850,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the VPP archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the VPP archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -15867,7 +15867,7 @@ Implements `IDisposable`.
 | `VppReader` | `VppReader(Stream stream, bool leaveOpen = false)` | Initializes a new `VppReader` from a stream. |
 | `DeclaredTotalSize` | `long DeclaredTotalSize { get; }` | Gets the total file size declared in the header (not the actual stream length). |
 | `Entries` | `IReadOnlyList<VppEntry> Entries { get; }` | Gets all entries in the archive in declaration order. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(VppEntry entry)` | Extracts the raw bytes for a given entry. |
 
 #### `VppWriter`
@@ -15880,7 +15880,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `VppWriter` | `VppWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `VppWriter`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the VPP_PC archive to the stream and finalises the header. |
 
 ### Namespace `FileFormat.VppV2`
@@ -15924,7 +15924,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the VPP v2 archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the VPP v2 archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -15941,7 +15941,7 @@ Implements `IDisposable`.
 | `VppV2Reader` | `VppV2Reader(Stream stream, bool leaveOpen = false)` | Initializes a new `VppV2Reader` from a stream. |
 | `DeclaredArchiveSize` | `long DeclaredArchiveSize { get; }` | Gets the total archive size declared in the header. |
 | `Entries` | `IReadOnlyList<VppV2Entry> Entries { get; }` | Gets all entries in the archive in declaration order. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(VppV2Entry entry)` | Extracts the (decompressed) raw bytes for a given entry. |
 
 #### `VppV2Writer`
@@ -15954,7 +15954,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `VppV2Writer` | `VppV2Writer(Stream stream, bool leaveOpen = false, CompressionLevel compressionLevel = 0)` | Initializes a new `VppV2Writer`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive contents to the stream and finalises the header. |
 
 ### Namespace `FileFormat.Vsdx`
@@ -15986,7 +15986,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (VSDX is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (VSDX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -16007,23 +16007,23 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WaczFormatDescriptor` | `WaczFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `metadata.ini` entry is materialised on the fly; all other entries delegate to the inner `ZipReader` and are wrapped in a `BoundedEntryStream` sized to the entry's uncompressed length. |
 
 ### Namespace `FileFormat.Wad`
@@ -16067,7 +16067,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the WAD archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the WAD archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -16086,7 +16086,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<WadEntry> Entries { get; }` | Gets all lump entries in the WAD. |
 | `IsIwad` | `bool IsIwad { get; }` | Gets whether the WAD is an Internal WAD (IWAD). |
 | `IsPwad` | `bool IsPwad { get; }` | Gets whether the WAD is a Patch WAD (PWAD). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(WadEntry entry)` | Extracts the data for a given lump entry. |
 
 #### `WadWriter`
@@ -16100,7 +16100,7 @@ Implements `IDisposable`.
 | `WadWriter` | `WadWriter(Stream stream, bool leaveOpen = false, bool isIwad = false)` | Initializes a new `WadWriter`. |
 | `AddLump` | `void AddLump(string name, byte[] data)` | Adds a lump with data. |
 | `AddMarker` | `void AddMarker(string name)` | Adds a zero-size marker lump (e.g., "MAP01", "S_START", "S_END"). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the WAD archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.Wad2`
@@ -16146,7 +16146,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the WAD2 archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the WAD2 archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -16173,7 +16173,7 @@ Implements `IDisposable`.
 | `Wad2Reader` | `Wad2Reader(Stream stream, bool leaveOpen = false)` | Initializes a new `Wad2Reader` from a stream. |
 | `Entries` | `IReadOnlyList<Wad2Entry> Entries { get; }` | Gets all entries in the WAD archive. |
 | `IsWad3` | `bool IsWad3 { get; }` | Gets whether the archive uses WAD3 magic (Half-Life). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(Wad2Entry entry)` | Extracts the raw data for a given entry. |
 
 #### `Wad2Writer`
@@ -16186,7 +16186,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `Wad2Writer` | `Wad2Writer(Stream stream, bool leaveOpen = false, bool isWad3 = true)` | Initializes a new `Wad2Writer`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data, byte type = 67)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the WAD archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.War`
@@ -16218,7 +16218,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (WAR is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (WAR is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -16268,7 +16268,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the WARC archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the WARC archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -16281,7 +16281,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WarcReader` | `WarcReader(Stream stream, bool leaveOpen = false)` | Initializes a new `WarcReader` from a stream. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ReadAll` | `List<ValueTuple<WarcEntry, byte[]>> ReadAll()` | Reads all records from the archive, returning each entry with its payload bytes. |
 | `ReadNext` | `ValueTuple<WarcEntry, byte[]>? ReadNext()` | Reads the next record from the stream. |
 
@@ -16407,23 +16407,23 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WheelFormatDescriptor` | `WheelFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `metadata.ini` entry is materialised on the fly; all other entries are delegated to the inner `ZipReader` and wrapped in a `BoundedEntryStream` sized to the entry's uncompressed length. |
 
 ### Namespace `FileFormat.Wim`
@@ -16493,7 +16493,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -16617,7 +16617,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the Wrapster archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the Wrapster archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `WrapsterModifier`. |
@@ -16698,7 +16698,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the XAR archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the XAR archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing XAR archive. Uses `XarModifier` for random-access I/O on the TOC. |
@@ -16764,7 +16764,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (XLSX is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (XLSX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -16800,7 +16800,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (XPI is a ZIP variant). |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (XPI is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -16820,12 +16820,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XzBuildingBlock` | `XzBuildingBlock()` |  |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `XzFormatDescriptor`
 
@@ -16868,9 +16868,9 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `XzStream` | `XzStream(Stream stream, CompressionStreamMode mode, int dictionarySize, byte checkType, IEnumerable<ValueTuple<ulong, byte[]>> preFilters, LzmaCompressionLevel level, bool leaveOpen = false)` | Initializes a new `XzStream` with a specific check type, pre-filters and LZMA2 compression level. |
 | `XzStream` | `XzStream(Stream stream, CompressionStreamMode mode, int dictionarySize, byte checkType, IEnumerable<ValueTuple<ulong, byte[]>> preFilters, bool leaveOpen = false)` | Initializes a new `XzStream` with a specific check type and pre-filters. |
 | `XzStream` | `XzStream(Stream stream, CompressionStreamMode mode, int dictionarySize, byte checkType, bool leaveOpen = false)` | Initializes a new `XzStream` with a specific check type. |
-| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Performs the compress block operation. |
-| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Performs the decompress block operation. |
-| `FinishCompression` | `protected override void FinishCompression()` | Performs the finish compression operation. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
+| `FinishCompression` | `protected override void FinishCompression()` |  |
 
 ### Namespace `FileFormat.YEnc`
 
@@ -17021,7 +17021,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the YPF archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the YPF archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -17046,7 +17046,7 @@ Implements `IDisposable`.
 | `YpfReader` | `YpfReader(Stream stream, bool leaveOpen = false)` | Opens a YPF archive from `stream`. |
 | `Entries` | `IReadOnlyList<YpfEntry> Entries { get; }` | All entries parsed from the archive's entry table. |
 | `Version` | `uint Version { get; }` | The version field from the header (always 480 for supported archives). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(YpfEntry entry)` | Reads, decompresses, and CRC-checks the bytes for the given entry. |
 
 #### `YpfWriter`
@@ -17059,7 +17059,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `YpfWriter` | `YpfWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `YpfWriter` bound to `stream`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data, byte type = 0)` | Adds a file to the archive. Compresses with zlib unless that would inflate the payload. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes the header, entry table, and all payloads to the output stream. |
 
 ### Namespace `FileFormat.Zap`
@@ -17101,7 +17101,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -17213,14 +17213,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ZIP archive. Uses `ZipModifier` for true O(touched bytes) random-access I/O — only the central directory, the EOCD, and the appended file's local file header + compressed data are read or written. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Large-file-safe streaming variant of `Create` for the STORE method. STORE entries are uncompressed, so the local header can be written with the pre-known `Size` up front and the payload copied in 64 KB chunks while the CRC is computed incrementally and patched back into the header — peak memory is the copy buffer regardless of entry size. Output is byte-identical to `Create` with `Method=store`. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a ZIP archive from `inputs`. Honors all of `FormatCreateOptions`: method, level, dict-size, threads, password, encryption mode, and incompressibility hints. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts every entry then re-creates the archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts every entry then re-creates the archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly across descriptors. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -17260,7 +17260,7 @@ Implements `IDisposable`.
 | `ZipReader` | `ZipReader(Stream stream, bool leaveOpen = false, string password = null)` | Initializes a new `ZipReader` from a stream. |
 | `Comment` | `string Comment { get; }` | Gets the archive comment. |
 | `Entries` | `IReadOnlyList<ZipEntry> Entries { get; }` | Gets the entries in the ZIP archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractEntryRaw` | `ValueTuple<ZipCompressionMethod, uint, long, byte[]> ExtractEntryRaw(ZipEntry entry)` | Extracts the raw compressed bytes for an entry without decompressing. Returns the method, CRC-32, uncompressed size, and raw bitstream. Useful for restreaming between formats sharing the same codec (e.g., ZIP Deflate → Gzip). |
 | `ExtractEntry` | `byte[] ExtractEntry(ZipEntry entry)` | Performs the extract entry operation. |
 | `OpenEntry` | `Stream OpenEntry(ZipEntry entry)` | Opens a stream to read the decompressed data for an entry. |
@@ -17286,7 +17286,7 @@ Implements `IDisposable`.
 | `AddRawEntry` | `void AddRawEntry(string fileName, byte[] compressedData, ZipCompressionMethod method, uint crc32, long uncompressedSize, DateTime? lastModified = null)` | Adds a pre-compressed entry. The data is already compressed and will not be re-compressed. Useful for restreaming between formats (e.g., Gzip → ZIP) or for injecting optimally-compressed data. |
 | `AddStreamingStoredEntry` | `void AddStreamingStoredEntry(string fileName, long size, Stream data, DateTime? lastModified = null)` | Adds a STORE (uncompressed) entry whose payload is streamed from `data` in bounded 64 KB chunks rather than buffered into RAM. The local file header is written up front with the pre-known `size` (STORE ⇒ compressed size = uncompressed size) and a placeholder CRC, the payload is copied while the CRC is computed incrementally, and the 4-byte CRC field in the just-written header is patched in place. Peak memory is the 64 KB copy buffer regardless of `size`. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ZipCompressionMethod method = 8, string password = null)` | Creates a ZIP archive split into multiple volumes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the central directory and finishes the archive. |
 
 ### Namespace `FileFormat.Zlib`
@@ -17469,7 +17469,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the Zoo archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the Zoo archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -17495,7 +17495,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `ZooReader` | `ZooReader(Stream stream, bool leaveOpen = false)` | Initializes a new `ZooReader` and reads the directory. |
 | `Entries` | `IReadOnlyList<ZooEntry> Entries { get; }` | Gets the entries present in the archive (deleted entries are included; check `IsDeleted`). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(ZooEntry entry)` | Extracts and decompresses the data for an entry. |
 
 #### `ZooWriter`
@@ -17509,7 +17509,7 @@ Implements `IDisposable`.
 | `ZooWriter` | `ZooWriter(Stream stream, bool leaveOpen = false, ZooCompressionMethod defaultMethod = 1)` | Initializes a new `ZooWriter`. |
 | `AddEntry` | `void AddEntry(string fileName, byte[] data, ZooCompressionMethod? method = null, DateTime? lastModified = null)` | Adds a file entry to the archive. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries)` | Creates a Zoo archive split into multiple volumes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalises the archive by patching all `nextOffset` chain pointers. Must be called (or the writer disposed) for a valid archive. |
 
 ### Namespace `FileFormat.Zpaq`
@@ -17557,12 +17557,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZpaqBuildingBlock` | `ZpaqBuildingBlock()` |  |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `ZpaqConstants`
 
@@ -17666,7 +17666,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive stream and scans its journal. |
 | `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Gets the entries discovered by scanning the archive journal. The list reflects the last recorded state of each file across all transactions (i.e. later transactions that mention the same filename supersede earlier ones in the final view). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's uncompressed bytes as a stream when the data block was STORED (the layout this toolkit's `ZpaqWriter` emits). |
 
 #### `ZpaqWriter`
@@ -17680,7 +17680,7 @@ Implements `IDisposable`.
 | `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false)` | Initializes a new ZPAQ writer that writes to the specified stream. |
 | `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry to the archive. |
 | `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive with the given name and data. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 #### `ZpaqlVm`
 
@@ -17720,12 +17720,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZstdBuildingBlock` | `ZstdBuildingBlock()` |  |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `ZstdCompressionLevel`
 
@@ -17777,6 +17777,6 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | --- | --- | --- |
 | `ZstdStream` | `ZstdStream(Stream stream, CompressionStreamMode mode, ZstdCompressionLevel level, bool leaveOpen = false, ZstdDictionary dictionary = null)` | Initializes a new `ZstdStream` with a typed compression level. |
 | `ZstdStream` | `ZstdStream(Stream stream, CompressionStreamMode mode, int compressionLevel = 3, bool leaveOpen = false, ZstdDictionary dictionary = null)` | Initializes a new `ZstdStream`. |
-| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Performs the compress block operation. |
-| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Performs the decompress block operation. |
-| `FinishCompression` | `protected override void FinishCompression()` | Performs the finish compression operation. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
+| `FinishCompression` | `protected override void FinishCompression()` |  |

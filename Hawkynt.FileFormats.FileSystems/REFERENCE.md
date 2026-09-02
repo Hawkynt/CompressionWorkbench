@@ -49,7 +49,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the 2 048-byte user-data region of each named sector. The sector framing bytes (sync / address / mode / EDC) on raw geometries are preserved so the LBA-to-offset map and the rest of the image remain byte-identical. |
@@ -101,7 +101,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `BinCueReader` | `BinCueReader(Stream stream, bool leaveOpen = false)` | Initializes a new `BinCueReader` from a BIN stream. |
 | `Entries` | `IReadOnlyList<BinCueEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(BinCueEntry entry)` | Extracts the raw data for a file entry. |
 
 ### Namespace `FileFormat.Cdi`
@@ -191,7 +191,7 @@ Implements `IDisposable`.
 | `CdiReader` | `CdiReader(Stream stream, bool leaveOpen = false)` | Initializes a new `CdiReader` from a CDI stream. |
 | `CdiVersion` | `uint CdiVersion { get; }` | Gets the CDI version identifier read from the footer, or 0 if no valid CDI footer was found. |
 | `Entries` | `IReadOnlyList<CdiEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(CdiEntry entry)` | Extracts the raw data for a file entry. |
 
 ### Namespace `FileFormat.Cso`
@@ -635,7 +635,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by ZIP path) entries inside an existing IPSW. Routes through `IpswInPlaceModifier` — only the central directory, EOCD, and the appended LFH + payload are touched. Synthetic canonical entries are silently dropped. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh IPSW (ZIP) container from the supplied inputs. Synthetic canonical entries the descriptor surfaces on read (`FULL.ipsw`, `metadata.ini`) are silently dropped — they aren't real ZIP entries. All other inputs are stored under their `ArchiveName`. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named ZIP entries from an existing IPSW. Routes through `IpswInPlaceModifier` — the LFH + compressed payload of the dropped entry are zero-wiped and the central directory is rewritten. |
@@ -771,7 +771,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `MdfReader` | `MdfReader(Stream stream, bool leaveOpen = false)` | Initializes a new `MdfReader` from an MDF stream. |
 | `Entries` | `IReadOnlyList<MdfEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(MdfEntry entry)` | Extracts the raw data for a file entry. |
 
 ### Namespace `FileFormat.Nrg`
@@ -861,7 +861,7 @@ Implements `IDisposable`.
 | `NrgReader` | `NrgReader(Stream stream, bool leaveOpen = false)` | Initializes a new `NrgReader` from an NRG stream. |
 | `Entries` | `IReadOnlyList<NrgEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
 | `Version` | `int Version { get; }` | Gets the NRG format version detected from the footer (1 or 2), or 0 if no valid footer was found. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(NrgEntry entry)` | Extracts the raw data for a file entry. |
 
 ### Namespace `FileFormat.Pfs0`
@@ -904,7 +904,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PFS0 archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PFS0 archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -930,7 +930,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `Pfs0Reader` | `Pfs0Reader(Stream stream, bool leaveOpen = false)` | Initializes a new `Pfs0Reader` from a stream. |
 | `Entries` | `IReadOnlyList<Pfs0Entry> Entries { get; }` | Gets all entries in the PFS0 archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(Pfs0Entry entry)` | Extracts the raw data for a given entry. |
 
 #### `Pfs0Writer`
@@ -943,7 +943,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `Pfs0Writer` | `Pfs0Writer(Stream stream, bool leaveOpen = false)` | Initializes a new `Pfs0Writer`. |
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the PFS0 archive to the stream and finishes writing. |
 
 ### Namespace `FileFormat.Qcow2`
@@ -982,16 +982,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 #### `Qcow2LayoutMap`
 
@@ -1059,8 +1059,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `T64BlockMover` | `T64BlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `T64Entry`
 
@@ -1105,9 +1105,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the byte layout of a T64 tape image: 64-byte header as MetadataReserved, N×32-byte directory entries as MetadataReserved, and each file's data region as Used. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing T64 tape image via `T64InPlaceModifier`. Later directory slots shift up by 32 bytes, the removed payload bytes are wiped, the remaining payload region shifts to close the gap (each affected slot's absolute dataOffset is patched), and the stream is truncated. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `T64InPlaceModifier`
 
@@ -1165,8 +1165,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TapBlockMover` | `TapBlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `TapEntry`
 
@@ -1208,9 +1208,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the byte layout of a TAP tape image. Each file occupies two blocks: a 19-byte header block (flag + type + name + params + checksum, preceded by a 2-byte length word) and a variable-size data block (flag + payload + checksum, preceded by a 2-byte length word). Header blocks are reported as MetadataReserved; data blocks as Used. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing TAP tape image using `TapModifier` — walks the block chain, shifts trailing bytes. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `TapModifier`
 
@@ -1438,16 +1438,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 #### `VdiLayoutMap`
 
@@ -1568,16 +1568,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 #### `VhdLayoutMap`
 
@@ -1657,16 +1657,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Wraps the supplied input files into a fixed-payload VHDX container. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 #### `VhdxReader`
 
@@ -1793,16 +1793,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 #### `VmdkLayoutMap`
 
@@ -1869,8 +1869,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AdfBlockMover` | `AdfBlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `AdfEntry`
 
@@ -1927,11 +1927,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Adf image (FFS). Uses `AdfModifier` for O(touched bytes) random-access I/O. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in an Amiga ADF image: every 512-byte sector not claimed by a boot/root/bitmap block, a directory or file header, a file extension block, or a file data block. Driven by the generic `UnusedSpaceWiper` over the ADF extent map. Per-file cluster-tip wiping is not applied: an ADF file's extent is a coalesced run that interleaves the file header block, optional extension blocks and the data blocks (and, under OFS, every data block carries a 24-byte block header), so the file's logical bytes are not laid out as a flat `offset..offset+size` region. Treating the trailing bytes of that run as slack would clobber live metadata, so tip wiping is N/A here; only genuinely free sectors are zeroed. |
 
 #### `AdfModifier`
@@ -1954,7 +1954,7 @@ Implements `IDisposable`.
 | `AdfReader` | `AdfReader(Stream stream, bool leaveOpen = false)` | Initializes a new `AdfReader` and parses the ADF disk image. |
 | `Entries` | `IReadOnlyList<AdfEntry> Entries { get; }` | Gets all file and directory entries found in the disk image. |
 | `IsFfs` | `bool IsFfs { get; }` | Gets whether the disk uses FFS (Fast File System). When `false` the disk uses OFS (Original File System). |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(AdfEntry entry)` | Extracts and returns the raw byte content of the specified file entry. |
 
 #### `AdfWriter`
@@ -1983,8 +1983,8 @@ Implements `IFilesystemBlockMover`.
 | `BlockSize` | `int BlockSize { get; }` | One byte. A file table row holds an absolute byte offset, so nothing about the format asks a file to start on a boundary. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file may occupy: past the RBMT page. |
 | `Init` | `void Init(Stream image)` | Locates the file table and the start of the data area. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `AdvFsEntry`
 
@@ -2030,7 +2030,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Relays the domain through the writer at the requested geometry. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `AdvFsReader`
 
@@ -2094,8 +2094,8 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call rewrites the record naming the run it is given, so a file in several extents is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the container while the rest of the layout moves, which is what lets a full container be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the container once and notes where every extent record is. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `ApfsEntry`
 
@@ -2149,7 +2149,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from the volume in place. Records for each removed entry (DIR_REC, INODE, FILE_EXTENT) are deleted from the FS-tree, the tree is rebuilt, the file's data blocks are zeroed (no forensic recovery), per-block Fletcher-64 is recomputed, and the transaction id advanced. Same full-scope support as `Add`: arbitrary depth, splits, multi-component paths. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `ApfsReader`
 
@@ -2218,8 +2218,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AppleDosBlockMover` | `AppleDosBlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `AppleDosEntry`
 
@@ -2276,10 +2276,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing AppleDos image. Uses `AppleDosModifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in an Apple DOS 3.3 image: every 256-byte sector not claimed by the VTOC/catalog (track 17) or by a live file's track/sector list and data sectors. Driven by the generic `UnusedSpaceWiper` over the AppleDOS extent map. Per-file cluster-tip wiping is not applied: an AppleDOS file's extent is a coalesced run that interleaves its track/sector-list sectors with the data sectors, so the file's logical bytes are not a flat `offset..offset+size` region. Treating the run's tail as slack would clobber a T/S-list sector or a neighbouring file, so tip wiping is N/A here; only genuinely free sectors are zeroed. |
 
 #### `AppleDosModifier`
@@ -2337,8 +2337,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Atari8BlockMover` | `Atari8BlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Atari8Entry`
 
@@ -2396,10 +2396,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Atari8 image. Uses `Atari8Modifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in an Atari 8-bit ATR (AtariDOS 2) image: the ATR header is preserved, and every sector not claimed by the VTOC, the directory, or a live file's sector chain is zeroed. Driven by the generic `UnusedSpaceWiper` over the Atari8 extent map. Per-file cluster-tip wiping is not applied: AtariDOS stores a 3-byte link trailer (file number, next sector, byte count) at the end of every data sector, so each sector mixes data with metadata and the file's logical bytes are not a flat `offset..offset+size` region. Treating a run's tail as slack would clobber a sector's link bytes, so tip wiping is N/A here; only genuinely free sectors are zeroed. |
 
 #### `Atari8Modifier`
@@ -2457,8 +2457,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BbcBlockMover` | `BbcBlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `BbcEntry`
 
@@ -2517,9 +2517,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the catalog (sectors 0-1 per side) and yields the actual on-disk byte layout — catalog sectors as `MetadataReserved`, every file as a single contiguous run starting at its `(start_sector, length)`, and unallocated sectors as Free. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Bbc image. Uses `BbcModifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a BBC DFS image: every sector not claimed by a live file, plus the cluster-tip slack — the bytes between a file's logical length and the end of its last (256-byte) sector. DFS stores each file as a single contiguous sector run starting at the catalog's start-sector, so the generic `UnusedSpaceWiper` driven by the DFS extent map plus a catalog-entry file-size lookup wipes tips precisely. |
 
 #### `BbcModifier`
@@ -2579,17 +2579,17 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcacheFsBlockMover` | `BcacheFsBlockMover()` |  |
-| `AllocationBlockSize` | `int AllocationBlockSize { get; }` | Gets the allocation block size. |
+| `AllocationBlockSize` | `int AllocationBlockSize { get; }` |  |
 | `BlockSize` | `int BlockSize { get; }` | The unit a layout may place a run at: a whole bucket. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | The first byte a file's bytes may occupy. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Gets a value indicating whether repoints runs independently. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | Gets a value indicating whether supports held runs. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` |  |
+| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` |  |
 | `DescribeAllocationDiscrepancies` | `IReadOnlyList<string> DescribeAllocationDiscrepancies(Stream image)` | Where the volume's two accounts of the same facts disagree, in words. |
 | `Init` | `void Init(Stream image)` | Reads the extents b-tree so its pointers can be found again. |
-| `MoveExtent` | `void MoveExtent(Stream image, long sourceOffset, long destinationOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long sourceOffset, long destinationOffset, long length, bool zeroSource = false)` |  |
 | `SettleAllocation` | `void SettleAllocation(Stream image)` | Rewrites the trees that say which buckets hold data, now that the data is in different buckets. |
 | `Settle` | `void Settle(Stream image)` | Writes every pointer back and re-stamps the node that holds them. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long sourceOffset, long destinationOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long sourceOffset, long destinationOffset, long length)` |  |
 
 #### `BcacheFsFormatDescriptor`
 
@@ -2718,7 +2718,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and finds the allocation bitmap. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `BfsFormatDescriptor`
 
@@ -2772,7 +2772,7 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the item naming the extent it is given and leaves the leaf's other items alone, so a file in several extents is several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | An extent may be held outside the image while the rest of the layout moves, which is what lets a full image be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Performs the init operation. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleExtentTree` | `void SettleExtentTree(Stream image)` | Brings the extent tree along with the extents it accounts for. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
@@ -2830,10 +2830,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Rebuild-style remove (see `BtrfsModifier`). The removed file's data does not survive into the rebuilt image because the new writer emits a fresh superblock, chunk tree, and fs-tree leaf. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
 
 #### `BtrfsInPlaceAdder`
@@ -3013,14 +3013,14 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CpcDskBlockMover` | `CpcDskBlockMover()` |  |
-| `AllocationBlockSize` | `int AllocationBlockSize { get; }` | Gets the allocation block size. |
+| `AllocationBlockSize` | `int AllocationBlockSize { get; }` |  |
 | `BlockSize` | `int BlockSize { get; }` | An allocation block: the unit any legal layout is expressed in. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | The first byte past the directory, which is where the files begin. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Gets a value indicating whether repoints runs independently. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | Gets a value indicating whether supports held runs. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` |  |
+| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` |  |
 | `Init` | `void Init(Stream image)` | Reads the geometry, and reports that the disk cannot be shuffled in place. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `CpcDskEntry`
 
@@ -3073,10 +3073,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing CPC DSK image. Uses `CpcDskModifier` for O(touched bytes) random-access I/O — walks the directory on track 0, secure-wipes the file's data sectors, and marks the directory entry's user-number byte as 0xE5 (CP/M unused). |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a CPC DSK image: unallocated data sectors and the cluster-tip slack at the tail of each AMSDOS file's last sector. CP/M allocates whole sectors but tracks length only to 128-byte record granularity, so the bytes between a file's real length and its last allocated sector boundary are slack and get zero-filled when `wipeClusterTips` is set. Live file data and the AMSDOS directory / Track-Info metadata are preserved. |
 
 #### `CpcDskModifier`
@@ -3131,9 +3131,9 @@ Implements `IFilesystemBlockMover`.
 | `BlockSize` | `int BlockSize { get; }` | Allocation block size in bytes (1024). |
 | `DataOrigin` | `long DataOrigin { get; }` | Byte offset where the file-data region begins, i.e. past the BIOS-reserved tracks AND the 2 KB directory area. The directory is metadata that the defrag planner must never overwrite. Block N still maps to `ReservedBytes + N*BlockSize`; we just exclude blocks 0 and 1 (the directory) from the data-region origin so the planner picks them as forbidden when finding target slots. |
 | `BlockToOffset` | `long BlockToOffset(int block)` | Converts a block index to a byte offset. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OffsetToBlock` | `int OffsetToBlock(long offset)` | Converts a byte offset to a block index. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `CpmExtentMap`
 
@@ -3177,9 +3177,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the 64-entry CP/M directory and yields the actual on-disk byte layout — the 2 reserved tracks (BIOS) + the 2 KB directory area as `MetadataReserved`, every per-file allocation-block list as one or more contiguous-run extents (coalesced across extents), and unreferenced data blocks as `Free`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing CP/M image. Uses `CpmModifier` for O(touched bytes) random-access I/O — matching directory entries are flipped to 0xE5 and data blocks are zeroed. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a CP/M image: unreferenced 1024-byte allocation blocks and the cluster-tip slack at the tail of each file's last block. CP/M allocates whole blocks but tracks length to 128-byte record granularity, so the bytes between a file's real length and its last allocated block boundary are slack and get zero-filled when `wipeClusterTips` is set. Live file data, the BIOS reserved tracks, and the 2 KB directory are preserved. |
 
 #### `CpmModifier`
@@ -3260,7 +3260,7 @@ Implements `IFilesystemBlockMover`.
 | `Init` | `void Init(Stream image)` | Finds where the first file's table starts, and indexes the inodes. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
 | `RestampChecksum` | `static void RestampChecksum(Stream image)` | Recomputes the checksum the superblock carries over the whole image, with the checksum field itself read as zero — which is how it was computed. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `CramFsEntry`
 
@@ -3325,7 +3325,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<CramFsEntry> Entries { get; }` | Flat list of all entries (files, directories, symlinks) found in the image. |
 | `BlockCount` | `static int BlockCount(CramFsEntry entry)` | How many block pointers a file's table holds. |
 | `DataExtent` | `ValueTuple<long, long> DataExtent(CramFsEntry entry)` | Where on disk `entry`'s bytes actually sit: its block pointer table followed by the compressed blocks the table ends. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(CramFsEntry entry)` | Extracts (decompresses) the data for a file or symlink entry. |
 
 #### `CramFsWriter`
@@ -3357,8 +3357,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `D64BlockMover` | `D64BlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `D64Entry`
 
@@ -3414,11 +3414,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing D64 image. Uses `D64Modifier` for O(touched bytes) random-access I/O — walks the file chain, marks each sector free in the BAM, secure-wipes data sectors, and clears the directory entry's file-type byte. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a D64 image: unallocated sectors and the cluster-tip slack at the tail of each file's last sector. A D64 file is a linked chain of 256-byte sectors — each carries a 2-byte next-track/next-sector link followed by up to 254 data bytes. The final sector's link is `(0, used+1)`, so the bytes after the last used data byte up to the sector boundary are slack. Those slack bytes are zero-filled when `wipeClusterTips` is set, while the 2-byte link headers, live file data, and the track-18 BAM/directory are preserved. Because file content is interleaved with per-sector link bytes and chains may be fragmented, the simple "offset + size" cluster-tip model of the generic wiper does not apply; tip wiping is done here by walking each chain to its final sector. Free-space wiping is delegated to the generic wiper using the extent map. |
 
 #### `D64Modifier`
@@ -3467,8 +3467,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `D71BlockMover` | `D71BlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `D71Entry`
 
@@ -3524,11 +3524,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing D71 image. Uses `D71Modifier` for O(touched bytes) random-access I/O. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the D71 image: every sector not claimed by a live file chain or by the directory/BAM metadata is overwritten with zeros. Cluster-tip wiping is not applicable to the 1571 layout: files are stored as a chain of 256-byte sectors carrying a 2-byte track/sector link header plus 254 payload bytes, so the directory-entry size is expressed in 254-byte units that do not map onto a contiguous, cluster-aligned tail. The trailing slack inside a file's final sector is therefore left to the reader/writer; this method clears only whole free sectors. |
 
 #### `D71Modifier`
@@ -3577,8 +3577,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `D81BlockMover` | `D81BlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `D81Entry`
 
@@ -3634,11 +3634,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing D81 image. Uses `D81Modifier` for O(touched bytes) random-access I/O. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the D81 image: every sector not claimed by a live file chain or by the header/BAM/directory metadata is overwritten with zeros. Cluster-tip wiping is not applicable to the 1581 layout: files are stored as a chain of 256-byte sectors carrying a 2-byte track/sector link header plus 254 payload bytes, so the directory-entry size is expressed in 254-byte units that do not map onto a contiguous, cluster-aligned tail. This method clears only whole free sectors. |
 
 #### `D81Modifier`
@@ -3701,7 +3701,7 @@ Implements `IFilesystemBlockMover`.
 | `BytesPerSector` | `int BytesPerSector { get; }` | Bytes per sector. |
 | `DataRegionByteStart` | `long DataRegionByteStart { get; }` | Byte offset of the DATA region start. |
 | `Init` | `void Init(byte[] image)` | Initialises the mover by parsing MDBPB fields from `image`. Must be called before any move operations. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Patches MDFAT and BitFAT after a raw extent move within the DATA region. Finds the MDFAT entry whose physical sector range matches the old offset, rewrites it to point at the new physical sector, and updates BitFAT bits accordingly (clears old sectors, sets new sectors). The inner FAT chain is NOT touched because logical cluster numbers do not change during a physical move — only the MDFAT indirection changes. |
 
 #### `DoubleSpaceEntry`
@@ -3752,9 +3752,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | True in-place remove: walks the inner FAT chain, zeros each physical run, clears BitFAT bits, zeros MDFAT entries, zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the CVF image: every physical sector in the DATA region not claimed by a live file/directory run, plus any gaps outside the metadata regions, is overwritten with zeros. Cluster-tip wiping is not applicable to a CVF: the DATA region holds compressed/stored sector runs whose physical byte length is unrelated to the logical (uncompressed) file size recorded in the inner FAT directory. Zeroing a tail by logical-size offset would corrupt the encoded run, so only whole free sectors are cleared. |
 
 #### `DoubleSpaceInPlaceModifier`
@@ -3828,9 +3828,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | True in-place remove: walks the inner FAT chain, zeros each physical run, clears BitFAT bits, zeros MDFAT entries, zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the CVF image: every physical sector in the DATA region not claimed by a live file/directory run, plus any gaps outside the metadata regions, is overwritten with zeros. Cluster-tip wiping is not applicable to a CVF: the DATA region holds compressed/stored sector runs whose physical byte length is unrelated to the logical (uncompressed) file size recorded in the inner FAT directory. Zeroing a tail by logical-size offset would corrupt the encoded run, so only whole free sectors are cleared. |
 
 #### `DsCompression`
@@ -3895,8 +3895,8 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the record it is given and nothing else, so an owner in several runs — which this format cannot produce — would be several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Nothing to read: the layout is the format's, not the image's. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `DragonFsEntry`
 
@@ -3944,7 +3944,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Produces a fresh DragonFS image from scratch holding `inputs`. DragonFS is a flat filesystem, so subdirectory paths are flattened to their leaf names via `AddFile`. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the volume out again. A file here is its directory record followed by its bytes — the record is what gives the bytes their address — so the pair moves together and what is rewritten is the pointer that reached it. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries in place by blanking their directory records (the chain stays intact; the reader skips blank records). |
@@ -4010,7 +4010,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and where the metadata area starts. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `ErofsFormatDescriptor`
 
@@ -4042,7 +4042,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single EROFS file as a bounded read-only stream. The reader produces the decoded file bytes; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `ErofsReader`
 
@@ -4101,19 +4101,19 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ExFatBlockMover` | `ExFatBlockMover()` |  |
-| `AllocationBlockSize` | `int AllocationBlockSize { get; }` | Gets the allocation block size. |
+| `AllocationBlockSize` | `int AllocationBlockSize { get; }` |  |
 | `ClusterSize` | `int ClusterSize { get; }` | Gets the cluster size. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | Gets the first data byte. |
 | `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | The allocation bitmap and the up-case table. exFAT keeps both as ordinary files: each has a directory entry in the root recording its first cluster, which is the whole of what says where it is. The FAT and the boot region are pinned — their positions are fields in the boot sector, and rewriting those means recomputing the boot checksum sector as well, which is a different operation from repointing a file. The root directory is pinned for the same reason. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
-| `SupportsScatteredRelink` | `bool SupportsScatteredRelink { get; }` | Gets a value indicating whether supports scattered relink. |
+| `SupportsScatteredRelink` | `bool SupportsScatteredRelink { get; }` |  |
 | `VolumeSize` | `long VolumeSize { get; }` | Upper bound of the exFAT volume as declared by the VBR — clusterHeapOffset + clusterCount × clusterSize. The defrag planner must use THIS as its "imageSize" rather than the stream length: when the exFAT image sits inside a larger container (partition window, sparse VHD), the stream length includes padding bytes that are outside the volume. Targeting offsets above this bound corrupts the FAT (cluster N's entry lives at fatOffset + N*4 — large N writes into the cluster heap). |
 | `Init` | `void Init(Stream image)` | Stream-based init — reads only the 512-byte VBR. |
 | `Init` | `void Init(byte[] image)` | Initialises the mover by parsing exFAT VBR from a byte buffer. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 | `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets, IReadOnlySet<long> blocksLiveElsewhere)` | Rewrites one file's whole allocation in a single pass, after every byte has moved. |
-| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Performs the update metadata after move operation. |
+| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` |  |
 
 #### `ExFatEntry`
 
@@ -4166,10 +4166,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing exFAT image with full secure wipe (cluster bytes, FAT chain, allocation bitmap bits, directory entry set). Uses `ExFatModifier` for O(touched bytes) random-access I/O — no forensic recovery of the removed content is possible from the resulting bytes. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the exFAT image: free clusters, cluster-tip slack (the bytes between a file's real size and the end of its last allocated cluster), and any gaps outside the reserved/FAT/heap-used regions. Driven by the generic `UnusedSpaceWiper` over the exFAT extent map, with a directory-entry-based file-size lookup for cluster-tip precision. |
 
 #### `ExFatModifier`
@@ -4235,10 +4235,10 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | Each group's block bitmap, inode bitmap and inode table. All three are located by fields in that group's descriptor, so moving one is a matter of writing the new block number there — which is how a real resize2fs shifts them about. The superblock, the descriptor table and their backups are pinned: their positions are computed from the geometry, not recorded. |
 | `Init` | `void Init(Stream image)` | Streaming init — reads only the superblock + first BGD (~2 KB total). |
 | `Init` | `void Init(byte[] image)` | Initialises the mover from a byte buffer (legacy callers). |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Performs the update allocation after move operation. |
-| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Performs the update metadata after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` |  |
+| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` |  |
 
 #### `ExtEntry`
 
@@ -4286,7 +4286,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ReclaimSupport` | `LayoutReclaim ReclaimSupport { get; }` | ext records an absent block as a zero pointer, so runs of zeros need not be allocated at all; and it counts the directory entries naming an inode, so identical files can share one copy under several names. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ext2/3/4 image. Uses `ExtModifier` for true O(touched bytes) random-access I/O — only the superblock, BGD entry, block + inode bitmaps, the affected inode slot, the root dir block, and the file's data blocks are read or written. |
-| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Performs the analyze layout operation. |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` |  |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: pre-known per-input sizes drive ext block group sizing in pass 1; pass 2 emits superblock + BGD + bitmaps + inode table + directory blocks with file data blocks left zero, then streams each input's bytes from its `OpenStream` factory into its first allocated block via 64 KB chunks. Block tail past each entry's exact `Size` stays sparse-zero. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
@@ -4295,13 +4295,13 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` | Performs the patch in place operation. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Performs the rebuild streaming operation. |
+| `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` |  |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Securely removes files from an existing ext2/3/4 image. Uses `ExtModifier` for O(touched bytes) random-access I/O — file data blocks are wiped during removal so no forensic trace remains. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Genuine in-place ext shrink: trims trailing free blocks via `ExtInPlaceShrinker` (updating bitmap / descriptors / superblock / backups / checksums; every surviving block stays byte-identical). Falls back to the `IArchiveShrinkable` default (verified rebuild / copy-through) when the in-place path declines — e.g. a target that would need genuine block relocation or block-group removal. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the ext2/3/4 image: free blocks, block-tip slack (the bytes between a file's real size and the end of its last allocated block), and any gaps outside the metadata regions. Driven by the generic `UnusedSpaceWiper` over the ext extent map, with an inode-size-based file-size lookup for block-tip precision. |
 
 #### `ExtInPlaceShrinker`
@@ -4435,12 +4435,12 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Ext1BlockMover` | `Ext1BlockMover()` |  |
-| `AllocationBlockSize` | `int AllocationBlockSize { get; }` | Gets the allocation block size. |
+| `AllocationBlockSize` | `int AllocationBlockSize { get; }` |  |
 | `BlockSize` | `int BlockSize { get; }` | Gets the block size. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | Gets the first data byte. |
-| `SupportsScatteredRelink` | `bool SupportsScatteredRelink { get; }` | Gets a value indicating whether supports scattered relink. |
+| `SupportsScatteredRelink` | `bool SupportsScatteredRelink { get; }` |  |
 | `Init` | `void Init(Stream image)` | Streaming init — reads only the superblock + first BGD (~1 KB total). |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 | `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets, IReadOnlySet<long> blocksLiveElsewhere)` | Rewrites one file's whole allocation once every byte has moved. |
 
@@ -4499,10 +4499,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the rev-0 superblock + BGD table + inode tree and yields the actual on-disk byte layout — every metadata region (SB, BGDT, block + inode bitmaps, inode table) plus one extent per contiguous block run per file. Used by the defragment window's block-map preview. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Re-lays the volume out with the requested geometry. The generic default wrote the synthetic entries back as files, so the rebuilt volume listed more entries than the original and the rebuild was refused. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Ext1 image. Uses `Ext1Modifier` for O(touched bytes) random-access I/O — file data blocks are wiped during removal so no forensic trace remains. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the ext1 image: free blocks, inter-file gaps and the block-tip slack between a file's logical size and the end of its last allocated 1024-byte block. The extent map clamps each file's run to its logical byte length, so any trailing slack inside the final block presents as a free gap that the generic `UnusedSpaceWiper` zero-fills. A directory-path-keyed size lookup makes the explicit cluster-tip pass exact for the (rare) case where an extent reports a block-rounded length. |
 
 #### `Ext1Modifier`
@@ -4562,9 +4562,9 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A block may be held outside the volume while the rest of the layout moves, which is what lets a full region be rearranged at all. |
 | `FindDataRegion` | `void FindDataRegion(Stream image, IEnumerable<long> dataOffsets)` | Works out the region file data lives in, from the types the segment table records. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and notes which field names each data block. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleSegmentTables` | `void SettleSegmentTables(Stream image)` | Brings the segment table and the summary area to where the blocks now are. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `F2fsEntry`
 
@@ -4615,7 +4615,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `F2fsReader`
 
@@ -4673,7 +4673,7 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | `FirstDataByte` | `long FirstDataByte { get; }` | Byte offset of the first data cluster in the image. |
 | `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | Nothing, for now. On FAT12 and FAT16 there is genuinely nothing to move: the root lives in a fixed area between the FATs and the first data cluster, sized at format time and named by nothing, and the FATs and boot sector are pinned for the same reason. On FAT32 the root is an ordinary chain the BPB names, and `UpdateMetadataAfterMove` repoints it correctly — but this descriptor relinks files in a second pass that replays the moves to work out where each cluster ended up, and that replay does not model a staged metadata hop. Offering the root while the two disagree produces a volume that passes fsck with the wrong bytes in its files, which is worse than leaving the root where it is. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
-| `SupportsScatteredRelink` | `bool SupportsScatteredRelink { get; }` | Gets a value indicating whether supports scattered relink. |
+| `SupportsScatteredRelink` | `bool SupportsScatteredRelink { get; }` |  |
 | `TotalDataClusters` | `int TotalDataClusters { get; }` | Total data clusters in the image. |
 | `ClusterOffset` | `long ClusterOffset(int cluster)` | Converts a cluster number to a byte offset. |
 | `GetChain` | `List<int> GetChain(byte[] data, int startCluster)` | Walks the FAT chain for a given file and returns its clusters as a list. |
@@ -4686,7 +4686,7 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters)` | Performs the update allocation scattered operation. |
 | `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters, IReadOnlySet<int> clustersLiveElsewhere)` | As above, but told which clusters other files have already been relinked onto. A defragmentation relinks one owner at a time, and an owner's old clusters are frequently where another owner has just landed; freeing them blindly cuts that owner's chain and truncates its content. |
 | `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets, IReadOnlySet<long> blocksLiveElsewhere)` | The interface's shape of the relink below: the shared executor speaks in byte offsets because it does not know a format's allocation unit, so the offsets are turned into cluster numbers and handed to the same code the FAT descriptor's own two-phase pass uses. |
-| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Performs the update metadata after move operation. |
+| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` |  |
 
 #### `FatChainStream`
 
@@ -4762,11 +4762,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Buffers the bounded `OpenEntry` stream into a fresh byte array — never reads past the entry's logical size. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single FAT entry as a forward-only stream that walks its cluster chain one cluster at a time, wrapped in a `BoundedEntryStream` sized to the entry's logical size. Reads past `entry.Size` return 0 — the cluster-tail slack is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing FAT image with full secure wipe (cluster bytes, cluster-tip slack, directory entries, FAT chain entries). No forensic recovery of the removed content is possible from the resulting bytes. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the FAT image: free clusters, cluster-tip slack, and optionally deleted directory entries. Uses the generic `UnusedSpaceWiper` driven by the FAT extent map plus a directory-entry-based file-size lookup for cluster-tip precision. |
 
 #### `FatModifier`
@@ -4886,8 +4886,8 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and walks the resource groups. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` |  |
 
 #### `Gfs2Entry`
 
@@ -5005,7 +5005,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads where the buffer area starts and how far the records reach. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `HammerExtentMap`
 
@@ -5040,7 +5040,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Produces a fresh, mountable single-volume HAMMER image from `inputs`. HAMMER's UNDO FIFO floor forces a volume size of ~1 GB minimum; see `HammerWriter`. Each input becomes an inode + directory-entry + data record in the global B-Tree. The DragonFly kernel mounts the image and reads every file's contents byte-exact (validated via `mount_hammer` + `cksum`, including multi-block files spanning the large- and small-data zones); the image also passes `hammer show` and `hammer checkmap`. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the volume out again. A file's bytes live in data records whose B-tree elements carry the offset they start at, so a move is the copy, that field, and the checksum over the node the element lives in — cheaper than reading every file out and writing a fresh volume, which is what the inherited default did for the one mode it offered. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zero-fills everything the freemap leaves unallocated: free big-blocks outright, and the tail of a partly-used one past its append point. |
@@ -5154,9 +5154,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the blockref naming the block it is given, so a file in several blocks is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A block may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the blockref tree once and notes the chain above each block. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleVolumeHeaders` | `void SettleVolumeHeaders(Stream image)` | Stamps the volume headers again, which carry CRCs over their own sectors. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Hammer2FormatDescriptor`
 
@@ -5282,9 +5282,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the descriptor naming the run it is given and leaves the fork's other descriptors alone, so an owner in several runs is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the master directory block and locates bitmap and catalog. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleAllocationBitmap` | `void SettleAllocationBitmap(Stream image, IEnumerable<ValueTuple<long, long>> live)` | Writes the volume bitmap from the runs the volume actually holds. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `HfsEntry`
 
@@ -5330,16 +5330,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing Hfs image via `AddFile`. The modifier mutates the catalog leaf, volume bitmap, MDB, and alternate MDB in place; on leaf overflow it transparently falls back to a writer-driven rebuild so the call always succeeds. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware HFS defragmentor via read-extract-rebuild dispatch through `DefragRebuilder`. The writer always emits a contiguous, start-packed allocation block layout, so all four `DefragMode` values converge on a clean repack. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the HFS catalog B-tree leaf chain and yields the actual on-disk byte layout — boot blocks + MDB + volume bitmap + catalog file as `MetadataReserved`, every file record's data-fork extent (filExtRec[0]) as `Used`. Coverage matches what `HfsReader` can extract — first leaf chain only, single data-fork extent per file. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Hfs image via `RemoveFile`. File data blocks are wiped and catalog records are excised from the leaf; missing names are silently ignored. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the HFS image: free allocation blocks, gaps between files and the block-tip slack between a file's logical size and the end of its last allocated 512-byte block. The catalog extent map clamps each file's run to its logical byte length, so trailing slack inside the final block presents as a free gap that the generic `UnusedSpaceWiper` zero-fills. The HFS extent map keys each `FileName` by the catalog leaf name, whereas `HfsReader` reports the full slash-separated path; the size lookup is therefore keyed by the leaf segment so the explicit cluster-tip pass matches. |
 
 #### `HfsModifier`
@@ -5394,10 +5394,10 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the extent descriptor naming the run it is given and leaves the fork's other descriptors alone, so an owner in several runs is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Streaming init — reads only the 512-byte volume header at offset 1024 plus trails of catalog metadata as needed during patches. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleAllocationBitmap` | `void SettleAllocationBitmap(Stream image, IEnumerable<ValueTuple<long, long>> live)` | Writes the allocation bitmap from the runs the volume actually holds. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
-| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Performs the update metadata after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` |  |
 
 #### `HfsPlusEntry`
 
@@ -5454,10 +5454,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing HFS+ image via `RemoveFile`. File data blocks are wiped and the catalog records are excised from the leaf node; missing names are silently ignored. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the HFS+ image: free allocation blocks, gaps between files and the block-tip slack between a file's logical size and the end of its last allocated block. The catalog extent map clamps each file's first-fork run to its logical byte length, so trailing slack inside the final block presents as a free gap that the generic `UnusedSpaceWiper` zero-fills. The size lookup is keyed by the reader's full path, matching the extent map's FileName. |
 
 #### `HfsPlusModifier`
@@ -5479,7 +5479,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `HfsPlusReader` | `HfsPlusReader(Stream stream, bool leaveOpen = false)` | Initializes a new `HfsPlusReader` and parses the HFS+ volume. |
 | `Entries` | `IReadOnlyList<HfsPlusEntry> Entries { get; }` | Gets all file and directory entries found in the volume. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(HfsPlusEntry entry)` | Extracts the data fork content of the specified file entry. |
 
 #### `HfsPlusWriter`
@@ -5515,7 +5515,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads where the volume keeps its allocation bitmap. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `HpfsEntry`
 
@@ -5603,7 +5603,7 @@ Implements `IFilesystemBlockMover`.
 | `SectorSize_` | `int SectorSize_ { get; }` | Sector size. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full image be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the directory once and notes where every record is. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
 #### `IsoEntry`
@@ -5635,32 +5635,32 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IsoFormatDescriptor` | `IsoFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Tunable knobs for ISO 9660 creation: ECMA-119 volume identifier, system identifier, publisher, application, plus the Joliet extension toggle. All identifier fields follow the ECMA-119 d/a-character rules and are truncated to the field length defined by the spec (32 for vol/sys, 128 for publisher/application). |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files at the root of an existing ISO 9660 image. Uses `IsoModifier` for true random-access I/O — only the PVD (sector 16), the root directory's existing extent, and the new file's data sectors are touched. The 32 KB system area, VDST, path tables, and existing file data sectors are left untouched. Names are sanitized to the ISO 9660 8.3 d-characters identifier set; ';1' versions are added automatically by the modifier. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: the pre-known per-input sizes drive the ISO 9660 path table + directory + file-extent layout in pass 1 (identical to `Create`, which flattens to leaf filenames); pass 2 streams each file's bytes from its `OpenStream` factory into its data extent via 64 KB chunks — no file is ever buffered as a `byte[]`. Output is byte-identical to `Create` for the same inputs (the ECMA-119 volume/record timestamps are sampled once per `Build`). Falls back to a buffered build when the target stream is not seekable. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware ISO 9660 defragmentor via read-extract-rebuild dispatch through `DefragRebuilder`. All four `DefragMode` values supported; image is repacked with files reordered per mode. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the 32 KiB system area, the volume descriptor sequence, the path tables, and the directory tree, and yields each file's contiguous extent (LBA, length) as a single Used run — ECMA-119 mandates contiguous allocation per file. Directories surface as MetadataReserved. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single ISO 9660 file entry as a bounded read-only `Stream`. ISO 9660 stores file data in contiguous extents — the reader's extract returns those bytes verbatim; they are wrapped in a `BoundedEntryStream` sized to the entry's logical size. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing ISO 9660 image. Uses `IsoModifier` for O(touched bytes) random-access I/O — the directory record is shifted out of its sector and the file's data sectors are zero-wiped. Names match case-insensitively after stripping any ';N' version suffix (ISO 9660 stores uppercase IDs). |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the ISO 9660 image: the unused remainder of the system area, free sectors and the sector-tip slack at the tail of each file's last 2048-byte sector. ECMA-119 stores every file contiguously and pads its final sector with zeros — the bytes between the file's logical length and the sector boundary are the cluster tip. The extent map clamps each Used run to the file's logical length, so the tip presents as a free gap that the generic `UnusedSpaceWiper` zero-fills. The size lookup is keyed by the reader's full path, matching the extent FileName. |
 
 #### `IsoModifier`
@@ -5682,7 +5682,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `IsoReader` | `IsoReader(Stream stream, bool leaveOpen = false, bool useJoliet = true)` | Opens an ISO 9660 image from the given stream. When `useJoliet` is `true` (the default) and the image carries a Joliet Supplementary Volume Descriptor, the long UCS-2 names from the Joliet directory tree are returned; otherwise the primary ECMA-119 tree (short uppercased names) is read. |
 | `Entries` | `IReadOnlyList<IsoEntry> Entries { get; }` | All entries found in the image. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `ExtractTo` | `void ExtractTo(IsoEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time, so an entry larger than a byte[] can hold is extracted like any other. |
 | `Extract` | `byte[] Extract(IsoEntry entry)` | Extracts the raw data for the given entry. |
 
@@ -5722,7 +5722,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Nothing to read: the alignment is the format's, not the image's. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Jffs2FileReader`
 
@@ -5830,7 +5830,7 @@ Implements `IFilesystemBlockMover`.
 | `UsableBlocks` | `int UsableBlocks { get; }` | Blocks the aggregate uses. The fsck workspace and the log sit past them and the allocation map does not describe them. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and where file data may start. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `JfsEntry`
 
@@ -5939,10 +5939,10 @@ Implements `IFilesystemBlockMover`.
 | `DataOrigin` | `long DataOrigin { get; }` | Byte offset where the data region begins (past directory). |
 | `UnitSize` | `int UnitSize { get; }` | Allocation unit size (one 256-byte sector). |
 | `Init` | `void Init(Stream image)` | Initialises the mover by parsing the LIF volume header. Must be called before any move operations. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OffsetToSector` | `int OffsetToSector(long offset)` | Converts a byte offset to a sector number. |
 | `SectorToOffset` | `long SectorToOffset(int sector)` | Converts a sector number to a byte offset. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `LifExtentMap`
 
@@ -5985,9 +5985,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the LIF directory and yields the actual on-disk byte layout — the volume label + directory sectors as `MetadataReserved`, every per-file contiguous 256-byte sector run as a `Used` extent, and unused sectors as `Free`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing LIF image. Uses `LifModifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros the unused (free) sectors of a LIF volume. LIF stores each file as a contiguous run of 256-byte sectors, but the directory entry records the file length only in whole sectors — there is no byte-precise logical size on disk, so a file exactly fills its allocated sectors and there is no recoverable cluster tip. Cluster-tip wiping is therefore N/A: no file-size lookup is supplied and `wipeClusterTips` is forced off so a sector-rounded run is never trimmed below its real on-disk extent. |
 
 #### `LifModifier`
@@ -6069,9 +6069,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one block has got to; the pointers are threaded once the whole file has landed. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A block may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the volume once and notes what each file is made of. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleChains` | `void SettleChains(Stream image)` | Threads every file's skip-list through where its blocks ended up, and writes each new head into the commit that names it. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `LittleFsFileEntry`
 
@@ -6112,7 +6112,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Genuine in-place remove: drops the named entries and rewrites the inactive root half at `revision+1`. Existing live blocks stay byte-identical; the removed file's data blocks are simply no longer referenced. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `LittleFsInPlaceModifier`
 
@@ -6171,9 +6171,9 @@ Implements `IFilesystemBlockMover`.
 | `DataOrigin` | `long DataOrigin { get; }` | Byte offset of the first allocation block. |
 | `BlockToOffset` | `long BlockToOffset(int block)` | Converts a 0-based block index to a byte offset. |
 | `Init` | `void Init(Stream image)` | Initialises geometry from the MFS MDB. Must be called before any move. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OffsetToBlock` | `int OffsetToBlock(long offset)` | Converts a byte offset to a 0-based block index. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `MfsEntry`
 
@@ -6223,9 +6223,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the MDB + directory area + per-file allocation and yields the actual on-disk byte layout. The system area (boot + MDB + directory) becomes a single `MetadataReserved` extent, every file emits one Used extent at its `(firstBlock × blockSize)` location, and the unused tail is emitted as Free. Suitable for our writer's linear-allocated images; the on-disk footprint is rounded up to the block size. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing MFS image. Uses `MfsModifier` for O(touched bytes) random-access I/O — locates the directory entry, secure-wipes the data blocks, and clears the entry's in-use bit. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in an MFS image: free allocation blocks and the cluster-tip slack between each file's logical size and the end of its last 1024-byte allocation block. MFS stores file data contiguously and each extent's FileName matches the directory-entry name, so a size lookup built from the reader lets the generic `UnusedSpaceWiper` trim each tip precisely without touching the system area (boot + MDB + directory). |
 
 #### `MfsModifier`
@@ -6274,7 +6274,7 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MinixFsBlockMover` | `MinixFsBlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
 #### `MinixFsEntry`
@@ -6328,11 +6328,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Performs the rebuild streaming operation. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing MinixFs image using `MinixFsInPlaceModifier` for true in-place O(touched bytes) random-access I/O across V1/V2/V3. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a Minix image: free zones and the cluster-tip slack between a file's logical size (i_size) and the end of its last 1024-byte zone. Data zones are reached through the inode's zone pointers and the writer allocates them contiguously per file, so a size lookup keyed by file name lets the generic `UnusedSpaceWiper` trim each tip precisely without touching the inode table, bitmaps or directory zones. |
 
 #### `MinixFsInPlaceModifier`
@@ -6393,8 +6393,8 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and where file data may start. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` |  |
 
 #### `MinixV1Entry`
 
@@ -6443,12 +6443,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh Minix v1 image holding the supplied inputs. Path separators in an input's archive name produce nested directory inodes, each with its own `"."`/`".."` entries. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the volume out again. A file's bytes are addressed one zone at a time by two-byte pointers in its inode and the indirect blocks below it, so a move is the copy, those pointers, and the bit per zone that says whether it is taken. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single file entry as a bounded stream over the inode's reassembled data zones. Reads past the entry's logical size return 0 (EOF). |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Performs the rebuild streaming operation. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries in-place via `MinixV1InPlaceModifier`. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zero-fills every zone the bitmap leaves clear — which is where a removed file's bytes stay until something else claims them. |
 
@@ -6519,8 +6519,8 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and where file data may start. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` |  |
 
 #### `MinixV2Entry`
 
@@ -6569,12 +6569,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh Minix v2 image holding the supplied inputs. Path separators in an input's archive name produce nested directory inodes, each with its own `"."`/`".."` entries. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the volume out again. A file's bytes are addressed one zone at a time by two-byte pointers in its inode and the indirect blocks below it, so a move is the copy, those pointers, and the bit per zone that says whether it is taken. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single file entry as a bounded stream over the inode's reassembled data zones (including triple-indirect blocks for large files). Reads past the entry's logical size return 0 (EOF). |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Performs the rebuild streaming operation. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries in-place via `MinixV2InPlaceModifier`. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zero-fills every zone the bitmap leaves clear — which is where a removed file's bytes stay until something else claims them. |
 
@@ -6726,8 +6726,8 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call rewrites the field naming the payload it is given and leaves the others alone. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A payload may be held outside the volume while the rest of the layout moves, which is what lets a full area be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the base segment once and notes which field names each payload. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Nilfs2Entry`
 
@@ -6765,17 +6765,17 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Creation knobs. `BlockSize` is the NILFS2 block size (power of two in [1024, 65536], recorded in `s_log_block_size`): leave it at "auto" (0) to let the layout optimiser pick the legal size that minimises wasted tail padding for the file-set, or pin a value. `VolumeLabel` fills the 16-byte superblock label slot. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends a fresh log segment at the tail of the image carrying dirent + data blocks for each input, and bumps `s_last_cno` in the superblock. The 8-byte cno field is the only in-place edit; every other byte of the prior image stays byte-identical at its original offset — continuous snapshot semantic intact. Inputs whose name already exists are effectively replaced (the higher cno wins on read). |
-| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Performs the analyze layout operation. |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a self-contained NILFS2 image (valid superblock + base private directory at cno=1). Round-trips through this descriptor's reader and serves as the substrate for in-place Add / Replace / Remove via `Nilfs2InPlaceModifier`. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Superblocks, the kernel log, the private directory and every appended segment's header are metadata; each live payload is the file that owns it. Superseded and tombstoned payloads are claimed by nothing, so a wipe reclaims exactly the bytes a segment cleaner would. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` | Performs the patch in place operation. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Performs the rebuild streaming operation. |
+| `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` |  |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Appends a tombstone dirent for each named entry in a fresh log segment and bumps `s_last_cno`. The reader's cno-merge drops the entry from the listing; the original data blocks stay byte-identical at their original offsets and remain addressable as a snapshot of the pre-Remove state. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `Nilfs2InPlaceModifier`
 
@@ -6870,8 +6870,8 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call rewrites the one field naming the file it is given. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A file may be held outside the container while the rest of the layout moves, which is what lets a full one be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Performs the init operation. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `NssEntry`
 
@@ -6909,7 +6909,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a container holding the given files. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Moves the files that are out of place and rewrites the directory. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -7019,11 +7019,11 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | `NtfsBlockMover` | `NtfsBlockMover()` |  |
 | `ClusterSize` | `int ClusterSize { get; }` | Bytes per cluster. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | Byte offset past all known metadata regions. For NTFS, the boot sector, MFT, and system file data are all marked MetadataReserved by the extent map. User data can safely be placed at or after this offset. Computed from the MFT location + its extent size as a conservative lower bound. The actual usable origin should be derived from the extent map (see `DefragmentWithPlanner`). |
-| `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | Gets the relocatable metadata. |
+| `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` |  |
 | `VolumeEndByte` | `long VolumeEndByte { get; }` | The last byte a file may occupy: the end of the volume, not the end of the file holding it. |
 | `Init` | `void Init(Stream image)` | Stream-based initialisation. Reads only the 512-byte boot sector and the first MFT record (typically 1 KB) — used by the streaming code paths so multi-TB images don't have to be loaded into memory. |
 | `Init` | `void Init(byte[] image)` | Initialises the mover by parsing the NTFS boot sector fields. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 | `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Moves one of the volume's own structures. Each system file's clusters are described by the data runs in its MFT record, so repointing it is the same edit a file gets — except for the two the boot sector names directly, and for the two that describe themselves. |
 
@@ -7080,11 +7080,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing NTFS image with full secure wipe (cluster bytes for non-resident data, MFT record, and root-dir index entry). No forensic recovery of the removed content is possible from the resulting bytes. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Genuine in-place NTFS shrink: relocates only the clusters above the auto-fit boundary into free space below it via `NtfsInPlaceShrinker`, trims $Bitmap/$Boot, and emits the smaller image. Falls back to the `IArchiveShrinkable` default (verified rebuild / copy-through) when the in-place path cannot handle the image (e.g. a compressed stream would need relocation). |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
 
 #### `NtfsInPlaceAdder`
@@ -7277,7 +7277,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and notes where every file's data starts. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Ocfs2FormatDescriptor`
 
@@ -7386,8 +7386,8 @@ Implements `IFilesystemBlockMover`.
 | `OpenVmsBlockMover` | `OpenVmsBlockMover()` |  |
 | `BlockSize` | `int BlockSize { get; }` | Allocation unit in bytes. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file may occupy: past the volume's own structures. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `OpenVmsChecksum`
 
@@ -7490,7 +7490,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) caller files in-place via `OpenVmsInPlaceModifier`. Untouched LBNs in `archive` remain byte-identical. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a fresh ODS-2 volume containing `inputs` as user files in 000000.DIR. Each file is a contiguous extent. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Moves only the files that are out of place, rewriting each one's retrieval pointer as its blocks arrive. The pass is kept only if every payload still reads back: it can refuse partway — a header it cannot find leaves bytes moved with nothing naming them — and the volume goes back as it was then. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the fixed metadata prefix — boot block, home block, BITMAP.SYS, INDEXF.SYS and the root directory — then each file's contiguous run of LBNs. Everything else is free. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
@@ -7661,9 +7661,9 @@ Implements `IFilesystemBlockMover`.
 | `DataOrigin` | `long DataOrigin { get; }` | Byte offset where user data typically begins (past ID + bitmap). |
 | `UnitSize` | `int UnitSize { get; }` | Allocation unit size (one 256-byte sector). |
 | `LsnToOffset` | `long LsnToOffset(int lsn)` | Converts a sector (LSN) number to a byte offset. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OffsetToLsn` | `int OffsetToLsn(long offset)` | Converts a byte offset to a sector (LSN) number. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Os9RbfExtentMap`
 
@@ -7706,9 +7706,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the OS-9 RBF root directory and yields the actual on-disk byte layout — identification sector + bitmap + per-file FD sectors as `MetadataReserved`, every (start, count) segment in each file's segment list as a contiguous `Used` extent, and unallocated sectors as `Free`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing OS-9 RBF image. Uses `Os9RbfModifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the OS-9 RBF image: unallocated sectors and the sector-tip slack between a file's logical size (FD.SIZ) and the end of its last allocated 256-byte sector. Cluster-tip wiping is applied only to files whose data is a single contiguous segment; a file spread across several segments keeps its tip in its final segment only, which the per-segment extent map cannot pinpoint by total size alone, so such files are omitted from the tip pass to avoid clobbering live sectors. |
 
 #### `Os9RbfModifier`
@@ -7782,8 +7782,8 @@ Implements `IFilesystemBlockMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ProDosBlockMover` | `ProDosBlockMover()` |  |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `ProDosEntry`
 
@@ -7841,10 +7841,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing ProDos image. Uses `ProDosModifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the ProDOS image: unallocated blocks and the block-tip slack between a file's logical EOF and the end of its last 512-byte block. Cluster-tip wiping is applied only to seedling files (storage type 1, a single data block). Sapling and tree files interleave index and master-index blocks with their data inside one coalesced Used extent, so a logical-size lookup cannot tell data slack from a live index block — those files are omitted from the tip pass to avoid corrupting the block pointers; their free blocks are still zeroed. |
 
 #### `ProDosModifier`
@@ -7967,9 +7967,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one run has got to; a file split by the bitmaps it steps over is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the directory once and notes where every file is. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleDirectory` | `void SettleDirectory(Stream image)` | Writes each file's first block into the directory, once the pass is over. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Reiser4FormatDescriptor`
 
@@ -8108,8 +8108,8 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the geometry and where file data may start. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` |  |
 
 #### `ReiserFsEntry`
 
@@ -8160,7 +8160,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing ReiserFS image. The rebuild always starts from zeroed bytes so the removed file data leaves no forensic trace. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `ReiserFsReader`
 
@@ -8211,9 +8211,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call rewrites the fields naming the run it is given and leaves the rest of the volume alone. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A record may be held outside the image while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads every chain once and notes each field that names a record. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleSuperblock` | `void SettleSuperblock(Stream image, long contentEnd)` | Writes the size the superblock records and takes its checksum again. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `RomFsEntry`
 
@@ -8266,10 +8266,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing RomFs image. ROMFS entries are inline with headers + data, so unlinking the first entry requires rebuilding. We use rebuild for Remove to handle all edge cases reliably. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros the unused space in a ROMFS image: the 16-byte alignment padding after each file's data and any trailing slack before the image's declared full size. ROMFS is a packed, read-only image — every file's data is stored byte-exact (no cluster rounding), so there is no cluster tip to wipe; cluster-tip wiping is therefore not applicable and is a no-op here. All file headers, names and live data are reported as live extents by the extent map, so the generic wiper only touches genuine gaps. |
 
 #### `RomFsModifier`
@@ -8327,7 +8327,7 @@ Implements `IDisposable`.
 | `RomFsWriter` | `RomFsWriter(Stream output, bool leaveOpen = false)` | Initializes a new writer targeting `output`. |
 | `AddFile` | `void AddFile(string path, byte[] data)` | Adds a file at the given path (forward-slash separated, no leading slash). |
 | `AddStreamingFile` | `void AddStreamingFile(string path, long size, Func<Stream> openStream)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields; the layout is settled from it before a byte is read. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish(string volumeName = "romfs")` | Builds the ROMFS image and writes it to the output stream. |
 
 ### Namespace `FileSystem.Rt11`
@@ -8360,9 +8360,9 @@ Implements `IFilesystemBlockMover`.
 | `DataOrigin` | `long DataOrigin { get; }` | Byte offset where data begins (past boot + home + dir). |
 | `UnitSize` | `int UnitSize { get; }` | Allocation unit size (512-byte block). |
 | `BlockToOffset` | `long BlockToOffset(int block)` | Converts a block number to a byte offset. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OffsetToBlock` | `int OffsetToBlock(long offset)` | Converts a byte offset to a block number. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Rt11ExtentMap`
 
@@ -8405,9 +8405,9 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the RT-11 directory segment chain and yields the actual on-disk byte layout — boot/home blocks + directory segments as `MetadataReserved`, every permanent file as a `Used` contiguous 512-byte block run (RT-11 always stores files contiguously), and E_MPTY directory slots' ranges as `Free`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing RT-11 image. Uses `Rt11Modifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in an RT-11 image: the blocks behind E_MPTY directory slots and any trailing region not claimed by a permanent file or the boot/home/directory metadata. Driven by the generic `UnusedSpaceWiper` over the RT-11 extent map. Cluster tips are not applicable: RT-11 stores files contiguously and records only a 512-byte block count — there is no sub-block logical length, so a file occupies exactly its allocated block run with no slack tail. `wipeClusterTips` is therefore forced off. |
 
 #### `Rt11Modifier`
@@ -8488,9 +8488,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes one run; the tree is written once the pass is over. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full one be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the volume once and notes which extent claims each run. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Settle` | `void Settle(Stream image)` | Writes the tree of extents and the directory entries that name their first links, then stamps both blocks' checksums. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `SfsExtentMap`
 
@@ -8525,7 +8525,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume holding the given files. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Moves the blocks that are out of place and rewrites the extent tree. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -8603,9 +8603,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call rewrites the fields naming the sectors it is given, so a file scattered over the volume is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A sector may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the volume once and notes which field names each sector. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleFreeSectors` | `void SettleFreeSectors(Stream image, IEnumerable<ValueTuple<long, long>> live)` | Erases every sector the volume no longer uses. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `SmartFsEntry`
 
@@ -8702,9 +8702,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one file's data went; the table is written once the pass is over. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the image while the rest of the layout moves, which is what lets a full image be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the inode table once and notes where each file's field is. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleInodeTable` | `void SettleInodeTable(Stream image)` | Writes the inode table again with every file's new starting block. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `SquashFsEntry`
 
@@ -8768,7 +8768,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SquashFsReader` | `SquashFsReader(Stream stream, bool leaveOpen = false)` | Opens a SquashFS image from the given stream. |
 | `Entries` | `IReadOnlyList<SquashFsEntry> Entries { get; }` | All entries found in the archive, in depth-first order. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SquashFsEntry entry)` | Extracts the data of a regular file entry. |
 
 #### `SquashFsWriter`
@@ -8783,7 +8783,7 @@ Implements `IDisposable`.
 | `DefaultBlockSize` | `const uint DefaultBlockSize` | Default data block size (128 KiB) — the mksquashfs default. |
 | `AddDirectory` | `void AddDirectory(string path, DateTime? lastModified = null)` | Adds an explicit directory entry to the image. |
 | `AddFile` | `void AddFile(string path, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the image. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileSystem.TFat`
 
@@ -8832,7 +8832,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from a TFAT image using the alternating-FAT transactional commit protocol. Each removal is a separate transaction. Cluster data is wiped before the seq bump so no forensic trace of the removed bytes remains after commit. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `TFatModifier`
 
@@ -8895,10 +8895,10 @@ Implements `IFilesystemBlockMover`.
 | `TrDosBlockMover` | `TrDosBlockMover()` |  |
 | `DataOrigin` | `long DataOrigin { get; }` | Byte offset where the data region begins (past directory + disk-info sector). |
 | `UnitSize` | `int UnitSize { get; }` | Allocation unit size (one 256-byte sector). |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OffsetToSector` | `int OffsetToSector(long offset)` | Converts a byte offset to a linear sector number. |
 | `SectorToOffset` | `long SectorToOffset(int sector)` | Converts a linear sector number to a byte offset. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `TrDosEntry`
 
@@ -8953,10 +8953,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing TR-DOS image. Uses `TrDosModifier` for O(touched bytes) random-access I/O. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a TR-DOS image: every free sector not claimed by the directory, the disk-info sector, or a file's contiguous sector run. Driven by the generic `UnusedSpaceWiper` over the TR-DOS extent map. Cluster tips are not applicable: a TR-DOS directory entry sizes a file in whole 256-byte sectors, and the reader exposes — and round-trips — the full sector run as the file's content (no truncation to a sub-sector logical length). There is therefore no slack tail the wiper could zero without changing the extracted bytes, so `wipeClusterTips` is forced off. |
 
 #### `TrDosModifier`
@@ -9010,7 +9010,7 @@ Implements `IFilesystemBlockMover`.
 | `FirstDataByte` | `long FirstDataByte { get; }` | First byte a record may occupy: past the container's header. |
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call moves the record it is given and nothing else. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A record may be held outside the container while the rest of the layout moves, which is what lets a full one be rearranged at all. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
 #### `Tux2Entry`
@@ -9057,7 +9057,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Re-lays the volume out with the requested geometry. The generic default would feed this reader's synthetic entries — the raw image and the metadata sheet — back in as files; they are excluded so the rebuilt volume holds the same files the original did. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `Tux2Reader`
 
@@ -9116,7 +9116,7 @@ Implements `IFilesystemBlockMover`.
 | `FirstDataByte` | `long FirstDataByte { get; }` | First byte a record may occupy: past the container's header. |
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call moves the record it is given and nothing else. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A record may be held outside the container while the rest of the layout moves, which is what lets a full one be rearranged at all. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
 #### `Tux3Entry`
@@ -9161,7 +9161,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Re-lays the volume out with the requested geometry. The generic default would feed this reader's synthetic entries — the raw image and the metadata sheet — back in as files; they are excluded so the rebuilt volume holds the same files the original did. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `Tux3Reader`
 
@@ -9338,7 +9338,7 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the descriptor naming the run it is given and leaves the file entry's other descriptors alone, so an owner in several runs is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the descriptor chain once and notes where every file entry is. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
 #### `UdfEntry`
@@ -9396,10 +9396,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single UDF file entry as a bounded read-only `Stream`. UDF stores file data in extents pointed to by File Entries — the reader's extract follows those allocation descriptors and returns the assembled bytes; they are wrapped in a `BoundedEntryStream` sized to the entry's logical size. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing UDF image. Uses `UdfModifier` for O(touched bytes) random-access I/O — the FID's deleted flag (ECMA-167 §14.4.3 bit 2) is set, its identifier bytes are zeroed, the tag is re-CRC'd, and the file's FE and data extents are zero-wiped. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a UDF image: every sector not claimed by the system area, VRS, AVDP, VDS, FSD, a File Entry, or a file's allocated data run. Driven by the generic `UnusedSpaceWiper` over the UDF extent map. Cluster tips are wiped: a UDF allocation descriptor records the file's logical byte length, so a file's Used extent ends exactly at its real size. The sector padding between that size and the next 2048-byte boundary is left uncovered and is zeroed as ordinary free space. A file-size lookup keyed on the entry name is also supplied so the wiper can trim any tail explicitly; only contiguous file-data extents (whose `FileName` matches a non-directory entry) are affected — metadata and directory File Entries are skipped, so live data and on-disk structures are never touched. |
 
 #### `UdfModifier`
@@ -9455,7 +9455,7 @@ Implements `IFilesystemBlockMover`.
 | `DataOrigin` | `long DataOrigin { get; }` | Byte offset where the file-data region begins, past the inode table. The defrag planner uses this as the lowest legal target offset; metadata regions (superblock, CG, inode bitmap, inode table) sit below it. |
 | `FragToOffset` | `long FragToOffset(int frag)` | Converts a fragment number to a byte offset. |
 | `Init` | `void Init(Stream image)` | Initialises geometry from the UFS1 superblock. Must be called before any moves. Reads only the superblock (~1.4 KB) — no whole-image load. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OffsetToFrag` | `int OffsetToFrag(long offset)` | Converts a byte offset to a fragment number. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
@@ -9516,10 +9516,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing UFS1 image. Data blocks are wiped during removal so no forensic trace remains. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a UFS1 image: every block not claimed by the superblock, the CG inode table, a directory's data blocks, or a file's direct-block run. Driven by the generic `UnusedSpaceWiper` over the UFS extent map. Cluster tips are wiped: each file's Used extent ends at its logical inode size (`di_size`), so the block/fragment padding between the file's last byte and the block boundary is left uncovered and zeroed as free space. A file-size lookup keyed on the entry name is also supplied so the wiper can trim the tail explicitly. Directory data blocks surface in the extent map with a trailing `"/"` in their `FileName` and so never match a file-size key — they (and all metadata) are preserved. |
 
 #### `UfsModifier`
@@ -9577,8 +9577,8 @@ Implements `IFilesystemBlockMover`.
 | `BlockSize` | `int BlockSize { get; }` | One byte. VDFS packs payloads end to end rather than on a grid, so the planner is free to place a file anywhere past the entry table. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | First byte a payload may occupy: past the header and the table. |
 | `Init` | `void Init(Stream image)` | Reads the container's header. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `VdfsEntry`
 
@@ -9681,9 +9681,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes one run; the inodes are written once the pass is over. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full one be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the volume once and notes which extent claims each run. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Settle` | `void Settle(Stream image)` | Writes every inode's direct extents back, in the order they were read. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `VxFsEntry`
 
@@ -9730,7 +9730,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume the Veritas driver mounts, holding the given files. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Moves the blocks that are out of place and repoints the inodes. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -9838,7 +9838,7 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the record naming the run it is given and leaves the inode's other records alone. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Performs the init operation. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleFreeSpace` | `void SettleFreeSpace(Stream image, IEnumerable<ValueTuple<long, long>> live)` | Writes each allocation group's free-space btrees from the layout the pass finished with. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
@@ -9897,10 +9897,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Rebuild-style remove (see `XfsModifier`). The removed file's data does not survive into the rebuilt image because the new writer emits a fresh superblock, AGF/AGI, and inode table. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in an XFS image: free blocks and the cluster-tip slack at the tail of each file's last data block. The XFS extent map emits each file's data as a `Used` run clipped to the file's logical size. The remainder of the file's last block (from the logical size to the block boundary) is therefore not covered by any live extent and surfaces as a free gap, which the generic wiper scrubs — that is the cluster tip. A directory-entry size lookup (keyed by the same file name the extent map uses) is supplied so any extent reported block-aligned is still trimmed precisely. |
 
 #### `XfsInPlaceAdder`
@@ -9968,7 +9968,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the chunk and spare sizes this image was written with. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Yaffs2FormatDescriptor`
 
@@ -10022,9 +10022,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the pointer naming the block it is given, so a file in several blocks is simply several calls. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A block may be held outside the pool while the rest of the layout moves, which is what lets a full pool be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the pool once and notes which pointer names each block. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `SettleChecksums` | `void SettleChecksums(Stream image)` | Takes every check in the pool again, from the bottom up. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `ZfsEntry`
 
@@ -10139,9 +10139,9 @@ Implements `IFilesystemBlockMover`.
 | `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call takes note of one payload; the directory that follows from all of them is written once the pass is over. |
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A payload may be held outside the container while the rest of the layout moves, which is what lets a full one be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the directory once and notes which entry describes each payload. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Performs the move extent operation. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Settle` | `void Settle(Stream image)` | Writes the directory in the order the payloads now lie in and sums the container again. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `ZxSclEntry`
 
