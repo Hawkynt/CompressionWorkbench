@@ -84,6 +84,14 @@ The descriptor's implemented interfaces and `FormatCapabilities` are authoritati
 | [JFFS2](https://en.wikipedia.org/wiki/JFFS2) | R/W | Log-structured flash filesystem | [Linux JFFS2 documentation](https://www.kernel.org/doc/html/latest/filesystems/jffs2.html) |
 | [UBIFS](https://en.wikipedia.org/wiki/UBIFS) | R | Read path only | [Linux UBIFS documentation](https://www.kernel.org/doc/html/latest/filesystems/ubifs.html) |
 | [bcachefs](https://en.wikipedia.org/wiki/Bcachefs) | R/W ⚠️ | Native b-trees; true in-place add/replace/remove + purge; in-place defrag/optimize and wipe/clean; alloc/freespace/backpointer/accounting metadata kept consistent. Mutation is limited to the supported single-device regular-extent profile. | [bcachefs](https://bcachefs.org/) |
+| [AdvFS](https://en.wikipedia.org/wiki/AdvFS) | R/W | Tru64 UNIX Advanced File System; `.advfs` | [AdvFS technical overview](https://en.wikipedia.org/wiki/AdvFS) |
+| [MINIX V1](https://en.wikipedia.org/wiki/MINIX_file_system) | R/W | Original 14-character-name MINIX filesystem; `.minix1` | [MINIX filesystem](https://en.wikipedia.org/wiki/MINIX_file_system) |
+| [MINIX V2](https://en.wikipedia.org/wiki/MINIX_file_system) | R/W | 30-character-name MINIX revision; `.minix2` | [MINIX filesystem](https://en.wikipedia.org/wiki/MINIX_file_system) |
+| [NILFS2](https://en.wikipedia.org/wiki/NILFS) | R/W | Log-structured filesystem with continuous checkpoints; `.nilfs2` | [NILFS project](https://nilfs.sourceforge.io/) |
+| [Tux2](https://en.wikipedia.org/wiki/Tux2) | R/W | Phase-tree filesystem; `.tux2` | [Tux2 design notes](https://en.wikipedia.org/wiki/Tux2) |
+| [Tux3](https://en.wikipedia.org/wiki/Tux3) | R/W | Versioning filesystem successor to Tux2; `.tux3` | [Tux3 project](https://github.com/OGAWAHirofumi/tux3) |
+| [VxFS](https://en.wikipedia.org/wiki/Veritas_File_System) | WORM | Veritas File System; read and fresh create, no in-place mutation; `.vxfs` | [Veritas File System](https://en.wikipedia.org/wiki/Veritas_File_System) |
+| [SmartFS](https://nuttx.apache.org/docs/latest/components/filesystem.html) | WORM | NuttX flash filesystem; read and fresh create, no in-place mutation; `.smartfs` | [NuttX SmartFS](https://nuttx.apache.org/docs/latest/components/filesystem.html) |
 
 ### Apple / optical / portable filesystems
 
@@ -107,6 +115,9 @@ The descriptor's implemented interfaces and `FormatCapabilities` are authoritati
 | [CP/M](https://en.wikipedia.org/wiki/CP/M) | R/W | Canonical CP/M 2.2 8-inch SSSD geometry; descriptor implements create/modify as well as read | [CP/M filesystem notes](https://www.seasip.info/Cpm/format22.html) |
 | [TR-DOS](https://en.wikipedia.org/wiki/TR-DOS) | WORM | ZX Spectrum disk images | [TR-DOS notes](https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS) |
 | [RT-11](https://en.wikipedia.org/wiki/RT-11) | R | DEC RT-11 filesystem images | [RT-11 documentation archive](https://bitsavers.org/pdf/dec/pdp11/rt11/) |
+| [DragonDOS](https://en.wikipedia.org/wiki/Dragon_32/64) | R/W | Dragon 32/64 disk filesystem; `.dfs` | [Dragon Data archive](https://en.wikipedia.org/wiki/Dragon_32/64) |
+| [PlayStation memory card](https://en.wikipedia.org/wiki/PlayStation_technical_specifications#Memory_Card) | R/W | PS1 save blocks; `.mcr` | [PS1 memory card format](https://www.psdevwiki.com/ps3/PS1_Memory_Card) |
+| [TFAT](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) | R/W | Transaction-safe FAT used by Windows CE; `.tfat` | [Transaction-Safe FAT](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) |
 
 ## 🚀 Quick start
 

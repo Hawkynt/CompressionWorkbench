@@ -356,6 +356,7 @@ If all you need is ordinary ZIP at default BCL settings, `System.IO.Compression.
 | PAK | `.pak` | Yes | Yes | [PAK](http://fileformats.archiveteam.org/wiki/PAK) | ARC-compatible family where applicable |
 | [HA](https://en.wikipedia.org/wiki/HA_(file_format)) | `.ha` | Yes | Yes | [HA](http://fileformats.archiveteam.org/wiki/HA) | HSC/ASC arithmetic coding |
 | [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `.zpaq` | Yes ⚠️ | Yes | [ZPAQ spec](https://mattmahoney.net/dc/zpaq206.pdf) | Writer surface exists; full reader requires ZPAQL VM support noted in limitations |
+| [Binary II](https://en.wikipedia.org/wiki/Binary_II) | R/W | Apple II transfer container; `.bny` | [Binary II specification](https://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Binary2/bin2.specs) |
 | [StuffIt](https://en.wikipedia.org/wiki/StuffIt) | `.sit` | Yes | Yes | [XADMaster](https://github.com/MacPaw/XADMaster) | Multiple historical methods |
 | StuffIt X | `.sitx` | Yes | Yes ⚠️ | [XADMaster](https://github.com/MacPaw/XADMaster) | Writer emits the supported envelope shell; full proprietary element catalog is not claimed |
 | [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `.exe` | Yes | Yes ⚠️ | [NSIS docs](https://nsis.sourceforge.io/Docs/) | Extraction + overlay-oriented WORM output, not a PE installer builder |
