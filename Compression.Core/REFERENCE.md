@@ -118,13 +118,13 @@ Implements `IBitOrder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` |  |
-| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` |  |
-| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` |  |
-| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` |  |
-| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` |  |
-| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` |  |
-| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` |  |
+| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` | Performs the accumulate bits operation. |
+| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` | Performs the drop operation. |
+| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` | Performs the extract bit operation. |
+| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` | Performs the insert byte operation. |
+| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` | Performs the peek operation. |
+| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` | Performs the place bit operation. |
+| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` | Writes the bit index to the supplied output. |
 
 #### `MsbBitOrder`
 
@@ -134,13 +134,13 @@ Implements `IBitOrder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` |  |
-| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` |  |
-| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` |  |
-| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` |  |
-| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` |  |
-| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` |  |
-| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` |  |
+| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` | Performs the accumulate bits operation. |
+| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` | Performs the drop operation. |
+| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` | Performs the extract bit operation. |
+| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` | Performs the insert byte operation. |
+| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` | Performs the peek operation. |
+| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` | Performs the place bit operation. |
+| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` | Writes the bit index to the supplied output. |
 
 ### Namespace `Compression.Core.BuildingBlocks`
 
@@ -155,14 +155,14 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DoubleSpaceCompressor` | `DoubleSpaceCompressor()` | Creates a compressor using the default DBLS window (4 KiB). |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
 | `CompressWithWindow` | `static byte[] CompressWithWindow(ReadOnlySpan<byte> data, int maxDistance)` | Compresses `data` with an explicit sliding-window cap. Shared entry point used by both `DoubleSpaceCompressor` and `DriveSpaceCompressor`, and by the DoubleSpace CVF writer when it needs direct access to a specific window size. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
 | `DecompressStream` | `static byte[] DecompressStream(ReadOnlySpan<byte> data)` | Decompresses a complete DoubleSpace/DriveSpace BB stream (4-byte LE original-size header followed by the LSB-first token bit stream). The same decoder handles both variants since they share the token grammar. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `DriveSpaceCompressor`
 
@@ -173,12 +173,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DriveSpaceCompressor` | `DriveSpaceCompressor()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Crypto`
 
@@ -265,12 +265,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Deflate64BuildingBlock` | `Deflate64BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Deflate64Compressor`
 
@@ -320,12 +320,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeflateBuildingBlock` | `DeflateBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `DeflateCompressionLevel`
 
@@ -440,12 +440,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZopfliBuildingBlock` | `ZopfliBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Ace`
 
@@ -460,12 +460,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AceBuildingBlock` | `AceBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `AceConstants`
 
@@ -542,15 +542,15 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AplibBuildingBlock` | `AplibBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize)` | Decodes a bare aPLib stream (no size prefix) into at most `maxOutputSize` bytes, stopping at the end-of-stream marker. Exposed for packer handlers that carve an aPLib payload out of a PE/ELF image and know the original size (or an upper bound) from the packer header. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize, AplibDialect dialect, out bool endMarkerHit, out int inputConsumed)` | As `DecompressRaw`, decoding the requested `dialect`. Packers that embed a hand-written aPLib depacker sometimes ship a simplified one; see `AplibDialect`. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize, out bool endMarkerHit, out int inputConsumed)` | As `DecompressRaw`, additionally reporting whether decoding stopped at a genuine end-of-stream marker (`endMarkerHit`) versus running into the `maxOutputSize` cap, and how many input bytes were consumed (`inputConsumed`). Packer handlers that carve a payload at a guessed offset use the end-marker flag to reject false positives: a bare aPLib stream that terminates cleanly and consumes most of its input is far more likely to be a real payload than random section bytes that happen to decode without throwing. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `AplibDialect`
 
@@ -574,12 +574,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ArjBuildingBlock` | `ArjBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `ArjDecoder`
 
@@ -612,12 +612,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BalzBuildingBlock` | `BalzBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.BriefLz`
 
@@ -632,12 +632,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BriefLzBuildingBlock` | `BriefLzBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Brotli`
 
@@ -652,12 +652,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BrotliBuildingBlock` | `BrotliBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BrotliCompressionLevel`
 
@@ -721,12 +721,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CrushBuildingBlock` | `CrushBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Ctw`
 
@@ -741,12 +741,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CtwBuildingBlock` | `CtwBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Density`
 
@@ -761,12 +761,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DensityBuildingBlock` | `DensityBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `DensityChameleonCompressor`
 
@@ -809,12 +809,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DnaBuildingBlock` | `DnaBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.DsLz77`
 
@@ -829,12 +829,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BB_DsLz77` | `BB_DsLz77()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `DsLz77Compressor`
 
@@ -869,12 +869,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FastLzBuildingBlock` | `FastLzBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `FastLzCompressor`
 
@@ -905,12 +905,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `GbaLz77BuildingBlock` | `GbaLz77BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Ibm842`
 
@@ -925,12 +925,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Ibm842BuildingBlock` | `Ibm842BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Lizard`
 
@@ -945,12 +945,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LizardBuildingBlock` | `LizardBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Lz4`
 
@@ -983,12 +983,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lz4BuildingBlock` | `Lz4BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Lz4CompressionLevel`
 
@@ -1026,12 +1026,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lz4FrameBuildingBlock` | `Lz4FrameBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Lz77`
 
@@ -1046,12 +1046,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lz77BuildingBlock` | `Lz77BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Lz77Compressor`
 
@@ -1079,12 +1079,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lz77OptimalBuildingBlock` | `Lz77OptimalBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 | `Parse` | `static List<Lz77Token> Parse(ReadOnlySpan<byte> data)` | Produces the optimal LZ77 parse of `data` using a hash-chain match finder and the default cost model. Exposed so tests can compare it against a greedy parse. |
 
 #### `Lz77Token`
@@ -1116,12 +1116,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lz78BuildingBlock` | `Lz78BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Lz78Compressor`
 
@@ -1165,12 +1165,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzapBuildingBlock` | `LzapBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzapDecoder`
 
@@ -1206,12 +1206,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzavBuildingBlock` | `LzavBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Lzf`
 
@@ -1226,12 +1226,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzfBuildingBlock` | `LzfBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzfCompressor`
 
@@ -1262,12 +1262,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzfseBuildingBlock` | `LzfseBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzfseCompressor`
 
@@ -1306,12 +1306,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzfxBuildingBlock` | `LzfxBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzfxCompressor`
 
@@ -1342,12 +1342,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzgBuildingBlock` | `LzgBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Lzh`
 
@@ -1398,12 +1398,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzhBuildingBlock` | `LzhBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzhConstants`
 
@@ -1497,12 +1497,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzhamBuildingBlock` | `LzhamBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzhamDecoder`
 
@@ -1535,12 +1535,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzjbBuildingBlock` | `LzjbBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzjbCompressor`
 
@@ -1592,13 +1592,13 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzmaBuildingBlock` | `LzmaBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> data, int literalContextBits, int literalPositionBits, int positionBits, int uncompressedSize, int dictionarySize = 0)` | Decodes a bare LZMA1 stream — no properties byte, no dictionary size, no length field, just the range-coded data — using coding parameters supplied by the caller. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzmaCompressionLevel`
 
@@ -1644,12 +1644,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzmsBuildingBlock` | `LzmsBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzmsCompressor`
 
@@ -1690,12 +1690,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzmwBuildingBlock` | `LzmwBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzmwDecoder`
 
@@ -1757,12 +1757,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzoBuildingBlock` | `LzoBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzoCompressionLevel`
 
@@ -1786,12 +1786,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzpBuildingBlock` | `LzpBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzpCompressor`
 
@@ -1824,12 +1824,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzrleBuildingBlock` | `LzrleBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzrleCompressor`
 
@@ -1874,12 +1874,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lzrw1BuildingBlock` | `Lzrw1BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Lzrw1Compressor`
 
@@ -1910,12 +1910,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lzrw3BuildingBlock` | `Lzrw3BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Lzrw3Compressor`
 
@@ -1946,12 +1946,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzsBuildingBlock` | `LzsBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Lzss`
 
@@ -1966,12 +1966,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzssBuildingBlock` | `LzssBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzssDecoder`
 
@@ -2006,12 +2006,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzturboBuildingBlock` | `LzturboBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzturboCompressor`
 
@@ -2059,12 +2059,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzvnBuildingBlock` | `LzvnBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzvnCompressor`
 
@@ -2111,12 +2111,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzcBuildingBlock` | `LzcBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzcCodec`
 
@@ -2138,12 +2138,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzwBuildingBlock` | `LzwBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzwCompressionLevel`
 
@@ -2184,12 +2184,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NuLzwBuildingBlock` | `NuLzwBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `NuLzwCodec`
 
@@ -2223,12 +2223,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzwlBuildingBlock` | `LzwlBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Lzx`
 
@@ -2243,12 +2243,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzxBuildingBlock` | `LzxBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `LzxCompressionLevel`
 
@@ -2347,7 +2347,7 @@ Implements `IMatchFinder`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BinaryTreeMatchFinder` | `BinaryTreeMatchFinder(int windowSize)` | Initializes a new `BinaryTreeMatchFinder`. |
-| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` |  |
+| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` | Performs the find match operation. |
 | `InsertPosition` | `void InsertPosition(ReadOnlySpan<byte> data, int position)` | Inserts a position into the tree without searching for a match. |
 
 #### `HashChainMatchFinder`
@@ -2359,7 +2359,7 @@ Implements `IMatchFinder`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HashChainMatchFinder` | `HashChainMatchFinder(int windowSize, int maxChainDepth = 128)` | Initializes a new `HashChainMatchFinder`. |
-| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` |  |
+| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` | Performs the find match operation. |
 | `InsertPosition` | `void InsertPosition(ReadOnlySpan<byte> data, int position)` | Inserts a position into the hash chain without searching for a match. Call this for positions that are skipped (e.g., inside a matched region). |
 
 #### `IMatchFinder`
@@ -2404,12 +2404,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MsLzhBuildingBlock` | `MsLzhBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `MsLzhCompressor`
 
@@ -2443,12 +2443,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Yay0BuildingBlock` | `Yay0BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Yaz0BuildingBlock`
 
@@ -2459,12 +2459,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Yaz0BuildingBlock` | `Yaz0BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Nrv2b`
 
@@ -2479,15 +2479,15 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Nrv2bBuildingBlock` | `Nrv2bBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
 | `DecompressRawByte` | `static byte[] DecompressRawByte(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2B 8-bit stream (no 4-byte size prefix). UPX compression method 6 uses this width — bits are packed into single bytes and consumed MSB-first; the decoder cursor advances by 1 on each bit-word refill. |
 | `DecompressRawLe16` | `static byte[] DecompressRawLe16(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2B LE16 stream (no 4-byte size prefix). UPX compression methods 4 and the LE16 variants use this width — bits are packed into 16-bit little-endian words and consumed MSB-first; the decoder cursor advances by 2 on each bit-word refill. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2B LE32 stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing UPX binaries or other embedded NRV2B streams. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Nrv2d`
 
@@ -2502,15 +2502,15 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Nrv2dBuildingBlock` | `Nrv2dBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
 | `DecompressRawByte` | `static byte[] DecompressRawByte(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2D 8-bit stream (no 4-byte size prefix). UPX compression method 7 uses this width — bits are packed into single bytes and consumed MSB-first. |
 | `DecompressRawLe16` | `static byte[] DecompressRawLe16(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2D LE16 stream (no 4-byte size prefix). UPX compression method 5 uses this width — bits are packed into 16-bit little-endian words and consumed MSB-first. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2D LE32 stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing UPX binaries or other embedded NRV2D streams. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Nrv2e`
 
@@ -2525,15 +2525,15 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Nrv2eBuildingBlock` | `Nrv2eBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
 | `DecompressRawByte` | `static byte[] DecompressRawByte(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2E 8-bit stream (no 4-byte size prefix). UPX compression method 10 uses this width — bits are packed into single bytes and consumed MSB-first. |
 | `DecompressRawLe16` | `static byte[] DecompressRawLe16(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2E LE16 stream (no 4-byte size prefix). UPX compression method 9 uses this width — bits are packed into 16-bit little-endian words and consumed MSB-first. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2E LE32 stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing UPX binaries or other embedded NRV2E streams. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Parsing`
 
@@ -2549,8 +2549,8 @@ Implements `ILzCostModel`.
 | --- | --- | --- |
 | `DefaultLzCostModel` | `DefaultLzCostModel(double literalBits = 9, double matchTokenBits = 9)` | Creates a cost model. |
 | `Instance` | `static DefaultLzCostModel Instance { get; }` | A shared instance using the default parameters. |
-| `LiteralCost` | `double LiteralCost(byte value)` |  |
-| `MatchCost` | `double MatchCost(int length, int distance)` |  |
+| `LiteralCost` | `double LiteralCost(byte value)` | Performs the literal cost operation. |
+| `MatchCost` | `double MatchCost(int length, int distance)` | Performs the match cost operation. |
 
 #### `FixedLzCostModel`
 
@@ -2561,8 +2561,8 @@ Implements `ILzCostModel`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FixedLzCostModel` | `FixedLzCostModel(double literalBits, double matchBits)` | Creates a flat cost model. |
-| `LiteralCost` | `double LiteralCost(byte value)` |  |
-| `MatchCost` | `double MatchCost(int length, int distance)` |  |
+| `LiteralCost` | `double LiteralCost(byte value)` | Performs the literal cost operation. |
+| `MatchCost` | `double MatchCost(int length, int distance)` | Performs the match cost operation. |
 
 #### `ILzCostModel`
 
@@ -2619,12 +2619,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PithyBuildingBlock` | `PithyBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Ppm`
 
@@ -2639,12 +2639,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PpmBuildingBlock` | `PpmBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `PpmCompressor`
 
@@ -2669,12 +2669,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `QuantumBuildingBlock` | `QuantumBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `QuantumCompressor`
 
@@ -2728,12 +2728,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `QuickLzBuildingBlock` | `QuickLzBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `QuickLzCompressor`
 
@@ -2782,12 +2782,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Rar3BuildingBlock` | `Rar3BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Rar3Decoder`
 
@@ -2834,12 +2834,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RarBuildingBlock` | `RarBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.RePair`
 
@@ -2854,12 +2854,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RePairBuildingBlock` | `RePairBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Rolz`
 
@@ -2874,12 +2874,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RolzBuildingBlock` | `RolzBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Rzip`
 
@@ -2923,10 +2923,10 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SalvadorBuildingBlock` | `SalvadorBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compress `data` with a 4-byte little-endian original-size prefix followed by a bare Salvador stream. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare Salvador / ZX0-inverted stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing embedded Salvador streams (Amiga intros/cruncher stubs). |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decompress a 4-byte-prefixed Salvador payload. |
@@ -2944,12 +2944,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SequiturBuildingBlock` | `SequiturBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `SequiturCompressor`
 
@@ -2973,12 +2973,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ShocoBuildingBlock` | `ShocoBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Snappy`
 
@@ -2993,12 +2993,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SnappyBuildingBlock` | `SnappyBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `SnappyCompressor`
 
@@ -3057,12 +3057,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SqxBuildingBlock` | `SqxBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `SqxConstants`
 
@@ -3155,12 +3155,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SuffixTreeBuildingBlock` | `SuffixTreeBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Xpress`
 
@@ -3175,12 +3175,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XpressBuildingBlock` | `XpressBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `XpressCompressionLevel`
 
@@ -3263,12 +3263,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ImplodeBuildingBlock` | `ImplodeBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `ImplodeDecoder`
 
@@ -3296,12 +3296,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ReduceBuildingBlock` | `ReduceBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `ReduceDecoder`
 
@@ -3329,12 +3329,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ShrinkBuildingBlock` | `ShrinkBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `ShrinkDecoder`
 
@@ -3366,12 +3366,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZlingBuildingBlock` | `ZlingBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Dictionary.Zstd`
 
@@ -3406,10 +3406,10 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Zx0BuildingBlock` | `Zx0BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compress `data` with a 4-byte little-endian original-size prefix followed by a bare ZX0 stream. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare ZX0 stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing ZX0-wrapped binaries (crunched ZX Spectrum TAPs, demoscene 4K/64K intros). |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decompress a 4-byte-prefixed ZX0 payload. |
@@ -3472,7 +3472,7 @@ Block-group arithmetic shared by the ext-family writers. ext1 and ext2/3/4 lay t
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BytesPerInode` | `static int BytesPerInode(long volumeBytes)` | Rounds the required inode count up to a sensible group size: every reserved/dir/file inode with headroom, never below the classic 128, and a multiple of 8 so the inode bitmap's byte boundaries stay tidy. |
-| `ChooseInodeCount` | `static int ChooseInodeCount(int needed)` |  |
+| `ChooseInodeCount` | `static int ChooseInodeCount(int needed)` | Performs the choose inode count operation. |
 | `Compute` | `static ExtGeometry Compute(int blockSize, int totalBlocks, int inodeSize, int neededInodes, int descriptorSize = 32)` | Works out how many block groups an ext-family volume needs and how the per-group metadata is sized. A group holds 8 * blockSize blocks because its block bitmap is a single block; anything larger takes more groups. Inodes are shared evenly across them, so a one-group volume ends up with exactly the geometry this writer produced before groups existed. |
 | `DescriptorSize` | `static int DescriptorSize(ReadOnlySpan<byte> superblock)` | How wide one group descriptor is on the volume whose superblock this is. |
 
@@ -3541,7 +3541,7 @@ Implements `IDisposable`.
 | `ImageAccessor` | `ImageAccessor(Stream stream, bool leaveOpen = true)` | Wraps `stream`, which must be readable and seekable. |
 | `Length` | `long Length { get; }` | Total length of the image in bytes. |
 | `CopyTo` | `void CopyTo(long offset, Stream destination, long count)` | Copies `count` bytes from `offset` into `destination`. |
-| `Dispose` | `void Dispose()` |  |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `FromBytes` | `static ImageAccessor FromBytes(byte[] data)` | Materialises an in-memory image. Convenience for callers that already hold the bytes. |
 | `Invalidate` | `void Invalidate(long offset, long length)` | Drops the cached copy of the range `offset`..`offset` + `length`, so a caller that wrote to the underlying stream sees its own bytes on the next read. |
 | `ReadByte` | `byte ReadByte(long offset)` | Reads a single byte, or 0 when `offset` lies outside the image. |
@@ -3577,14 +3577,14 @@ MBR partition-type bytes for common filesystems.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Fat12` | `const byte Fat12` |  |
-| `Fat16Lba` | `const byte Fat16Lba` |  |
-| `Fat16Small` | `const byte Fat16Small` |  |
-| `Fat16` | `const byte Fat16` |  |
-| `Fat32Chs` | `const byte Fat32Chs` |  |
-| `Fat32Lba` | `const byte Fat32Lba` |  |
-| `Linux` | `const byte Linux` |  |
-| `NtfsExfat` | `const byte NtfsExfat` |  |
+| `Fat12` | `const byte Fat12` | Defines the fat 12 constant value. |
+| `Fat16Lba` | `const byte Fat16Lba` | Defines the fat 16 lba constant value. |
+| `Fat16Small` | `const byte Fat16Small` | Defines the fat 16 small constant value. |
+| `Fat16` | `const byte Fat16` | Defines the fat 16 constant value. |
+| `Fat32Chs` | `const byte Fat32Chs` | Defines the fat 32 chs constant value. |
+| `Fat32Lba` | `const byte Fat32Lba` | Defines the fat 32 lba constant value. |
+| `Linux` | `const byte Linux` | Defines the linux constant value. |
+| `NtfsExfat` | `const byte NtfsExfat` | Defines the ntfs exfat constant value. |
 
 #### `PartitionEditor`
 
@@ -3727,18 +3727,18 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PartitionWindowStream` | `PartitionWindowStream(Stream inner, long offset, long length, bool leaveOpen = true)` |  |
-| `CanRead` | `override bool CanRead { get; }` |  |
-| `CanSeek` | `override bool CanSeek { get; }` |  |
-| `CanWrite` | `override bool CanWrite { get; }` |  |
-| `Length` | `override long Length { get; }` |  |
-| `Position` | `override long Position { get; set; }` |  |
-| `Dispose` | `protected override void Dispose(bool disposing)` |  |
-| `Flush` | `override void Flush()` |  |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
-| `SetLength` | `override void SetLength(long value)` |  |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+| `PartitionWindowStream` | `PartitionWindowStream(Stream inner, long offset, long length, bool leaveOpen = true)` | Initializes a new instance of `PartitionWindowStream`. |
+| `CanRead` | `override bool CanRead { get; }` | Gets a value indicating whether can read. |
+| `CanSeek` | `override bool CanSeek { get; }` | Gets a value indicating whether can seek. |
+| `CanWrite` | `override bool CanWrite { get; }` | Gets a value indicating whether can write. |
+| `Length` | `override long Length { get; }` | Gets the length. |
+| `Position` | `override long Position { get; set; }` | Gets or sets the position. |
+| `Dispose` | `protected override void Dispose(bool disposing)` | Releases resources held by this instance. |
+| `Flush` | `override void Flush()` | Performs the flush operation. |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` | Reads the value from the supplied input. |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` | Performs the seek operation. |
+| `SetLength` | `override void SetLength(long value)` | Sets the length. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
 
 #### `PartitionedDiskLister`
 
@@ -3869,18 +3869,18 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | --- | --- | --- |
 | `RaidAssembledStream` | `RaidAssembledStream(RaidArray array, bool leaveOpen = true)` | Builds a virtual stream over `array`. |
 | `Array` | `RaidArray Array { get; }` | The array this stream presents. |
-| `CanRead` | `override bool CanRead { get; }` |  |
-| `CanSeek` | `override bool CanSeek { get; }` |  |
-| `CanWrite` | `override bool CanWrite { get; }` |  |
-| `Length` | `override long Length { get; }` |  |
-| `Position` | `override long Position { get; set; }` |  |
-| `Dispose` | `protected override void Dispose(bool disposing)` |  |
-| `Flush` | `override void Flush()` |  |
-| `Read` | `override int Read(Span<byte> buffer)` |  |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
-| `SetLength` | `override void SetLength(long value)` |  |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+| `CanRead` | `override bool CanRead { get; }` | Gets a value indicating whether can read. |
+| `CanSeek` | `override bool CanSeek { get; }` | Gets a value indicating whether can seek. |
+| `CanWrite` | `override bool CanWrite { get; }` | Gets a value indicating whether can write. |
+| `Length` | `override long Length { get; }` | Gets the length. |
+| `Position` | `override long Position { get; set; }` | Gets or sets the position. |
+| `Dispose` | `protected override void Dispose(bool disposing)` | Releases resources held by this instance. |
+| `Flush` | `override void Flush()` | Performs the flush operation. |
+| `Read` | `override int Read(Span<byte> buffer)` | Reads the value from the supplied input. |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` | Reads the value from the supplied input. |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` | Performs the seek operation. |
+| `SetLength` | `override void SetLength(long value)` | Sets the length. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
 
 #### `RaidAssembler`
 
@@ -3961,12 +3961,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ArithmeticBuildingBlock` | `ArithmeticBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BpeBuildingBlock`
 
@@ -3979,12 +3979,12 @@ Implements `IBuildingBlock`.
 | `BpeBuildingBlock` | `BpeBuildingBlock()` | Creates a BPE building block using greedy grammar construction. |
 | `BpeBuildingBlock` | `BpeBuildingBlock(BpeConstructionStrategy constructionStrategy)` | Creates a BPE building block using the requested grammar-construction strategy. |
 | `ConstructionStrategy` | `BpeConstructionStrategy ConstructionStrategy { get; }` | The grammar-construction strategy used by `Compress`. |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BpeConstructionStrategy`
 
@@ -4004,12 +4004,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DmcBuildingBlock` | `DmcBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `EliasDeltaBuildingBlock`
 
@@ -4020,12 +4020,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EliasDeltaBuildingBlock` | `EliasDeltaBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `EliasGammaBuildingBlock`
 
@@ -4036,12 +4036,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EliasGammaBuildingBlock` | `EliasGammaBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `FibonacciBuildingBlock`
 
@@ -4052,12 +4052,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FibonacciBuildingBlock` | `FibonacciBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `FseBuildingBlock`
 
@@ -4068,12 +4068,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FseBuildingBlock` | `FseBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `GolombBuildingBlock`
 
@@ -4084,13 +4084,13 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `GolombBuildingBlock` | `GolombBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, GolombProfile profile, int fixedParameter = 2)` | Encodes `data` under the given `profile`. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, GolombProfile profile)` | Decodes a stream produced by `Compress` under the same `profile`. M is always read back from the stream, so the profile only selects how the element count is framed. |
 
 #### `GolombFixedMBuildingBlock`
@@ -4102,12 +4102,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `GolombFixedMBuildingBlock` | `GolombFixedMBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `GolombProfile`
 
@@ -4127,12 +4127,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LevenshteinBuildingBlock` | `LevenshteinBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `OmegaBuildingBlock`
 
@@ -4143,12 +4143,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OmegaBuildingBlock` | `OmegaBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `RangeCodingBuildingBlock`
 
@@ -4159,12 +4159,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RangeCodingBuildingBlock` | `RangeCodingBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `ShannonFanoBuildingBlock`
 
@@ -4175,12 +4175,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ShannonFanoBuildingBlock` | `ShannonFanoBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `TunstallBuildingBlock`
 
@@ -4191,12 +4191,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TunstallBuildingBlock` | `TunstallBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `UnaryBuildingBlock`
 
@@ -4207,12 +4207,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UnaryBuildingBlock` | `UnaryBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Entropy.AdaptiveHuffman`
 
@@ -4227,12 +4227,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AdaptiveHuffmanBuildingBlock` | `AdaptiveHuffmanBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Entropy.Ans`
 
@@ -4247,12 +4247,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RansBuildingBlock` | `RansBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `RansDecoder`
 
@@ -4336,12 +4336,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CmBuildingBlock` | `CmBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `CmCompressor`
 
@@ -4410,12 +4410,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcmBuildingBlock` | `BcmBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcmCompressor`
 
@@ -4439,12 +4439,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BscBuildingBlock` | `BscBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BscCompressor`
 
@@ -4468,12 +4468,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CmixBuildingBlock` | `CmixBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `CmixCompressor`
 
@@ -4497,12 +4497,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CscBuildingBlock` | `CscBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `CscCompressor`
 
@@ -4526,12 +4526,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ContextTreeWeightingBuildingBlock` | `ContextTreeWeightingBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `ContextTreeWeightingCompressor`
 
@@ -4556,12 +4556,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `McmBuildingBlock` | `McmBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `McmCompressor`
 
@@ -4585,12 +4585,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Paq8hpBuildingBlock` | `Paq8hpBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `Paq8hpCompressor`
 
@@ -4630,12 +4630,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ExpGolombBuildingBlock` | `ExpGolombBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `ExpGolombDecoder`
 
@@ -4670,12 +4670,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Fpaq0BuildingBlock` | `Fpaq0BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 ### Namespace `Compression.Core.Entropy.Fse`
 
@@ -4789,12 +4789,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HuffmanBuildingBlock` | `HuffmanBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `HuffmanDecoder<TOrder>`
 
@@ -4865,12 +4865,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NnBuildingBlock` | `NnBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `NnCompressor`
 
@@ -4894,12 +4894,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PpmdBuildingBlock` | `PpmdBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `PpmdContext`
 
@@ -4957,7 +4957,7 @@ Inherits `PpmdModelBase`.
 | --- | --- | --- |
 | `PpmdModelH` | `PpmdModelH(int order)` | Initializes a new PPMd Model H with the specified order and default memory. |
 | `PpmdModelH` | `PpmdModelH(int order, int memorySize)` | Initializes a new PPMd Model H with the specified order and memory budget. |
-| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` |  |
+| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the rescale threshold. |
 
 #### `PpmdModelI`
 
@@ -4969,7 +4969,7 @@ Inherits `PpmdModelBase`.
 | --- | --- | --- |
 | `PpmdModelI` | `PpmdModelI(int order)` | Initializes a new PPMd Model I with the specified order and default memory. |
 | `PpmdModelI` | `PpmdModelI(int order, int memorySize)` | Initializes a new PPMd Model I with the specified order and memory budget. |
-| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` |  |
+| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the rescale threshold. |
 
 #### `PpmdRangeDecoder`
 
@@ -5052,27 +5052,31 @@ LZMA-style byte-aligned range encoder with adaptive binary probabilities.
 
 #### `CpuArchitecture`
 
+Specifies cpu architecture values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `X86` | `0` |  |
-| `X64` | `1` |  |
-| `Arm32` | `2` |  |
-| `Arm64` | `3` |  |
-| `PowerPc32` | `4` |  |
-| `PowerPc64` | `5` |  |
-| `Mips32Le` | `6` |  |
-| `Mips32Be` | `7` |  |
-| `Mips64Le` | `8` |  |
-| `Mips64Be` | `9` |  |
-| `Unknown` | `10` |  |
+| `X86` | `0` | Specifies the x 86 option. |
+| `X64` | `1` | Specifies the x 64 option. |
+| `Arm32` | `2` | Specifies the arm 32 option. |
+| `Arm64` | `3` | Specifies the arm 64 option. |
+| `PowerPc32` | `4` | Specifies the power pc 32 option. |
+| `PowerPc64` | `5` | Specifies the power pc 64 option. |
+| `Mips32Le` | `6` | Specifies the mips 32 le option. |
+| `Mips32Be` | `7` | Specifies the mips 32 be option. |
+| `Mips64Le` | `8` | Specifies the mips 64 le option. |
+| `Mips64Be` | `9` | Specifies the mips 64 be option. |
+| `Unknown` | `10` | Specifies an unknown or unrecognized value. |
 
 #### `DetectionResult`
+
+Represents a detection result.
 
 Implements `IEquatable<DetectionResult>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DetectionResult` | `DetectionResult(bool IsMatch, string PackerId, double Confidence, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `DetectionResult` | `DetectionResult(bool IsMatch, string PackerId, double Confidence, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents a detection result. |
 | `Confidence` | `double Confidence { get; init; }` |  |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
 | `IsMatch` | `bool IsMatch { get; init; }` |  |
@@ -5080,78 +5084,92 @@ Implements `IEquatable<DetectionResult>`.
 
 #### `ElfParser`
 
+Represents an elf parser.
+
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ElfParser` | `ElfParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `ExecutableContainerKind`
 
+Specifies executable container kind values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Pe` | `0` |  |
-| `Elf` | `1` |  |
-| `MachO` | `2` |  |
-| `FatMachO` | `3` |  |
-| `DosMz` | `4` |  |
-| `DosCom` | `5` |  |
-| `LinearExecutable` | `6` |  |
-| `Unknown` | `7` |  |
+| `Pe` | `0` | Specifies the pe option. |
+| `Elf` | `1` | Specifies the elf option. |
+| `MachO` | `2` | Specifies the mach o option. |
+| `FatMachO` | `3` | Specifies the fat mach o option. |
+| `DosMz` | `4` | Specifies the dos mz option. |
+| `DosCom` | `5` | Specifies the dos com option. |
+| `LinearExecutable` | `6` | Specifies the linear executable option. |
+| `Unknown` | `7` | Specifies an unknown or unrecognized value. |
 
 #### `ExecutableContainerParsers`
 
+Represents an executable container parsers.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Elf` | `static readonly IExecutableContainerParser Elf` |  |
-| `FatMachO` | `static readonly IExecutableContainerParser FatMachO` |  |
-| `MachO` | `static readonly IExecutableContainerParser MachO` |  |
-| `Pe` | `static readonly IExecutableContainerParser Pe` |  |
-| `ParseBestEffort` | `static ExecutableImageInfo ParseBestEffort(ReadOnlySpan<byte> image)` |  |
+| `Elf` | `static readonly IExecutableContainerParser Elf` | Provides the elf value. |
+| `FatMachO` | `static readonly IExecutableContainerParser FatMachO` | Provides the fat mach o value. |
+| `MachO` | `static readonly IExecutableContainerParser MachO` | Provides the mach o value. |
+| `Pe` | `static readonly IExecutableContainerParser Pe` | Provides the pe value. |
+| `ParseBestEffort` | `static ExecutableImageInfo ParseBestEffort(ReadOnlySpan<byte> image)` | Parses the best effort from the supplied data. |
 
 #### `ExecutableDiagnostic`
+
+Represents an executable diagnostic.
 
 Implements `IEquatable<ExecutableDiagnostic>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableDiagnostic` | `ExecutableDiagnostic(ExecutableDiagnosticCode Code, string Message, bool IsError = false)` |  |
+| `ExecutableDiagnostic` | `ExecutableDiagnostic(ExecutableDiagnosticCode Code, string Message, bool IsError = false)` | Represents an executable diagnostic. |
 | `Code` | `ExecutableDiagnosticCode Code { get; init; }` |  |
 | `IsError` | `bool IsError { get; init; }` |  |
 | `Message` | `string Message { get; init; }` |  |
 
 #### `ExecutableDiagnosticCode`
 
+Specifies executable diagnostic code values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `NotPackedExecutable` | `0` |  |
-| `UnsupportedContainer` | `1` |  |
-| `UnsupportedArchitecture` | `2` |  |
-| `UnsupportedPackerVersion` | `3` |  |
-| `PayloadNotFound` | `4` |  |
-| `UnsupportedCompressionMethod` | `5` |  |
-| `DecompressionFailed` | `6` |  |
-| `TransformNotReversible` | `7` |  |
-| `MemoryImageBuildFailed` | `8` |  |
-| `ExecutableRebuildFailed` | `9` |  |
-| `RunnableRebuildNotGuaranteed` | `10` |  |
+| `NotPackedExecutable` | `0` | Specifies the not packed executable option. |
+| `UnsupportedContainer` | `1` | Specifies the unsupported container option. |
+| `UnsupportedArchitecture` | `2` | Specifies the unsupported architecture option. |
+| `UnsupportedPackerVersion` | `3` | Specifies the unsupported packer version option. |
+| `PayloadNotFound` | `4` | Specifies the payload not found option. |
+| `UnsupportedCompressionMethod` | `5` | Specifies the unsupported compression method option. |
+| `DecompressionFailed` | `6` | Specifies the decompression failed option. |
+| `TransformNotReversible` | `7` | Specifies the transform not reversible option. |
+| `MemoryImageBuildFailed` | `8` | Specifies the memory image build failed option. |
+| `ExecutableRebuildFailed` | `9` | Specifies the executable rebuild failed option. |
+| `RunnableRebuildNotGuaranteed` | `10` | Specifies the runnable rebuild not guaranteed option. |
 
 #### `ExecutableDiagnosticsJson`
 
+Represents an executable diagnostics json.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Build` | `static byte[] Build(string packer, ExecutableImageInfo imageInfo, UnpackResult result)` |  |
+| `Build` | `static byte[] Build(string packer, ExecutableImageInfo imageInfo, UnpackResult result)` | Performs the build operation. |
 
 #### `ExecutableImageInfo`
+
+Represents an executable image info.
 
 Implements `IEquatable<ExecutableImageInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableImageInfo` | `ExecutableImageInfo(ExecutableContainerKind Container, CpuArchitecture Architecture, ulong PreferredBaseAddress, ulong EntryPoint, IReadOnlyList<ExecutableRegion> Regions, IReadOnlyList<ExecutableImport> Imports, IReadOnlyList<ExecutableRelocation> Relocations, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `ExecutableImageInfo` | `ExecutableImageInfo(ExecutableContainerKind Container, CpuArchitecture Architecture, ulong PreferredBaseAddress, ulong EntryPoint, IReadOnlyList<ExecutableRegion> Regions, IReadOnlyList<ExecutableImport> Imports, IReadOnlyList<ExecutableRelocation> Relocations, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents an executable image info. |
 | `Architecture` | `CpuArchitecture Architecture { get; init; }` |  |
 | `Container` | `ExecutableContainerKind Container { get; init; }` |  |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
@@ -5163,28 +5181,34 @@ Implements `IEquatable<ExecutableImageInfo>`.
 
 #### `ExecutableImport`
 
+Represents an executable import.
+
 Implements `IEquatable<ExecutableImport>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableImport` | `ExecutableImport(string ModuleName, string SymbolName, ulong Address)` |  |
+| `ExecutableImport` | `ExecutableImport(string ModuleName, string SymbolName, ulong Address)` | Represents an executable import. |
 | `Address` | `ulong Address { get; init; }` |  |
 | `ModuleName` | `string ModuleName { get; init; }` |  |
 | `SymbolName` | `string SymbolName { get; init; }` |  |
 
 #### `ExecutableMemoryImageBuilder`
 
+Represents an executable memory image builder.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Build` | `static ValueTuple<byte[], IReadOnlyList<ExecutableRegion>, IReadOnlyList<ExecutableDiagnostic>> Build(ExecutableImageInfo info, byte[] replacementPayload = null, string replacementTargetRegionName = null, UnpackOptions options = null)` |  |
+| `Build` | `static ValueTuple<byte[], IReadOnlyList<ExecutableRegion>, IReadOnlyList<ExecutableDiagnostic>> Build(ExecutableImageInfo info, byte[] replacementPayload = null, string replacementTargetRegionName = null, UnpackOptions options = null)` | Performs the build operation. |
 
 #### `ExecutableRegion`
+
+Represents an executable region.
 
 Implements `IEquatable<ExecutableRegion>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableRegion` | `ExecutableRegion(string Name, ulong FileOffset, ulong FileSize, ulong VirtualAddress, ulong VirtualSize, ExecutableRegionFlags Flags, byte[] FileBytes, byte[] MemoryBytes)` |  |
+| `ExecutableRegion` | `ExecutableRegion(string Name, ulong FileOffset, ulong FileSize, ulong VirtualAddress, ulong VirtualSize, ExecutableRegionFlags Flags, byte[] FileBytes, byte[] MemoryBytes)` | Represents an executable region. |
 | `FileBytes` | `byte[] FileBytes { get; init; }` |  |
 | `FileOffset` | `ulong FileOffset { get; init; }` |  |
 | `FileSize` | `ulong FileSize { get; init; }` |  |
@@ -5196,66 +5220,78 @@ Implements `IEquatable<ExecutableRegion>`.
 
 #### `ExecutableRegionFlags`
 
+Specifies executable region flags values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `None` | `0` |  |
-| `Read` | `1` |  |
-| `Write` | `2` |  |
-| `Execute` | `4` |  |
-| `Bss` | `8` |  |
+| `None` | `0` | Specifies that no option is selected. |
+| `Read` | `1` | Specifies the read option. |
+| `Write` | `2` | Specifies the write option. |
+| `Execute` | `4` | Specifies the execute option. |
+| `Bss` | `8` | Specifies the bss option. |
 
 #### `ExecutableRelocation`
+
+Represents an executable relocation.
 
 Implements `IEquatable<ExecutableRelocation>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableRelocation` | `ExecutableRelocation(ulong Address, string Type)` |  |
+| `ExecutableRelocation` | `ExecutableRelocation(ulong Address, string Type)` | Represents an executable relocation. |
 | `Address` | `ulong Address { get; init; }` |  |
 | `Type` | `string Type { get; init; }` |  |
 
 #### `ExecutableUnpackCapabilities`
 
+Specifies executable unpack capabilities values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `None` | `0` |  |
-| `CanDetect` | `1` |  |
-| `CanLocatePayload` | `2` |  |
-| `CanDecompressPayload` | `4` |  |
-| `CanBuildMemoryImage` | `8` |  |
-| `CanRebuildExecutable` | `16` |  |
-| `CanProduceRunnableExecutable` | `32` |  |
-| `SupportsPe` | `256` |  |
-| `SupportsElf` | `512` |  |
-| `SupportsMachO` | `1024` |  |
-| `SupportsX86` | `65536` |  |
-| `SupportsX64` | `131072` |  |
-| `SupportsArm32` | `262144` |  |
-| `SupportsArm64` | `524288` |  |
+| `None` | `0` | Specifies that no option is selected. |
+| `CanDetect` | `1` | Specifies the can detect option. |
+| `CanLocatePayload` | `2` | Specifies the can locate payload option. |
+| `CanDecompressPayload` | `4` | Specifies the can decompress payload option. |
+| `CanBuildMemoryImage` | `8` | Specifies the can build memory image option. |
+| `CanRebuildExecutable` | `16` | Specifies the can rebuild executable option. |
+| `CanProduceRunnableExecutable` | `32` | Specifies the can produce runnable executable option. |
+| `SupportsPe` | `256` | Specifies the supports pe option. |
+| `SupportsElf` | `512` | Specifies the supports elf option. |
+| `SupportsMachO` | `1024` | Specifies the supports mach o option. |
+| `SupportsX86` | `65536` | Specifies the supports x 86 option. |
+| `SupportsX64` | `131072` | Specifies the supports x 64 option. |
+| `SupportsArm32` | `262144` | Specifies the supports arm 32 option. |
+| `SupportsArm64` | `524288` | Specifies the supports arm 64 option. |
 
 #### `ExecutableUnpackLevel`
 
+Specifies executable unpack level values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `DetectionOnly` | `0` |  |
-| `PayloadLocated` | `1` |  |
-| `PayloadDecompressed` | `2` |  |
-| `RuntimeMemoryImage` | `3` |  |
-| `RebuiltExecutable` | `4` |  |
-| `RunnableRebuiltExecutable` | `5` |  |
+| `DetectionOnly` | `0` | Specifies the detection only option. |
+| `PayloadLocated` | `1` | Specifies the payload located option. |
+| `PayloadDecompressed` | `2` | Specifies the payload decompressed option. |
+| `RuntimeMemoryImage` | `3` | Specifies the runtime memory image option. |
+| `RebuiltExecutable` | `4` | Specifies the rebuilt executable option. |
+| `RunnableRebuiltExecutable` | `5` | Specifies the runnable rebuilt executable option. |
 
 #### `FatMachOParser`
+
+Represents a fat mach o parser.
 
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FatMachOParser` | `FatMachOParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `IExecutableContainerParser`
+
+Defines the contract for i executable container parser.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5264,6 +5300,8 @@ Implements `IExecutableContainerParser`.
 | `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
 
 #### `IExecutablePackerHandler`
+
+Defines the contract for i executable packer handler.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5276,6 +5314,8 @@ Implements `IExecutableContainerParser`.
 
 #### `IPackerTransform`
 
+Defines the contract for i packer transform.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Id` | `string Id { get; }` |  |
@@ -5284,22 +5324,26 @@ Implements `IExecutableContainerParser`.
 
 #### `MachOParser`
 
+Represents a mach o parser.
+
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MachOParser` | `MachOParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `PackedExecutable`
+
+Represents a packed executable.
 
 Implements `IEquatable<PackedExecutable>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PackedExecutable` | `PackedExecutable(string PackerId, byte[] OriginalImage, DetectionResult Detection, ExecutableImageInfo ImageInfo, ExecutableUnpackCapabilities Capabilities, IReadOnlyDictionary<string, string> Metadata)` |  |
+| `PackedExecutable` | `PackedExecutable(string PackerId, byte[] OriginalImage, DetectionResult Detection, ExecutableImageInfo ImageInfo, ExecutableUnpackCapabilities Capabilities, IReadOnlyDictionary<string, string> Metadata)` | Represents a packed executable. |
 | `Capabilities` | `ExecutableUnpackCapabilities Capabilities { get; init; }` |  |
 | `Detection` | `DetectionResult Detection { get; init; }` |  |
 | `ImageInfo` | `ExecutableImageInfo ImageInfo { get; init; }` |  |
@@ -5309,49 +5353,59 @@ Implements `IEquatable<PackedExecutable>`.
 
 #### `PeParser`
 
+Represents a pe parser.
+
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PeParser` | `PeParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `PeRebuilder`
 
+Represents a pe rebuilder.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `RebuildSynthetic` | `static byte[] RebuildSynthetic(ExecutableImageInfo original, byte[] payload)` |  |
+| `RebuildSynthetic` | `static byte[] RebuildSynthetic(ExecutableImageInfo original, byte[] payload)` | Performs the rebuild synthetic operation. |
 
 #### `TransformResult`
+
+Represents a transform result.
 
 Implements `IEquatable<TransformResult>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `TransformResult` | `TransformResult(byte[] Payload, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `TransformResult` | `TransformResult(byte[] Payload, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents a transform result. |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
 | `Payload` | `byte[] Payload { get; init; }` |  |
 
 #### `UnpackArtifact`
 
+Represents an unpack artifact.
+
 Implements `IEquatable<UnpackArtifact>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UnpackArtifact` | `UnpackArtifact(string Name, byte[] Data, string Method = "stored")` |  |
+| `UnpackArtifact` | `UnpackArtifact(string Name, byte[] Data, string Method = "stored")` | Represents an unpack artifact. |
 | `Data` | `byte[] Data { get; init; }` |  |
 | `Method` | `string Method { get; init; }` |  |
 | `Name` | `string Name { get; init; }` |  |
 
 #### `UnpackOptions`
 
+Specifies options for unpack.
+
 Implements `IEquatable<UnpackOptions>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UnpackOptions` | `UnpackOptions(bool StrictRebuild = false, bool BestEffort = true, long MaximumInputSize = 268435456, long MaximumDecompressedSize = 536870912, int MaximumRegionCount = 4096, ulong MaximumVirtualAddressSpan = 536870912)` |  |
+| `UnpackOptions` | `UnpackOptions(bool StrictRebuild = false, bool BestEffort = true, long MaximumInputSize = 268435456, long MaximumDecompressedSize = 536870912, int MaximumRegionCount = 4096, ulong MaximumVirtualAddressSpan = 536870912)` | Specifies options for unpack. |
 | `BestEffort` | `bool BestEffort { get; init; }` |  |
 | `MaximumDecompressedSize` | `long MaximumDecompressedSize { get; init; }` |  |
 | `MaximumInputSize` | `long MaximumInputSize { get; init; }` |  |
@@ -5361,11 +5415,13 @@ Implements `IEquatable<UnpackOptions>`.
 
 #### `UnpackResult`
 
+Represents an unpack result.
+
 Implements `IEquatable<UnpackResult>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UnpackResult` | `UnpackResult(ExecutableUnpackLevel Level, ExecutableUnpackCapabilities Capabilities, IReadOnlyList<UnpackArtifact> Artifacts, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `UnpackResult` | `UnpackResult(ExecutableUnpackLevel Level, ExecutableUnpackCapabilities Capabilities, IReadOnlyList<UnpackArtifact> Artifacts, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents an unpack result. |
 | `Artifacts` | `IReadOnlyList<UnpackArtifact> Artifacts { get; init; }` |  |
 | `Capabilities` | `ExecutableUnpackCapabilities Capabilities { get; init; }` |  |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
@@ -5473,12 +5529,12 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DefragStagingBuffer` | `DefragStagingBuffer(long memoryBudgetBytes = 268435456)` |  |
+| `DefragStagingBuffer` | `DefragStagingBuffer(long memoryBudgetBytes = 268435456)` | Initializes a new instance of `DefragStagingBuffer`. |
 | `DefaultMemoryBudgetBytes` | `const long DefaultMemoryBudgetBytes` | Bytes held in memory before the rest goes to scratch. |
 | `HeldInMemoryBytes` | `long HeldInMemoryBytes { get; }` | Bytes currently held in memory. |
 | `MemoryBudgetBytes` | `long MemoryBudgetBytes { get; }` | Bytes this buffer may hold in memory before spilling. |
 | `Spilled` | `bool Spilled { get; }` | Whether anything had to go to scratch rather than memory. |
-| `Dispose` | `void Dispose()` |  |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Park` | `void Park(Stream image, int slot, long offset, long length)` | Reads a run out of the image and holds it under `slot`. |
 | `Unpark` | `void Unpark(Stream image, int slot, long offset)` | Writes the run held under `slot` back into the image. |
 
@@ -5615,11 +5671,11 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SectorCache` | `SectorCache(Stream stream, int chunkSize = 65536, int maxChunks = 4096)` |  |
+| `SectorCache` | `SectorCache(Stream stream, int chunkSize = 65536, int maxChunks = 4096)` | Initializes a new instance of `SectorCache`. |
 | `DefaultChunkSize` | `const int DefaultChunkSize` | Default chunk size (64 KB). |
 | `DefaultMaxChunks` | `const int DefaultMaxChunks` | Default chunk count (4096 × 64 KB ≈ 256 MB cap). |
 | `Length` | `long Length { get; }` | Stream length passthrough. |
-| `Dispose` | `void Dispose()` |  |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `InvalidateAll` | `void InvalidateAll()` | Drops all cached chunks (e.g. after a full image rewrite). |
 | `Invalidate` | `void Invalidate(long offset, int length)` | Invalidates cached chunks overlapping [offset, offset+length). Call after any direct write to the underlying stream so the next Read returns the fresh bytes from disk. |
 | `Read` | `byte[] Read(long offset, int length)` | Convenience wrapper that allocates the destination buffer. |
@@ -5742,22 +5798,22 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CompressionStream` | `protected CompressionStream(Stream stream, CompressionStreamMode mode, bool leaveOpen = false)` | Initializes a new `CompressionStream`. |
-| `CanRead` | `override bool CanRead { get; }` |  |
-| `CanSeek` | `override bool CanSeek { get; }` |  |
-| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `CanRead` | `override bool CanRead { get; }` | Gets a value indicating whether can read. |
+| `CanSeek` | `override bool CanSeek { get; }` | Gets a value indicating whether can seek. |
+| `CanWrite` | `override bool CanWrite { get; }` | Gets a value indicating whether can write. |
 | `InnerStream` | `protected Stream InnerStream { get; }` | Gets the underlying stream. |
-| `Length` | `override long Length { get; }` |  |
+| `Length` | `override long Length { get; }` | Gets the length. |
 | `Mode` | `CompressionStreamMode Mode { get; }` | Gets the compression mode. |
-| `Position` | `override long Position { get; set; }` |  |
+| `Position` | `override long Position { get; set; }` | Gets or sets the position. |
 | `CompressBlock` | `protected abstract void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
 | `DecompressBlock` | `protected abstract int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
-| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` | Releases resources held by this instance. |
 | `FinishCompression` | `protected virtual void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
-| `Flush` | `override void Flush()` |  |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
-| `SetLength` | `override void SetLength(long value)` |  |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+| `Flush` | `override void Flush()` | Performs the flush operation. |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` | Reads the value from the supplied input. |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` | Performs the seek operation. |
+| `SetLength` | `override void SetLength(long value)` | Sets the length. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
 
 #### `CompressionStreamMode`
 
@@ -5777,17 +5833,17 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ConcatenatedStream` | `ConcatenatedStream(Stream[] segments, bool leaveOpen = false)` | Creates a concatenated view of multiple streams. |
-| `CanRead` | `override bool CanRead { get; }` |  |
-| `CanSeek` | `override bool CanSeek { get; }` |  |
-| `CanWrite` | `override bool CanWrite { get; }` |  |
-| `Length` | `override long Length { get; }` |  |
-| `Position` | `override long Position { get; set; }` |  |
-| `Dispose` | `protected override void Dispose(bool disposing)` |  |
-| `Flush` | `override void Flush()` |  |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
-| `SetLength` | `override void SetLength(long value)` |  |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+| `CanRead` | `override bool CanRead { get; }` | Gets a value indicating whether can read. |
+| `CanSeek` | `override bool CanSeek { get; }` | Gets a value indicating whether can seek. |
+| `CanWrite` | `override bool CanWrite { get; }` | Gets a value indicating whether can write. |
+| `Length` | `override long Length { get; }` | Gets the length. |
+| `Position` | `override long Position { get; set; }` | Gets or sets the position. |
+| `Dispose` | `protected override void Dispose(bool disposing)` | Releases resources held by this instance. |
+| `Flush` | `override void Flush()` | Performs the flush operation. |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` | Reads the value from the supplied input. |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` | Performs the seek operation. |
+| `SetLength` | `override void SetLength(long value)` | Sets the length. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
 
 #### `VolumeHelper`
 
@@ -5820,12 +5876,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjArm64BuildingBlock` | `BcjArm64BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcjArmBuildingBlock`
 
@@ -5836,12 +5892,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjArmBuildingBlock` | `BcjArmBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcjArmThumbBuildingBlock`
 
@@ -5852,12 +5908,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjArmThumbBuildingBlock` | `BcjArmThumbBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcjFilter`
 
@@ -5891,12 +5947,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjIa64BuildingBlock` | `BcjIa64BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcjPowerPcBuildingBlock`
 
@@ -5907,12 +5963,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjPowerPcBuildingBlock` | `BcjPowerPcBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcjRiscVBuildingBlock`
 
@@ -5923,12 +5979,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjRiscVBuildingBlock` | `BcjRiscVBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcjSparcBuildingBlock`
 
@@ -5939,12 +5995,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjSparcBuildingBlock` | `BcjSparcBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BcjX86BuildingBlock`
 
@@ -5955,12 +6011,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BcjX86BuildingBlock` | `BcjX86BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `BurrowsWheelerTransform`
 
@@ -5980,12 +6036,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BwtBuildingBlock` | `BwtBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `DeltaBuildingBlock`
 
@@ -5996,12 +6052,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeltaBuildingBlock` | `DeltaBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `DeltaFilter`
 
@@ -6021,12 +6077,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeltaRleBuildingBlock` | `DeltaRleBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `DeltaRleEncoding`
 
@@ -6046,12 +6102,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DpcmBuildingBlock` | `DpcmBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `MoveToFrontTransform`
 
@@ -6071,12 +6127,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MtfBuildingBlock` | `MtfBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `PackBitsBuildingBlock`
 
@@ -6087,12 +6143,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackBitsBuildingBlock` | `PackBitsBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `PackBitsEncoding`
 
@@ -6112,12 +6168,12 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RleBuildingBlock` | `RleBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Encodes the supplied input. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decodes the supplied input. |
 
 #### `RunLengthEncoding`
 
