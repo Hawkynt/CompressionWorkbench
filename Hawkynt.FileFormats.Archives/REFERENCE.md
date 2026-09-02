@@ -15803,6 +15803,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces lumps. Canonical WADs keep all payloads before a trailing directory, so new data overwrites the old directory and a fresh directory is appended. Untouched payload bytes stay at their original offsets. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the WAD archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the WAD archive per the requested mode. |
@@ -15810,7 +15811,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The underlying reader produces the entry's bytes (decoded if the format compresses per-entry); the returned stream is a `BoundedEntryStream` sized to the entry's logical length so adjacent entries and any trailing padding are physically unreachable through this view. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The underlying reader produces the entry's bytes (decoded if the format compresses per-entry); the returned stream is a `BoundedEntryStream` sized to the entry's logical length so adjacent entries and trailing padding are physically unreachable. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes lumps by rewriting only the trailing directory and wiping the removed payload ranges. Shared/overlapping or non-canonical layouts fall back to verified rebuild because destructive wiping would not be safe. |
 
 #### `WadReader`
 
