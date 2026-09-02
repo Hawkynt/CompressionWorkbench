@@ -153,6 +153,19 @@ jobs:
           --filter "Category=EndToEnd"
           --logger "trx;LogFileName=e2e-tests.trx"
 
+      # These exercise our formats against the real external tools installed
+      # above (7-Zip, zstd, lz4, flac) and the post-mutation filesystem checks.
+      # They were excluded from the core filter but had no step of their own, so
+      # nothing ran them at all; advisory like the other interop tiers, because a
+      # runner without one of the tools must not fail the build.
+      - name: External interop tests
+        continue-on-error: true
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "Category=ExternalInterop"
+          --logger "trx;LogFileName=external-tests.trx"
+
       - name: OS integration tests
         continue-on-error: true
         run: >
