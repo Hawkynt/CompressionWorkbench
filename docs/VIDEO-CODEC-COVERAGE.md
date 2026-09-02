@@ -71,7 +71,16 @@ GSpot's Visual GOP Structure is worth copying as a **capability**, not as code. 
 
 **The analyzer half of that is done.** `Compression.Analysis/Video/VideoFrameStructureAnalyzer.cs` takes a sequence of `VideoFrameSample` metadata and returns I→I, P→P, B→B and random-access spacing statistics, the longest consecutive-B run, reorder depth, GOP patterns, and the two disagreement counts that catch a mislabelled stream — intra pictures that are not random-access points, and random-access points that are not intra. It reconstructs no pixels.
 
-What is missing is the other half: **producers**. No elementary-stream parser emits `VideoFrameSample` yet, so the analyzer currently has nothing to consume from a real file. The per-frame model below is therefore still the specification each parser has to meet, not a description of what any of them do today.
+**The first producer exists.** `Compression.Analysis/Video/Mpeg12VideoFrameParser.cs` walks an MPEG-1 (ISO/IEC 11172-2) or MPEG-2 (ISO/IEC 13818-2 / ITU-T H.262) **video elementary stream** and emits one `VideoFrameSample` per coded frame, reconstructing no pixels. It fills `DecodeIndex`, `PresentationIndex` (from `temporal_reference` plus the group's base), `Kind` (from `picture_coding_type`: 1→I, 2→P, 3→B, 4→S for MPEG-1 D pictures), `SizeBytes`, `Offset`, `IsRandomAccess`, `IsReference` and `IsCorrupt`, and reports `closed_gop`/`broken_link` alongside the frames. Complementary field-picture pairs are combined into the frame they encode, so an interlaced MPEG-2 stream does not hand the analyzer two pictures sharing one `temporal_reference`.
+
+Where the bitstream cannot answer honestly, the parser leaves the default rather than inventing a value:
+
+- `DecodeTimestamp` and `PresentationTimestamp` are always null. A video elementary stream carries no timing; PTS/DTS live in the PES layer. `vbv_delay` is a buffer-occupancy hint and is not reinterpreted as a presentation time.
+- `PresentationIndex` falls back to `DecodeIndex` for a whole group whenever that group's temporal references are repeated, sparse or wrapped past 1023, and the number of frames this happened to is reported as `DecodeOrderPresentationCount`.
+
+What is still missing: **AVC and HEVC parsers**, which remain unwritten. Within MPEG-1/2 the gaps are per-field detail (`top_field_first`, `repeat_first_field`, `progressive_frame`, individual field sizes, 3:2 pulldown), the sequence-header body (resolution, aspect ratio, frame rate, bit rate) and anything slice-level, including a quantiser summary and detection of truncated or missing slices. Nothing wires the parser to a container yet either: `FileFormat.MpegTs` reassembles per-PID **PES**, not elementary streams, so feeding it a `.ts` file needs a PES depacketizer first — which is also what would supply the timestamps.
+
+The per-frame model below remains the specification every parser has to meet.
 
 ### Per-frame data model
 
