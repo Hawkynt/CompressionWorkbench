@@ -128,12 +128,10 @@ public static class ComplementChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Parity"/>.
 /// </summary>
 public static class ParityChecksumSizeExtensions {
-  extension(Parity) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned;
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Nmea0183"/>.

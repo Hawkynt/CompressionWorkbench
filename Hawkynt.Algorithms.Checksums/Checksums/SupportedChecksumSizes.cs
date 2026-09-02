@@ -17,12 +17,10 @@ public static class Adler32ChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Crc16"/>.
 /// </summary>
 public static class Crc16ChecksumSizeExtensions {
-  extension(Crc16) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16;
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Crc16Ccitt"/>.

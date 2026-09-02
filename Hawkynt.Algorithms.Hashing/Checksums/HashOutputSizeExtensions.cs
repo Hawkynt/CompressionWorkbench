@@ -28,12 +28,10 @@ public static class Md5HashSizeExtensions {
 /// Provides supported hash-output size metadata for <see cref="Sha1"/>.
 /// </summary>
 public static class Sha1HashSizeExtensions {
-  extension(Sha1) {
-    /// <summary>
-    /// Gets the supported hash-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits160;
-  }
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits160;
 }
 /// <summary>
 /// Provides supported hash-output size metadata for <see cref="Sha256"/>.

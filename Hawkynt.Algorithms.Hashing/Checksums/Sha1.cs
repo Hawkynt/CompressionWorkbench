@@ -10,6 +10,11 @@ namespace Compression.Core.Checksums;
 /// </summary>
 public sealed class Sha1 {
   /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits160;
+
+  /// <summary>
   /// The size of the SHA-1 hash output in bytes (20 bytes / 160 bits).
   /// </summary>
   public const int HashSize = 20;

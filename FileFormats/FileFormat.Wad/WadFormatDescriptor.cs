@@ -112,10 +112,22 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     });
   }
 
-  public string DefaultExtension => ".wad";
-  public IReadOnlyList<string> Extensions => [".wad"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".wad";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".wad"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'I', (byte)'W', (byte)'A', (byte)'D'], Confidence: 0.90),
     new([(byte)'P', (byte)'W', (byte)'A', (byte)'D'], Confidence: 0.90)
   ];
