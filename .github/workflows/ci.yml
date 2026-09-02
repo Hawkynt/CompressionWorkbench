@@ -28,6 +28,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -211,81 +212,3 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: '**/TestResults/*.trx'
-
-  coverage:
-    name: coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Clone PNGCrushCS sibling
-        shell: bash
-        run: git clone --depth 1 https://github.com/Hawkynt/PNGCrushCS.git "$GITHUB_WORKSPACE/../PNGCrushCS"
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
-
-      - name: Pre-build PNGCrushCS sibling (Release)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$GITHUB_WORKSPACE/../PNGCrushCS"
-          REQUIRED="Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
-                    FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
-                    FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
-                    FileFormat.Png"
-          # Sibling reorganised most format projects into a FileFormats/ subdir
-          # but kept Compression.Core / FileFormat.Core at the root. Probe both
-          # locations per project so the script tolerates the layout move; also
-          # tolerate transient sibling-mid-refactor commits where a project is
-          # missing entirely — FileFormat.PngCrushAdapters.csproj has a matching
-          # SiblingPresent gate that falls back to an empty assembly.
-          locate() {
-            local proj="$1"
-            if [ -f "$proj/$proj.csproj" ]; then echo "$proj"; return 0; fi
-            if [ -f "FileFormats/$proj/$proj.csproj" ]; then echo "FileFormats/$proj"; return 0; fi
-            return 1
-          }
-          MISSING=""
-          for proj in $REQUIRED; do
-            if ! locate "$proj" >/dev/null; then
-              MISSING="$MISSING $proj"
-            fi
-          done
-          if [ -n "$MISSING" ]; then
-            echo "::warning::PNGCrushCS sibling incomplete (missing:$MISSING). Skipping pre-build; consumer csproj SiblingPresent gate handles the fallback."
-            exit 0
-          fi
-          for proj in $REQUIRED; do
-            dir="$(locate "$proj")"
-            echo "::group::Building $proj ($dir)"
-            dotnet build "$dir/$proj.csproj" --configuration Release --nologo
-            echo "::endgroup::"
-            test -f "$dir/bin/Release/net8.0/$proj.dll" || {
-              echo "::error::Pre-build did not produce $dir/bin/Release/net8.0/$proj.dll"
-              exit 1
-            }
-          done
-          echo "All sibling Release DLLs verified."
-
-      - name: Run tests with coverage
-        run: >
-          dotnet test Compression.Tests
-          --configuration Release
-          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop&Category!=Performance"
-          --collect:"XPlat Code Coverage"
-          --results-directory ./coverage
-
-      - name: Generate coverage report
-        run: |
-          dotnet tool install -g dotnet-reportgenerator-globaltool
-          reportgenerator -reports:./coverage/**/coverage.cobertura.xml -targetdir:./coverage/report -reporttypes:HtmlInline_AzurePipelines
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: ./coverage/report
