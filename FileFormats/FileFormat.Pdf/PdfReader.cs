@@ -205,7 +205,7 @@ public sealed partial class PdfReader : IDisposable {
   /// in that case the caller falls back to "treat every lexically present
   /// object as live", matching the original behaviour.
   /// </summary>
-  private static HashSet<int>? TryBuildLiveObjectSet(string text) {
+  internal static HashSet<int>? TryBuildLiveObjectSet(string text) {
     var startXrefIdx = text.LastIndexOf("startxref", StringComparison.Ordinal);
     if (startXrefIdx < 0) return null;
     var p = startXrefIdx + "startxref".Length;
