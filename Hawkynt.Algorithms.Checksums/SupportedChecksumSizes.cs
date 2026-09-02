@@ -128,35 +128,43 @@ public static class ComplementChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Parity"/>.
 /// </summary>
 public static class ParityChecksumSizeExtensions {
-  /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned;
+  extension(Parity) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned;
+  }
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Nmea0183"/>.
 /// </summary>
 public static class Nmea0183ChecksumSizeExtensions {
-  /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8;
+  extension(Nmea0183) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8;
+  }
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Crc"/>.
 /// </summary>
 public static class CrcChecksumSizeExtensions {
-  /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8To64;
+  extension(Crc) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8To64;
+  }
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Crc128"/>.
 /// </summary>
 public static class Crc128ChecksumSizeExtensions {
-  /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits128;
+  extension(Crc128) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits128;
+  }
 }
