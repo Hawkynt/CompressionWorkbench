@@ -2902,12 +2902,12 @@ Reader for Commodore 1541/1571 nibble dumps — both the raw .nib format (used b
 
 #### `CbmNibbleReader.ImageKind`
 
-Specifies image kind values.
+The nibble-level Commodore disk image layout the stream holds.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Nib` | `0` | Specifies the nib option. |
-| `G64` | `1` | Specifies the g 64 option. |
+| `Nib` | `0` |  |
+| `G64` | `1` |  |
 
 #### `CbmNibbleReader.NibbleImage`
 
@@ -4418,9 +4418,9 @@ ext filesystem revision selector used by the writer's `Build` overload. Drives t
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Ext2` | `0` | Specifies the ext 2 option. |
-| `Ext3` | `1` | Specifies the ext 3 option. |
-| `Ext4` | `2` | Specifies the ext 4 option. |
+| `Ext2` | `0` |  |
+| `Ext3` | `1` |  |
+| `Ext4` | `2` |  |
 
 ### Namespace `FileSystem.Ext1`
 

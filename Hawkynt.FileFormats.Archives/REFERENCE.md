@@ -3540,13 +3540,13 @@ Reads Bethesda Softworks Archive (BSA) files. Supports TES3 (Morrowind), TES4/FO
 
 #### `BsaReader.BsaFormat`
 
-Specifies bsa format values.
+The generation of the Bethesda archive, which decides the header and folder record layout.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Tes3` | `0` | Specifies the tes 3 option. |
-| `Tes4` | `1` | Specifies the tes 4 option. |
-| `Ba2` | `2` | Specifies the ba 2 option. |
+| `Tes3` | `0` |  |
+| `Tes4` | `1` |  |
+| `Ba2` | `2` |  |
 
 #### `BsaWriter`
 
@@ -10615,12 +10615,12 @@ Implements `IEquatable<NiftiImage>`.
 
 #### `NiftiReader.NiftiVersion`
 
-Specifies nifti version values.
+The NIfTI header revision the file declares.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Nifti1` | `1` | Specifies the nifti 1 option. |
-| `Nifti2` | `2` | Specifies the nifti 2 option. |
+| `Nifti1` | `1` |  |
+| `Nifti2` | `2` |  |
 
 ### Namespace `FileFormat.Nsa`
 
@@ -15255,14 +15255,14 @@ Reader for UPX-packed executables. Parses both PE and ELF variants and surfaces 
 
 #### `UpxReader.ContainerKind`
 
-Specifies container kind values.
+The executable container the packed image is wrapped in.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Pe` | `0` | Specifies the pe option. |
-| `Elf` | `1` | Specifies the elf option. |
-| `MachO` | `2` | Specifies the mach o option. |
-| `Unknown` | `3` | Specifies an unknown or unrecognized value. |
+| `Pe` | `0` |  |
+| `Elf` | `1` |  |
+| `MachO` | `2` |  |
+| `Unknown` | `3` |  |
 
 #### `UpxReader.DetectionConfidence`
 
