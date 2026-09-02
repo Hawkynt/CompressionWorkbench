@@ -31,40 +31,34 @@ namespace FileSystem.CbmNibble;
 /// </remarks>
 public sealed class CbmNibbleReader {
 
-    /// <summary>
+  /// <summary>
   /// Provides the g 64 signature value.
   /// </summary>
 public static readonly byte[] G64Signature = "GCR-1541"u8.ToArray();
-    /// <summary>
+  /// <summary>
   /// Defines the nib track count constant value.
   /// </summary>
 public const int NibTrackCount = 84;          // standard nibtools: 84 half-tracks
-    /// <summary>
+  /// <summary>
   /// Defines the nib track size constant value.
   /// </summary>
 public const int NibTrackSize = 0x2000;       // 8192 bytes per half-track
-    /// <summary>
+  /// <summary>
   /// Defines the nib expected file size constant value.
   /// </summary>
 public const int NibExpectedFileSize = NibTrackCount * NibTrackSize; // 688128
 
-    /// <summary>
-  /// Specifies image kind values.
+  /// <summary>
+  /// The nibble-level Commodore disk image layout the stream holds.
   /// </summary>
-public enum ImageKind { /// <summary>
-/// Specifies the nib option.
-/// </summary>
-Nib, /// <summary>
-/// Specifies the g 64 option.
-/// </summary>
-G64 }
+  public enum ImageKind { Nib, G64 }
 
-    /// <summary>
+  /// <summary>
   /// Represents a track.
   /// </summary>
 public sealed record Track(int Index, byte[] Data, uint SpeedZone);
 
-    /// <summary>
+  /// <summary>
   /// Represents a nibble image.
   /// </summary>
 public sealed record NibbleImage(
@@ -75,7 +69,7 @@ public sealed record NibbleImage(
     List<Track> Tracks,
     long TotalFileSize);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static NibbleImage Read(ReadOnlySpan<byte> data, string? fileName = null) {
@@ -156,7 +150,7 @@ public static NibbleImage Read(ReadOnlySpan<byte> data, string? fileName = null)
       TotalFileSize: data.Length);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build metadata operation.
   /// </summary>
 public static byte[] BuildMetadata(NibbleImage img) {

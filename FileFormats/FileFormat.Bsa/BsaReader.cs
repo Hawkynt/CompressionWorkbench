@@ -11,30 +11,21 @@ public sealed class BsaReader {
   private readonly List<BsaEntry> _entries = [];
   private readonly BsaFormat _format;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<BsaEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets the format.
   /// </summary>
 public BsaFormat Format => _format;
 
-    /// <summary>
-  /// Specifies bsa format values.
+  /// <summary>
+  /// The generation of the Bethesda archive, which decides the header and folder record layout.
   /// </summary>
-public enum BsaFormat { /// <summary>
-/// Specifies the tes 3 option.
-/// </summary>
-Tes3, /// <summary>
-/// Specifies the tes 4 option.
-/// </summary>
-Tes4, /// <summary>
-/// Specifies the ba 2 option.
-/// </summary>
-Ba2 }
+  public enum BsaFormat { Tes3, Tes4, Ba2 }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="BsaReader"/>.
   /// </summary>
 public BsaReader(Stream stream) {

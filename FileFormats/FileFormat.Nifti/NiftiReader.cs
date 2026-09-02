@@ -22,16 +22,10 @@ namespace FileFormat.Nifti;
 /// </remarks>
 public sealed class NiftiReader {
 
-    /// <summary>
-  /// Specifies nifti version values.
+  /// <summary>
+  /// The NIfTI header revision the file declares.
   /// </summary>
-public enum NiftiVersion { /// <summary>
-/// Specifies the nifti 1 option.
-/// </summary>
-Nifti1 = 1, /// <summary>
-/// Specifies the nifti 2 option.
-/// </summary>
-Nifti2 = 2 }
+  public enum NiftiVersion { Nifti1 = 1, Nifti2 = 2 }
 
   /// <summary>Parsed NIfTI file — header, raw header bytes, voxels, and key metadata.</summary>
   public sealed record NiftiImage(

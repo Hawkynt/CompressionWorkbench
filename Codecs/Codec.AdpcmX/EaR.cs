@@ -40,16 +40,7 @@ public static class EaR {
   public const byte RawFrameMarker = 0xEE;
 
   /// <summary>EA revision selector.</summary>
-  public enum Revision {   /// <summary>
-  /// Specifies the r 1 option.
-  /// </summary>
-R1,   /// <summary>
-  /// Specifies the r 2 option.
-  /// </summary>
-R2,   /// <summary>
-  /// Specifies the r 3 option.
-  /// </summary>
-R3 }
+  public enum Revision { R1, R2, R3 }
 
   /// <summary>
   /// Decodes a single channel's R1/R2/R3 chunk into PCM16. For R1 the two start samples are

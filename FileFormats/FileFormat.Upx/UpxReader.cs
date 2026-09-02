@@ -34,22 +34,10 @@ public sealed class UpxReader {
   /// <summary>PE-style 8-byte section names used by canonical UPX output.</summary>
   public static readonly string[] SectionNames = ["UPX0", "UPX1", "UPX2"];
 
-    /// <summary>
-  /// Specifies container kind values.
+  /// <summary>
+  /// The executable container the packed image is wrapped in.
   /// </summary>
-public enum ContainerKind { /// <summary>
-/// Specifies the pe option.
-/// </summary>
-Pe, /// <summary>
-/// Specifies the elf option.
-/// </summary>
-Elf, /// <summary>
-/// Specifies the mach o option.
-/// </summary>
-MachO, /// <summary>
-/// Specifies an unknown or unrecognized value.
-/// </summary>
-Unknown }
+  public enum ContainerKind { Pe, Elf, MachO, Unknown }
 
   /// <summary>Aggregated detection confidence after combining all heuristic layers.</summary>
   public enum DetectionConfidence {
@@ -61,27 +49,27 @@ Unknown }
     Confirmed,
   }
 
-    /// <summary>
+  /// <summary>
   /// Specifies packer header layout values.
   /// </summary>
 public enum PackerHeaderLayout {
-        /// <summary>
+    /// <summary>
     /// Specifies the legacy option.
     /// </summary>
 Legacy,
-        /// <summary>
+    /// <summary>
     /// Specifies the modern pe option.
     /// </summary>
 ModernPe,
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents a pe section.
   /// </summary>
 public sealed record PeSection(
     string Name, uint VirtualSize, uint VirtualAddress, uint RawSize, uint RawOffset, uint Characteristics);
 
-    /// <summary>
+  /// <summary>
   /// Represents a packer header.
   /// </summary>
 public sealed record PackerHeader(
@@ -115,7 +103,7 @@ public sealed record PackerHeader(
     string FingerprintReasoning
   );
 
-    /// <summary>
+  /// <summary>
   /// Represents an info.
   /// </summary>
 public sealed record Info(
@@ -133,7 +121,7 @@ public sealed record Info(
     public bool IsUpxPacked => this.Confidence != DetectionConfidence.None;
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static Info Read(ReadOnlySpan<byte> data) {
