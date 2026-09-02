@@ -39,7 +39,6 @@ MD5 hash function (RFC 1321). Produces 16-byte (128-bit) message digests. Used f
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the MD5 hash of the given data. |
 
 #### `Md5HashSizeExtensions`
@@ -48,7 +47,7 @@ Provides supported hash-output size metadata for `Md5`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `Sha1`
 
@@ -59,7 +58,6 @@ FIPS 180-4 SHA-1 cryptographic hash function. Provides both batch (`Compute`) an
 | `Sha1` | `Sha1()` | Initializes a new `Sha1` instance. |
 | `HashSize` | `const int HashSize` | The size of the SHA-1 hash output in bytes (20 bytes / 160 bits). |
 | `Hash` | `byte[] Hash { get; }` | Gets the computed hash. Available after `Finish` has been called. |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Clone` | `Sha1 Clone()` | Creates a copy of the current hasher state, allowing independent continuation. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the SHA-1 hash of the given data in a single call. |
 | `Finish` | `void Finish()` | Finalizes the hash computation. |
@@ -72,7 +70,7 @@ Provides supported hash-output size metadata for `Sha1`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `Sha256`
 
@@ -83,7 +81,6 @@ FIPS 180-4 SHA-256 cryptographic hash function. Provides both batch (`Compute`) 
 | `Sha256` | `Sha256()` | Initializes a new `Sha256` instance. |
 | `HashSize` | `const int HashSize` | The size of the SHA-256 hash output in bytes (32 bytes / 256 bits). |
 | `Hash` | `byte[] Hash { get; }` | Gets the computed hash. Available after `Finish` has been called. Returns an empty array before finalization. |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the SHA-256 hash of the given data in a single call. |
 | `Finish` | `void Finish()` | Finalizes the hash computation. After calling this method, the `Hash` property contains the 32-byte SHA-256 digest. |
 | `Reset` | `void Reset()` | Resets the hasher to its initial state. |
@@ -95,7 +92,7 @@ Provides supported hash-output size metadata for `Sha256`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `XxHash32`
 
@@ -104,7 +101,6 @@ xxHash 32-bit non-cryptographic hash function. Provides both batch (`Compute`) a
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XxHash32` | `XxHash32(uint seed = 0)` | Initializes a new `XxHash32` with the specified seed. |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Value` | `uint Value { get; }` | Gets the current hash value. This finalizes the accumulated state without modifying it. |
 | `Compute` | `static uint Compute(ReadOnlySpan<byte> data, uint seed = 0)` | Computes the xxHash32 of the given data in a single call. |
 | `Reset` | `void Reset()` | Resets the hasher to its initial state. |
@@ -116,7 +112,7 @@ Provides supported hash-output size metadata for `XxHash32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `XxHash64`
 
@@ -125,7 +121,6 @@ xxHash 64-bit non-cryptographic hash function. Provides both batch (`Compute`) a
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XxHash64` | `XxHash64(ulong seed = 0)` | Initializes a new `XxHash64` with the specified seed. |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Value` | `ulong Value { get; }` | Gets the current hash value. This finalizes the accumulated state without modifying it. |
 | `Compute` | `static ulong Compute(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the xxHash64 of the given data in a single call. |
 | `Reset` | `void Reset()` | Resets the hasher to its initial state. |
@@ -137,7 +132,7 @@ Provides supported hash-output size metadata for `XxHash64`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 ### Namespace `Hawkynt.Algorithms.Hashing`
 
@@ -1445,7 +1440,6 @@ Streebog-512 (GOST R 34.11-2012) hash function.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Streebog-512 hash of the supplied data. |
 
 #### `Streebog512HashSizeExtensions`
@@ -1454,7 +1448,7 @@ Provides supported hash-output size metadata for `Streebog512`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `SubterraneanHash`
 
@@ -1462,7 +1456,6 @@ Subterranean-Hash, a 256-bit lightweight hash based on the 257-bit Subterranean 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Subterranean Hash hash of the supplied data. |
 
 #### `SubterraneanHashSizeExtensions`
@@ -1471,7 +1464,7 @@ Provides supported hash-output size metadata for `SubterraneanHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `Tiger`
 
@@ -1497,7 +1490,6 @@ Whirlpool as standardized in ISO/IEC 10118-3.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Whirlpool hash of the supplied data. |
 
 #### `WhirlpoolHashSizeExtensions`
@@ -1506,7 +1498,7 @@ Provides supported hash-output size metadata for `Whirlpool`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `XoodyakHash`
 
@@ -1514,7 +1506,6 @@ Xoodyak hash mode from the JavaScript registry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes the Xoodyak Hash hash of the supplied data. |
 
 #### `XoodyakHashSizeExtensions`
@@ -1523,7 +1514,7 @@ Provides supported hash-output size metadata for `XoodyakHash`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `XxHash`
 
@@ -1540,7 +1531,6 @@ xxHash3 registry implementation, including its 64- and 128-bit output modes.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
 | `Compute128` | `static byte[] Compute128(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 128-bit xxHash-3 hash of the supplied data. |
 | `Compute64Bytes` | `static byte[] Compute64Bytes(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 64-bit xxHash-3 hash and returns its encoded bytes. |
 | `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data, ulong seed = 0)` | Computes the 64-bit xxHash-3 hash of the supplied data. |
@@ -1551,7 +1541,7 @@ Provides supported hash-output size metadata for `XxHash3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits. |
+| `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` |  |
 
 #### `XxHashHashSizeExtensions`
 

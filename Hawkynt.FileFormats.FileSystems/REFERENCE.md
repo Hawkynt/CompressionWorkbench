@@ -1129,7 +1129,7 @@ In-place T64 modifier — performs O(touched bytes) random-access I/O against a 
 
 #### `T64Reader`
 
-Reads t 64 data.
+Reads a Commodore 64 T64 tape container and exposes the program entries recorded in its directory.
 
 Implements `IDisposable`.
 
@@ -1143,7 +1143,7 @@ Implements `IDisposable`.
 
 #### `T64Writer`
 
-Writes t 64 data.
+Writes a Commodore 64 T64 tape container, building the tape record and the directory of program entries.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1848,7 +1848,7 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 #### `VmdkWriter`
 
-Writes vmdk data.
+Writes a VMware VMDK virtual disk, emitting the descriptor and the grain directory for the extent data.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3432,7 +3432,7 @@ In-place D64 modifier. Performs add / remove on an existing 1541 disk image with
 
 #### `D64Reader`
 
-Reads d 64 data.
+Reads the directory of a Commodore 1541 D64 disk image and extracts the files it holds.
 
 Implements `IDisposable`.
 
@@ -3445,7 +3445,7 @@ Implements `IDisposable`.
 
 #### `D64Writer`
 
-Writes d 64 data.
+Builds a Commodore 1541 D64 disk image from a set of files, filling in the BAM and directory.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3542,7 +3542,7 @@ In-place D71 modifier — same blueprint as `D64Modifier`, adapted for the 1571'
 
 #### `D71Reader`
 
-Reads d 71 data.
+Reads the directory of a double-sided Commodore 1571 D71 disk image and extracts the files it holds.
 
 Implements `IDisposable`.
 
@@ -3555,7 +3555,7 @@ Implements `IDisposable`.
 
 #### `D71Writer`
 
-Writes d 71 data.
+Builds a double-sided Commodore 1571 D71 disk image from a set of files, filling in both BAM sides and the directory.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3652,7 +3652,7 @@ In-place D81 modifier — same blueprint as `D64Modifier` / `D71Modifier`, adapt
 
 #### `D81Reader`
 
-Reads d 81 data.
+Reads the directory of a Commodore 1581 D81 disk image and extracts the files it holds.
 
 Implements `IDisposable`.
 
@@ -3665,7 +3665,7 @@ Implements `IDisposable`.
 
 #### `D81Writer`
 
-Writes d 81 data.
+Builds a Commodore 1581 D81 disk image from a set of files, filling in the header block, BAM and directory.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5353,7 +5353,7 @@ In-place HFS classic modifier — performs random-access mutation of an existing
 
 #### `HfsReader`
 
-Reads hfs data.
+Reads the catalog of a Classic Macintosh HFS volume and extracts the files it holds.
 
 Implements `IDisposable`.
 
@@ -6239,7 +6239,7 @@ In-place modifier for MFS (Macintosh File System) disk images. Performs add / re
 
 #### `MfsReader`
 
-Reads mfs data.
+Reads the flat directory of a Classic Macintosh MFS volume and extracts the files it holds.
 
 Implements `IDisposable`.
 
@@ -9413,7 +9413,7 @@ In-place UDF (ECMA-167) modifier — true random-access editing without rebuildi
 
 #### `UdfReader`
 
-Reads udf data.
+Reads the directory tree of a UDF volume image and extracts the files it holds.
 
 Implements `IDisposable`.
 
@@ -9636,7 +9636,7 @@ In-place VDFS modifier — true random-access editing without rebuilding the who
 
 #### `VdfsReader`
 
-Reads vdfs data.
+Reads the entry table of a Gothic-engine VDFS archive and extracts the files it holds.
 
 Implements `IDisposable`.
 
@@ -9653,7 +9653,7 @@ Implements `IDisposable`.
 
 #### `VdfsWriter`
 
-Writes vdfs data.
+Builds a Gothic-engine VDFS archive from a set of files, writing the entry table and the file data behind it.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9922,7 +9922,7 @@ Rebuild-style modifier for XFS images produced by `XfsWriter` — the fallback f
 
 #### `XfsReader`
 
-Reads xfs data.
+Reads the directory tree of an SGI XFS filesystem image and extracts the files it holds.
 
 Implements `IDisposable`.
 

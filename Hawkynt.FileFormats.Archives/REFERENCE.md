@@ -12539,7 +12539,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `RarcReader`
 
-Reads rarc data.
+Reads a Nintendo RARC resource archive, walking its directory nodes to enumerate the files it holds.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12550,7 +12550,7 @@ Reads rarc data.
 
 #### `RarcWriter`
 
-Writes rarc data.
+Writes a Nintendo RARC resource archive, laying out the directory nodes and aligning file data to 32 bytes.
 
 Implements `IDisposable`.
 
@@ -14430,7 +14430,7 @@ In-place T64 modifier — performs O(touched bytes) random-access I/O against a 
 
 #### `T64Reader`
 
-Reads t 64 data.
+Reads a Commodore 64 T64 tape container and exposes the program entries recorded in its directory.
 
 Implements `IDisposable`.
 
@@ -14444,7 +14444,7 @@ Implements `IDisposable`.
 
 #### `T64Writer`
 
-Writes t 64 data.
+Writes a Commodore 64 T64 tape container, building the tape record and the directory of program entries.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

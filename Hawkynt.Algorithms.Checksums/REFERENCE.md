@@ -20,7 +20,6 @@ Implements `IChecksum`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Adler32` | `Adler32()` | Initializes a new instance of `Adler32`. |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | Computes the Adler-32 of the given data in a single call. |
 | `Reset` | `void Reset()` | Resets the checksum to its initial state. |
@@ -33,7 +32,7 @@ Provides supported checksum-output size metadata for `Adler32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
 
 #### `Crc16`
 
@@ -45,7 +44,6 @@ Implements `IChecksum`.
 | --- | --- | --- |
 | `Crc16` | `Crc16(ushort polynomial = 40961, ushort initialValue = 0)` | Initializes a new `Crc16` with the specified polynomial. |
 | `Arc` | `const ushort Arc` | CRC-16/ARC polynomial (reflected form). |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` | Computes the CRC-16 of the given data using the ARC polynomial. |
 | `Reset` | `void Reset()` | Resets the checksum to its initial state. |
@@ -62,7 +60,6 @@ Implements `IChecksum`.
 | --- | --- | --- |
 | `Crc16Ccitt` | `Crc16Ccitt(ushort initialValue = 0)` | Initializes a new `Crc16Ccitt` with the specified initial value. |
 | `Polynomial` | `const ushort Polynomial` | CRC-16/CCITT polynomial (non-reflected form). |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static ushort Compute(ReadOnlySpan<byte> data, ushort initial = 0)` | Computes the CRC-16/CCITT of the given data. |
 | `Reset` | `void Reset()` | Resets the checksum to its initial state. |
@@ -75,7 +72,7 @@ Provides supported checksum-output size metadata for `Crc16Ccitt`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
 
 #### `Crc16ChecksumSizeExtensions`
 
@@ -83,7 +80,7 @@ Provides supported checksum-output size metadata for `Crc16`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
 
 #### `Crc32`
 
@@ -96,7 +93,6 @@ Implements `IChecksum`.
 | `Crc32` | `Crc32(uint polynomial = 3988292384)` | Initializes a new `Crc32` with the specified polynomial. |
 | `Castagnoli` | `const uint Castagnoli` | Castagnoli (CRC-32C) polynomial. |
 | `Ieee` | `const uint Ieee` | Standard IEEE 802.3 polynomial (used by ZIP, GZIP, PNG, etc.). |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | Computes the CRC-32 of the given data in a single call using the IEEE polynomial. |
 | `Compute` | `static uint Compute(ReadOnlySpan<byte> data, uint polynomial)` | Computes the CRC-32 of the given data with the specified polynomial. |
@@ -110,7 +106,7 @@ Provides supported checksum-output size metadata for `Crc32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
 
 #### `Crc64`
 
@@ -122,7 +118,6 @@ Implements `IChecksum`.
 | --- | --- | --- |
 | `Crc64` | `Crc64(ulong polynomial = 14514072000185962306)` | Initializes a new `Crc64` with the specified polynomial. |
 | `Ecma182` | `const ulong Ecma182` | ECMA-182 polynomial used by the XZ format. |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Value64` | `ulong Value64 { get; }` | Gets the full 64-bit CRC value. |
 | `Compute` | `static ulong Compute(ReadOnlySpan<byte> data)` | Computes the CRC-64 of the given data in a single call using the ECMA-182 polynomial. |
 | `Reset` | `void Reset()` | Resets the checksum to its initial state. |
@@ -135,7 +130,7 @@ Provides supported checksum-output size metadata for `Crc64`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
+| `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
 
 #### `IChecksum`
 
@@ -301,7 +296,6 @@ Bit-accurate generic CRC implementation using normal-form polynomials.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 16-bit CRC checksum of the supplied data. |
 | `Compute24` | `static uint Compute24(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 24-bit CRC checksum of the supplied data. |
 | `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 32-bit CRC checksum of the supplied data. |
@@ -315,7 +309,6 @@ Generic 128-bit CRC using normal-form polynomials.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Compute` | `static UInt128 Compute(ReadOnlySpan<byte> data, Crc128Parameters parameters)` | Computes the CRC-128 checksum of the supplied data. |
 
 #### `Crc128ChecksumSizeExtensions`
@@ -569,7 +562,6 @@ NMEA-0183 XOR checksum. Delimiters '$'/'!' and '*' plus suffix are ignored when 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes { get; }` | Gets the supported checksum-output sizes, in bits. |
 | `Compute` | `static byte Compute(ReadOnlySpan<byte> sentence)` | Computes the NMEA-0183 checksum of the supplied data. |
 
 #### `Nmea0183ChecksumSizeExtensions`
