@@ -130,7 +130,7 @@ public sealed class BonkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (channelBlobs.Count is < 1 or > 2)
       throw new InvalidOperationException("Bonk create requires one or two mono PCM16 WAV channel files.");
 
-    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var channels = channelBlobs.Select(b => new WavReader().ReadCanonicalPcm(b.Data)).ToList();
     var first = channels[0];
     if (channels.Any(c => c.NumChannels != 1 || c.BitsPerSample != 16))
       throw new InvalidOperationException("Bonk create requires mono 16-bit integer PCM WAV channel files.");

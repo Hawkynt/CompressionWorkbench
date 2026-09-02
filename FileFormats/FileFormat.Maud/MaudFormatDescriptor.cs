@@ -118,7 +118,7 @@ public sealed class MaudFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (channelBlobs.Count is 0 or > 2)
       throw new InvalidOperationException("MAUD archive create needs FULL.maud or one (mono) / two (stereo) per-channel WAVs.");
 
-    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var channels = channelBlobs.Select(b => new WavReader().ReadCanonicalPcm(b.Data)).ToList();
     var first = channels[0];
     if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
       throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");

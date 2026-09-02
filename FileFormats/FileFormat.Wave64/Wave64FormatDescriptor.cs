@@ -108,7 +108,7 @@ public sealed class Wave64FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     if (channelBlobs.Count == 0)
       throw new InvalidOperationException("Wave64 archive create needs either FULL.w64 or one or more per-channel WAVs.");
 
-    var channels = channelBlobs.Select(f => new WavReader().Read(f.Data)).ToList();
+    var channels = channelBlobs.Select(f => new WavReader().ReadCanonicalPcm(f.Data)).ToList();
 
     var first = channels[0];
     if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))

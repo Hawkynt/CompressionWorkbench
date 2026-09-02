@@ -132,7 +132,7 @@ public abstract class G711FormatDescriptorBase : IFormatDescriptor, IArchiveForm
       throw new InvalidOperationException(
         $"Raw G.711 create needs either {fullName} or a single mono 16-bit WAV.");
 
-    var parsed = new WavReader().Read(wav.Data);
+    var parsed = new WavReader().ReadCanonicalPcm(wav.Data);
     if (parsed.NumChannels != 1)
       throw new InvalidOperationException("Raw G.711 is mono; the source WAV must have exactly one channel.");
     if (parsed.BitsPerSample != 16)

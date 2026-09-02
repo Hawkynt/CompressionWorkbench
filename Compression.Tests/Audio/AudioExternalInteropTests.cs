@@ -263,7 +263,7 @@ public sealed class AudioExternalInteropTests {
   }
 
   /// <summary>
-  /// Given an Apple CAF assembled by our CAF descriptor (LPCM, little-endian flag set),
+  /// Given an Apple CAF assembled by our CAF descriptor (LPCM, CAF-canonical big-endian samples),
   /// When ffprobe inspects it,
   /// Then the CAF container + 16-bit PCM @ 44.1 kHz is recognised and ffmpeg decodes it.
   /// </summary>

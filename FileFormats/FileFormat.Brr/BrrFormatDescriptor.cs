@@ -114,7 +114,7 @@ public sealed class BrrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (wavInput.Data == null)
       throw new InvalidOperationException("BRR archive create needs either FULL.brr or a mono WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels != 1)
       throw new InvalidOperationException("BRR is mono; supply a single-channel WAV.");
     if (wav.BitsPerSample != 16)

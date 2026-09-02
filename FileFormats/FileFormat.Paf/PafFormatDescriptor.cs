@@ -116,7 +116,7 @@ public sealed class PafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (channelBlobs.Count == 0)
       throw new InvalidOperationException("PAF archive create needs FULL.paf or one or more per-channel WAVs.");
 
-    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var channels = channelBlobs.Select(b => new WavReader().ReadCanonicalPcm(b.Data)).ToList();
     var first = channels[0];
     if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
       throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");

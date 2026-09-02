@@ -71,7 +71,7 @@ public class UnityBundleTests {
     d.Create(ms, inputs, new FormatCreateOptions {
       MethodName = method,
       Optimize = optimize,
-      FormatSpecific = formatSpecific,
+      FormatSpecific = FormatCreateOptions.FormatSpecificFrom(formatSpecific),
     });
     return ms.ToArray();
   }

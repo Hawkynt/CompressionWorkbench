@@ -122,7 +122,7 @@ public sealed class AicaFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (wav.Data == null)
       throw new InvalidOperationException("AICA archive create needs either FULL.aica or a mono WAV.");
 
-    var parsed = new WavReader().Read(wav.Data);
+    var parsed = new WavReader().ReadCanonicalPcm(wav.Data);
     if (parsed.NumChannels != 1)
       throw new InvalidOperationException("AICA is mono — supply a single-channel WAV.");
 

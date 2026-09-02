@@ -112,7 +112,7 @@ public sealed class SmpFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (channelBlobs.Count != 1)
       throw new InvalidOperationException("SMP archive create needs FULL.smp or exactly one (mono) WAV.");
 
-    var wav = new WavReader().Read(channelBlobs[0].Data);
+    var wav = new WavReader().ReadCanonicalPcm(channelBlobs[0].Data);
     if (wav.NumChannels != 1)
       throw new InvalidOperationException("SampleVision is mono; supply a single-channel WAV.");
     if (wav.BitsPerSample != 16)

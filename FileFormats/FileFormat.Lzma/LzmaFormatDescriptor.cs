@@ -119,7 +119,7 @@ public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
 
   /// <summary>Parses the compression level from the options, falling back to Normal.</summary>
   internal static LzmaCompressionLevel ParseLevel(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("Level");
+    var raw = options.GetString("Level");
     return raw is not null && Enum.TryParse<LzmaCompressionLevel>(raw, ignoreCase: true, out var level)
       ? level
       : LzmaCompressionLevel.Normal;
@@ -127,7 +127,7 @@ public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
 
   /// <summary>Parses the dictionary size label into bytes, falling back to the 8 MiB default.</summary>
   internal static int ParseDictionarySize(FormatCreateOptions options) {
-    var raw = options.FormatSpecific?.GetValueOrDefault("DictionarySize");
+    var raw = options.GetString("DictionarySize");
     return raw is not null && DictionarySizesByLabel.TryGetValue(raw, out var bytes)
       ? bytes
       : LzmaConstants.DefaultDictionarySize;
@@ -136,7 +136,7 @@ public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>Parses an integer knob, clamping it to <paramref name="min"/>..<paramref name="max"/>
   /// and falling back to <paramref name="fallback"/> when absent or unparseable.</summary>
   private static int ParseClampedInt(FormatCreateOptions options, string key, int min, int max, int fallback) {
-    var raw = options.FormatSpecific?.GetValueOrDefault(key);
+    var raw = options.GetString(key);
     return raw is not null && int.TryParse(raw, out var value)
       ? Math.Clamp(value, min, max)
       : fallback;

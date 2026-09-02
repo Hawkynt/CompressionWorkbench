@@ -119,7 +119,7 @@ public sealed class SndrFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (wavInput.Data == null)
       throw new InvalidOperationException("Sounder create needs FULL.sndr or a mono WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels != 1)
       throw new InvalidOperationException("Sounder is mono; supply a single-channel WAV.");
 

@@ -31,7 +31,7 @@ public static class WavChannelMux {
     if (channelBlobs.Count == 0)
       throw new InvalidOperationException("No channel WAVs supplied.");
 
-    var channels = channelBlobs.Select(c => new WavReader().Read(c.Data)).ToList();
+    var channels = channelBlobs.Select(c => new WavReader().ReadCanonicalPcm(c.Data)).ToList();
     var first = channels[0];
     if (channels.Any(c => c.SampleRate != first.SampleRate ||
                           c.BitsPerSample != first.BitsPerSample ||

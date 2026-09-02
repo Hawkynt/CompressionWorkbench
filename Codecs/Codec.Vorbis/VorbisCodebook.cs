@@ -131,7 +131,8 @@ internal sealed class VorbisCodebook {
   /// <summary>Assign Huffman codewords to lengths and build a sorted lookup.</summary>
   private static void BuildHuffman(VorbisCodebook cb) {
     var codewords = new uint[cb.Entries];
-    Span<uint> available = stackalloc uint[32];
+    // Indexed by codeword length, which Vorbis stores as a 5-bit field plus one, so 32 is reachable.
+    Span<uint> available = stackalloc uint[33];
     var usedCount = 0;
 
     // First used entry seeds the tree.
@@ -158,7 +159,10 @@ internal sealed class VorbisCodebook {
         throw new InvalidDataException("Vorbis: codebook not a valid prefix code (overfull).");
       var code = available[depth];
       available[depth] = 0;
-      codewords[i] = BitReverse(code) >> (32 - len);
+      // 'code' carries the prefix in its top bits, so right-aligning it yields the canonical
+      // MSB-first codeword DecodeScalar accumulates. Reversing first would push every prefix
+      // into the low bits that the shift then discards, collapsing all codewords to zero.
+      codewords[i] = code >> (32 - len);
       if (depth != len) {
         for (var d = len; d > depth; --d) {
           if (available[d] != 0)
@@ -185,14 +189,6 @@ internal sealed class VorbisCodebook {
       cb.SortedCodewords[i] = pairs[i].code;
       cb.SortedIndex[i] = pairs[i].entry;
     }
-  }
-
-  private static uint BitReverse(uint n) {
-    n = ((n & 0xAAAAAAAAu) >> 1) | ((n & 0x55555555u) << 1);
-    n = ((n & 0xCCCCCCCCu) >> 2) | ((n & 0x33333333u) << 2);
-    n = ((n & 0xF0F0F0F0u) >> 4) | ((n & 0x0F0F0F0Fu) << 4);
-    n = ((n & 0xFF00FF00u) >> 8) | ((n & 0x00FF00FFu) << 8);
-    return (n >> 16) | (n << 16);
   }
 
   /// <summary>

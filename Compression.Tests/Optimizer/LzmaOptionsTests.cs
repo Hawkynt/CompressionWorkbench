@@ -30,7 +30,7 @@ public class LzmaOptionsTests {
   private static byte[] Compress(LzmaFormatDescriptor d, byte[] data, IReadOnlyDictionary<string, string> opts) {
     using var inMs = new MemoryStream(data);
     using var outMs = new MemoryStream();
-    d.Compress(inMs, outMs, new FormatCreateOptions { FormatSpecific = opts });
+    d.Compress(inMs, outMs, new FormatCreateOptions { FormatSpecific = FormatCreateOptions.FormatSpecificFrom(opts) });
     return outMs.ToArray();
   }
 

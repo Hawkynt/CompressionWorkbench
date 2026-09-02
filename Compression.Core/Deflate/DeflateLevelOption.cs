@@ -19,7 +19,7 @@ public static class DeflateLevelOption {
   public static DeflateCompressionLevel Parse(FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(options);
 
-    var raw = options.FormatSpecific?.GetValueOrDefault("Level");
+    var raw = options.GetString("Level");
     if (raw is { Length: > 0 } && Enum.TryParse<DeflateCompressionLevel>(raw, ignoreCase: true, out var named))
       return named;
 

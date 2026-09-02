@@ -113,7 +113,7 @@ public sealed class BfstmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       throw new InvalidOperationException("BFSTM archive create needs either FULL.bfstm or one or more per-channel WAVs.");
 
     var channels = new List<WavReader.ParsedWav>();
-    foreach (var (_, data) in channelBlobs) channels.Add(new WavReader().Read(data));
+    foreach (var (_, data) in channelBlobs) channels.Add(new WavReader().ReadCanonicalPcm(data));
 
     var first = channels[0];
     if (channels.Any(c => c.NumChannels != 1 || c.SampleRate != first.SampleRate || c.BitsPerSample != 16))

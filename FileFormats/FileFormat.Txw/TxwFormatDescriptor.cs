@@ -207,7 +207,7 @@ public sealed class TxwFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (wavInput.Data == null)
       throw new InvalidOperationException("TXW archive create needs FULL.txw or one mono WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels != 1)
       throw new InvalidOperationException("TXW assembly accepts a single mono WAV.");
 

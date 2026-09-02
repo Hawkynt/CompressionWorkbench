@@ -125,7 +125,7 @@ public sealed class RoqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (wavInput.Data == null)
       throw new InvalidOperationException("RoQ archive create needs either FULL.roq or a WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels is not (1 or 2))
       throw new InvalidOperationException("RoQ create supports mono or stereo WAV.");
     if (wav.BitsPerSample != 16)

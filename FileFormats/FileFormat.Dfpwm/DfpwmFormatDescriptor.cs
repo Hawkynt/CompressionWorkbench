@@ -136,7 +136,7 @@ public sealed class DfpwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     if (wav.Data == null)
       throw new InvalidOperationException("DFPWM archive create needs either FULL.dfpwm or a mono WAV.");
 
-    var parsed = new WavReader().Read(wav.Data);
+    var parsed = new WavReader().ReadCanonicalPcm(wav.Data);
     if (parsed.NumChannels != 1)
       throw new InvalidOperationException("DFPWM create requires a mono WAV.");
     if (parsed.BitsPerSample != 8)
