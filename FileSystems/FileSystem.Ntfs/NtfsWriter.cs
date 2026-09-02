@@ -1012,7 +1012,7 @@ public sealed class NtfsWriter {
     => this.BuildToStreaming(output, totalSize, DefaultClusterSize, 1024);
 
   /// <inheritdoc cref="BuildToStreaming(Stream,long)" />
-    /// <summary>
+  /// <summary>
   /// Performs the build to streaming operation.
   /// </summary>
 public void BuildToStreaming(Stream output, long totalSize, int clusterSizeBytes, int mftRecordSize) {

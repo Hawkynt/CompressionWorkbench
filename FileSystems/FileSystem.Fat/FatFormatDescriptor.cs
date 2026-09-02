@@ -118,11 +118,11 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // Canonical FAT image sizes in ascending order: 3.5" floppies, then continuous sizes for
   // hard disks. Shrink picks the smallest that fits the current payload.
-    /// <summary>
+  /// <summary>
   /// Gets the canonical sizes.
   /// </summary>
 public IReadOnlyList<long> CanonicalSizes => [737280, 1474560, 2949120];
-    /// <summary>
+  /// <summary>
   /// Performs the shrink operation.
   /// </summary>
 public void Shrink(Stream input, Stream output) =>
@@ -131,7 +131,7 @@ public void Shrink(Stream input, Stream output) =>
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -141,7 +141,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -615,62 +615,62 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Fat";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "FAT Filesystem Image";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
   // R/W: add/remove edit the FAT, clusters and directory in place (FatModifier /
   // FatRemover); existing files and the boot sector stay byte-identical. A verified
   // rebuild is only a structural-edge-case fallback. See FormatCapabilities.cs.
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".img";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp", ".fat"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "FAT12/FAT16/FAT32 filesystem image";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -680,7 +680,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     )).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -727,7 +727,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     return ms.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -951,7 +951,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
 public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {

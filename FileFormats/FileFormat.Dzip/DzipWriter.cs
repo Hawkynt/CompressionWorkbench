@@ -101,7 +101,7 @@ public sealed class DzipWriter : IDisposable {
     => name.Replace('\\', '/').TrimStart('/');
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

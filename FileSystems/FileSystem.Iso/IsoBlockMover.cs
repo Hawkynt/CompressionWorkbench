@@ -106,7 +106,7 @@ public sealed class IsoBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -129,7 +129,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// flushes. No full-image load — multi-GB DVD/BD images require only a
   /// handful of sector reads/writes per move.
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

@@ -25,40 +25,40 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // IArchiveShrinkable uses the interface default: a verified extract →
   // re-create rebuild that only replaces the image when the result round-trips
   // AND is smaller; otherwise the original bytes are copied through unchanged.
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Stacker";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Stacker CVF";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
   // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
   // so the verb works via rebuild but nothing is modified in place. CanModify
   // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract
     | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".sta";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".sta", ".stk"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
@@ -67,19 +67,19 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
     // produced by the genuine Stacker 3.10 CREATE tool.
     new([0x53, 0x54, 0x41, 0x43, 0x4B, 0x45, 0x52], Offset: 0, Confidence: 0.90),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stacker-lzs", "Stacker LZS")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
@@ -89,7 +89,7 @@ public string Description =>
     + "driver / dmsdos, or 'Extended' for CompressionWorkbench-only LZS compression.";
 
   // ── IFormatOptionsSchema ──────────────────────────────────────────────────
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
@@ -158,7 +158,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
   };
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -171,7 +171,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       i, e.Name, e.Size, e.Size, "Stacker-LZS", e.IsDirectory, false, null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -192,7 +192,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -252,7 +252,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
 
   // ── Modify / defrag / purge (rebuild) ─────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
 public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
@@ -260,7 +260,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     WriteBack(archive, Rebuild(ReadAll(archive), inputs, null));
   }
 
-    /// <summary>
+  /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
 public void Remove(Stream archive, string[] entryNames) {
@@ -268,13 +268,13 @@ public void Remove(Stream archive, string[] entryNames) {
     WriteBack(archive, Rebuild(ReadAll(archive), null, entryNames));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
     => WriteBack(archive, Rebuild(ReadAll(archive), null, null));
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive, DefragOptions options)

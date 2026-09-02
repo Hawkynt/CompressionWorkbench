@@ -7,61 +7,61 @@ namespace FileFormat.Rzip;
 /// Describes rzip format.
 /// </summary>
 public sealed class RzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Rzip";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Rzip";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Stream;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".rz";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".rz", ".rzip"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("rzip", "Rzip")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Classic;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Long-distance redundancy elimination, for large files";
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Decompress(Stream input, Stream output) => RzipStream.Decompress(input, output);
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public void Compress(Stream input, Stream output) => RzipStream.Compress(input, output);

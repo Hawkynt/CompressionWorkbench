@@ -7,35 +7,35 @@ namespace Compression.Core.Transforms;
 /// </summary>
 public sealed class DeltaBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Delta";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Delta";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Delta filter, stores differences between consecutive bytes";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data)
     => DeltaFilter.Encode(data);
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data)

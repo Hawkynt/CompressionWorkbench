@@ -68,23 +68,23 @@ public sealed class FatChainStream : Stream {
     this._clusterBufferPos = 0;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
 public override bool CanRead => !this._disposed;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
 public override bool CanSeek => false;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
 public override bool CanWrite => false;
-    /// <summary>
+  /// <summary>
   /// Gets the length.
   /// </summary>
 public override long Length => this._logicalSize;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the position.
   /// </summary>
 public override long Position {
@@ -92,7 +92,7 @@ public override long Position {
     set => throw new NotSupportedException("FatChainStream is forward-only.");
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public override int Read(byte[] buffer, int offset, int count) {
@@ -163,27 +163,27 @@ public override int Read(byte[] buffer, int offset, int count) {
     _ => true,
   };
 
-    /// <summary>
+  /// <summary>
   /// Performs the flush operation.
   /// </summary>
 public override void Flush() { }
-    /// <summary>
+  /// <summary>
   /// Performs the seek operation.
   /// </summary>
 public override long Seek(long offset, SeekOrigin origin)
     => throw new NotSupportedException("FatChainStream is forward-only.");
-    /// <summary>
+  /// <summary>
   /// Sets the length.
   /// </summary>
 public override void SetLength(long value)
     => throw new NotSupportedException("FatChainStream is read-only.");
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public override void Write(byte[] buffer, int offset, int count)
     => throw new NotSupportedException("FatChainStream is read-only.");
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 protected override void Dispose(bool disposing) {

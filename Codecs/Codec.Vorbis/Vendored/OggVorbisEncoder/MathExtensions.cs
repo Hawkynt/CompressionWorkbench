@@ -6,7 +6,7 @@ namespace OggVorbisEncoder;
 /// </summary>
 public static class MathExtensions
 {
-        /// <summary>
+    /// <summary>
     /// Performs the safe abs operation.
     /// </summary>
 public static int SafeAbs(int value)

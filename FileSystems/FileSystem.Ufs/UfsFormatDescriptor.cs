@@ -78,21 +78,21 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => null;
-    /// <summary>
+  /// <summary>
   /// Gets the min total archive size.
   /// </summary>
 public long? MinTotalArchiveSize => 16L * 1024 * 1024;
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription =>
     "UFS1 filesystem image; multiple cylinder groups, nested directories, " +
     "direct- plus single-indirect-block files (up to ~16 MB each).";
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) {
@@ -100,60 +100,60 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     return true;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Ufs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "UFS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".ufs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".ufs"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x54, 0x19, 0x01, 0x00], Offset: 8192 + 1372, Confidence: 0.90)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Unix File System (UFS1) image";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -165,7 +165,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     return SymlinkResolver.Resolve(entries);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -209,7 +209,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     return memoryStream.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -297,7 +297,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -307,7 +307,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -316,7 +316,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)

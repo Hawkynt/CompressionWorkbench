@@ -31,7 +31,7 @@ public sealed class Os9RbfBlockMover : IFilesystemBlockMover {
   public long LsnToOffset(int lsn) => (long)lsn * Os9Layout.SectorSize;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -46,7 +46,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

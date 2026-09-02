@@ -43,36 +43,36 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB"]),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Reiser4";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Reiser4";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".reiser4";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".reiser4"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
@@ -85,24 +85,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
     // magics that live at position 0.
     new("ReIsEr4"u8.ToArray(), Offset: (int)Reiser4MasterSb.MasterOffset, Confidence: 0.9),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Reiser4 filesystem image — master + format40 superblock surface only.";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -158,7 +158,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -235,7 +235,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   // cde40 directory units) is not reproduced here. Files go in the workbench-layout
   // payload area past those blocks, with the block-allocator bitmap and
   // sb_free_blocks kept consistent so the volume stays internally coherent.
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -275,7 +275,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
     w.Write(output);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -397,22 +397,22 @@ public void Defragment(Stream archive)
   }
 
   // ── IArchiveWriteConstraints ─────────────────────────────────────────
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     reason = null;
     return true;
   }
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => null;
-    /// <summary>
+  /// <summary>
   /// Gets the min total archive size.
   /// </summary>
 public long? MinTotalArchiveSize => Reiser4Writer.BlockSize * (long)Reiser4Writer.MinBlockCount; // 16 MB
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription =>

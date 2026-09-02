@@ -33,7 +33,7 @@ namespace FileFormat.AndroidBundle;
 public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Enumerates the layout.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -99,15 +99,15 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayout
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "AndroidBundle";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Android App Bundle / split-APK set";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
@@ -115,7 +115,7 @@ public FormatCategory Category => FormatCategory.Archive;
   // time, not in the .aab itself). Add/Replace/Remove are genuine in-place ZIP
   // edits (ZipModifier), matching the sibling APPX/APK descriptors. See
   // FormatCapabilities.cs (WORM vs R/W).
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -123,19 +123,19 @@ public FormatCapabilities Capabilities =>
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".aab";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".aab", ".apks"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
@@ -143,26 +143,26 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
     // extensionless inputs — AAB/APKS detection really wants the file extension.
     new([0x50, 0x4B, 0x03, 0x04], Confidence: 0.15),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
     "Android App Bundle (.aab) or split-APK set (.apks) re-surfaced so split boundaries " +
     "are visible (base/, splits/, BundleConfig.pb).";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -173,7 +173,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     )).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

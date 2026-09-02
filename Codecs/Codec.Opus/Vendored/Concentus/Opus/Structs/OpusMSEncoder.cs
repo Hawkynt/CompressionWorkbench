@@ -72,7 +72,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Performs the reset state operation.
         /// </summary>
 public void ResetState()
@@ -845,7 +845,7 @@ public void ResetState()
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Encodes the supplied input.
         /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
@@ -861,7 +861,7 @@ public void ResetState()
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Encodes the supplied input.
         /// </summary>
 public int EncodeMultistream(
@@ -885,7 +885,7 @@ public int EncodeMultistream(
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Encodes the supplied input.
         /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
@@ -901,7 +901,7 @@ public int EncodeMultistream(
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Encodes the supplied input.
         /// </summary>
 public int EncodeMultistream(
@@ -929,7 +929,7 @@ public int EncodeMultistream(
         #region Getters and Setters
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the bitrate.
         /// </summary>
 public int Bitrate
@@ -957,7 +957,7 @@ public int Bitrate
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the application.
         /// </summary>
 public OpusApplication Application
@@ -976,7 +976,7 @@ public OpusApplication Application
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the force channels.
         /// </summary>
 public int ForceChannels
@@ -995,7 +995,7 @@ public int ForceChannels
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the num channels.
         /// </summary>
 public int NumChannels
@@ -1007,7 +1007,7 @@ public int NumChannels
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the max bandwidth.
         /// </summary>
 public OpusBandwidth MaxBandwidth
@@ -1026,7 +1026,7 @@ public OpusBandwidth MaxBandwidth
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the bandwidth.
         /// </summary>
 public OpusBandwidth Bandwidth
@@ -1045,7 +1045,7 @@ public OpusBandwidth Bandwidth
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets a value indicating whether use dtx.
         /// </summary>
 public bool UseDTX
@@ -1064,7 +1064,7 @@ public bool UseDTX
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the complexity.
         /// </summary>
 public int Complexity
@@ -1083,7 +1083,7 @@ public int Complexity
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the force mode.
         /// </summary>
 public OpusMode ForceMode
@@ -1102,7 +1102,7 @@ public OpusMode ForceMode
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets a value indicating whether use inband fec.
         /// </summary>
 public bool UseInbandFEC
@@ -1121,7 +1121,7 @@ public bool UseInbandFEC
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the packet loss percent.
         /// </summary>
 public int PacketLossPercent
@@ -1140,7 +1140,7 @@ public int PacketLossPercent
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets a value indicating whether use vbr.
         /// </summary>
 public bool UseVBR
@@ -1159,7 +1159,7 @@ public bool UseVBR
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets a value indicating whether use constrained vbr.
         /// </summary>
 public bool UseConstrainedVBR
@@ -1193,7 +1193,7 @@ public bool UseConstrainedVBR
         //}
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the signal type.
         /// </summary>
 public OpusSignal SignalType
@@ -1212,7 +1212,7 @@ public OpusSignal SignalType
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the lookahead.
         /// </summary>
 public int Lookahead
@@ -1224,7 +1224,7 @@ public int Lookahead
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the sample rate.
         /// </summary>
 public int SampleRate
@@ -1236,7 +1236,7 @@ public int SampleRate
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the final range.
         /// </summary>
 public uint FinalRange
@@ -1255,7 +1255,7 @@ public uint FinalRange
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the lsb depth.
         /// </summary>
 public int LSBDepth
@@ -1274,7 +1274,7 @@ public int LSBDepth
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets a value indicating whether prediction disabled.
         /// </summary>
 public bool PredictionDisabled
@@ -1293,7 +1293,7 @@ public bool PredictionDisabled
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the expert frame duration.
         /// </summary>
 public OpusFramesize ExpertFrameDuration
@@ -1321,7 +1321,7 @@ public OpusFramesize ExpertFrameDuration
         }
 
         /// <inheritdoc/>
-                /// <summary>
+        /// <summary>
         /// Gets the version string.
         /// </summary>
 public string GetVersionString()
@@ -1329,7 +1329,7 @@ public string GetVersionString()
             return CodecHelpers.GetVersionString();
         }
 
-                /// <summary>
+        /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
 public void Dispose() { }

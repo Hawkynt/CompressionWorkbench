@@ -46,24 +46,24 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class JdpackExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "jdpack";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "JDPack";
-    /// <summary>
+  /// <summary>
   /// Performs the is packer section operation.
   /// </summary>
 protected override bool IsPackerSection(string name) => name.Contains("jd", StringComparison.OrdinalIgnoreCase);
-    /// <summary>
+  /// <summary>
   /// Gets the literal signature.
   /// </summary>
 protected override ReadOnlySpan<byte> LiteralSignature => "JDPack"u8;
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public override ExecutableUnpackCapabilities Capabilities =>
@@ -74,7 +74,7 @@ public override ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

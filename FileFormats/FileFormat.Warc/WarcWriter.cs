@@ -49,7 +49,7 @@ public sealed class WarcWriter {
     AddRecord(entry, payload);
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

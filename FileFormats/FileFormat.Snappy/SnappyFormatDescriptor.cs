@@ -7,64 +7,64 @@ namespace FileFormat.Snappy;
 /// Describes snappy format.
 /// </summary>
 public sealed class SnappyFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Snappy";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Snappy";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Stream;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".sz";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".sz", ".snappy"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xFF, 0x06, 0x00, 0x00, 0x73, 0x4E, 0x61, 0x50], Confidence: 0.90)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("snappy", "Snappy")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Google's fast compressor, designed for speed over ratio";
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Decompress(Stream input, Stream output) {
     var r = new SnappyFrameReader(input);
     output.Write(r.Read());
   }
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public void Compress(Stream input, Stream output) {

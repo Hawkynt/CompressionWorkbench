@@ -27,60 +27,60 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "RomFs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "ROMFS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".romfs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".romfs"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("-rom1fs-"u8.ToArray(), Confidence: 0.95)
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("romfs", "ROMFS")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Linux ROM filesystem image";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -89,7 +89,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -133,7 +133,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     return memoryStream.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -206,14 +206,14 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new RomFsBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
@@ -262,7 +262,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -335,7 +335,7 @@ public void Defragment(Stream archive)
     return ms.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the extents.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)

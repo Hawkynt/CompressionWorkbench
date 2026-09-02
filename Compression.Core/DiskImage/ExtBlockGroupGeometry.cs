@@ -97,7 +97,7 @@ public static class ExtBlockGroupGeometry {
     _ => 65536,
   };
 
-    /// <summary>
+  /// <summary>
   /// Performs the choose inode count operation.
   /// </summary>
 public static int ChooseInodeCount(int needed) {

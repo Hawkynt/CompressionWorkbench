@@ -10,7 +10,7 @@ namespace FileFormat.Vmdk;
 public sealed class VmdkWriter {
   private byte[]? _diskData;
 
-    /// <summary>
+  /// <summary>
   /// Sets the disk data.
   /// </summary>
 public void SetDiskData(byte[] data) => _diskData = data;

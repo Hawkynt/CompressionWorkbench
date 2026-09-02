@@ -25,7 +25,7 @@ public sealed class MatlabV4Reader {
   /// <summary>"full" if every record parsed cleanly to EOF; "partial" if a truncated or implausible record was encountered.</summary>
   public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MatlabV4Reader"/>.
   /// </summary>
 public MatlabV4Reader(Stream stream) {

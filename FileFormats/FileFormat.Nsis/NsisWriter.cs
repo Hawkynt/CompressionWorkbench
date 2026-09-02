@@ -17,7 +17,7 @@ namespace FileFormat.Nsis;
 public sealed class NsisWriter {
   private readonly List<byte[]> _blocks = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -27,7 +27,7 @@ public void AddFile(string name, byte[] data) {
     _blocks.Add(data);
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

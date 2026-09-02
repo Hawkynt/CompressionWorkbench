@@ -25,7 +25,7 @@ public sealed class MpqReader {
   private readonly uint[] _blockFlags;
   private readonly uint _sectorSize;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<MpqEntry> Entries => _entries;
@@ -33,7 +33,7 @@ public IReadOnlyList<MpqEntry> Entries => _entries;
   /// <summary>Gets the byte offset of the MPQ header within the stream.</summary>
   public long HeaderOffset => _headerOffset;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MpqReader"/>.
   /// </summary>
 public MpqReader(Stream stream) {

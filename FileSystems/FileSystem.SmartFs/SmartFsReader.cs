@@ -32,29 +32,29 @@ public sealed class SmartFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<SmartFsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<SmartFsEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the format version.
   /// </summary>
 public byte FormatVersion { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sector size.
   /// </summary>
 public uint SectorSize { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root sector count.
   /// </summary>
 public ushort RootSectorCount { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid format sector.
   /// </summary>
 public bool ValidFormatSector { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Provides the format signature value.
   /// </summary>
 public static readonly byte[] FormatSignature = "SMRT"u8.ToArray();
@@ -64,7 +64,7 @@ public static readonly byte[] FormatSignature = "SMRT"u8.ToArray();
   // always within the first 32 bytes of the format sector.
   private const int SignatureScanWindow = 32;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="SmartFsReader"/>.
   /// </summary>
 public SmartFsReader(Stream stream) {
@@ -208,7 +208,7 @@ public SmartFsReader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(SmartFsEntry entry) {
@@ -216,7 +216,7 @@ public byte[] Extract(SmartFsEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

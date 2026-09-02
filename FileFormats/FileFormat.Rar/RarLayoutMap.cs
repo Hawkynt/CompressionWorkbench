@@ -11,7 +11,7 @@ namespace FileFormat.Rar;
 /// </summary>
 public static class RarLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

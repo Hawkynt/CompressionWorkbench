@@ -20,20 +20,20 @@ public sealed class TrDosReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<TrDosEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<TrDosEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets the disk type.
   /// </summary>
 public byte DiskType { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the disk label.
   /// </summary>
 public string DiskLabel { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="TrDosReader"/>.
   /// </summary>
 public TrDosReader(Stream stream, bool leaveOpen = false) {
@@ -87,7 +87,7 @@ public TrDosReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(TrDosEntry entry) {
@@ -99,7 +99,7 @@ public byte[] Extract(TrDosEntry entry) {
     return _data.AsSpan(offset, length).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

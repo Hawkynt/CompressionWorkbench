@@ -5,15 +5,15 @@ namespace FileFormat.Vhd;
 /// Represents a vhd entry.
 /// </summary>
 public sealed class VhdEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory => false;

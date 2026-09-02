@@ -98,7 +98,7 @@ public static class TiffReader {
     return tiffArea.Slice(offset, totalBytes).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the bytes per component operation.
   /// </summary>
 public static uint BytesPerComponent(TiffFieldType type) => type switch {

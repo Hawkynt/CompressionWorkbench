@@ -10,28 +10,28 @@ namespace Compression.Core.Dictionary.Lz77;
 /// </summary>
 public sealed class Lz77BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Lz77";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "LZ77";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Sliding-window dictionary compression with distance/length tokens";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {
@@ -42,7 +42,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) {

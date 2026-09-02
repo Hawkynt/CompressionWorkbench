@@ -12,38 +12,38 @@ namespace Compression.Core.Dictionary.Nintendo;
 /// </remarks>
 public sealed class Yaz0BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Yaz0";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Yaz0";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Nintendo Yaz0 grouped-flag LZ compression";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data)
     => NintendoLzCodecs.CompressYaz0(data);
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data)

@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class MappingTemplate : IMappingTemplate
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="MappingTemplate"/>.
     /// </summary>
 public MappingTemplate(
@@ -16,11 +16,11 @@ public MappingTemplate(
         ResidueTemplate = residueTemplate;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the mapping.
     /// </summary>
 public Mapping[] Mapping { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the residue template.
     /// </summary>
 public IResidueTemplate[] ResidueTemplate { get; }

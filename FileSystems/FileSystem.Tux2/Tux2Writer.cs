@@ -29,7 +29,7 @@ namespace FileSystem.Tux2;
 public sealed class Tux2Writer {
   private readonly List<Item> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the version.
   /// </summary>
 public uint Version { get; init; } = 1;
@@ -37,7 +37,7 @@ public uint Version { get; init; } = 1;
   /// <summary>One file to emit: either its bytes, or a copier that streams them.</summary>
   private readonly record struct Item(string Name, long Size, byte[]? Data, Action<Stream>? Copy);
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -68,7 +68,7 @@ public void AddFile(string name, byte[] data) {
     return name;
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {
@@ -106,7 +106,7 @@ public void WriteTo(Stream output) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build() {

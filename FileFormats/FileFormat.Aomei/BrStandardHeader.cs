@@ -47,7 +47,7 @@ public readonly struct BrStandardHeader {
   /// computation, per <see cref="BrCrc32.ComputeWithZeroedCrc"/>.</summary>
   public readonly uint Crc32;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="BrStandardHeader"/>.
   /// </summary>
 public BrStandardHeader(uint size, ushort type, uint crc32, ushort reserved = 0) {

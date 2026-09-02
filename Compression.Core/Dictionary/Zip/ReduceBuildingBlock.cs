@@ -15,28 +15,28 @@ public sealed class ReduceBuildingBlock : IBuildingBlock {
   private const int Factor = 4; // methods 2-5 == factor 1-4; 4 is the strongest.
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Reduce";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Reduce";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "PKWARE ZIP Reduce (methods 2-5) - probabilistic follower-set predictor plus RLE expansion";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {
@@ -49,7 +49,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) {

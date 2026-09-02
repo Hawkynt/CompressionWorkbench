@@ -15,7 +15,7 @@ public sealed class AviReader {
   /// <summary>One movi chunk belonging to a track (a single video frame or audio packet).</summary>
   public sealed record ChunkEntry(string ChunkId, byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Represents a track.
   /// </summary>
 public sealed record Track(
@@ -33,7 +33,7 @@ public sealed record Track(
     byte[] Data,
     IReadOnlyList<ChunkEntry> Chunks);
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed avi.
   /// </summary>
 public sealed record ParsedAvi(
@@ -43,7 +43,7 @@ public sealed record ParsedAvi(
     uint TotalFrames,
     IReadOnlyList<Track> Tracks);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedAvi Read(ReadOnlySpan<byte> data) {

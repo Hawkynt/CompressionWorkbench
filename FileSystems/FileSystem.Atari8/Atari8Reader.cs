@@ -31,27 +31,27 @@ namespace FileSystem.Atari8;
 /// </remarks>
 public sealed class Atari8Reader : IDisposable {
 
-    /// <summary>
+  /// <summary>
   /// Defines the atr header size constant value.
   /// </summary>
 public const int AtrHeaderSize = 16;
-    /// <summary>
+  /// <summary>
   /// Defines the default sector size constant value.
   /// </summary>
 public const int DefaultSectorSize = 128;
-    /// <summary>
+  /// <summary>
   /// Defines the directory start sector constant value.
   /// </summary>
 public const int DirectoryStartSector = 361;
-    /// <summary>
+  /// <summary>
   /// Defines the directory sector count constant value.
   /// </summary>
 public const int DirectorySectorCount = 8;
-    /// <summary>
+  /// <summary>
   /// Defines the entries per directory sector constant value.
   /// </summary>
 public const int EntriesPerDirectorySector = 8;
-    /// <summary>
+  /// <summary>
   /// Defines the directory entry size constant value.
   /// </summary>
 public const int DirectoryEntrySize = 16;
@@ -62,12 +62,12 @@ public const int DirectoryEntrySize = 16;
   /// <summary>Sector size read from the ATR header (128 or 256).</summary>
   public int SectorSize { get; }
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Atari8Entry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Atari8Reader"/>.
   /// </summary>
 public Atari8Reader(Stream stream) {
@@ -90,7 +90,7 @@ public Atari8Reader(Stream stream) {
     ParseDirectory();
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Atari8Reader"/>.
   /// </summary>
 public Atari8Reader(byte[] data) : this(new MemoryStream(data)) { }
@@ -180,7 +180,7 @@ public Atari8Reader(byte[] data) : this(new MemoryStream(data)) { }
     return total;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Atari8Entry entry) {
@@ -205,7 +205,7 @@ public byte[] Extract(Atari8Entry entry) {
     return buf.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

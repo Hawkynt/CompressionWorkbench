@@ -21,7 +21,7 @@ namespace FileFormat.Pvf;
 /// </summary>
 public sealed class PvfReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed pvf.
   /// </summary>
 public sealed record ParsedPvf(
@@ -31,7 +31,7 @@ public sealed record ParsedPvf(
     int Bits,
     int[] Samples);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedPvf Read(ReadOnlySpan<byte> data) {

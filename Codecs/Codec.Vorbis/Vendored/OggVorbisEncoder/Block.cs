@@ -2077,7 +2077,7 @@ public static class Block
         1.0000000000F, 1.0000000000F, 1.0000000000F, 1.0000000000F
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the windows value.
     /// </summary>
 public static readonly float[][] Windows = new[]

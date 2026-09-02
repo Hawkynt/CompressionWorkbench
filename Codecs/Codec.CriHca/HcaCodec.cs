@@ -41,103 +41,103 @@ public sealed class HcaCodec {
 
   /// <summary>Parsed HCA header fields and decode parameters.</summary>
   public sealed class HcaHeader {
-        /// <summary>
+    /// <summary>
     /// Provides the version value.
     /// </summary>
 public int Version;
-        /// <summary>
+    /// <summary>
     /// Provides the header size value.
     /// </summary>
 public int HeaderSize;
-        /// <summary>
+    /// <summary>
     /// Provides the channels value.
     /// </summary>
 public int Channels;
-        /// <summary>
+    /// <summary>
     /// Provides the sample rate value.
     /// </summary>
 public int SampleRate;
-        /// <summary>
+    /// <summary>
     /// Provides the frame count value.
     /// </summary>
 public int FrameCount;
-        /// <summary>
+    /// <summary>
     /// Provides the encoder delay value.
     /// </summary>
 public int EncoderDelay;
-        /// <summary>
+    /// <summary>
     /// Provides the encoder padding value.
     /// </summary>
 public int EncoderPadding;
-        /// <summary>
+    /// <summary>
     /// Provides the frame size value.
     /// </summary>
 public int FrameSize;
-        /// <summary>
+    /// <summary>
     /// Provides the min resolution value.
     /// </summary>
 public int MinResolution;
-        /// <summary>
+    /// <summary>
     /// Provides the max resolution value.
     /// </summary>
 public int MaxResolution;
-        /// <summary>
+    /// <summary>
     /// Provides the track count value.
     /// </summary>
 public int TrackCount;
-        /// <summary>
+    /// <summary>
     /// Provides the channel config value.
     /// </summary>
 public int ChannelConfig;
-        /// <summary>
+    /// <summary>
     /// Provides the total band count value.
     /// </summary>
 public int TotalBandCount;
-        /// <summary>
+    /// <summary>
     /// Provides the base band count value.
     /// </summary>
 public int BaseBandCount;
-        /// <summary>
+    /// <summary>
     /// Provides the stereo band count value.
     /// </summary>
 public int StereoBandCount;
-        /// <summary>
+    /// <summary>
     /// Provides the bands per hfr group value.
     /// </summary>
 public int BandsPerHfrGroup;
-        /// <summary>
+    /// <summary>
     /// Provides the ms stereo value.
     /// </summary>
 public int MsStereo;
-        /// <summary>
+    /// <summary>
     /// Provides the ath type value.
     /// </summary>
 public int AthType;
-        /// <summary>
+    /// <summary>
     /// Provides the cipher type value.
     /// </summary>
 public int CipherType;
-        /// <summary>
+    /// <summary>
     /// Provides the hfr group count value.
     /// </summary>
 public int HfrGroupCount;
-        /// <summary>
+    /// <summary>
     /// Provides the has loop value.
     /// </summary>
 public bool HasLoop;
-        /// <summary>
+    /// <summary>
     /// Provides the loop start frame value.
     /// </summary>
 public int LoopStartFrame;
-        /// <summary>
+    /// <summary>
     /// Provides the loop end frame value.
     /// </summary>
 public int LoopEndFrame;
-        /// <summary>
+    /// <summary>
     /// Provides the rva volume value.
     /// </summary>
 public float RvaVolume = 1.0f;
-        /// <summary>
+    /// <summary>
     /// Provides the comment value.
     /// </summary>
 public string Comment = "";

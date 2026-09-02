@@ -38,35 +38,35 @@ public sealed class BkfReader : IDisposable {
 
   /// <summary>4-char DBLK type identifiers as little-endian uint32 for fast comparison.</summary>
   public static readonly uint TapeType = AsUInt32("TAPE");
-    /// <summary>
+  /// <summary>
   /// Provides the sset type value.
   /// </summary>
 public static readonly uint SsetType = AsUInt32("SSET");
-    /// <summary>
+  /// <summary>
   /// Provides the volb type value.
   /// </summary>
 public static readonly uint VolbType = AsUInt32("VOLB");
-    /// <summary>
+  /// <summary>
   /// Provides the dirb type value.
   /// </summary>
 public static readonly uint DirbType = AsUInt32("DIRB");
-    /// <summary>
+  /// <summary>
   /// Provides the file type value.
   /// </summary>
 public static readonly uint FileType = AsUInt32("FILE");
-    /// <summary>
+  /// <summary>
   /// Provides the eset type value.
   /// </summary>
 public static readonly uint EsetType = AsUInt32("ESET");
-    /// <summary>
+  /// <summary>
   /// Provides the eotm type value.
   /// </summary>
 public static readonly uint EotmType = AsUInt32("EOTM");
-    /// <summary>
+  /// <summary>
   /// Provides the espb type value.
   /// </summary>
 public static readonly uint EspbType = AsUInt32("ESPB");
-    /// <summary>
+  /// <summary>
   /// Provides the sfmb type value.
   /// </summary>
 public static readonly uint SfmbType = AsUInt32("SFMB");
@@ -115,7 +115,7 @@ public static readonly uint SfmbType = AsUInt32("SFMB");
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { /* no unmanaged resources */ }

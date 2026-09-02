@@ -7,53 +7,53 @@ namespace FileFormat.Bzip2;
 /// Describes bzip 2 format.
 /// </summary>
 public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Bzip2";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BZip2";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Stream;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".bz2";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".bz2", ".bzip2"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x42, 0x5A, 0x68], Confidence: 0.85)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("bzip2", "BZip2", SupportsOptimize: true)];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Classic;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "BWT + MTF + Huffman, good ratio for text data";
@@ -82,21 +82,21 @@ public string Description => "BWT + MTF + Huffman, good ratio for text data";
     return options.Level is { } l ? Math.Clamp(l, 1, 9) : 9;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Decompress(Stream input, Stream output) {
     using var ds = new Bzip2Stream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
     ds.CopyTo(output);
   }
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public void Compress(Stream input, Stream output) {
     using var cs = new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
     input.CopyTo(cs);
   }
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public void Compress(Stream input, Stream output, FormatCreateOptions options) {
@@ -104,7 +104,7 @@ public void Compress(Stream input, Stream output, FormatCreateOptions options) {
       blockSize100k: ParseBlockSize(options), leaveOpen: true);
     input.CopyTo(cs);
   }
-    /// <summary>
+  /// <summary>
   /// Performs the compress optimal operation.
   /// </summary>
 public void CompressOptimal(Stream input, Stream output) {
@@ -112,12 +112,12 @@ public void CompressOptimal(Stream input, Stream output) {
       blockSize100k: 9, leaveOpen: true);
     input.CopyTo(cs);
   }
-    /// <summary>
+  /// <summary>
   /// Performs the wrap decompress operation.
   /// </summary>
 public Stream? WrapDecompress(Stream input) =>
     new Bzip2Stream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
-    /// <summary>
+  /// <summary>
   /// Performs the wrap compress operation.
   /// </summary>
 public Stream? WrapCompress(Stream output) =>
@@ -125,7 +125,7 @@ public Stream? WrapCompress(Stream output) =>
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
@@ -173,7 +173,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
       Level = ValidationLevel.Header, Issues = issues };
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateStructure(Stream stream) {
@@ -189,7 +189,7 @@ public ValidationResult ValidateStructure(Stream stream) {
       Level = ValidationLevel.Structure, Issues = issues };
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateIntegrity(Stream stream) {

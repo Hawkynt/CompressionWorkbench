@@ -20,7 +20,7 @@ public sealed class RarcWriter : IDisposable {
   private bool _finished;
   private bool _disposed;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="RarcWriter"/>.
   /// </summary>
 public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root") {
@@ -34,7 +34,7 @@ public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root
     this._leaveOpen = leaveOpen;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the add entry operation.
   /// </summary>
 public void AddEntry(
@@ -72,7 +72,7 @@ public void AddEntry(
     this._files.Add(new InputFile(normalized, data, attributes));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the finish operation.
   /// </summary>
 public void Finish() {
@@ -221,7 +221,7 @@ public void Finish() {
     this._stream.Position = fileSize;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the normalize path operation.
   /// </summary>
 public static string NormalizePath(string path) {
@@ -319,7 +319,7 @@ public static string NormalizePath(string path) {
       destination[i] = (byte)char.ToUpperInvariant(directory.Name[i]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

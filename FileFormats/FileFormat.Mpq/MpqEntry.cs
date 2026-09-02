@@ -2,23 +2,23 @@ namespace FileFormat.Mpq;
 
 /// <summary>Entry in an MPQ archive.</summary>
 public sealed class MpqEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the file name.
   /// </summary>
 public string FileName { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the original size.
   /// </summary>
 public long OriginalSize { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the compressed size.
   /// </summary>
 public long CompressedSize { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the flags.
   /// </summary>
 public uint Flags { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the file offset.
   /// </summary>
 public long FileOffset { get; init; }

@@ -45,16 +45,16 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class HxorExecutablePackerHandler : IExecutablePackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "hxor";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "hXOR-Packer";
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -71,7 +71,7 @@ public ExecutableUnpackCapabilities Capabilities =>
 
   private static ReadOnlySpan<byte> FifaSignature => "FIFA"u8;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -87,7 +87,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
     return new(true, this.Id, 1.0, []);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -103,7 +103,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
     return new(this.Id, imageBytes, detection, info, this.Capabilities, metadata);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

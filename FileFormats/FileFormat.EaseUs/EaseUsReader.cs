@@ -185,7 +185,7 @@ public sealed class EaseUsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<EaseUsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<EaseUsEntry> Entries => _entries;
@@ -279,7 +279,7 @@ public IReadOnlyList<EaseUsEntry> Entries => _entries;
   /// </summary>
   public bool TrailerBlockFullyValidated { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="EaseUsReader"/>.
   /// </summary>
 public EaseUsReader(Stream stream) {
@@ -604,7 +604,7 @@ public EaseUsReader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(EaseUsEntry entry) {
@@ -612,7 +612,7 @@ public byte[] Extract(EaseUsEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

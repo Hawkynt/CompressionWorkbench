@@ -7,7 +7,7 @@ namespace FileFormat.Avro;
 /// </summary>
 public static class AvroVarLong {
 
-    /// <summary>
+  /// <summary>
   /// Reads the long from the supplied input.
   /// </summary>
 public static long ReadLong(Stream stream) {
@@ -25,7 +25,7 @@ public static long ReadLong(Stream stream) {
     return (long)(result >> 1) ^ -(long)(result & 1);
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the long to the supplied output.
   /// </summary>
 public static void WriteLong(Stream stream, long value) {

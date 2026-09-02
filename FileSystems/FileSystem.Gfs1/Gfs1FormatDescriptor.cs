@@ -36,19 +36,19 @@ public sealed class Gfs1FormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Gfs1";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "GFS (Sistina/Red Hat, original)";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -56,19 +56,19 @@ public FormatCapabilities Capabilities =>
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".gfs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".gfs", ".gfs1"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
@@ -86,24 +86,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
     // The second meta header the writer lays down right after the superblock.
     new([0x01, 0x16, 0x19, 0x70], Offset: 65536 + 0x40, Confidence: 0.65),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Sistina GFS (pre-GFS2) — WORM writer + nested-directory reader.";
 
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
@@ -119,7 +119,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -135,7 +135,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -155,7 +155,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -185,7 +185,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   // directories are handled in place; deeper trees, a full inode region, or a
   // full directory block fall back to the rebuild delegate.
 
-    /// <summary>
+  /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
 public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
@@ -201,7 +201,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
       (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
   }
 
-    /// <summary>
+  /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
 public void Remove(Stream archive, string[] entryNames) {
@@ -226,12 +226,12 @@ public void Remove(Stream archive, string[] entryNames) {
     return w.Build();
   }
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the extents.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => Gfs1ExtentMap.Enumerate(image);
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -304,7 +304,7 @@ public void Defragment(Stream archive)
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
 public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {

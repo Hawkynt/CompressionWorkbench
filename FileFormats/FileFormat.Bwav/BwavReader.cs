@@ -13,7 +13,7 @@ namespace FileFormat.Bwav;
 /// </summary>
 public sealed class BwavReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a channel info.
   /// </summary>
 public sealed record ChannelInfo(
@@ -30,7 +30,7 @@ public sealed record ChannelInfo(
     short Hist1,
     short Hist2);
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed bwav.
   /// </summary>
 public sealed record ParsedBwav(
@@ -40,7 +40,7 @@ public sealed record ParsedBwav(
     IReadOnlyList<ChannelInfo> Channels,
     short[][] Pcm);           // [channel][sampleCount]
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedBwav Read(ReadOnlySpan<byte> data) {

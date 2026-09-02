@@ -21,12 +21,12 @@ namespace OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled;
 /// </summary>
 public class Blocks
 {
-        /// <summary>
+    /// <summary>
     /// Represents a block neg 1.
     /// </summary>
 public class BlockNeg1 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -42,12 +42,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 0.
     /// </summary>
 public class Block0 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -63,12 +63,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 1.
     /// </summary>
 public class Block1 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -84,12 +84,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 2.
     /// </summary>
 public class Block2 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -106,12 +106,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 3.
     /// </summary>
 public class Block3 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -128,12 +128,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 4.
     /// </summary>
 public class Block4 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -150,12 +150,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 5.
     /// </summary>
 public class Block5 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -172,12 +172,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 6.
     /// </summary>
 public class Block6 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -194,12 +194,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 7.
     /// </summary>
 public class Block7 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -216,12 +216,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 8.
     /// </summary>
 public class Block8 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -238,12 +238,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a block 9.
     /// </summary>
 public class Block9 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -263,12 +263,12 @@ public IStaticCodeBook[][] Books { get; } = {
 
 
 
-        /// <summary>
+    /// <summary>
     /// Represents a managed block neg 1.
     /// </summary>
 public class ManagedBlockNeg1 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -284,12 +284,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a managed block 0.
     /// </summary>
 public class ManagedBlock0 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {
@@ -305,12 +305,12 @@ public IStaticCodeBook[][] Books { get; } = {
         };
     }
 
-        /// <summary>
+    /// <summary>
     /// Represents a managed block 1.
     /// </summary>
 public class ManagedBlock1 : IStaticBookBlock
     {
-                /// <summary>
+        /// <summary>
         /// Gets the books.
         /// </summary>
 public IStaticCodeBook[][] Books { get; } = {

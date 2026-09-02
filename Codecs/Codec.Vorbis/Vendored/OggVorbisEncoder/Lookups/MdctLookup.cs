@@ -18,7 +18,7 @@ public class MdctLookup
     private readonly float _scale;
     private readonly float[] _trig;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="MdctLookup"/>.
     /// </summary>
 public MdctLookup(int n)
@@ -61,7 +61,7 @@ public MdctLookup(int n)
         _scale = 4f / n;
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the forward operation.
     /// </summary>
 public void Forward(in Span<float> input, in Span<float> output)

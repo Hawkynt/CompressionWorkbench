@@ -24,20 +24,20 @@ public sealed class Wave64Reader {
   /// little-endian; the trailing 12 bytes are the fixed Wave64 tail (the riff guid uses
   /// a distinct tail).</summary>
   public static readonly byte[] RiffGuid = [0x72, 0x69, 0x66, 0x66, 0x2E, 0x91, 0xCF, 0x11, 0xA5, 0xD6, 0x28, 0xDB, 0x04, 0xC1, 0x00, 0x00];
-    /// <summary>
+  /// <summary>
   /// Provides the wave guid value.
   /// </summary>
 public static readonly byte[] WaveGuid = [0x77, 0x61, 0x76, 0x65, 0xF3, 0xAC, 0xD3, 0x11, 0x8C, 0xD1, 0x00, 0xC0, 0x4F, 0x8E, 0xDB, 0x8A];
-    /// <summary>
+  /// <summary>
   /// Provides the fmt guid value.
   /// </summary>
 public static readonly byte[] FmtGuid = [0x66, 0x6D, 0x74, 0x20, 0xF3, 0xAC, 0xD3, 0x11, 0x8C, 0xD1, 0x00, 0xC0, 0x4F, 0x8E, 0xDB, 0x8A];
-    /// <summary>
+  /// <summary>
   /// Provides the data guid value.
   /// </summary>
 public static readonly byte[] DataGuid = [0x64, 0x61, 0x74, 0x61, 0xF3, 0xAC, 0xD3, 0x11, 0x8C, 0xD1, 0x00, 0xC0, 0x4F, 0x8E, 0xDB, 0x8A];
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed wave 64.
   /// </summary>
 public sealed record ParsedWave64(
@@ -49,7 +49,7 @@ public sealed record ParsedWave64(
     IReadOnlyList<(byte[] Guid, byte[] Data)> OtherChunks,
     uint? ChannelMask = null);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedWave64 Read(ReadOnlySpan<byte> data) {

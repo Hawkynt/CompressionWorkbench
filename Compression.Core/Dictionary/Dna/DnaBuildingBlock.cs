@@ -17,22 +17,22 @@ namespace Compression.Core.Dictionary.Dna;
 /// </summary>
 public sealed class DnaBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Dna";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "DNA Sequence Compression";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "2-bit packing for ACGT nucleotides with exception escapes for other bytes";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
@@ -51,7 +51,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {
@@ -105,7 +105,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) {

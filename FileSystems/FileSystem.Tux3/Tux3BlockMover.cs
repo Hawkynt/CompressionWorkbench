@@ -32,7 +32,7 @@ public sealed class Tux3BlockMover : IFilesystemBlockMover {
   public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -51,7 +51,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// Nothing to do: a record carries its own name and lengths, and where it
   /// sits is recorded nowhere.
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

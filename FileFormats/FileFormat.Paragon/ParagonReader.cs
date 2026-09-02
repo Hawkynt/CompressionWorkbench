@@ -214,7 +214,7 @@ public sealed class ParagonReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<ParagonEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ParagonEntry> Entries => _entries;
@@ -250,7 +250,7 @@ public IReadOnlyList<ParagonEntry> Entries => _entries;
   /// </summary>
   public ushort FormatVersion { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
 public bool ValidHeader { get; private set; }
@@ -293,7 +293,7 @@ public bool ValidHeader { get; private set; }
   public IReadOnlyList<ParagonChunkInfo> ChunkTable => this._chunkTable;
   private readonly List<ParagonChunkInfo> _chunkTable = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ParagonReader"/>.
   /// </summary>
 public ParagonReader(Stream stream) {
@@ -583,7 +583,7 @@ public ParagonReader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ParagonEntry entry) {
@@ -591,7 +591,7 @@ public byte[] Extract(ParagonEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

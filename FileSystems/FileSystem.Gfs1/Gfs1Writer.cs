@@ -44,24 +44,24 @@ public sealed class Gfs1Writer {
   private string _lockProto = "lock_nolock";
   private string _lockTable = "WORM:gfs1";
 
-    /// <summary>
+  /// <summary>
   /// Sets the volume label.
   /// </summary>
 public void SetVolumeLabel(string? s) { if (!string.IsNullOrWhiteSpace(s)) _volumeLabel = s; }
-    /// <summary>
+  /// <summary>
   /// Sets the journal count.
   /// </summary>
 public void SetJournalCount(int n) => _journalCount = Math.Clamp(n, 1, 32);
-    /// <summary>
+  /// <summary>
   /// Sets the lock proto.
   /// </summary>
 public void SetLockProto(string? s) { if (!string.IsNullOrWhiteSpace(s)) _lockProto = s; }
-    /// <summary>
+  /// <summary>
   /// Sets the lock table.
   /// </summary>
 public void SetLockTable(string? s) { if (!string.IsNullOrWhiteSpace(s)) _lockTable = s; }
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {

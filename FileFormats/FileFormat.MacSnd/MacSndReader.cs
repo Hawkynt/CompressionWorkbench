@@ -25,15 +25,15 @@ namespace FileFormat.MacSnd;
 /// </summary>
 public sealed class MacSndReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the standard header constant value.
   /// </summary>
 public const byte StandardHeader = 0x00;
-    /// <summary>
+  /// <summary>
   /// Defines the extended header constant value.
   /// </summary>
 public const byte ExtendedHeader = 0xFF;
-    /// <summary>
+  /// <summary>
   /// Defines the compressed header constant value.
   /// </summary>
 public const byte CompressedHeader = 0xFE;
@@ -43,20 +43,20 @@ public const byte CompressedHeader = 0xFE;
   private const ushort BufferCmd = 0x8051;
 
   // compressionID values used by the compressed header.
-    /// <summary>
+  /// <summary>
   /// Defines the compression mace 3 constant value.
   /// </summary>
 public const short CompressionMace3 = 3;
-    /// <summary>
+  /// <summary>
   /// Defines the compression mace 6 constant value.
   /// </summary>
 public const short CompressionMace6 = 4;
-    /// <summary>
+  /// <summary>
   /// Defines the compression not compressed constant value.
   /// </summary>
 public const short CompressionNotCompressed = 0; // also -1/-2 in the wild
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed snd.
   /// </summary>
 public sealed record ParsedSnd(
@@ -69,7 +69,7 @@ public sealed record ParsedSnd(
     short CompressionId,
     byte[] SampleData);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedSnd Read(ReadOnlySpan<byte> data) {

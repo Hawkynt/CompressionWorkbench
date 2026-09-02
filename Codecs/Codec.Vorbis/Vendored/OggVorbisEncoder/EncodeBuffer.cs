@@ -25,7 +25,7 @@ public class EncodeBuffer
     private int _endBit;
     private int _endByte;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="EncodeBuffer"/>.
     /// </summary>
 public EncodeBuffer()
@@ -33,7 +33,7 @@ public EncodeBuffer()
     {
     }
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="EncodeBuffer"/>.
     /// </summary>
 public EncodeBuffer(int initialBufferSize)
@@ -43,7 +43,7 @@ public EncodeBuffer(int initialBufferSize)
 
     private int Bytes => _endByte + (_endBit + 7) / 8;
 
-        /// <summary>
+    /// <summary>
     /// Writes the book to the supplied output.
     /// </summary>
 public void WriteBook(CodeBook book, int a)
@@ -54,7 +54,7 @@ public void WriteBook(CodeBook book, int a)
         Write(book.CodeList[a], book.StaticBook.LengthList[a]);
     }
 
-        /// <summary>
+    /// <summary>
     /// Writes the string to the supplied output.
     /// </summary>
 public void WriteString(string str)
@@ -63,7 +63,7 @@ public void WriteString(string str)
             Write(c, 8);
     }
 
-        /// <summary>
+    /// <summary>
     /// Writes the value to the supplied output.
     /// </summary>
 public void Write(uint value, int bits)
@@ -106,7 +106,7 @@ public void Write(uint value, int bits)
         _endBit = bits & 7;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the bytes.
     /// </summary>
 public byte[] GetBytes()

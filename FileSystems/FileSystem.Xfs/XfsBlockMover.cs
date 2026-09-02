@@ -75,7 +75,7 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
 
   private long _firstDataByte;
 
-    /// <summary>
+  /// <summary>
   /// Performs the init operation.
   /// </summary>
 public void Init(Stream image) {
@@ -126,7 +126,7 @@ public void Init(Stream image) {
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -147,7 +147,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// BMBT_REC, and recomputes the inode's CRC-32C — total disk write is one
   /// inode-sized region (256 bytes on V5).
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

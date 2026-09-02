@@ -77,22 +77,22 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => NtfsExtentMap.Enumerate(image);
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Ntfs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "NTFS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
   // implementation re-packs the volume, so existing data may move — acceptable for
   // a conceptually read-write container. See FormatCapabilities.cs (WORM vs R/W).
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -116,7 +116,7 @@ public FormatCapabilities Capabilities =>
   /// </summary>
   private const long ResidentCeilingBytes = 1024;
 
-    /// <summary>
+  /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
 public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
@@ -193,7 +193,7 @@ public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipe
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -203,7 +203,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -256,7 +256,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     ((IArchiveShrinkable)this).ShrinkDefault(input, output);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -373,33 +373,33 @@ public void Defragment(Stream archive)
         try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
   }
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".ntfs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".ntfs", ".img"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'N', (byte)'T', (byte)'F', (byte)'S', (byte)' ', (byte)' ', (byte)' ', (byte)' '], Offset: 3, Confidence: 0.90)
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
@@ -415,7 +415,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// </summary>
   public string Description => "NTFS filesystem image with LZNT1 compression and full $MFT system files";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -459,7 +459,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     return memoryStream.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -589,7 +589,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
     _        => 0,                       // "Auto (fit to files)" or unknown → auto-size
   };
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -648,7 +648,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     combined.BuildTo(archive, declaredBytes);
   }
 
-    /// <summary>
+  /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
 public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {

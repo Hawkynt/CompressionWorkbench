@@ -12,22 +12,22 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class DmcBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Dmc";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "DMC";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Dynamic Markov Compression, bit-level FSM with state cloning";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Entropy;
@@ -40,7 +40,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   private const uint Bottom = 1u << 16;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {
@@ -137,7 +137,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) {

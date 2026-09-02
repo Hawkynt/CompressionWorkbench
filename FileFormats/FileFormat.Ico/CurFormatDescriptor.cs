@@ -18,88 +18,88 @@ namespace CompressionWorkbench.FileFormat.Ico;
 public sealed class CurFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveWriteConstraints {
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "CUR is a Windows cursor bundle (image bitmaps + hotspot fields) — defragmentation isn't meaningful.");
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Cur";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Windows CUR cursor";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".cur";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".cur"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x00, 0x00, 0x02, 0x00], Confidence: 0.85),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
     "Windows CUR cursor bundle — pseudo-archive of one or more PNG/DIB images " +
     "with hotspot fields. Hotspots default to (0,0) when creating from raw images.";
 
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => null;
-    /// <summary>
+  /// <summary>
   /// Gets the min total archive size.
   /// </summary>
 public long? MinTotalArchiveSize => null;
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription => "Accepts PNG and BMP image files; max 65535 cursors.";
 
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) {
@@ -113,7 +113,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     return true;
   }
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -125,7 +125,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       IsDirectory: false, IsEncrypted: false, LastModified: null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -136,7 +136,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {

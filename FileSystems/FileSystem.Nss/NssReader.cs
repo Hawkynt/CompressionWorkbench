@@ -13,16 +13,16 @@ public sealed class NssReader {
   private readonly byte[] _image;
   private readonly List<NssEntry> _entries = new();
 
-    /// <summary>
+  /// <summary>
   /// Gets the headers.
   /// </summary>
 public NssHeaders Headers { get; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
 public string VolumeName { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<NssEntry> Entries => this._entries;
@@ -33,12 +33,12 @@ public IReadOnlyList<NssEntry> Entries => this._entries;
   /// <summary>True iff at least one primary NSS anchor was located.</summary>
   public bool AnyValid => this.Headers.AnyValid;
 
-    /// <summary>
+  /// <summary>
   /// Gets the image length.
   /// </summary>
 public long ImageLength => this._image.LongLength;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="NssReader"/>.
   /// </summary>
 public NssReader(Stream stream) {

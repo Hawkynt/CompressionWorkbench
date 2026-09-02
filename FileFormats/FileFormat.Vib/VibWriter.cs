@@ -294,7 +294,7 @@ public sealed class VibWriter : IDisposable {
   private static string XmlBool(bool value) => value ? "true" : "false";
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

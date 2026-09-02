@@ -10,7 +10,7 @@ namespace FileSystem.Msa;
 public static class MsaWriter {
   private const int SectorSize = 512;
 
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public static void Write(Stream output, byte[] diskData,

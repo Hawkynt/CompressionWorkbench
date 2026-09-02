@@ -32,12 +32,12 @@ public sealed class VdfsReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<VdfsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<VdfsEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="VdfsReader"/>.
   /// </summary>
 public VdfsReader(Stream stream, bool leaveOpen = false) {
@@ -96,7 +96,7 @@ public VdfsReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(VdfsEntry entry) {
@@ -118,7 +118,7 @@ public byte[] Extract(VdfsEntry entry) {
     _data.CopyTo(entry.DataOffset, destination, entry.Size);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

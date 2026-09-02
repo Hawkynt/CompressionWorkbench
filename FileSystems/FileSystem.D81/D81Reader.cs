@@ -11,7 +11,7 @@ public sealed class D81Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<D81Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<D81Entry> Entries => _entries;
@@ -29,7 +29,7 @@ public IReadOnlyList<D81Entry> Entries => _entries;
   private const int Bam2Sector = 2;    // BAM for tracks 41-80
   private const int DirStartSector = 3; // first directory sector
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="D81Reader"/>.
   /// </summary>
 public D81Reader(Stream stream, bool leaveOpen = false) {
@@ -119,7 +119,7 @@ public D81Reader(Stream stream, bool leaveOpen = false) {
     return sectorCount * 254;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(D81Entry entry) {
@@ -152,7 +152,7 @@ public byte[] Extract(D81Entry entry) {
     return ms.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

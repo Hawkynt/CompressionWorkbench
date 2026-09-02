@@ -4,25 +4,25 @@ namespace Codec.TrackerXmIt;
 /// <summary>A decoded XM pattern: a rows × channels grid of <see cref="XmCell"/>.</summary>
 public sealed class XmPattern {
 
-    /// <summary>
+  /// <summary>
   /// Provides the rows value.
   /// </summary>
 public int Rows;
-    /// <summary>
+  /// <summary>
   /// Provides the channels value.
   /// </summary>
 public int Channels;
-    /// <summary>
+  /// <summary>
   /// Provides the cells value.
   /// </summary>
 public XmCell[] Cells = []; // row-major: cells[row * Channels + channel]
 
-    /// <summary>
+  /// <summary>
   /// Performs the cell operation.
   /// </summary>
 public XmCell Cell(int row, int channel) => this.Cells[row * this.Channels + channel];
 
-    /// <summary>
+  /// <summary>
   /// Performs the empty operation.
   /// </summary>
 public static XmPattern Empty(int channels) {
@@ -65,23 +65,23 @@ public static XmPattern Empty(int channels) {
 
 /// <summary>One XM pattern cell. Note 97 = key-off; 0 = none.</summary>
 public struct XmCell {
-    /// <summary>
+  /// <summary>
   /// Provides the note value.
   /// </summary>
 public byte Note;        // 1..96 = note, 97 = key off, 0 = none
-    /// <summary>
+  /// <summary>
   /// Provides the instrument value.
   /// </summary>
 public byte Instrument;  // 1-based, 0 = none
-    /// <summary>
+  /// <summary>
   /// Provides the volume value.
   /// </summary>
 public byte Volume;      // volume column byte
-    /// <summary>
+  /// <summary>
   /// Provides the effect value.
   /// </summary>
 public byte Effect;      // effect type
-    /// <summary>
+  /// <summary>
   /// Provides the param value.
   /// </summary>
 public byte Param;       // effect parameter

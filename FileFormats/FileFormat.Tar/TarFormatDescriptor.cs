@@ -18,7 +18,7 @@ namespace FileFormat.Tar;
 public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -61,7 +61,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
 
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Enumerates the layout.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
@@ -150,19 +150,19 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayout
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Tar";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "TAR";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -192,40 +192,40 @@ public FormatCapabilities Capabilities =>
       TarModifier.RemoveFile(archive, name, wipeData: true);
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".tar";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".tar"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x75, 0x73, 0x74, 0x61, 0x72], Offset: 257, Confidence: 0.95)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", "TAR")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Unix tape archive, no compression, container only";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -239,7 +239,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     return entries;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -292,7 +292,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     return ms.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -350,7 +350,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
@@ -404,7 +404,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
       Level = ValidationLevel.Header, Issues = issues };
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateStructure(Stream stream) {
@@ -428,7 +428,7 @@ public ValidationResult ValidateStructure(Stream stream) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateIntegrity(Stream stream) {

@@ -5,24 +5,24 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public struct Mode
 {
-        /// <summary>
+    /// <summary>
     /// Provides the block flag value.
     /// </summary>
 public int BlockFlag;
-        /// <summary>
+    /// <summary>
     /// Provides the window type value.
     /// </summary>
 public int WindowType;
-        /// <summary>
+    /// <summary>
     /// Provides the transform type value.
     /// </summary>
 public int TransformType;
-        /// <summary>
+    /// <summary>
     /// Provides the mapping value.
     /// </summary>
 public int Mapping;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="Mode"/>.
     /// </summary>
 public Mode(

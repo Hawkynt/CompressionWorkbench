@@ -7,15 +7,15 @@ namespace Codec.Opus;
 /// field per RFC 6716 §3.1.
 /// </summary>
 public enum OpusMode {
-    /// <summary>
+  /// <summary>
   /// Specifies the silk only option.
   /// </summary>
 SilkOnly,
-    /// <summary>
+  /// <summary>
   /// Specifies the hybrid option.
   /// </summary>
 Hybrid,
-    /// <summary>
+  /// <summary>
   /// Specifies the celt only option.
   /// </summary>
 CeltOnly,

@@ -110,7 +110,7 @@ public sealed class UbifsFileReader {
   /// <summary>List of unsupported compression types encountered (e.g. "lzo", "zstd"). Empty when all data was stored or zlib.</summary>
   public IReadOnlyList<string> UnsupportedCompressors { get; private set; } = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="UbifsFileReader"/>.
   /// </summary>
 public UbifsFileReader(Stream stream) {
@@ -121,7 +121,7 @@ public UbifsFileReader(Stream stream) {
     this.Parse();
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="UbifsFileReader"/>.
   /// </summary>
 public UbifsFileReader(byte[] image) {

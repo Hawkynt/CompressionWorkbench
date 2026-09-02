@@ -12,7 +12,7 @@ public static class VmdkLayoutMap {
 
   private static readonly byte[] SparseMagic = [0x4B, 0x44, 0x4D, 0x56];
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {

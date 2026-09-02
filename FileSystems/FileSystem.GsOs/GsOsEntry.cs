@@ -5,19 +5,19 @@ namespace FileSystem.GsOs;
 /// Represents a gs os entry.
 /// </summary>
 public sealed class GsOsEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data offset.
   /// </summary>
 public int DataOffset { get; init; }

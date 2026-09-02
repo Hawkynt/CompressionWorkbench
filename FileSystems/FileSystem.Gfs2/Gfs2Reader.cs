@@ -65,53 +65,53 @@ public sealed class Gfs2Reader : IDisposable {
   private readonly ImageAccessor _image;
   private readonly List<Gfs2Entry> _entries = new();
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether superblock valid.
   /// </summary>
 public bool SuperblockValid { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block size.
   /// </summary>
 public uint BlockSize { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block size shift.
   /// </summary>
 public uint BlockSizeShift { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root inode block.
   /// </summary>
 public ulong RootInodeBlock { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root formal ino.
   /// </summary>
 public ulong RootFormalIno { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the master inode block.
   /// </summary>
 public ulong MasterInodeBlock { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the master formal ino.
   /// </summary>
 public ulong MasterFormalIno { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the lock proto.
   /// </summary>
 public string LockProto { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the lock table.
   /// </summary>
 public string LockTable { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the uuid hex.
   /// </summary>
 public string UuidHex { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Gfs2Entry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Gfs2Reader"/>.
   /// </summary>
 public Gfs2Reader(Stream stream) {
@@ -126,7 +126,7 @@ public Gfs2Reader(Stream stream) {
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._image.Length;
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._image.Dispose();

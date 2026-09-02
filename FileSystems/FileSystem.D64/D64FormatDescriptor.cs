@@ -161,17 +161,17 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return 0;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => 174848;  // standard 1541 single-sided D64 image size
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription =>
     "Commodore 1541 D64 disk; any file up to 174 848 bytes total (664 data sectors × 254 bytes).";
 
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) {
@@ -181,29 +181,29 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   }
 
   // D64 has only one canonical size. Shrink therefore rebuilds to the fixed 174848 bytes.
-    /// <summary>
+  /// <summary>
   /// Gets the canonical sizes.
   /// </summary>
 public IReadOnlyList<long> CanonicalSizes => [174848];
-    /// <summary>
+  /// <summary>
   /// Performs the shrink operation.
   /// </summary>
 public void Shrink(Stream input, Stream output) =>
     Compression.Registry.ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "D64";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "D64";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -239,40 +239,40 @@ public FormatCapabilities Capabilities =>
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".d64";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".d64"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Commodore 64 1541 disk image";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -282,7 +282,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     )).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -325,7 +325,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     return memoryStream.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -342,20 +342,20 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new D64BlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new D64BlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)

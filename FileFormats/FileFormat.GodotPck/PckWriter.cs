@@ -46,7 +46,7 @@ public sealed class PckWriter : IDisposable {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

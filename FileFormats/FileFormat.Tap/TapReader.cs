@@ -16,12 +16,12 @@ public sealed class TapReader {
   private readonly byte[] _data;
   private readonly List<TapEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<TapEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="TapReader"/>.
   /// </summary>
 public TapReader(Stream stream) {

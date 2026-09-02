@@ -30,16 +30,16 @@ namespace FileSystem.ZxScl;
 public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => ZxSclReader.MaxPayloadSize;
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription =>
     "ZX Spectrum TR-DOS file (up to 655 360 bytes total; 8-char names).";
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
@@ -50,20 +50,20 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = nul
   /// </summary>
   public IReadOnlyList<long> CanonicalSizes => [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "ZxScl";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "SCL (ZX Spectrum)";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -100,43 +100,43 @@ public FormatCapabilities Capabilities =>
   }
 
 
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".scl";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".scl"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new(ZxSclReader.Magic, Offset: 0, Confidence: 0.95)];
 
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "ZX Spectrum SCL archive (TR-DOS compact form)";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -146,7 +146,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     )).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -157,7 +157,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -175,7 +175,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
 
   // ── IArchiveDefragmentable (rebuild-based) ───────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)

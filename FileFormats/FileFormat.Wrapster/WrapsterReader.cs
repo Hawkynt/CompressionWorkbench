@@ -15,16 +15,16 @@ public sealed class WrapsterReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<WrapsterEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<WrapsterEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the version.
   /// </summary>
 public int Version { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="WrapsterReader"/>.
   /// </summary>
 public WrapsterReader(Stream stream, bool leaveOpen = false) {
@@ -185,7 +185,7 @@ public WrapsterReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(WrapsterEntry entry) {
@@ -195,7 +195,7 @@ public byte[] Extract(WrapsterEntry entry) {
     return _data.AsSpan(entry.Offset, entry.DataLength).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

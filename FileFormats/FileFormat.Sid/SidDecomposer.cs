@@ -14,26 +14,26 @@ namespace FileFormat.Sid;
 /// </summary>
 public static class SidDecomposer {
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry kinds.
   /// </summary>
 public static class EntryKinds {
-        /// <summary>
+    /// <summary>
     /// Defines the track constant value.
     /// </summary>
 public const string Track = "Track";
-        /// <summary>
+    /// <summary>
     /// Defines the tag constant value.
     /// </summary>
 public const string Tag = "Tag";
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry.
   /// </summary>
 public readonly record struct Entry(string Name, byte[] Data, string Kind);
 
-    /// <summary>
+  /// <summary>
   /// Performs the decompose operation.
   /// </summary>
 public static List<Entry> Decompose(byte[] file) {

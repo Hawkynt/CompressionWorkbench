@@ -11,7 +11,7 @@ public sealed class D64Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<D64Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<D64Entry> Entries => _entries;
@@ -35,7 +35,7 @@ public IReadOnlyList<D64Entry> Entries => _entries;
     17, 17, 17, 17, 17 // 31-35
   ];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="D64Reader"/>.
   /// </summary>
 public D64Reader(Stream stream, bool leaveOpen = false) {
@@ -141,7 +141,7 @@ public D64Reader(Stream stream, bool leaveOpen = false) {
     return sectorCount * 254;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(D64Entry entry) {
@@ -175,7 +175,7 @@ public byte[] Extract(D64Entry entry) {
     return ms.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

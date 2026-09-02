@@ -75,23 +75,23 @@ public sealed class VeeamReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<VeeamEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<VeeamEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the magic offset.
   /// </summary>
 public int MagicOffset { get; private set; } = -1;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
 public bool ValidHeader { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the file type.
   /// </summary>
 public VeeamFileType FileType { get; private set; } = VeeamFileType.Unknown;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the trailing word.
   /// </summary>
 public uint TrailingWord { get; private set; }
@@ -104,7 +104,7 @@ public uint TrailingWord { get; private set; }
   /// </summary>
   public OibSummary? OibSummary { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="VeeamReader"/>.
   /// </summary>
 public VeeamReader(Stream stream, VeeamFileType fileTypeHint = VeeamFileType.Unknown) {
@@ -321,7 +321,7 @@ public VeeamReader(Stream stream, VeeamFileType fileTypeHint = VeeamFileType.Unk
     _ => "Unknown",
   };
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(VeeamEntry entry) {
@@ -329,7 +329,7 @@ public byte[] Extract(VeeamEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

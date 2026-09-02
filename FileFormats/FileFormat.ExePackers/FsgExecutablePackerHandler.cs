@@ -12,15 +12,15 @@ namespace FileFormat.ExePackers;
 /// and inflates it.
 /// </summary>
 public sealed class FsgExecutablePackerHandler : AplibSectionPackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "fsg";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "FSG (Fast Small Good) aPLib-packed PE";
-    /// <summary>
+  /// <summary>
   /// Gets the packer label.
   /// </summary>
 protected override string PackerLabel => "FSG";
@@ -80,7 +80,7 @@ protected override string PackerLabel => "FSG";
     return result with { Artifacts = artifacts };
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
 protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
@@ -109,20 +109,20 @@ protected override (bool Match, double Confidence, string Reason) DetectPe(ReadO
 /// which case the handler reports the payload as located but not aPLib-decodable).
 /// </summary>
 public sealed class PeCompactExecutablePackerHandler : AplibSectionPackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "pecompact";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "PECompact aPLib-packed PE";
-    /// <summary>
+  /// <summary>
   /// Gets the packer label.
   /// </summary>
 protected override string PackerLabel => "PECompact";
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
 protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
@@ -141,20 +141,20 @@ protected override (bool Match, double Confidence, string Reason) DetectPe(ReadO
 /// corpus variant whose section contains a clean aPLib stream.
 /// </summary>
 public sealed class PackmanExecutablePackerHandler : AplibSectionPackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "packman";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "Packman aPLib-packed PE";
-    /// <summary>
+  /// <summary>
   /// Gets the packer label.
   /// </summary>
 protected override string PackerLabel => "Packman";
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
 protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
@@ -176,20 +176,20 @@ protected override (bool Match, double Confidence, string Reason) DetectPe(ReadO
 /// separate higher-level target.
 /// </summary>
 public sealed class EnigmaVirtualBoxExecutablePackerHandler : AplibSectionPackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "enigmavirtualbox";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "Enigma Virtual Box aPLib-packed PE";
-    /// <summary>
+  /// <summary>
   /// Gets the packer label.
   /// </summary>
 protected override string PackerLabel => "Enigma Virtual Box";
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
 protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
@@ -214,20 +214,20 @@ protected override (bool Match, double Confidence, string Reason) DetectPe(ReadO
 /// when the decoded image can be mapped.
 /// </summary>
 public sealed class PeToyExecutablePackerHandler : AplibSectionPackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "petoy";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "PE-Toy aPLib-packed PE";
-    /// <summary>
+  /// <summary>
   /// Gets the packer label.
   /// </summary>
 protected override string PackerLabel => "PE-Toy";
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
 protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
@@ -250,22 +250,22 @@ protected override (bool Match, double Confidence, string Reason) DetectPe(ReadO
 /// present.
 /// </summary>
 public sealed class GenericAplibPackedPeHandler : AplibSectionPackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "aplib_pe";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "aPLib-packed PE (generic)";
-    /// <summary>
+  /// <summary>
   /// Gets the packer label.
   /// </summary>
 protected override string PackerLabel => "aPLib-packed PE";
 
   private const long DetectDecodeCap = 64L * 1024 * 1024;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
 protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) =>

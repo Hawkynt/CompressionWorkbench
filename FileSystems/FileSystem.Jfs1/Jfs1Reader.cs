@@ -20,7 +20,7 @@ public sealed class Jfs1Reader {
   private readonly int _inodesPerBlock;
   private readonly List<Jfs1Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Jfs1Reader"/>.
   /// </summary>
 public Jfs1Reader(Stream stream) {
@@ -35,12 +35,12 @@ public Jfs1Reader(Stream stream) {
     Recurse(2, "");
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Jfs1Entry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Jfs1Entry entry) {

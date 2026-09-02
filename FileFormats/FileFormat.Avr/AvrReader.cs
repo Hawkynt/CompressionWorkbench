@@ -23,12 +23,12 @@ namespace FileFormat.Avr;
 /// </summary>
 public sealed class AvrReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the header size constant value.
   /// </summary>
 public const int HeaderSize = 128;
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed avr.
   /// </summary>
 public sealed record ParsedAvr(
@@ -43,7 +43,7 @@ public sealed record ParsedAvr(
     string User,
     byte[] SampleData);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedAvr Read(ReadOnlySpan<byte> data) {

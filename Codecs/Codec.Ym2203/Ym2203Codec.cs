@@ -33,7 +33,7 @@ public sealed class Ym2203Codec {
   private int _ssgLatch;
 
   /// <param name="clock">Chip input clock in Hz (3993600 on the X1, 3579545 on many arcades).</param>
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Ym2203Codec"/>.
   /// </summary>
 public Ym2203Codec(double clock = 3993600.0) {

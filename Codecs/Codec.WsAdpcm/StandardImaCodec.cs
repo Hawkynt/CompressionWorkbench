@@ -30,16 +30,16 @@ public static class StandardImaCodec {
 
   /// <summary>Mutable IMA decoder/encoder state (predictor + step index).</summary>
   public struct State {
-        /// <summary>
+    /// <summary>
     /// Provides the predictor value.
     /// </summary>
 public int Predictor;
-        /// <summary>
+    /// <summary>
     /// Provides the step index value.
     /// </summary>
 public int StepIndex;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="State"/>.
     /// </summary>
 public State(int predictor, int stepIndex) {

@@ -21,15 +21,15 @@ public static class SolidBlockOptimizer {
 
   /// <summary>A single trial run result.</summary>
   public sealed class TrialResult {
-        /// <summary>
+    /// <summary>
     /// Gets or sets the strategy name.
     /// </summary>
 public required string StrategyName { get; init; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the output size.
     /// </summary>
 public required long OutputSize { get; init; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the elapsed.
     /// </summary>
 public required TimeSpan Elapsed { get; init; }

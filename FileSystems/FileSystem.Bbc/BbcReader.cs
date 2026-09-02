@@ -17,23 +17,23 @@ namespace FileSystem.Bbc;
 /// </remarks>
 public sealed class BbcReader : IDisposable {
 
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 256;
-    /// <summary>
+  /// <summary>
   /// Defines the sectors per track constant value.
   /// </summary>
 public const int SectorsPerTrack = 10;
-    /// <summary>
+  /// <summary>
   /// Defines the max entries constant value.
   /// </summary>
 public const int MaxEntries = 31;
-    /// <summary>
+  /// <summary>
   /// Defines the ssd 40 track size constant value.
   /// </summary>
 public const int Ssd40TrackSize = 100_000;   // 40 tracks x 10 x 256
-    /// <summary>
+  /// <summary>
   /// Defines the ssd 80 track size constant value.
   /// </summary>
 public const int Ssd80TrackSize = 200_000;   // 80 tracks x 10 x 256
@@ -44,16 +44,16 @@ public const int Ssd80TrackSize = 200_000;   // 80 tracks x 10 x 256
   private readonly int _sideSize;
   private readonly List<BbcEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<BbcEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the disk title.
   /// </summary>
 public string DiskTitle { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="BbcReader"/>.
   /// </summary>
 public BbcReader(Stream stream, bool doubleSided = false) {
@@ -166,7 +166,7 @@ public BbcReader(Stream stream, bool doubleSided = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(BbcEntry entry) {
@@ -181,7 +181,7 @@ public byte[] Extract(BbcEntry entry) {
     return buf;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

@@ -6,103 +6,103 @@ namespace FileFormat.Zarr;
 /// </summary>
 public static class ZarrConstants {
 
-    /// <summary>
+  /// <summary>
   /// Defines the zarr format key constant value.
   /// </summary>
 public const string ZarrFormatKey = "zarr_format";
-    /// <summary>
+  /// <summary>
   /// Defines the shape key constant value.
   /// </summary>
 public const string ShapeKey = "shape";
-    /// <summary>
+  /// <summary>
   /// Defines the chunks key constant value.
   /// </summary>
 public const string ChunksKey = "chunks";
-    /// <summary>
+  /// <summary>
   /// Defines the dtype key constant value.
   /// </summary>
 public const string DtypeKey = "dtype";
-    /// <summary>
+  /// <summary>
   /// Defines the compressor key constant value.
   /// </summary>
 public const string CompressorKey = "compressor";
-    /// <summary>
+  /// <summary>
   /// Defines the fill value key constant value.
   /// </summary>
 public const string FillValueKey = "fill_value";
-    /// <summary>
+  /// <summary>
   /// Defines the order key constant value.
   /// </summary>
 public const string OrderKey = "order";
-    /// <summary>
+  /// <summary>
   /// Defines the filters key constant value.
   /// </summary>
 public const string FiltersKey = "filters";
-    /// <summary>
+  /// <summary>
   /// Defines the dimension separator key constant value.
   /// </summary>
 public const string DimensionSeparatorKey = "dimension_separator";
 
-    /// <summary>
+  /// <summary>
   /// Defines the node type key constant value.
   /// </summary>
 public const string NodeTypeKey = "node_type";
-    /// <summary>
+  /// <summary>
   /// Defines the data type key constant value.
   /// </summary>
 public const string DataTypeKey = "data_type";
-    /// <summary>
+  /// <summary>
   /// Defines the chunk grid key constant value.
   /// </summary>
 public const string ChunkGridKey = "chunk_grid";
-    /// <summary>
+  /// <summary>
   /// Defines the chunk key encoding key constant value.
   /// </summary>
 public const string ChunkKeyEncodingKey = "chunk_key_encoding";
-    /// <summary>
+  /// <summary>
   /// Defines the codecs key constant value.
   /// </summary>
 public const string CodecsKey = "codecs";
-    /// <summary>
+  /// <summary>
   /// Defines the attributes key constant value.
   /// </summary>
 public const string AttributesKey = "attributes";
-    /// <summary>
+  /// <summary>
   /// Defines the dimension names key constant value.
   /// </summary>
 public const string DimensionNamesKey = "dimension_names";
 
-    /// <summary>
+  /// <summary>
   /// Defines the id key constant value.
   /// </summary>
 public const string IdKey = "id";
-    /// <summary>
+  /// <summary>
   /// Defines the name key constant value.
   /// </summary>
 public const string NameKey = "name";
-    /// <summary>
+  /// <summary>
   /// Defines the configuration key constant value.
   /// </summary>
 public const string ConfigurationKey = "configuration";
-    /// <summary>
+  /// <summary>
   /// Defines the chunk shape key constant value.
   /// </summary>
 public const string ChunkShapeKey = "chunk_shape";
 
-    /// <summary>
+  /// <summary>
   /// Defines the node type array constant value.
   /// </summary>
 public const string NodeTypeArray = "array";
-    /// <summary>
+  /// <summary>
   /// Defines the node type group constant value.
   /// </summary>
 public const string NodeTypeGroup = "group";
 
-    /// <summary>
+  /// <summary>
   /// Provides the v 2 required keys value.
   /// </summary>
 public static readonly string[] V2RequiredKeys = [ZarrFormatKey, ShapeKey, ChunksKey, DtypeKey];
-    /// <summary>
+  /// <summary>
   /// Provides the v 3 required keys value.
   /// </summary>
 public static readonly string[] V3RequiredKeys = [ZarrFormatKey, NodeTypeKey];

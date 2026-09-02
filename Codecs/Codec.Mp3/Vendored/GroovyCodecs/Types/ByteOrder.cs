@@ -1,15 +1,15 @@
 namespace GroovyCodecs.Types
 {
-        /// <summary>
+    /// <summary>
     /// Specifies byte order values.
     /// </summary>
 public enum ByteOrder
     {
-                /// <summary>
+        /// <summary>
         /// Specifies the big endian option.
         /// </summary>
 BIG_ENDIAN,
-                /// <summary>
+        /// <summary>
         /// Specifies the little endian option.
         /// </summary>
 LITTLE_ENDIAN

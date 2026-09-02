@@ -5,7 +5,7 @@ namespace FileFormat.Acronis;
 
 /// <summary>Form of an Acronis slice — determines how the trailer is laid out.</summary>
 public enum AcronisSliceForm {
-    /// <summary>
+  /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
 Unknown,

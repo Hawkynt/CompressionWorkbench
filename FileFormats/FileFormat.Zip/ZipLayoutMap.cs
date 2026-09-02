@@ -10,7 +10,7 @@ namespace FileFormat.Zip;
 /// </summary>
 public static class ZipLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

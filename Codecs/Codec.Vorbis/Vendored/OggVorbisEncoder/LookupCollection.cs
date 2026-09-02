@@ -26,36 +26,36 @@ public class LookupCollection
         ResidueLookup = residueLookup;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the envelope lookup.
     /// </summary>
 public EnvelopeLookup EnvelopeLookup { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the transform lookup.
     /// </summary>
 public MdctLookup[] TransformLookup { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the psy global lookup.
     /// </summary>
 public PsyGlobalLookup PsyGlobalLookup { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the psy lookup.
     /// </summary>
 public PsyLookup[] PsyLookup { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the fft lookup.
     /// </summary>
 public DrftLookup[] FftLookup { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the floor lookup.
     /// </summary>
 public FloorLookup[] FloorLookup { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the residue lookup.
     /// </summary>
 public ResidueLookup[] ResidueLookup { get; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the create operation.
     /// </summary>
 public static LookupCollection Create(VorbisInfo info)

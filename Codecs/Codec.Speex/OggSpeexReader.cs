@@ -19,7 +19,7 @@ public sealed class OggSpeexReader {
   private readonly List<byte> _partial = new();
   private bool _eof;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="OggSpeexReader"/>.
   /// </summary>
 public OggSpeexReader(Stream stream) => this._stream = stream;
@@ -37,7 +37,7 @@ public OggSpeexReader(Stream stream) => this._stream = stream;
   /// </summary>
   public byte[]? TryReadComments() => this.TryReadPacket(out var pkt) ? pkt : null;
 
-    /// <summary>
+  /// <summary>
   /// Attempts to read the packet from the supplied input.
   /// </summary>
 public bool TryReadPacket(out byte[] packet) {

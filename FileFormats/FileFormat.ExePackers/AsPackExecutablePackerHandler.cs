@@ -26,20 +26,20 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class AsPackExecutablePackerHandler : AplibSectionPackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "aspack";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "ASPack (Win32 PE)";
-    /// <summary>
+  /// <summary>
   /// Gets the packer label.
   /// </summary>
 protected override string PackerLabel => "ASPack";
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
 protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
@@ -53,7 +53,7 @@ protected override (bool Match, double Confidence, string Reason) DetectPe(ReadO
     return (false, 0, "ASPack: neither .aspack/.adata section nor 'ASPack' literal found.");
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

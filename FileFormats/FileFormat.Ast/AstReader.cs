@@ -23,7 +23,7 @@ namespace FileFormat.Ast;
 /// </summary>
 public sealed class AstReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a header.
   /// </summary>
 public sealed record Header(
@@ -36,14 +36,14 @@ public sealed record Header(
     int LoopStart,
     int LoopEnd);
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed ast.
   /// </summary>
 public sealed record ParsedAst(
     Header Info,
     short[][] Pcm);          // [channel][sampleCount]; empty for undecoded codecs.
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedAst Read(ReadOnlySpan<byte> data) {

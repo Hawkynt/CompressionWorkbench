@@ -60,7 +60,7 @@ public sealed class UbifsBlockMover : IFilesystemBlockMover {
   /// The source is always cleared, whatever the caller asked for: a node left
   /// where it was is one the log replays twice.
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -91,7 +91,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// Nothing to do. A node is found by its magic and identified by what it
   /// carries, so no field anywhere says where it is.
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

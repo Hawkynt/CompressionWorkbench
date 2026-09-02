@@ -15,7 +15,7 @@ public static class PngOptimizer {
     "tIME", "iTXt", "zTXt",
   };
 
-    /// <summary>
+  /// <summary>
   /// Performs the optimize operation.
   /// </summary>
 public static void Optimize(Stream stream, MetadataPlacementProfile? profile = null) {

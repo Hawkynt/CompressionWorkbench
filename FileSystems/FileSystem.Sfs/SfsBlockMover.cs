@@ -55,7 +55,7 @@ public sealed class SfsBlockMover : IFilesystemBlockMover {
         });
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the block size.
   /// </summary>
 public int BlockSize => this._volume?.BlockSize ?? 512;
@@ -73,7 +73,7 @@ public int BlockSize => this._volume?.BlockSize ?? 512;
   public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -88,7 +88,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

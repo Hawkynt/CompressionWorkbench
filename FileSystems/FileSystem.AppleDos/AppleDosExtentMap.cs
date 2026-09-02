@@ -19,7 +19,7 @@ public static class AppleDosExtentMap {
   private const int VtocSector = 0;
   private const int StandardSize = 143360;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

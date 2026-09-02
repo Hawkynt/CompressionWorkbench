@@ -86,7 +86,7 @@ public sealed class UfsBlockMover : IFilesystemBlockMover {
   public int OffsetToFrag(long offset) => (int)(offset / _fragSize);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -111,7 +111,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// Crash mid-3: file reachable via new pointers, old frags still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

@@ -58,11 +58,11 @@ public sealed class Tux3Writer {
   /// a birthday that reads the same on every volume is a maker's mark.
   /// </summary>
   public ulong Birthday { get; init; } = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-    /// <summary>
+  /// <summary>
   /// Gets or sets the flags.
   /// </summary>
 public ulong Flags { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block bits.
   /// </summary>
 public ulong BlockBits { get; init; } = 12; // 4 KiB blocks (matches Tux3 prototype default)
@@ -70,7 +70,7 @@ public ulong BlockBits { get; init; } = 12; // 4 KiB blocks (matches Tux3 protot
   /// <summary>One file to emit: either its bytes, or a copier that streams them.</summary>
   private readonly record struct Item(string Name, long Size, byte[]? Data, Action<Stream>? Copy);
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -101,7 +101,7 @@ public void AddFile(string name, byte[] data) {
     return name;
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {
@@ -189,7 +189,7 @@ public void WriteTo(Stream output) {
     output.Position = finalLen;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build() {

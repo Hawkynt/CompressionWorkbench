@@ -11,7 +11,7 @@ namespace FileFormat.PackDisk;
 /// "XPKF" chunk header precedes them. No XPK encoder is needed.
 /// </summary>
 public sealed class PackDiskWriter {
-    /// <summary>
+  /// <summary>
   /// Defines the track size constant value.
   /// </summary>
 public const int TrackSize = 11 * 512;
@@ -30,7 +30,7 @@ public const int TrackSize = 11 * 512;
   private readonly byte[] _magic;
   private readonly List<byte[]> _tracks = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add track operation.
   /// </summary>
 public void AddTrack(ReadOnlySpan<byte> data) {
@@ -40,7 +40,7 @@ public void AddTrack(ReadOnlySpan<byte> data) {
     _tracks.Add(buf);
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

@@ -13,34 +13,34 @@ namespace FileFormat.ExePackers;
 /// container layout.
 /// </summary>
 public sealed class MewExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "mew";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "MEW";
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public override ExecutableUnpackCapabilities Capabilities =>
     base.Capabilities | ExecutableUnpackCapabilities.CanDecompressPayload;
 
-    /// <summary>
+  /// <summary>
   /// Performs the is packer section operation.
   /// </summary>
 protected override bool IsPackerSection(string name) =>
     name.StartsWith("MEW", StringComparison.OrdinalIgnoreCase) ||
     name.StartsWith(".MEW", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
+  /// <summary>
   /// Gets the literal signature.
   /// </summary>
 protected override ReadOnlySpan<byte> LiteralSignature => [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public override DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -54,7 +54,7 @@ public override DetectionResult Detect(ReadOnlySpan<byte> image) {
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "MEW section marker was not found.", true)]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

@@ -75,7 +75,7 @@ public sealed class Human68kWriter {
   /// <summary>Data clusters a FAT16 allocation table can address.</summary>
   private const int MaxClusters = 65524;
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build() {

@@ -25,11 +25,11 @@ namespace FileFormat.Acronis;
 /// </para>
 /// </remarks>
 public enum AcronisVolumeVersion {
-    /// <summary>
+  /// <summary>
   /// Specifies the windows option.
   /// </summary>
 Windows = 0,
-    /// <summary>
+  /// <summary>
   /// Specifies the mac option.
   /// </summary>
 Mac = 1,
@@ -49,7 +49,7 @@ public sealed record AcronisVolumeHeader(
   uint BlockSize
 ) {
 
-    /// <summary>
+  /// <summary>
   /// Defines the magic constant value.
   /// </summary>
 public const uint Magic = 0xA2B924CE;

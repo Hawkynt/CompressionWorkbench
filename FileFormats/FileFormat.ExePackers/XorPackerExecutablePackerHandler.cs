@@ -9,18 +9,18 @@ namespace FileFormat.ExePackers;
 /// Represents a xor packer executable packer handler.
 /// </summary>
 public sealed class XorPackerExecutablePackerHandler : IExecutablePackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "xor_packer";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Xor_Packer .NET PE wrapper";
 
   private static ReadOnlySpan<byte> Marker => "***"u8;
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -30,7 +30,7 @@ public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanRebuildExecutable |
     ExecutableUnpackCapabilities.SupportsPe;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -43,7 +43,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Xor_Packer appended settings marker or recoverable PE payload was not found.", true)]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -62,7 +62,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
       });
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

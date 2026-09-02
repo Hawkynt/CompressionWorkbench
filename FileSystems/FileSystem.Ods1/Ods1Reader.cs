@@ -62,20 +62,20 @@ public sealed class Ods1Reader : IDisposable {
   private readonly long _len;
   private readonly List<Ods1Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Ods1Entry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the volume format.
   /// </summary>
 public string VolumeFormat { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
 public string VolumeName { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the structure level.
   /// </summary>
 public int StructureLevel { get; private set; }
@@ -83,7 +83,7 @@ public int StructureLevel { get; private set; }
   internal const int LbnSize = 512;
   internal const int HomeBlockLbn = 1;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Ods1Reader"/>.
   /// </summary>
 public Ods1Reader(Stream stream) {
@@ -194,7 +194,7 @@ public Ods1Reader(Stream stream) {
     });
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Ods1Entry entry) {
@@ -231,7 +231,7 @@ public byte[] Extract(Ods1Entry entry) {
     return written;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._img.Dispose();

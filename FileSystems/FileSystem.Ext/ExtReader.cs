@@ -18,7 +18,7 @@ public sealed class ExtReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<ExtEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ExtEntry> Entries => _entries;
@@ -51,7 +51,7 @@ public IReadOnlyList<ExtEntry> Entries => _entries;
   private const ushort ExtentMagic = 0xF30A;
   private const uint RootInode = 2;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ExtReader"/>.
   /// </summary>
 public ExtReader(Stream stream, bool leaveOpen = false) {
@@ -446,7 +446,7 @@ public ExtReader(Stream stream, bool leaveOpen = false) {
     WriteInodeBlocks(inodeData, destination);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ExtEntry entry) {
@@ -467,7 +467,7 @@ public byte[] Extract(ExtEntry entry) {
     return data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

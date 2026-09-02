@@ -23,7 +23,7 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// expansion; only their defaults round-trip through the current writer. Non-default
   /// values are accepted but may be silently ignored — see <see cref="Create"/>.
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
@@ -60,7 +60,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -69,7 +69,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -77,7 +77,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -147,7 +147,7 @@ public void Defragment(Stream archive)
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive, DefragOptions options) {
@@ -217,16 +217,16 @@ public void Defragment(Stream archive, DefragOptions options) {
   // WORM-minimal writer constraints: a single leaf node holds ≤64 file
   // tuples (INODE_ITEM + DIR_INDEX + inline EXTENT_DATA). No chunk tree is
   // emitted — the reader's identity LogicalToPhysical fallback maps blocks.
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => null;
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription =>
     "Btrfs WORM image: up to 64 flat files with inline extents, single fs-tree leaf node.";
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) {
@@ -235,54 +235,54 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     return true;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Btrfs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Btrfs Filesystem Image";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
   // implementation re-packs the volume, so existing data may move — acceptable for
   // a conceptually read-write container. See FormatCapabilities.cs (WORM vs R/W).
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".btrfs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".btrfs", ".img"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("_BHRfS_M"u8.ToArray(), Offset: 0x10040, Confidence: 0.90)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
@@ -298,7 +298,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// </summary>
   public string Description => "Btrfs copy-on-write filesystem image with real chunk tree + CRC-32C metadata checksums";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -309,7 +309,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     )).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -355,7 +355,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     return memoryStream.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -477,7 +477,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// </summary>
   private const long InlineCeilingBytes = 4096;
 
-    /// <summary>
+  /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
 public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {

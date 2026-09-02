@@ -12,86 +12,86 @@ namespace FileFormat.Pkcs12;
 public static class Pkcs12Parser {
 
   // OIDs defined in RFC 7292 § 4.2 and PKCS#7 § 9.
-    /// <summary>
+  /// <summary>
   /// Defines the oid data constant value.
   /// </summary>
 public const string OidData              = "1.2.840.113549.1.7.1";
-    /// <summary>
+  /// <summary>
   /// Defines the oid signed data constant value.
   /// </summary>
 public const string OidSignedData        = "1.2.840.113549.1.7.2";
-    /// <summary>
+  /// <summary>
   /// Defines the oid encrypted data constant value.
   /// </summary>
 public const string OidEncryptedData     = "1.2.840.113549.1.7.6";
-    /// <summary>
+  /// <summary>
   /// Defines the oid key bag constant value.
   /// </summary>
 public const string OidKeyBag            = "1.2.840.113549.1.12.10.1.1";
-    /// <summary>
+  /// <summary>
   /// Defines the oid shrouded key bag constant value.
   /// </summary>
 public const string OidShroudedKeyBag    = "1.2.840.113549.1.12.10.1.2";
-    /// <summary>
+  /// <summary>
   /// Defines the oid cert bag constant value.
   /// </summary>
 public const string OidCertBag           = "1.2.840.113549.1.12.10.1.3";
-    /// <summary>
+  /// <summary>
   /// Defines the oid crl bag constant value.
   /// </summary>
 public const string OidCrlBag            = "1.2.840.113549.1.12.10.1.4";
-    /// <summary>
+  /// <summary>
   /// Defines the oid secret bag constant value.
   /// </summary>
 public const string OidSecretBag         = "1.2.840.113549.1.12.10.1.5";
-    /// <summary>
+  /// <summary>
   /// Defines the oid safe contents bag constant value.
   /// </summary>
 public const string OidSafeContentsBag   = "1.2.840.113549.1.12.10.1.6";
-    /// <summary>
+  /// <summary>
   /// Defines the oid x 509 cert constant value.
   /// </summary>
 public const string OidX509Cert          = "1.2.840.113549.1.9.22.1";
 
-    /// <summary>
+  /// <summary>
   /// Specifies bag kind values.
   /// </summary>
 public enum BagKind {
-        /// <summary>
+    /// <summary>
     /// Specifies the cert option.
     /// </summary>
 Cert,
-        /// <summary>
+    /// <summary>
     /// Specifies the key option.
     /// </summary>
 Key,
-        /// <summary>
+    /// <summary>
     /// Specifies the shrouded key option.
     /// </summary>
 ShroudedKey,
-        /// <summary>
+    /// <summary>
     /// Specifies the crl option.
     /// </summary>
 Crl,
-        /// <summary>
+    /// <summary>
     /// Specifies the secret option.
     /// </summary>
 Secret,
-        /// <summary>
+    /// <summary>
     /// Specifies the nested option.
     /// </summary>
 Nested,
-        /// <summary>
+    /// <summary>
     /// Specifies the encrypted content option.
     /// </summary>
 EncryptedContent,
-        /// <summary>
+    /// <summary>
     /// Specifies an unknown or unrecognized value.
     /// </summary>
 Unknown,
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents a bag.
   /// </summary>
 public sealed record Bag(int Index, BagKind Kind, string BagOid, byte[] ValueDer);

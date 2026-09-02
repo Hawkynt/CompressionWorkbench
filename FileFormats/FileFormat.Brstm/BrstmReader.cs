@@ -16,7 +16,7 @@ namespace FileFormat.Brstm;
 /// </summary>
 public sealed class BrstmReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a stream info.
   /// </summary>
 public sealed record StreamInfo(
@@ -34,7 +34,7 @@ public sealed record StreamInfo(
     int FinalBlockSamples,
     int FinalBlockSizePadded);
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed brstm.
   /// </summary>
 public sealed record ParsedBrstm(
@@ -42,7 +42,7 @@ public sealed record ParsedBrstm(
     short[][] Coefs,           // [channel][16]
     short[][] Pcm);            // [channel][totalSamples] decoded to PCM16
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedBrstm Read(ReadOnlySpan<byte> data) {

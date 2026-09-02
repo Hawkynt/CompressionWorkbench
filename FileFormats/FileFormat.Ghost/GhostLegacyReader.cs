@@ -73,7 +73,7 @@ public sealed class GhostLegacyReader {
   /// <summary>Synthesised entries: metadata + raw dump head + raw dump body.</summary>
   public IReadOnlyList<GhostEntry> Entries { get; private set; } = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GhostLegacyReader"/>.
   /// </summary>
 public GhostLegacyReader(ReadOnlySpan<byte> data) {

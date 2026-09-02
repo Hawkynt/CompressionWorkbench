@@ -16,7 +16,7 @@ namespace FileFormat.Mz;
 /// </remarks>
 public sealed class MzReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a mz image.
   /// </summary>
 public sealed record MzImage(
@@ -40,7 +40,7 @@ public sealed record MzImage(
     byte[] Overlay               // bytes imageSize .. eof (can be empty)
   );
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static MzImage Read(ReadOnlySpan<byte> data) {

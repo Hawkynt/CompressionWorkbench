@@ -20,7 +20,7 @@ namespace FileFormat.Dff;
 /// </summary>
 public sealed class DffReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed dff.
   /// </summary>
 public sealed record ParsedDff(
@@ -31,7 +31,7 @@ public sealed record ParsedDff(
     byte[][] ChannelDsd,
     long BytesPerChannel);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedDff Read(ReadOnlySpan<byte> data) {

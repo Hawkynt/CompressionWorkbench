@@ -46,7 +46,7 @@ public sealed class AmigaPfsReader : IDisposable {
   private readonly ImageAccessor _accessor;
   private readonly List<AmigaPfsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<AmigaPfsEntry> Entries => this._entries;
@@ -60,7 +60,7 @@ public IReadOnlyList<AmigaPfsEntry> Entries => this._entries;
   /// <summary>Disk name from the root block.</summary>
   public string DiskName { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AmigaPfsReader"/>.
   /// </summary>
 public AmigaPfsReader(Stream stream, int blockSize = 512) {
@@ -171,7 +171,7 @@ public AmigaPfsReader(Stream stream, int blockSize = 512) {
     return Encoding.ASCII.GetString(data, offset + 1, end - offset - 1);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(AmigaPfsEntry entry) {
@@ -205,7 +205,7 @@ public byte[] Extract(AmigaPfsEntry entry) {
     return (offset, Math.Min(entry.Size, this._accessor.Length - offset));
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._accessor.Dispose();

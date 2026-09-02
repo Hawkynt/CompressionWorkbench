@@ -17,7 +17,7 @@ public static class WbnConstants {
     0xF0, 0x9F, 0x93, 0xA6,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Defines the magic length constant value.
   /// </summary>
 public const int MagicLength = 10;
@@ -26,35 +26,35 @@ public const int MagicLength = 10;
   public const int VersionFieldLength = 4;
 
   // CBOR major type constants (high 3 bits of the leading byte, shifted down).
-    /// <summary>
+  /// <summary>
   /// Defines the major type unsigned int constant value.
   /// </summary>
 public const byte MajorTypeUnsignedInt = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the major type negative int constant value.
   /// </summary>
 public const byte MajorTypeNegativeInt = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the major type byte string constant value.
   /// </summary>
 public const byte MajorTypeByteString = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the major type text string constant value.
   /// </summary>
 public const byte MajorTypeTextString = 3;
-    /// <summary>
+  /// <summary>
   /// Defines the major type array constant value.
   /// </summary>
 public const byte MajorTypeArray = 4;
-    /// <summary>
+  /// <summary>
   /// Defines the major type map constant value.
   /// </summary>
 public const byte MajorTypeMap = 5;
-    /// <summary>
+  /// <summary>
   /// Defines the major type tag constant value.
   /// </summary>
 public const byte MajorTypeTag = 6;
-    /// <summary>
+  /// <summary>
   /// Defines the major type simple or float constant value.
   /// </summary>
 public const byte MajorTypeSimpleOrFloat = 7;

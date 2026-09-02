@@ -20,35 +20,35 @@ public sealed class Cpu6502 {
   /// <summary>Processor status flag bits.</summary>
   [Flags]
   public enum Status : byte {
-        /// <summary>
+    /// <summary>
     /// Specifies the carry option.
     /// </summary>
 Carry = 0x01,
-        /// <summary>
+    /// <summary>
     /// Specifies the zero option.
     /// </summary>
 Zero = 0x02,
-        /// <summary>
+    /// <summary>
     /// Specifies the interrupt option.
     /// </summary>
 Interrupt = 0x04,
-        /// <summary>
+    /// <summary>
     /// Specifies the decimal option.
     /// </summary>
 Decimal = 0x08,
-        /// <summary>
+    /// <summary>
     /// Specifies the break option.
     /// </summary>
 Break = 0x10,
-        /// <summary>
+    /// <summary>
     /// Specifies the unused option.
     /// </summary>
 Unused = 0x20,
-        /// <summary>
+    /// <summary>
     /// Specifies the overflow option.
     /// </summary>
 Overflow = 0x40,
-        /// <summary>
+    /// <summary>
     /// Specifies the negative option.
     /// </summary>
 Negative = 0x80,
@@ -56,32 +56,32 @@ Negative = 0x80,
 
   private readonly IBus6502 _bus;
 
-    /// <summary>
+  /// <summary>
   /// Provides the a value.
   /// </summary>
 public byte A;
-    /// <summary>
+  /// <summary>
   /// Provides the x value.
   /// </summary>
 public byte X;
-    /// <summary>
+  /// <summary>
   /// Provides the y value.
   /// </summary>
 public byte Y;
-    /// <summary>
+  /// <summary>
   /// Provides the sp value.
   /// </summary>
 public byte SP;
-    /// <summary>
+  /// <summary>
   /// Provides the pc value.
   /// </summary>
 public ushort PC;
-    /// <summary>
+  /// <summary>
   /// Provides the p value.
   /// </summary>
 public Status P;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Cpu6502"/>.
   /// </summary>
 public Cpu6502(IBus6502 bus) {

@@ -13,7 +13,7 @@ namespace FileFormat.Ogg;
 /// </summary>
 public static class OggLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {

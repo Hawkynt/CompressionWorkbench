@@ -24,7 +24,7 @@ public sealed class GhostWriter : IDisposable {
   private readonly string? _password;
   private bool _disposed;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GhostWriter"/>.
   /// </summary>
 public GhostWriter(Stream output, byte compression, uint id = 0x12345678, string? password = null, bool leaveOpen = true) {
@@ -135,7 +135,7 @@ public GhostWriter(Stream output, byte compression, uint id = 0x12345678, string
     if (body.Length > 0) this._output.Write(body);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {
@@ -151,7 +151,7 @@ public void Dispose() {
 /// </summary>
 public static class GhostZlib {
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public static int Decompress(ReadOnlySpan<byte> data, int compLen, Span<byte> dst) {
@@ -176,7 +176,7 @@ public static int Decompress(ReadOnlySpan<byte> data, int compLen, Span<byte> ds
     return read;
   }
 
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public static byte[] Compress(ReadOnlySpan<byte> src, byte level) {

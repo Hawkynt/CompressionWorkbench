@@ -9,7 +9,7 @@ namespace FileFormat.Cab;
 /// </summary>
 public static class CabLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

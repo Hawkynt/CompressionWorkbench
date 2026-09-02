@@ -24,38 +24,38 @@ public sealed class BfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Bfs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BFS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".bfs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".bfs", ".img"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
@@ -64,26 +64,26 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
     // '1SFB' at offset 32 (no-MBR rewrap)
     new([0x31, 0x53, 0x46, 0x42], Offset: 32, Confidence: 0.30),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "BeOS / Haiku BFS filesystem image";
 
   // ── IArchiveFormatOperations ────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -100,7 +100,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -154,7 +154,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     return memoryStream.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -217,7 +217,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   // modifier falls back to ModifyRebuilder so the user always gets a
   // working image.
 
-    /// <summary>
+  /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
 public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
@@ -233,7 +233,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
       (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
   }
 
-    /// <summary>
+  /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
 public void Remove(Stream archive, string[] entryNames) {
@@ -249,13 +249,13 @@ public void Remove(Stream archive, string[] entryNames) {
 
   // ── IArchiveDefragmentable (rebuild-based) ─────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive, DefragOptions options) {
@@ -338,7 +338,7 @@ public void Defragment(Stream archive, DefragOptions options) {
 
   // ── IFilesystemExtentMap ───────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the extents.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {

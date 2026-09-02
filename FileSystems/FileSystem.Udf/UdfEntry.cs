@@ -5,19 +5,19 @@ namespace FileSystem.Udf;
 /// Represents an udf entry.
 /// </summary>
 public sealed class UdfEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the last modified.
   /// </summary>
 public DateTime? LastModified { get; init; }

@@ -26,7 +26,7 @@ namespace CompressionWorkbench.FileFormat.Ani;
 /// </remarks>
 public sealed class AniReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents an animation header.
   /// </summary>
 public sealed record AnimationHeader(
@@ -41,7 +41,7 @@ public sealed record AnimationHeader(
     uint Flags
   );
 
-    /// <summary>
+  /// <summary>
   /// Represents an ani file.
   /// </summary>
 public sealed record AniFile(
@@ -53,7 +53,7 @@ public sealed record AniFile(
     string? Artist
   );
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static AniFile Read(ReadOnlySpan<byte> data) {

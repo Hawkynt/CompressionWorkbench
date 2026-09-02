@@ -51,24 +51,24 @@ public sealed class GlusterFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<GlusterFsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<GlusterFsEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the magic word.
   /// </summary>
 public uint MagicWord { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the trailing word.
   /// </summary>
 public uint TrailingWord { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
 public bool ValidHeader { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GlusterFsReader"/>.
   /// </summary>
 public GlusterFsReader(Stream stream) {
@@ -112,7 +112,7 @@ public GlusterFsReader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(GlusterFsEntry entry) {
@@ -120,7 +120,7 @@ public byte[] Extract(GlusterFsEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

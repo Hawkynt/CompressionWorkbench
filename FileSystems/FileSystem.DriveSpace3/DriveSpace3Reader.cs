@@ -32,7 +32,7 @@ public sealed class DriveSpace3Reader : IDisposable {
   /// <summary>True once <see cref="Parse"/> has accepted the header.</summary>
   public bool ValidHeader { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
@@ -287,7 +287,7 @@ public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

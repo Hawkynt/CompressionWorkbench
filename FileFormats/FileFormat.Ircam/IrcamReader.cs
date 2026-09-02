@@ -14,7 +14,7 @@ namespace FileFormat.Ircam;
 /// offset 1024 in file byte order.
 /// </summary>
 public sealed class IrcamReader {
-    /// <summary>
+  /// <summary>
   /// Represents a parsed ircam.
   /// </summary>
 public sealed record ParsedIrcam(
@@ -26,7 +26,7 @@ public sealed record ParsedIrcam(
 
   private const int DataOffset = 1024;
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedIrcam Read(ReadOnlySpan<byte> data) {

@@ -13,21 +13,21 @@ namespace FileFormat.Gbs;
 /// </summary>
 public static class GbsDecomposer {
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry kinds.
   /// </summary>
 public static class EntryKinds {
-        /// <summary>
+    /// <summary>
     /// Defines the track constant value.
     /// </summary>
 public const string Track = "Track";
-        /// <summary>
+    /// <summary>
     /// Defines the tag constant value.
     /// </summary>
 public const string Tag = "Tag";
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry.
   /// </summary>
 public readonly record struct Entry(string Name, byte[] Data, string Kind);
@@ -35,7 +35,7 @@ public readonly record struct Entry(string Name, byte[] Data, string Kind);
   // The fixed GBS header is 0x70 bytes; code+data follows immediately.
   private const int HeaderSize = 0x70;
 
-    /// <summary>
+  /// <summary>
   /// Performs the decompose operation.
   /// </summary>
 public static List<Entry> Decompose(byte[] file) {

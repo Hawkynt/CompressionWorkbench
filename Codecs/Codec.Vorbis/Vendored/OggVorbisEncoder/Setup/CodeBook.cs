@@ -7,7 +7,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class CodeBook
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="CodeBook"/>.
     /// </summary>
 public CodeBook(
@@ -57,7 +57,7 @@ public CodeBook(
     /// </summary>
     public int UsedEntries { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the static book.
     /// </summary>
 public IStaticCodeBook StaticBook { get; }
@@ -81,42 +81,42 @@ public IStaticCodeBook StaticBook { get; }
     /// </summary>
     public int[] DecIndex { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the dec code lengths.
     /// </summary>
 public byte[] DecCodeLengths { get; }
 
 
-        /// <summary>
+    /// <summary>
     /// Gets the dec first table.
     /// </summary>
 public uint[] DecFirstTable { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the dec first table n.
     /// </summary>
 public int DecFirstTableN { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the dec max length.
     /// </summary>
 public int DecMaxLength { get; }
 
     /* The current encoder uses only centered, integer-only lattice books. */
-        /// <summary>
+    /// <summary>
     /// Gets the quant values.
     /// </summary>
 public int QuantValues { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the min val.
     /// </summary>
 public int MinVal { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the delta.
     /// </summary>
 public int Delta { get; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the init encode operation.
     /// </summary>
 public static CodeBook InitEncode(IStaticCodeBook source)

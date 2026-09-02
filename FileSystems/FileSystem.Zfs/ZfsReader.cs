@@ -16,16 +16,16 @@ public sealed class ZfsReader : IDisposable {
   private readonly Dictionary<ulong, Dnode.Builder> _datasetDnodesById = new();
   private string? _poolName;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ZfsEntry> Entries => this._entries;
-    /// <summary>
+  /// <summary>
   /// Gets the pool name.
   /// </summary>
 public string? PoolName => this._poolName;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ZfsReader"/>.
   /// </summary>
 public ZfsReader(Stream stream, bool leaveOpen = true) {
@@ -286,7 +286,7 @@ public ZfsReader(Stream stream, bool leaveOpen = true) {
     return body;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ZfsEntry entry) {
@@ -323,7 +323,7 @@ public byte[] Extract(ZfsEntry entry) {
     return written;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._data.Dispose();

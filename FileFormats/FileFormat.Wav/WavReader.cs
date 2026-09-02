@@ -25,7 +25,7 @@ namespace FileFormat.Wav;
 /// leaves them addressable via <see cref="ParsedWav.MetadataChunks"/>.</para>
 /// </summary>
 public sealed class WavReader {
-    /// <summary>
+  /// <summary>
   /// Represents a parsed wav.
   /// </summary>
 public sealed record ParsedWav(
@@ -37,7 +37,7 @@ public sealed record ParsedWav(
     IReadOnlyList<(string Id, byte[] Data)> MetadataChunks,
     uint? ChannelMask = null);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedWav Read(ReadOnlySpan<byte> data) {

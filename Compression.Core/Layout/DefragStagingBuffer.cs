@@ -30,7 +30,7 @@ public sealed class DefragStagingBuffer : IDisposable {
   private long _held;
   private long _scratchEnd;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="DefragStagingBuffer"/>.
   /// </summary>
 public DefragStagingBuffer(long memoryBudgetBytes = DefaultMemoryBudgetBytes)
@@ -87,7 +87,7 @@ public DefragStagingBuffer(long memoryBudgetBytes = DefaultMemoryBudgetBytes)
     image.Flush();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

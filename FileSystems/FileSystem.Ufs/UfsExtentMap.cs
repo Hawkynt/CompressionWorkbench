@@ -28,7 +28,7 @@ public static class UfsExtentMap {
   private const int RootInode = 2;
   private const int MaxDirectBlocks = 12;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

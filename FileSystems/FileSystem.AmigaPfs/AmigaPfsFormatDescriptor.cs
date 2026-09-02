@@ -39,37 +39,37 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "AmigaPfs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Amiga Professional FS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".pfs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".pfs"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
@@ -77,19 +77,19 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'F', (byte)'S', 0x03], Offset: 0, Confidence: 0.95),
     new([(byte)'P', (byte)'F', (byte)'S', (byte)'a'], Offset: 0, Confidence: 0.95),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Amiga Professional File System (PFS3/PFS3aio) image — Stage 1 R/W " +
@@ -157,7 +157,7 @@ public string Description => "Amiga Professional File System (PFS3/PFS3aio) imag
     w.BuildTo(output, label);
   }
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -166,7 +166,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -181,7 +181,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the open entry operation.
   /// </summary>
 public Stream OpenEntry(Stream archive, string entryName, string? password) {
@@ -200,7 +200,7 @@ public Stream OpenEntry(Stream archive, string entryName, string? password) {
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract entry to memory operation.
   /// </summary>
 public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
@@ -212,7 +212,7 @@ public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? pas
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)

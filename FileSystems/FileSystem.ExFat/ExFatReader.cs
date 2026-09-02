@@ -18,7 +18,7 @@ public sealed class ExFatReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<ExFatEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ExFatEntry> Entries => _entries;
@@ -32,7 +32,7 @@ public IReadOnlyList<ExFatEntry> Entries => _entries;
   private uint _clusterCount;
   private uint _rootDirCluster;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ExFatReader"/>.
   /// </summary>
 public ExFatReader(Stream stream, bool leaveOpen = false) {
@@ -174,7 +174,7 @@ public ExFatReader(Stream stream, bool leaveOpen = false) {
 
   private static bool IsEndOfChain(uint cluster) => cluster >= 0xFFFFFFF8;
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ExFatEntry entry) {
@@ -188,7 +188,7 @@ public byte[] Extract(ExFatEntry entry) {
     return data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

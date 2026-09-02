@@ -5,15 +5,15 @@ namespace FileFormat.Qcow2;
 /// Represents a qcow 2 entry.
 /// </summary>
 public sealed class Qcow2Entry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the offset.
   /// </summary>
 public long Offset { get; init; }

@@ -5,15 +5,15 @@ namespace FileFormat.OneNote;
 /// Specifies one note variant values.
 /// </summary>
 public enum OneNoteVariant {
-    /// <summary>
+  /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
 Unknown,
-    /// <summary>
+  /// <summary>
   /// Specifies the one note 2007 option.
   /// </summary>
 OneNote2007,
-    /// <summary>
+  /// <summary>
   /// Specifies the one note 2010 plus option.
   /// </summary>
 OneNote2010Plus,
@@ -41,7 +41,7 @@ public static class OneNoteDetector {
     0xA5, 0xD0, 0x17, 0x91, 0xED, 0xC8, 0xAE, 0xD8,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public static OneNoteVariant Detect(Stream stream) {

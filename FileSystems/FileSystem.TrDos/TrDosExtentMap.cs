@@ -22,7 +22,7 @@ public static class TrDosExtentMap {
   private const int DirBytes = 8 * SectorSize; // track 0 sectors 0..7 hold the directory
   private const int DiskInfoOffset = 0x800; // track 0 sector 8
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

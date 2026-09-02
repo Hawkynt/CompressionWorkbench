@@ -58,7 +58,7 @@ public sealed class UdfWriter {
   /// </summary>
   public string VolumeIdentifier { get; set; } = "UDF Volume";
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -120,7 +120,7 @@ public void AddFile(string name, byte[] data) {
     public int DataLength;     // exact byte length of the (directory or file) data
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

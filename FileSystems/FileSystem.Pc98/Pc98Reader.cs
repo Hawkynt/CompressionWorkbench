@@ -32,15 +32,15 @@ namespace FileSystem.Pc98;
 /// </para>
 /// </summary>
 public sealed class Pc98Reader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 512;
-    /// <summary>
+  /// <summary>
   /// Defines the ipl offset constant value.
   /// </summary>
 public const int IplOffset = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the bpb offset constant value.
   /// </summary>
 public const int BpbOffset = 0x80;
@@ -48,41 +48,41 @@ public const int BpbOffset = 0x80;
   private readonly byte[] _data;
   private readonly List<Pc98Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Pc98Entry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid volume.
   /// </summary>
 public bool ValidVolume { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per cluster.
   /// </summary>
 public int SectorsPerCluster { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the reserved sectors.
   /// </summary>
 public int ReservedSectors { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the fat count.
   /// </summary>
 public int FatCount { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root entries.
   /// </summary>
 public int RootEntries { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per fat.
   /// </summary>
 public int SectorsPerFat { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Provides the signature value.
   /// </summary>
 public static readonly byte[] Signature = "NECIPL"u8.ToArray();
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Pc98Reader"/>.
   /// </summary>
 public Pc98Reader(Stream stream) {
@@ -167,7 +167,7 @@ public Pc98Reader(Stream stream) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Pc98Entry entry) {
@@ -184,7 +184,7 @@ public byte[] Extract(Pc98Entry entry) {
     return size <= 0 ? [] : _data.AsSpan(clusterOffset, size).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
 public byte[] BuildSurfaceMetadata() {
@@ -200,7 +200,7 @@ public byte[] BuildSurfaceMetadata() {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

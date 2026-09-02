@@ -11,7 +11,7 @@ namespace FileFormat.Zap;
 /// WORM creation; tracks just round-trip verbatim.
 /// </summary>
 public sealed class ZapWriter {
-    /// <summary>
+  /// <summary>
   /// Defines the track size constant value.
   /// </summary>
 public const int TrackSize = 11 * 512;
@@ -19,7 +19,7 @@ public const int TrackSize = 11 * 512;
 
   private readonly List<(int trackNum, byte[] data)> _tracks = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add track operation.
   /// </summary>
 public void AddTrack(int trackNumber, ReadOnlySpan<byte> data) {
@@ -29,7 +29,7 @@ public void AddTrack(int trackNumber, ReadOnlySpan<byte> data) {
     _tracks.Add((trackNumber, buf));
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

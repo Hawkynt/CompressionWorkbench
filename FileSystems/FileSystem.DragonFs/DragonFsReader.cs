@@ -29,32 +29,32 @@ public sealed class DragonFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<DragonFsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<DragonFsEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid root.
   /// </summary>
 public bool ValidRoot { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root offset.
   /// </summary>
 public int RootOffset { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Defines the default root offset constant value.
   /// </summary>
 public const int DefaultRootOffset = 256;
   // Newer Libdragon images can prepend an 8-byte "DragonFS" ASCII tag
   // before the root entry table for robust auto-detect; we accept either.
-    /// <summary>
+  /// <summary>
   /// Provides the optional tag value.
   /// </summary>
 public static readonly byte[] OptionalTag = "DragonFS"u8.ToArray();
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="DragonFsReader"/>.
   /// </summary>
 public DragonFsReader(Stream stream) {
@@ -139,7 +139,7 @@ public DragonFsReader(Stream stream) {
     return Encoding.ASCII.GetString(span.Slice(0, end));
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(DragonFsEntry entry) {
@@ -150,7 +150,7 @@ public byte[] Extract(DragonFsEntry entry) {
     return _data.AsSpan(entry.DataOffset, (int)entry.Size).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
 public byte[] BuildSurfaceMetadata() {
@@ -162,7 +162,7 @@ public byte[] BuildSurfaceMetadata() {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

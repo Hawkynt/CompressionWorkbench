@@ -97,7 +97,7 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   /// </summary>
   public bool SupportsHeldRuns => true;
 
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -130,7 +130,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   ///   partially freed. fsck cleans up the orphan.</item>
   /// </list></para>
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -185,7 +185,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update metadata after move operation.
   /// </summary>
 public void UpdateMetadataAfterMove(Stream image, string metadataName,
@@ -489,7 +489,7 @@ public void UpdateMetadataAfterMove(Stream image, string metadataName,
   public int AllocationBlockSize => _clusterSize;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether supports scattered relink.
   /// </summary>
 public bool SupportsScatteredRelink => true;
@@ -520,7 +520,7 @@ public bool SupportsScatteredRelink => true;
     this.UpdateAllocationScattered(image, fileName, oldClusters, newClusters, live);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation scattered operation.
   /// </summary>
 public void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters)

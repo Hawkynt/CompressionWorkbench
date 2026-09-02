@@ -10,7 +10,7 @@ namespace FileFormat.LhF;
 /// Magic: "LhF\0" at offset 0, followed by track count and track headers.
 /// </summary>
 public sealed class LhFReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Provides the lh f magic value.
   /// </summary>
 public static readonly byte[] LhFMagic = "LhF\0"u8.ToArray();
@@ -19,12 +19,12 @@ public static readonly byte[] LhFMagic = "LhF\0"u8.ToArray();
   private readonly byte[] _data;
   private readonly List<LhFEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<LhFEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="LhFReader"/>.
   /// </summary>
 public LhFReader(Stream stream, bool leaveOpen = false) {
@@ -67,7 +67,7 @@ public LhFReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(LhFEntry entry) {
@@ -92,7 +92,7 @@ public byte[] Extract(LhFEntry entry) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

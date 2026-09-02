@@ -33,7 +33,7 @@ public static class JfsExtentMap {
   private const int PmapOffset = 3072;
   private const int LeavesPerDmap = 256;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

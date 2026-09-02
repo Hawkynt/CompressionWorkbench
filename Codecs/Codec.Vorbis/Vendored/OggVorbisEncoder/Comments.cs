@@ -10,12 +10,12 @@ public class Comments
 {
     private readonly List<string> _userComments = new List<string>();
 
-        /// <summary>
+    /// <summary>
     /// Gets the user comments.
     /// </summary>
 public List<string> UserComments => _userComments;
 
-        /// <summary>
+    /// <summary>
     /// Performs the add tag operation.
     /// </summary>
 public void AddTag(string tag, string contents)

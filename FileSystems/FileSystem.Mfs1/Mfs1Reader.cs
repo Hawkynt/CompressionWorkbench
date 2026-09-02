@@ -20,15 +20,15 @@ namespace FileSystem.Mfs1;
 /// </summary>
 public sealed class Mfs1Reader : IDisposable {
 
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 256;
-    /// <summary>
+  /// <summary>
   /// Defines the sectors per track constant value.
   /// </summary>
 public const int SectorsPerTrack = 10;
-    /// <summary>
+  /// <summary>
   /// Defines the max entries constant value.
   /// </summary>
 public const int MaxEntries = 31;
@@ -36,20 +36,20 @@ public const int MaxEntries = 31;
   private readonly byte[] _data;
   private readonly List<Mfs1Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Mfs1Entry> Entries => this._entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the disk title.
   /// </summary>
 public string DiskTitle { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether catalog parsed.
   /// </summary>
 public bool CatalogParsed { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Mfs1Reader"/>.
   /// </summary>
 public Mfs1Reader(Stream stream) {
@@ -60,7 +60,7 @@ public Mfs1Reader(Stream stream) {
     this.Parse();
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Mfs1Reader"/>.
   /// </summary>
 public Mfs1Reader(byte[] image) {
@@ -150,7 +150,7 @@ public Mfs1Reader(byte[] image) {
     this.CatalogParsed = anyValid;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Mfs1Entry entry) {
@@ -165,7 +165,7 @@ public byte[] Extract(Mfs1Entry entry) {
     return buf;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

@@ -425,7 +425,7 @@ public static class AcronisFileMetaBodyDecoder {
   }
 
   /// <inheritdoc cref="Decode(byte[])"/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public static AcronisFileMetaBody? Decode(ReadOnlySpan<byte> payload) {

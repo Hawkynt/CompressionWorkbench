@@ -22,7 +22,7 @@ public class FloorLookup
     private readonly int[] _reverseIndex = new int[Posit + 2];
     private readonly int[] _sortedIndex = new int[Posit + 2];
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="FloorLookup"/>.
     /// </summary>
 public FloorLookup(Floor floor)
@@ -107,7 +107,7 @@ public FloorLookup(Floor floor)
         }
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the fit operation.
     /// </summary>
 public int[] Fit(in Span<float> logmdct, float[] logmask)
@@ -493,7 +493,7 @@ public int[] Fit(in Span<float> logmdct, float[] logmask)
         return i;
     }
 
-        /// <summary>
+    /// <summary>
     /// Encodes the supplied input.
     /// </summary>
 public bool Encode(

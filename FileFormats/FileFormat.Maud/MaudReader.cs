@@ -18,29 +18,29 @@ namespace FileFormat.Maud;
 /// </summary>
 public sealed class MaudReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the compression none constant value.
   /// </summary>
 public const int CompressionNone = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the compression a law constant value.
   /// </summary>
 public const int CompressionALaw = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the compression u law constant value.
   /// </summary>
 public const int CompressionULaw = 3;
 
-    /// <summary>
+  /// <summary>
   /// Defines the channel info mono constant value.
   /// </summary>
 public const int ChannelInfoMono = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the channel info stereo constant value.
   /// </summary>
 public const int ChannelInfoStereo = 1;
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed maud.
   /// </summary>
 public sealed record ParsedMaud(
@@ -53,7 +53,7 @@ public sealed record ParsedMaud(
     int Compression,
     byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedMaud Read(ReadOnlySpan<byte> data) {

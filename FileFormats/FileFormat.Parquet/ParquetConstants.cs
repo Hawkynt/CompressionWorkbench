@@ -16,55 +16,55 @@ public static class ParquetConstants {
   public const int TrailerLength = 8;
 
   // Thrift compact protocol type codes used in field headers.
-    /// <summary>
+  /// <summary>
   /// Defines the type stop constant value.
   /// </summary>
 public const byte TypeStop = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the type bool true constant value.
   /// </summary>
 public const byte TypeBoolTrue = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the type bool false constant value.
   /// </summary>
 public const byte TypeBoolFalse = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the type byte constant value.
   /// </summary>
 public const byte TypeByte = 3;
-    /// <summary>
+  /// <summary>
   /// Defines the type i 16 constant value.
   /// </summary>
 public const byte TypeI16 = 4;
-    /// <summary>
+  /// <summary>
   /// Defines the type i 32 constant value.
   /// </summary>
 public const byte TypeI32 = 5;
-    /// <summary>
+  /// <summary>
   /// Defines the type i 64 constant value.
   /// </summary>
 public const byte TypeI64 = 6;
-    /// <summary>
+  /// <summary>
   /// Defines the type double constant value.
   /// </summary>
 public const byte TypeDouble = 7;
-    /// <summary>
+  /// <summary>
   /// Defines the type binary constant value.
   /// </summary>
 public const byte TypeBinary = 8;
-    /// <summary>
+  /// <summary>
   /// Defines the type list constant value.
   /// </summary>
 public const byte TypeList = 9;
-    /// <summary>
+  /// <summary>
   /// Defines the type set constant value.
   /// </summary>
 public const byte TypeSet = 10;
-    /// <summary>
+  /// <summary>
   /// Defines the type map constant value.
   /// </summary>
 public const byte TypeMap = 11;
-    /// <summary>
+  /// <summary>
   /// Defines the type struct constant value.
   /// </summary>
 public const byte TypeStruct = 12;

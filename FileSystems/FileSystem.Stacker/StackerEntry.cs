@@ -5,15 +5,15 @@ namespace FileSystem.Stacker;
 /// Represents a stacker entry.
 /// </summary>
 public sealed class StackerEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }

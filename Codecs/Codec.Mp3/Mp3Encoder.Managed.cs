@@ -8,23 +8,23 @@ namespace Codec.Mp3;
 
 /// <summary>Layer III channel mode.</summary>
 public enum Mp3EncoderChannelMode {
-    /// <summary>
+  /// <summary>
   /// Selects the value automatically.
   /// </summary>
 Auto = -1,
-    /// <summary>
+  /// <summary>
   /// Specifies the stereo option.
   /// </summary>
 Stereo = 0,
-    /// <summary>
+  /// <summary>
   /// Specifies the joint stereo option.
   /// </summary>
 JointStereo = 1,
-    /// <summary>
+  /// <summary>
   /// Specifies the dual channel option.
   /// </summary>
 DualChannel = 2,
-    /// <summary>
+  /// <summary>
   /// Specifies the mono option.
   /// </summary>
 Mono = 3,

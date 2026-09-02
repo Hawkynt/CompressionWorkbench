@@ -10,7 +10,7 @@ namespace FileFormat.Flac;
 /// </summary>
 public static class FlacLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

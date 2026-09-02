@@ -13,17 +13,17 @@ namespace FileFormat.Sdat;
 /// </summary>
 public sealed class SdatReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a file entry.
   /// </summary>
 public sealed record FileEntry(int Index, int Offset, int Size, string Magic, byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed sdat.
   /// </summary>
 public sealed record ParsedSdat(int Version, IReadOnlyList<FileEntry> Files);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedSdat Read(ReadOnlySpan<byte> data) {

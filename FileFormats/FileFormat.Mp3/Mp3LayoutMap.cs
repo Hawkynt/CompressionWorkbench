@@ -13,7 +13,7 @@ public static class Mp3LayoutMap {
 
   private static readonly byte[] ApeTagMagic = "APETAGEX"u8.ToArray();
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {

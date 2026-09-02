@@ -12,16 +12,16 @@ namespace FileSystem.Lif;
 /// </summary>
 public sealed class LifReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the lif magic constant value.
   /// </summary>
 public const ushort LifMagic = 0x8000;
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 256;
 
-    /// <summary>
+  /// <summary>
   /// Represents a file entry.
   /// </summary>
 public sealed record FileEntry(
@@ -33,7 +33,7 @@ public sealed record FileEntry(
     DateTime? Created
   );
 
-    /// <summary>
+  /// <summary>
   /// Represents a volume.
   /// </summary>
 public sealed record Volume(
@@ -44,7 +44,7 @@ public sealed record Volume(
     byte[] Image  // raw bytes, retained so Extract can read sector ranges
   );
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static Volume Read(ReadOnlySpan<byte> image) {
@@ -94,7 +94,7 @@ public static Volume Read(ReadOnlySpan<byte> image) {
       Image: image.ToArray());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public static byte[] Extract(Volume v, FileEntry e) {

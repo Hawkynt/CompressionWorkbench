@@ -7,15 +7,15 @@ namespace FileFormat.WwiseBnk;
 /// Represents a wem entry.
 /// </summary>
 public sealed class WemEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the wem id.
   /// </summary>
 public uint WemId { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the offset.
   /// </summary>
 public uint Offset { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public uint Size { get; init; }
@@ -25,15 +25,15 @@ public uint Size { get; init; }
 /// Represents a hirc object.
 /// </summary>
 public sealed class HircObject {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the type.
   /// </summary>
 public byte Type { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the id.
   /// </summary>
 public uint Id { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public uint Size { get; init; }
@@ -49,31 +49,31 @@ public sealed class WwiseBnkReader {
 
   private readonly Stream _stream;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the bank version.
   /// </summary>
 public uint BankVersion { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the bank id.
   /// </summary>
 public uint BankId { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data chunk offset.
   /// </summary>
 public long DataChunkOffset { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data chunk size.
   /// </summary>
 public long DataChunkSize { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets the wems.
   /// </summary>
 public List<WemEntry> Wems { get; } = [];
-    /// <summary>
+  /// <summary>
   /// Gets the hirc objects.
   /// </summary>
 public List<HircObject> HircObjects { get; } = [];
-    /// <summary>
+  /// <summary>
   /// Gets the chunks.
   /// </summary>
 public Dictionary<string, long> Chunks { get; } = [];
@@ -98,7 +98,7 @@ public Dictionary<string, long> Chunks { get; } = [];
     return buf;
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="WwiseBnkReader"/>.
   /// </summary>
 public WwiseBnkReader(Stream stream) {
@@ -161,7 +161,7 @@ public WwiseBnkReader(Stream stream) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract wem operation.
   /// </summary>
 public byte[] ExtractWem(WemEntry e) {

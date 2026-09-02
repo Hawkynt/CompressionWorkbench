@@ -8,7 +8,7 @@ namespace OggVorbisEncoder;
 /// </summary>
 public static class StaticCodeBookExtensions
 {
-        /// <summary>
+    /// <summary>
     /// Gets the quant vals.
     /// </summary>
 public static int GetQuantVals(this IStaticCodeBook book)

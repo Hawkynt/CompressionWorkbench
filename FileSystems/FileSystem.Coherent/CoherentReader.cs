@@ -22,7 +22,7 @@ public sealed class CoherentReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<CoherentEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<CoherentEntry> Entries => this._entries;
@@ -30,7 +30,7 @@ public IReadOnlyList<CoherentEntry> Entries => this._entries;
   public bool Valid { get; private set; }
   /// <summary>Volume name from the superblock s_fname field (e.g. "noname").</summary>
   public string VolumeName { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block size.
   /// </summary>
 public int BlockSize { get; private set; } = 512;
@@ -45,7 +45,7 @@ public int BlockSize { get; private set; } = 512;
   internal const int CohFpackOffset = 0x1EA;
   private const int RootInode = 2;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="CoherentReader"/>.
   /// </summary>
 public CoherentReader(Stream stream) {
@@ -225,7 +225,7 @@ public CoherentReader(Stream stream) {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(CoherentEntry entry) {
@@ -239,7 +239,7 @@ public byte[] Extract(CoherentEntry entry) {
     return data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

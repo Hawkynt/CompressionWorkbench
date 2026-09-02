@@ -39,7 +39,7 @@ namespace FileFormat.Vdi;
 /// </para>
 /// </summary>
 public sealed class VdiReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the vdi signature constant value.
   /// </summary>
 public const uint VdiSignature = 0xBEDA107F;
@@ -71,7 +71,7 @@ public const uint VdiSignature = 0xBEDA107F;
   /// <summary>Image type: 1 = dynamic, 2 = fixed.</summary>
   public uint ImageType { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="VdiReader"/>.
   /// </summary>
 public VdiReader(Stream stream, bool leaveOpen = false) {
@@ -181,7 +181,7 @@ public VdiReader(Stream stream, bool leaveOpen = false) {
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => _cache.Dispose();

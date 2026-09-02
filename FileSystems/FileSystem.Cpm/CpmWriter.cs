@@ -12,7 +12,7 @@ namespace FileSystem.Cpm;
 /// </summary>
 public sealed class CpmWriter {
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public static byte[] Build(IReadOnlyList<(string Name, byte[] Data, byte UserCode)> files) {

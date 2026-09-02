@@ -11,7 +11,7 @@ namespace CompressionWorkbench.FileFormat.Ico;
 /// </summary>
 public sealed class IcoReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents an icon entry.
   /// </summary>
 public sealed record IconEntry(
@@ -26,7 +26,7 @@ public sealed record IconEntry(
     byte[] Data          // ready-to-write PNG bytes or fully-formed BMP bytes
   );
 
-    /// <summary>
+  /// <summary>
   /// Represents a bundle.
   /// </summary>
 public sealed record Bundle(
@@ -34,7 +34,7 @@ public sealed record Bundle(
     IReadOnlyList<IconEntry> Entries
   );
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static Bundle Read(ReadOnlySpan<byte> data) {

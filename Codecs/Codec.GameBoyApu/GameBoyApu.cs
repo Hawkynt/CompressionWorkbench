@@ -42,7 +42,7 @@ public sealed class GameBoyApu {
   // Fractional accumulator for clock→output decimation.
   private readonly double _clocksPerSample;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GameBoyApu"/>.
   /// </summary>
 public GameBoyApu(int outputRate = OutputSampleRate) {

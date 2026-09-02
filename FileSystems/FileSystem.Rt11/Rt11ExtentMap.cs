@@ -15,7 +15,7 @@ namespace FileSystem.Rt11;
 /// </summary>
 public static class Rt11ExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

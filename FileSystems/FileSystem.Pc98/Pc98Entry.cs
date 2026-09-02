@@ -5,23 +5,23 @@ namespace FileSystem.Pc98;
 /// Represents a pc 98 entry.
 /// </summary>
 public sealed class Pc98Entry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the first cluster.
   /// </summary>
 public int FirstCluster { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the attributes.
   /// </summary>
 public byte Attributes { get; init; }

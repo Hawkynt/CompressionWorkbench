@@ -110,7 +110,7 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the allocation block size.
   /// </summary>
 public int AllocationBlockSize => BucketBytes;
@@ -139,19 +139,19 @@ public int AllocationBlockSize => BucketBytes;
   public long FirstDataByte => MetadataEndBytes;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether repoints runs independently.
   /// </summary>
 public bool RepointsRunsIndependently => true;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether supports held runs.
   /// </summary>
 public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long sourceOffset, long destinationOffset, long length,
@@ -183,7 +183,7 @@ public void MoveExtent(Stream image, long sourceOffset, long destinationOffset, 
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName,

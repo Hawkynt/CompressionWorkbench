@@ -129,7 +129,7 @@ public sealed class MacriumReader : IDisposable {
   /// <summary>Diagnostic reason why sector reconstruction was skipped, or empty when it succeeded / wasn't attempted.</summary>
   public string SectorReconstructionStatus { get; private set; } = "not-attempted";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MacriumReader"/>.
   /// </summary>
 public MacriumReader(Stream stream) : this(stream, password: null) { }
@@ -614,7 +614,7 @@ public MacriumReader(Stream stream) : this(stream, password: null) { }
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(MacriumEntry entry) {
@@ -622,7 +622,7 @@ public byte[] Extract(MacriumEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

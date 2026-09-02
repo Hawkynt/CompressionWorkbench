@@ -44,19 +44,19 @@ public sealed class CxfsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<CxfsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<CxfsEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the xfs magic.
   /// </summary>
 public uint XfsMagic { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sb features 2.
   /// </summary>
 public uint SbFeatures2 { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
 public bool ValidHeader { get; private set; }
@@ -66,7 +66,7 @@ public bool ValidHeader { get; private set; }
   /// back to the Stage-0 metadata-only surface.</summary>
   public bool DelegatedToXfs { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="CxfsReader"/>.
   /// </summary>
 public CxfsReader(Stream stream) {
@@ -147,7 +147,7 @@ public CxfsReader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(CxfsEntry entry) {
@@ -155,7 +155,7 @@ public byte[] Extract(CxfsEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

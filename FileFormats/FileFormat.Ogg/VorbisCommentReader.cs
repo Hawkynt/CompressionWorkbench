@@ -12,12 +12,12 @@ namespace FileFormat.Ogg;
 /// pass the block *after* stripping those prefixes.
 /// </summary>
 public sealed class VorbisCommentReader {
-    /// <summary>
+  /// <summary>
   /// Represents a parsed.
   /// </summary>
 public readonly record struct Parsed(string Vendor, IReadOnlyList<(string Key, string Value)> Comments);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public Parsed Read(ReadOnlySpan<byte> body) {

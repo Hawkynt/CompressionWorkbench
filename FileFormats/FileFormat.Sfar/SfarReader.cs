@@ -121,7 +121,7 @@ public sealed class SfarReader : IDisposable {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

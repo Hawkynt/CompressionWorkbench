@@ -20,7 +20,7 @@ public static class DragonFsExtentMap {
   /// <summary>Bytes one directory record occupies.</summary>
   public const int RecordSize = 32;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

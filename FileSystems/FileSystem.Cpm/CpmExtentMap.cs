@@ -15,7 +15,7 @@ namespace FileSystem.Cpm;
 /// </summary>
 public static class CpmExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

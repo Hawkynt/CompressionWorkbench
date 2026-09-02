@@ -14,23 +14,23 @@ namespace FileFormat.Sup;
 public sealed class SupReader {
 
   // Segment-type constants per PGS spec.
-    /// <summary>
+  /// <summary>
   /// Defines the seg palette definition constant value.
   /// </summary>
 public const byte SegPaletteDefinition = 0x14;
-    /// <summary>
+  /// <summary>
   /// Defines the seg object definition constant value.
   /// </summary>
 public const byte SegObjectDefinition = 0x15;
-    /// <summary>
+  /// <summary>
   /// Defines the seg presentation composition constant value.
   /// </summary>
 public const byte SegPresentationComposition = 0x16;
-    /// <summary>
+  /// <summary>
   /// Defines the seg window definition constant value.
   /// </summary>
 public const byte SegWindowDefinition = 0x17;
-    /// <summary>
+  /// <summary>
   /// Defines the seg end constant value.
   /// </summary>
 public const byte SegEnd = 0x80;

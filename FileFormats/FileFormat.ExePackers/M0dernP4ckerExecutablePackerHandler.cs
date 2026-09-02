@@ -33,16 +33,16 @@ public sealed class M0dernP4ckerExecutablePackerHandler : IExecutablePackerHandl
 
   private enum Cipher { None, Xor, Not, Compound }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "m0dern_p4cker";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "m0dern_p4cker ELF64 stub packer";
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -53,7 +53,7 @@ public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.SupportsElf |
     ExecutableUnpackCapabilities.SupportsX64;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -65,7 +65,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
         "No m0dern_p4cker decrypt-loop stub was found.", true)]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -78,7 +78,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
     });
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

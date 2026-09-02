@@ -10,7 +10,7 @@ namespace FileFormat.Arj;
 /// </summary>
 public static class ArjLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

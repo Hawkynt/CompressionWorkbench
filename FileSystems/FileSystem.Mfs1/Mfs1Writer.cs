@@ -32,15 +32,15 @@ namespace FileSystem.Mfs1;
 /// </summary>
 public sealed class Mfs1Writer {
 
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = Mfs1Reader.SectorSize;
-    /// <summary>
+  /// <summary>
   /// Defines the max entries constant value.
   /// </summary>
 public const int MaxEntries = Mfs1Reader.MaxEntries;
-    /// <summary>
+  /// <summary>
   /// Defines the default total sectors constant value.
   /// </summary>
 public const int DefaultTotalSectors = 800;    // 80 tracks × 10 sectors

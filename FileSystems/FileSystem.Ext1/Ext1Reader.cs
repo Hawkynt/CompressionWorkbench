@@ -27,7 +27,7 @@ public sealed class Ext1Reader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<Ext1Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Ext1Entry> Entries => this._entries;
@@ -50,7 +50,7 @@ public IReadOnlyList<Ext1Entry> Entries => this._entries;
   private const ushort InodeModeDir = 0x4000;
   private const uint RootInode = 2;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Ext1Reader"/>.
   /// </summary>
 public Ext1Reader(Stream stream) {
@@ -284,7 +284,7 @@ public Ext1Reader(Stream stream) {
     this.WriteInodeBlocks(inodeData, destination);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Ext1Entry entry) {
@@ -301,7 +301,7 @@ public byte[] Extract(Ext1Entry entry) {
     return data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }
@@ -311,23 +311,23 @@ public void Dispose() { }
 /// Single entry returned by <see cref="Ext1Reader"/>.
 /// </summary>
 public sealed class Ext1Entry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public required string Name { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the last modified.
   /// </summary>
 public DateTime? LastModified { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the inode.
   /// </summary>
 public uint Inode { get; init; }

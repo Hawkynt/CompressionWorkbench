@@ -65,7 +65,7 @@ public static class SirenCodec {
     // libavcodec/siren.c: the four 16-bit get_dw registers, all initialised to 1.
     internal uint Dw1 = 1, Dw2 = 1, Dw3 = 1, Dw4 = 1;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="Decoder"/>.
     /// </summary>
 public Decoder() {

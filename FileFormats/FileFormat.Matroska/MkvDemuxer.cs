@@ -14,19 +14,19 @@ public sealed class MkvDemuxer {
   /// <summary>A single block (frame) from a track.</summary>
   public sealed record FrameEntry(byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Represents a track.
   /// </summary>
 public sealed record Track(int Number, string TrackType, string CodecId, string? Language,
                              byte[]? CodecPrivate, byte[] FrameBytes,
                              IReadOnlyList<FrameEntry> Frames,
                              int AudioChannels = 0, int AudioSampleRate = 0, int AudioBitDepth = 0);
-    /// <summary>
+  /// <summary>
   /// Represents an attachment.
   /// </summary>
 public sealed record Attachment(string FileName, string MimeType, byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Represents a demux result.
   /// </summary>
 public sealed record DemuxResult(
@@ -58,7 +58,7 @@ public sealed record DemuxResult(
   private const ulong Id_Channels = 0x9F;
   private const ulong Id_BitDepth = 0x6264;
 
-    /// <summary>
+  /// <summary>
   /// Performs the demux operation.
   /// </summary>
 public DemuxResult Demux(byte[] file) {

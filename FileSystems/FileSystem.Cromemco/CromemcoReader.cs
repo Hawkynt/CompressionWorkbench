@@ -32,19 +32,19 @@ namespace FileSystem.Cromemco;
 /// </para>
 /// </summary>
 public sealed class CromemcoReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 128;
-    /// <summary>
+  /// <summary>
   /// Defines the directory offset constant value.
   /// </summary>
 public const int DirectoryOffset = 0x100;
-    /// <summary>
+  /// <summary>
   /// Defines the entry size constant value.
   /// </summary>
 public const int EntrySize = 32;
-    /// <summary>
+  /// <summary>
   /// Defines the max entries constant value.
   /// </summary>
 public const int MaxEntries = 64;
@@ -52,25 +52,25 @@ public const int MaxEntries = 64;
   private readonly byte[] _data;
   private readonly List<CromemcoEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<CromemcoEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid volume.
   /// </summary>
 public bool ValidVolume { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the signature offset.
   /// </summary>
 public int SignatureOffset { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Provides the signature value.
   /// </summary>
 public static readonly byte[] Signature = "CROMEMCO"u8.ToArray();
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="CromemcoReader"/>.
   /// </summary>
 public CromemcoReader(Stream stream) {
@@ -146,7 +146,7 @@ public CromemcoReader(Stream stream) {
     return new string(chars[..len]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(CromemcoEntry entry) {
@@ -158,7 +158,7 @@ public byte[] Extract(CromemcoEntry entry) {
     return size <= 0 ? [] : _data.AsSpan(offset, size).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
 public byte[] BuildSurfaceMetadata() {
@@ -170,7 +170,7 @@ public byte[] BuildSurfaceMetadata() {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

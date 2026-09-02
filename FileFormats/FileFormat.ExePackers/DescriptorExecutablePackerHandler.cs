@@ -16,7 +16,7 @@ public sealed class DescriptorExecutablePackerHandler : IExecutablePackerHandler
   private readonly IFormatDescriptor descriptor;
   private readonly IArchiveFormatOperations archiveOps;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="DescriptorExecutablePackerHandler"/>.
   /// </summary>
 public DescriptorExecutablePackerHandler(IFormatDescriptor descriptor) {
@@ -24,16 +24,16 @@ public DescriptorExecutablePackerHandler(IFormatDescriptor descriptor) {
     this.archiveOps = (IArchiveFormatOperations)descriptor;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => this.descriptor.Id.ToLowerInvariant();
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => this.descriptor.DisplayName;
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -42,7 +42,7 @@ public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -63,7 +63,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
     return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, $"{this.DisplayName} signature not matched.", true)]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -82,7 +82,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
       });
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

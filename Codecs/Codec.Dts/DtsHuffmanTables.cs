@@ -11,7 +11,7 @@ namespace Codec.Dts;
 /// </summary>
 public static class DtsHuffmanTables {
 
-    /// <summary>
+  /// <summary>
   /// Provides the tmode codes value.
   /// </summary>
 public static readonly ushort[][] TmodeCodes = [
@@ -21,7 +21,7 @@ public static readonly ushort[][] TmodeCodes = [
     [0x0000, 0x0001, 0x0002, 0x0003],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the tmode bits value.
   /// </summary>
 public static readonly byte[][] TmodeBits = [
@@ -31,7 +31,7 @@ public static readonly byte[][] TmodeBits = [
     [2, 2, 2, 2],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 12 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc12Codes = [
@@ -42,7 +42,7 @@ public static readonly ushort[][] Bitalloc12Codes = [
     [0x0001, 0x0000, 0x0002, 0x0006, 0x000E, 0x003F, 0x003D, 0x007C, 0x0079, 0x0078, 0x00FB, 0x00FA],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 12 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc12Bits = [
@@ -53,7 +53,7 @@ public static readonly byte[][] Bitalloc12Bits = [
     [1, 2, 3, 4, 5, 7, 7, 8, 8, 8, 9, 9],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the scales codes value.
   /// </summary>
 public static readonly ushort[][] ScalesCodes = [
@@ -64,7 +64,7 @@ public static readonly ushort[][] ScalesCodes = [
     [0xDF54, 0xDF56, 0xDFC8, 0xDFCA, 0xDFCC, 0xDFCE, 0xDFD0, 0xDFD2, 0xDFD4, 0xDFD6, 0xDFD8, 0xDFDA, 0xDFDC, 0xDFDE, 0xDFE0, 0xDFE2, 0x0FE8, 0x2FEA, 0x6FA8, 0x6FF6, 0x07F5, 0x07F7, 0x37D2, 0x37F9, 0x03F8, 0x0BF8, 0x0BFB, 0x1BEB, 0x01FA, 0x05FA, 0x09FA, 0x0DFA, 0x0DFF, 0x00FF, 0x02FF, 0x06FB, 0x007C, 0x017C, 0x027C, 0x027F, 0x003C, 0x00BC, 0x013C, 0x01BC, 0x001C, 0x005C, 0x009C, 0x00DC, 0x000C, 0x002C, 0x004C, 0x006C, 0x0004, 0x0014, 0x0024, 0x0034, 0x0000, 0x0008, 0x0010, 0x0018, 0x001E, 0x0002, 0x0006, 0x000A, 0x000E, 0x000B, 0x0007, 0x0003, 0x001F, 0x0019, 0x0011, 0x0009, 0x0001, 0x0035, 0x0025, 0x0015, 0x0005, 0x006D, 0x004D, 0x002D, 0x000D, 0x00DD, 0x009D, 0x005D, 0x001D, 0x01BD, 0x013D, 0x00BD, 0x003D, 0x037C, 0x027D, 0x017D, 0x007D, 0x06FC, 0x04FC, 0x02FC, 0x00FC, 0x0DFB, 0x09FB, 0x05FB, 0x01FB, 0x1BF8, 0x1BE8, 0x0BF9, 0x03F9, 0x37FA, 0x37D3, 0x17F4, 0x07F6, 0x6FF7, 0x6FA9, 0x2FEB, 0x0FE9, 0xDFE3, 0xDFE1, 0xDFDF, 0xDFDD, 0xDFDB, 0xDFD9, 0xDFD7, 0xDFD5, 0xDFD3, 0xDFD1, 0xDFCF, 0xDFCD, 0xDFCB, 0xDFC9, 0xDF57, 0xDF55],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the scales bits value.
   /// </summary>
 public static readonly byte[][] ScalesBits = [
@@ -75,21 +75,21 @@ public static readonly byte[][] ScalesBits = [
     [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 14, 14, 14, 14, 13, 13, 13, 13, 12, 12, 12, 12, 12, 11, 11, 11, 10, 10, 10, 10, 9, 9, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 6, 6, 6, 6, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 14, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 3 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc3Codes = [
     [0x0003, 0x0000, 0x0002],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 3 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc3Bits = [
     [2, 1, 2],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 5 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc5Codes = [
@@ -98,7 +98,7 @@ public static readonly ushort[][] Bitalloc5Codes = [
     [0x0007, 0x0005, 0x0000, 0x0004, 0x0006],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 5 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc5Bits = [
@@ -107,7 +107,7 @@ public static readonly byte[][] Bitalloc5Bits = [
     [3, 3, 1, 3, 3],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 7 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc7Codes = [
@@ -116,7 +116,7 @@ public static readonly ushort[][] Bitalloc7Codes = [
     [0x0000, 0x0002, 0x0001, 0x0003, 0x0002, 0x0003, 0x0001],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 7 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc7Bits = [
@@ -125,7 +125,7 @@ public static readonly byte[][] Bitalloc7Bits = [
     [4, 4, 2, 2, 2, 4, 4],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 9 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc9Codes = [
@@ -134,7 +134,7 @@ public static readonly ushort[][] Bitalloc9Codes = [
     [0x001C, 0x000F, 0x0002, 0x0007, 0x0002, 0x0000, 0x0006, 0x0006, 0x001D],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 9 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc9Bits = [
@@ -143,7 +143,7 @@ public static readonly byte[][] Bitalloc9Bits = [
     [6, 5, 3, 3, 2, 2, 3, 4, 6],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 13 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc13Codes = [
@@ -152,7 +152,7 @@ public static readonly ushort[][] Bitalloc13Codes = [
     [0x0004, 0x001A, 0x0003, 0x000E, 0x0000, 0x0003, 0x0005, 0x0004, 0x0002, 0x000F, 0x000C, 0x001B, 0x0005],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 13 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc13Bits = [
@@ -161,7 +161,7 @@ public static readonly byte[][] Bitalloc13Bits = [
     [5, 5, 4, 4, 3, 3, 3, 3, 3, 4, 4, 5, 5],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 17 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc17Codes = [
@@ -174,7 +174,7 @@ public static readonly ushort[][] Bitalloc17Codes = [
     [0x0060, 0x007E, 0x0031, 0x0019, 0x000D, 0x0004, 0x0000, 0x0006, 0x0002, 0x0007, 0x0001, 0x0005, 0x000E, 0x001E, 0x003E, 0x007F, 0x0061],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 17 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc17Bits = [
@@ -187,7 +187,7 @@ public static readonly byte[][] Bitalloc17Bits = [
     [8, 8, 7, 6, 5, 4, 3, 3, 2, 3, 3, 4, 5, 6, 7, 8, 8],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 25 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc25Codes = [
@@ -200,7 +200,7 @@ public static readonly ushort[][] Bitalloc25Codes = [
     [0x03A8, 0x03AE, 0x01D5, 0x0094, 0x0014, 0x004B, 0x000B, 0x003B, 0x0013, 0x0003, 0x000F, 0x0005, 0x0001, 0x0006, 0x0000, 0x0008, 0x001C, 0x0004, 0x0024, 0x0074, 0x0015, 0x0095, 0x01D6, 0x03AF, 0x03A9],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 25 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc25Bits = [
@@ -213,7 +213,7 @@ public static readonly byte[][] Bitalloc25Bits = [
     [10, 10, 9, 8, 7, 7, 6, 6, 5, 4, 4, 3, 2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 10, 10],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 33 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc33Codes = [
@@ -226,7 +226,7 @@ public static readonly ushort[][] Bitalloc33Codes = [
     [0x0284, 0x0042, 0x0140, 0x0143, 0x003E, 0x00BE, 0x0011, 0x0051, 0x0009, 0x0029, 0x0005, 0x0015, 0x0000, 0x0008, 0x000E, 0x0002, 0x0006, 0x0003, 0x000F, 0x0009, 0x0001, 0x0016, 0x0006, 0x002E, 0x000E, 0x005E, 0x001E, 0x00BF, 0x003F, 0x0020, 0x0141, 0x0043, 0x0285],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 33 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc33Bits = [
@@ -239,7 +239,7 @@ public static readonly byte[][] Bitalloc33Bits = [
     [10, 9, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 4, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 8, 9, 9, 10],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 65 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc65Codes = [
@@ -252,7 +252,7 @@ public static readonly ushort[][] Bitalloc65Codes = [
     [0x010C, 0x038A, 0x0608, 0x0786, 0x0084, 0x0087, 0x0302, 0x0305, 0x0040, 0x00E0, 0x00E3, 0x0183, 0x001E, 0x005E, 0x009E, 0x00DE, 0x00F1, 0x0011, 0x0039, 0x0061, 0x0079, 0x0009, 0x001D, 0x0031, 0x003D, 0x0005, 0x000F, 0x0019, 0x001F, 0x0003, 0x0006, 0x000A, 0x000E, 0x000B, 0x0008, 0x0004, 0x0000, 0x001A, 0x0012, 0x000A, 0x0002, 0x0036, 0x0026, 0x0016, 0x0006, 0x006E, 0x004E, 0x002E, 0x000E, 0x00DF, 0x009F, 0x005F, 0x001F, 0x01E0, 0x0180, 0x00E1, 0x0041, 0x03C2, 0x0303, 0x01C4, 0x0085, 0x0787, 0x0609, 0x038B, 0x010D],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 65 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc65Bits = [
@@ -265,7 +265,7 @@ public static readonly byte[][] Bitalloc65Bits = [
     [11, 11, 11, 11, 10, 10, 10, 10, 9, 9, 9, 9, 8, 8, 8, 8, 8, 7, 7, 7, 7, 6, 6, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11, 11, 11],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 129 codes value.
   /// </summary>
 public static readonly ushort[][] Bitalloc129Codes = [
@@ -278,7 +278,7 @@ public static readonly ushort[][] Bitalloc129Codes = [
     [0x1E20, 0x1E5E, 0x031C, 0x051A, 0x0718, 0x0916, 0x0B14, 0x0D12, 0x0F11, 0x0090, 0x018F, 0x028E, 0x038D, 0x048C, 0x058B, 0x068A, 0x0789, 0x0049, 0x00C8, 0x0148, 0x01C7, 0x0247, 0x02C6, 0x0346, 0x03C5, 0x0025, 0x0065, 0x00A5, 0x00E4, 0x0124, 0x0164, 0x01A4, 0x01E3, 0x0013, 0x0033, 0x0053, 0x0073, 0x0093, 0x00B3, 0x00D3, 0x00F3, 0x000A, 0x001A, 0x002A, 0x003A, 0x004A, 0x005A, 0x006A, 0x007A, 0x0006, 0x000E, 0x0016, 0x001E, 0x0026, 0x002E, 0x0036, 0x003E, 0x0004, 0x0008, 0x000C, 0x0010, 0x0014, 0x0018, 0x001C, 0x0000, 0x001D, 0x0019, 0x0015, 0x0011, 0x000D, 0x0009, 0x0005, 0x003F, 0x0037, 0x002F, 0x0027, 0x001F, 0x0017, 0x000F, 0x0007, 0x007B, 0x006B, 0x005B, 0x004B, 0x003B, 0x002B, 0x001B, 0x000B, 0x0008, 0x00F0, 0x00D0, 0x00B0, 0x0090, 0x0070, 0x0050, 0x0030, 0x01E4, 0x01A5, 0x0165, 0x0125, 0x00E5, 0x00E2, 0x00A2, 0x0062, 0x03CA, 0x0347, 0x02C7, 0x02C4, 0x0244, 0x0149, 0x00C9, 0x00C6, 0x0796, 0x068B, 0x0688, 0x048D, 0x048A, 0x028F, 0x028C, 0x0091, 0x0F2E, 0x0D13, 0x0B15, 0x0917, 0x0719, 0x051B, 0x031D, 0x1E5F, 0x1E21],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc 129 bits value.
   /// </summary>
 public static readonly byte[][] Bitalloc129Bits = [
@@ -291,12 +291,12 @@ public static readonly byte[][] Bitalloc129Bits = [
     [13, 13, 12, 12, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10, 10, 10, 10, 10, 10, 10, 9, 9, 9, 9, 9, 9, 9, 9, 8, 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 5, 4, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 13, 13],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc sizes value.
   /// </summary>
 public static readonly byte[] BitallocSizes = [3, 5, 7, 9, 13, 17, 25, 33, 65, 129];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bitalloc offsets value.
   /// </summary>
 public static readonly sbyte[] BitallocOffsets = [-1, -2, -3, -4, -6, -8, -12, -16, -32, -64];

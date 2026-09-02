@@ -12,7 +12,7 @@ public sealed class GemdosReader : System.IDisposable {
 
   private readonly FileSystem.Fat.FatReader _inner;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GemdosReader"/>.
   /// </summary>
 public GemdosReader(System.IO.Stream stream) {
@@ -33,7 +33,7 @@ public GemdosReader(System.IO.Stream stream) {
   /// <summary>Reads the bytes of a file entry.</summary>
   public byte[] Extract(FileSystem.Fat.FatEntry entry) => _inner.Extract(entry);
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => _inner.Dispose();

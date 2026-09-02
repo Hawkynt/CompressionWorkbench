@@ -30,7 +30,7 @@ public static class Gfs2ExtentMap {
   /// <summary>How far the search for the first resource group runs, in blocks.</summary>
   private const long FirstRgrpSearchBlocks = 1 << 16;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

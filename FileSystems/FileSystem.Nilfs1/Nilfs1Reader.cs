@@ -40,56 +40,56 @@ public sealed class Nilfs1Reader : IDisposable {
   private readonly long _len;
   private readonly List<Nilfs1Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Nilfs1Entry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the rev level.
   /// </summary>
 public uint RevLevel { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the magic.
   /// </summary>
 public ushort Magic { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the log block size.
   /// </summary>
 public uint LogBlockSize { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the num segments.
   /// </summary>
 public ulong NumSegments { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the dev size.
   /// </summary>
 public ulong DevSize { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the blocks per segment.
   /// </summary>
 public uint BlocksPerSegment { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the last checkpoint.
   /// </summary>
 public ulong LastCheckpoint { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid superblock.
   /// </summary>
 public bool ValidSuperblock { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Defines the super magic constant value.
   /// </summary>
 public const ushort SuperMagic = 0x3434;
-    /// <summary>
+  /// <summary>
   /// Defines the nilfs v 1 rev level constant value.
   /// </summary>
 public const uint NilfsV1RevLevel = 1;
   private const int SuperblockOffset = 1024;
   private const int SuperblockSize = 1024;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Nilfs1Reader"/>.
   /// </summary>
 public Nilfs1Reader(Stream stream) {
@@ -281,7 +281,7 @@ public Nilfs1Reader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Nilfs1Entry entry) {
@@ -307,7 +307,7 @@ public byte[] Extract(Nilfs1Entry entry) {
     return take;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._img.Dispose();

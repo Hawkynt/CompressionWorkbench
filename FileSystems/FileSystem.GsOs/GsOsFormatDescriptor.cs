@@ -31,22 +31,22 @@ public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // lossy result. ProDOS-ordered payloads round-trip via the inner ProDOS walk;
   // HFS / DOS-3.3 payloads fail the rebuild verification and leave the image
   // untouched (defrag throws cleanly, shrink copies through unchanged).
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "GsOs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Apple IIgs GS/OS (2IMG)";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
   // R/W: Add/Remove edit the inner ProDOS volume in place via ProDosModifier
   // (2IMG header + untouched blocks preserved; image length unchanged), with a
   // verified rebuild only as a structural-edge-case fallback. See FormatCapabilities.cs.
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -55,44 +55,44 @@ public FormatCapabilities Capabilities =>
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // .2mg is owned by FileSystem.ProDos; we register the GS/OS-specific
   // .gsdos extension only to avoid extension routing conflicts.
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".gsdos";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".gsdos"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
   // Magic intentionally omitted: ProDos already advertises "2IMG"@0, and
   // we don't want detector first-match to fight over the same bytes.
   // Routing to GS/OS is by extension; the reader still parses the 2IMG header.
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
     "Apple IIgs GS/OS 2IMG — 64-byte 2IMG header + ProDOS-ordered payload (HFS/DOS-3.3 payloads listed read-only).";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -106,7 +106,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

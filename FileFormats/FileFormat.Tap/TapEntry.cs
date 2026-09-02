@@ -5,15 +5,15 @@ namespace FileFormat.Tap;
 /// Represents a tap entry.
 /// </summary>
 public sealed class TapEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public int Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data offset.
   /// </summary>
 public long DataOffset { get; init; }

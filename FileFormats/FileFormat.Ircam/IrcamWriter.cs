@@ -13,7 +13,7 @@ public sealed class IrcamWriter {
   private const int DataOffset = 1024;
   private const uint Format16BitLinear = 2;
 
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public byte[] Write(byte[] interleavedLe, int channels, int sampleRate) {

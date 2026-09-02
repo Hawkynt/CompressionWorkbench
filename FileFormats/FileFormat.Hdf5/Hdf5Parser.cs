@@ -8,27 +8,27 @@ namespace FileFormat.Hdf5;
 /// root object-header offset, and scans the file for object-header signatures.
 /// </summary>
 public sealed class Hdf5SuperblockInfo {
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether found.
   /// </summary>
 public bool Found { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the superblock offset.
   /// </summary>
 public long SuperblockOffset { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the version.
   /// </summary>
 public int Version { get; set; } = -1;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the offset size.
   /// </summary>
 public int OffsetSize { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the length size.
   /// </summary>
 public int LengthSize { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root offset.
   /// </summary>
 public long RootOffset { get; set; } = -1;

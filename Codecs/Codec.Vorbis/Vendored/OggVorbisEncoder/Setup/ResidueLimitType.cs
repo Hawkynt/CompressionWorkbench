@@ -5,15 +5,15 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public enum ResidueLimitType
 {
-        /// <summary>
+    /// <summary>
     /// Specifies the low pass option.
     /// </summary>
 LowPass = 0,
-        /// <summary>
+    /// <summary>
     /// Specifies the point stereo option.
     /// </summary>
 PointStereo = 1,
-        /// <summary>
+    /// <summary>
     /// Specifies the low frequency effects option.
     /// </summary>
 LowFrequencyEffects = 2

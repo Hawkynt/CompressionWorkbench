@@ -41,24 +41,24 @@ public sealed class FatxReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<FatxEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<FatxEntry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per cluster.
   /// </summary>
 public uint SectorsPerCluster { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root dir cluster.
   /// </summary>
 public uint RootDirCluster { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the fat type.
   /// </summary>
 public int FatType { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets the cluster size.
   /// </summary>
 public int ClusterSize => (int)this.SectorsPerCluster * SectorSize;
@@ -68,7 +68,7 @@ public int ClusterSize => (int)this.SectorsPerCluster * SectorSize;
   internal const int DirRecordSize = 0x40;
   private const uint MagicFatx = 0x58544146; // 'F','A','T','X' little-endian
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="FatxReader"/>.
   /// </summary>
 public FatxReader(Stream stream) {
@@ -172,7 +172,7 @@ public FatxReader(Stream stream) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(FatxEntry entry) {
@@ -218,7 +218,7 @@ public byte[] Extract(FatxEntry entry) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

@@ -85,47 +85,47 @@ public static class OpenVmsLayout {
 
   // ── File Header field layout (offsets inside the 512-byte FH block) ──
 
-    /// <summary>
+  /// <summary>
   /// Defines the fh id offset constant value.
   /// </summary>
 public const int FhIdOffset = 0;       // FH2$B_IDOFFSET (in words)
-    /// <summary>
+  /// <summary>
   /// Defines the fh mp offset constant value.
   /// </summary>
 public const int FhMpOffset = 1;       // FH2$B_MPOFFSET (in words)
-    /// <summary>
+  /// <summary>
   /// Defines the fh ac offset constant value.
   /// </summary>
 public const int FhAcOffset = 2;       // FH2$B_ACOFFSET (in words)
-    /// <summary>
+  /// <summary>
   /// Defines the fh rs offset constant value.
   /// </summary>
 public const int FhRsOffset = 3;       // FH2$B_RSOFFSET (in words)
-    /// <summary>
+  /// <summary>
   /// Defines the fh seg num constant value.
   /// </summary>
 public const int FhSegNum = 4;         // FH2$W_SEG_NUM (LE u16)
-    /// <summary>
+  /// <summary>
   /// Defines the fh struc lev constant value.
   /// </summary>
 public const int FhStrucLev = 6;       // FH2$W_STRUCLEV (LE u16, 0x0201 for ODS-2)
-    /// <summary>
+  /// <summary>
   /// Defines the fh fid num constant value.
   /// </summary>
 public const int FhFidNum = 8;         // FH2$W_FID_NUM (LE u16)
-    /// <summary>
+  /// <summary>
   /// Defines the fh fid seq constant value.
   /// </summary>
 public const int FhFidSeq = 10;        // FH2$W_FID_SEQ (LE u16)
-    /// <summary>
+  /// <summary>
   /// Defines the fh fid rvn nmx constant value.
   /// </summary>
 public const int FhFidRvnNmx = 12;     // FH2$W_FID_RVN + NMX
-    /// <summary>
+  /// <summary>
   /// Defines the fh ext fid constant value.
   /// </summary>
 public const int FhExtFid = 14;        // FH2$W_EXT_FID
-    /// <summary>
+  /// <summary>
   /// Defines the fh rec attr constant value.
   /// </summary>
 public const int FhRecAttr = 44;       // FH2$W_RECATTR (32 bytes)
@@ -148,28 +148,28 @@ public const int FhRecAttr = 44;       // FH2$W_RECATTR (32 bytes)
   /// stored high word first, which is how VMS wrote them.
   /// </remarks>
   public const int FhRecattr = 20;       // FH2$W_RECATTR
-    /// <summary>
+  /// <summary>
   /// Defines the fh recattr high block constant value.
   /// </summary>
 public const int FhRecattrHighBlock = FhRecattr + 4;   // FAT$L_HIBLK, allocated
-    /// <summary>
+  /// <summary>
   /// Defines the fh recattr end block constant value.
   /// </summary>
 public const int FhRecattrEndBlock = FhRecattr + 8;    // FAT$L_EFBLK, one past the last used
-    /// <summary>
+  /// <summary>
   /// Defines the fh recattr first free constant value.
   /// </summary>
 public const int FhRecattrFirstFree = FhRecattr + 12;  // FAT$W_FFBYTE, within that block
 
-    /// <summary>
+  /// <summary>
   /// Defines the fh used size constant value.
   /// </summary>
 public const int FhUsedSize = 80;      // size in bytes (writer-internal, 8 bytes)
-    /// <summary>
+  /// <summary>
   /// Defines the fh alloc size constant value.
   /// </summary>
 public const int FhAllocSize = 88;     // allocation in LBNs (writer-internal, 4 bytes)
-    /// <summary>
+  /// <summary>
   /// Defines the fh checksum constant value.
   /// </summary>
 public const int FhChecksum = 510;     // FH2$W_CHECKSUM (LE u16)
@@ -187,68 +187,68 @@ public const int FhChecksum = 510;     // FH2$W_CHECKSUM (LE u16)
   public const int MaxBlocksPerPointer = 1 << 14;
 
   // Ident area starts at byte 128 (= 64 words); fits 20-char file name + meta.
-    /// <summary>
+  /// <summary>
   /// Defines the fh ident area offset constant value.
   /// </summary>
 public const int FhIdentAreaOffset = 128;
-    /// <summary>
+  /// <summary>
   /// Defines the fh file name length constant value.
   /// </summary>
 public const int FhFileNameLength = 20;
 
   // Map area starts at byte 256 (= 128 words); fits up to (510-256)/8 ≈ 31 pointer pairs.
-    /// <summary>
+  /// <summary>
   /// Defines the fh map area offset constant value.
   /// </summary>
 public const int FhMapAreaOffset = 256;
 
   // ── Home-block field offsets (inside the 512-byte home block) ──
 
-    /// <summary>
+  /// <summary>
   /// Defines the hb home lbn constant value.
   /// </summary>
 public const int HbHomeLbn = 0x000;        // HM2$L_HOMELBN
-    /// <summary>
+  /// <summary>
   /// Defines the hb alt home lbn constant value.
   /// </summary>
 public const int HbAltHomeLbn = 0x004;     // HM2$L_ALHOMELBN
-    /// <summary>
+  /// <summary>
   /// Defines the hb alt idx lbn constant value.
   /// </summary>
 public const int HbAltIdxLbn = 0x008;      // HM2$L_ALTIDXLBN
-    /// <summary>
+  /// <summary>
   /// Defines the hb struc lev constant value.
   /// </summary>
 public const int HbStrucLev = 0x00C;       // HM2$W_STRUCLEV
-    /// <summary>
+  /// <summary>
   /// Defines the hb cluster constant value.
   /// </summary>
 public const int HbCluster = 0x00E;        // HM2$W_CLUSTER
-    /// <summary>
+  /// <summary>
   /// Defines the hb home vbn constant value.
   /// </summary>
 public const int HbHomeVbn = 0x010;        // HM2$W_HOMEVBN
-    /// <summary>
+  /// <summary>
   /// Defines the hb ib map vbn constant value.
   /// </summary>
 public const int HbIbMapVbn = 0x016;       // HM2$W_IBMAPVBN
-    /// <summary>
+  /// <summary>
   /// Defines the hb ib map lbn constant value.
   /// </summary>
 public const int HbIbMapLbn = 0x018;       // HM2$L_IBMAPLBN
-    /// <summary>
+  /// <summary>
   /// Defines the hb max files constant value.
   /// </summary>
 public const int HbMaxFiles = 0x01C;       // HM2$L_MAXFILES
-    /// <summary>
+  /// <summary>
   /// Defines the hb ib map size constant value.
   /// </summary>
 public const int HbIbMapSize = 0x020;      // HM2$W_IBMAPSIZE
-    /// <summary>
+  /// <summary>
   /// Defines the hb owner uic constant value.
   /// </summary>
 public const int HbOwnerUic = 0x02C;       // HM2$W_VOLOWNER
-    /// <summary>
+  /// <summary>
   /// Defines the hb format string constant value.
   /// </summary>
 public const int HbFormatString = 0x1F0;   // "DECFILE11B  " for Files-11 Level 2
@@ -274,7 +274,7 @@ public const int HbFormatString = 0x1F0;   // "DECFILE11B  " for Files-11 Level 
 
   /// <summary>The owner's name, twelve characters.</summary>
   public const int HbOwnerName = 0x1E4;      // HM2$T_OWNERNAME
-    /// <summary>
+  /// <summary>
   /// Defines the hb volume name constant value.
   /// </summary>
 public const int HbVolumeName = 0x1D8;     // 12-char ASCII volume label

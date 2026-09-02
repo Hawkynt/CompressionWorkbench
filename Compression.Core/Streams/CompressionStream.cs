@@ -32,31 +32,31 @@ public abstract class CompressionStream : Stream {
   public CompressionStreamMode Mode { get; }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
 public override bool CanRead => this.Mode == CompressionStreamMode.Decompress;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
 public override bool CanWrite => this.Mode == CompressionStreamMode.Compress;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
 public override bool CanSeek => false;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the length.
   /// </summary>
 public override long Length => throw new NotSupportedException();
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets or sets the position.
   /// </summary>
 public override long Position {
@@ -65,7 +65,7 @@ public override long Position {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public override int Read(byte[] buffer, int offset, int count) {
@@ -79,7 +79,7 @@ public override int Read(byte[] buffer, int offset, int count) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public override void Write(byte[] buffer, int offset, int count) {
@@ -92,7 +92,7 @@ public override void Write(byte[] buffer, int offset, int count) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the flush operation.
   /// </summary>
 public override void Flush() {
@@ -101,13 +101,13 @@ public override void Flush() {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the seek operation.
   /// </summary>
 public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Sets the length.
   /// </summary>
 public override void SetLength(long value) => throw new NotSupportedException();
@@ -137,7 +137,7 @@ public override void SetLength(long value) => throw new NotSupportedException();
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 protected override void Dispose(bool disposing) {

@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class ResidueTemplate : IResidueTemplate
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="ResidueTemplate"/>.
     /// </summary>
 public ResidueTemplate(
@@ -28,35 +28,35 @@ public ResidueTemplate(
         Grouping = grouping;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the residue type.
     /// </summary>
 public ResidueType ResidueType { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the limit type.
     /// </summary>
 public ResidueLimitType LimitType { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the grouping.
     /// </summary>
 public int Grouping { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the residue.
     /// </summary>
 public ResidueEntry Residue { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the book aux.
     /// </summary>
 public IStaticCodeBook BookAux { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the book aux managed.
     /// </summary>
 public IStaticCodeBook BookAuxManaged { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the books base.
     /// </summary>
 public IStaticBookBlock BooksBase { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the books base managed.
     /// </summary>
 public IStaticBookBlock BooksBaseManaged { get; }

@@ -18,7 +18,7 @@ public sealed class NtfsReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<NtfsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<NtfsEntry> Entries => _entries;
@@ -33,7 +33,7 @@ public IReadOnlyList<NtfsEntry> Entries => _entries;
   // Parsed MFT records: record number -> parsed info
   private readonly Dictionary<uint, MftRecord> _mftRecords = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="NtfsReader"/>.
   /// </summary>
 public NtfsReader(Stream stream, bool leaveOpen = false) {
@@ -729,7 +729,7 @@ public NtfsReader(Stream stream, bool leaveOpen = false) {
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

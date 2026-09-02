@@ -172,7 +172,7 @@ public static class AcronisRecordReader {
     return records;
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the one from the supplied input.
   /// </summary>
 public static AcronisRecord ReadOne(Stream stream, long endExclusive) {

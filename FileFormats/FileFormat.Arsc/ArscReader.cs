@@ -31,7 +31,7 @@ public sealed class ArscReader {
   /// <summary><c>full</c> when every chunk header read cleanly to EOF; <c>partial</c> on any truncation, structural error or trailing-byte shortfall.</summary>
   public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ArscReader"/>.
   /// </summary>
 public ArscReader(Stream stream) {

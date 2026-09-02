@@ -51,11 +51,11 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
     _clusterHeapOffset = (long)clusterHeapOffsetSectors * _bytesPerSector;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the first data byte.
   /// </summary>
 public long FirstDataByte => _clusterHeapOffset;
-    /// <summary>
+  /// <summary>
   /// Gets the cluster size.
   /// </summary>
 public int ClusterSize => _clusterSize;
@@ -80,7 +80,7 @@ public int ClusterSize => _clusterSize;
   /// </summary>
   public bool SupportsHeldRuns => true;
 
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -102,7 +102,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   ///   3. Free old FAT entries (targeted writes, flush).
   ///   4. Update allocation bitmap + PercentInUse (targeted RMW writes, flush).
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -166,7 +166,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "<bitmap>", "<upcase>" };
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update metadata after move operation.
   /// </summary>
 public void UpdateMetadataAfterMove(Stream image, string metadataName,
@@ -275,13 +275,13 @@ public void UpdateMetadataAfterMove(Stream image, string metadataName,
   // ── Scattered relink ──────────────────────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the allocation block size.
   /// </summary>
 public int AllocationBlockSize => _clusterSize;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether supports scattered relink.
   /// </summary>
 public bool SupportsScatteredRelink => true;

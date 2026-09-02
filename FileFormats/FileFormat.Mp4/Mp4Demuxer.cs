@@ -16,13 +16,13 @@ public sealed class Mp4Demuxer {
   /// <summary>A single sample (video frame or audio packet).</summary>
   public sealed record SampleEntry(byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Represents a track.
   /// </summary>
 public sealed record Track(int Id, string HandlerType, string CodecFourCc, byte[] Data, long DurationTicks, int Timescale,
                              IReadOnlyList<SampleEntry> Samples);
 
-    /// <summary>
+  /// <summary>
   /// Performs the demux operation.
   /// </summary>
 public IReadOnlyList<Track> Demux(byte[] file) {

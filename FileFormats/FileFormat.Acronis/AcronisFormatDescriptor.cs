@@ -37,54 +37,54 @@ namespace FileFormat.Acronis;
 /// </para>
 /// </remarks>
 public sealed class AcronisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveModifiable {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "AcronisTib";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Acronis True Image (.tib)";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify
     | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".tib";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".tib"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0xCE, 0x24, 0xB9, 0xA2], Confidence: 0.95)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate (record stream)")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Acronis True Image classic .tib backup — R/W via true in-place record-stream append: Add/Replace/Remove each append a fresh Listing + chain (102 → 1 → 2 → 5 → 108 → 109) + EndTrailer + 12-byte fs trailer + 48-byte mirror footer at EOF, leaving [0, oldLength) byte-identical. Reader's per-name latest-Listing-wins gate + tombstone MetaOffset sentinel (0xFFFFFFFFFFFF) surfaces the post-mutation entry view; the walker tolerates mid-stream EndTrailer + trailer + footer blocks by sniffing the fs magic (2C 8A E1 94) at +8 and skipping 60 bytes. R/O listing + R/O file extraction via spec-grounded FileMeta chain walk (Listing.MetaOffset → FirstFileMetaRecord(102) → next RecordIndex(108)) with sequential pairing as fallback; FileMeta 102/1/2/5 body shape reverse-engineered as an InputItem attribute stream (uint32 count + N×{uint32 idAndFlags, uint16 size, body}) with the high-value ids decoded — ItemCommon(0x10)=filename+altname+DosAttributes+4 FILETIMEs (CreationTime/LastWriteTime/LastAccessTime/ChangeTime via BackupCommonAttributes writer) + trailer dword, SourceItem(0x40)=path, HardLinkId(0x14), BackupTime(0x50), TimeZone(0x60), Replica(0x17)=GUID+2 cookies, ItemCommonExtra(0x18)=uint64 cookie, SliceItem(0x80)=GUID+2 cookies+flag+optional name, SliceItemBlob(0x90)=opaque variable bytes; per-entry DecodedName surfaced when the 102 body parses; per-blob MD5 integrity check still gates extraction. Documented-TODO: ACL blob shape on record-5 bodies — the per-id handler was not located in the binary inspection pass; record-5 bodies are still surfaced as attribute streams if they decode as such, otherwise as raw payload. Whole-archive writer implemented (AcronisWriter.Build emits a from-scratch single-volume Windows file-system slice — header + per-file 102/1/2/5/109/108 chain + Listing + EndTrailer + fs trailer + mirror footer); self-round-trips through our reader byte-identical (content + names + sizes, chain walk complete, MD5 integrity passes). CanCreate is NOT advertised pending vendor-restore validation: the Acronis app must restore the emitted .tib before the flag is flipped.";
@@ -135,7 +135,7 @@ public string Description => "Acronis True Image classic .tib backup — R/W via
       AcronisInPlaceModifier.Remove(archive, name);
   }
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -159,7 +159,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     }).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

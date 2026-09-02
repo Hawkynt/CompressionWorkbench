@@ -23,65 +23,65 @@ namespace FileSystem.Gemdos;
 ///   0x1A  sides     u16  — heads
 /// </summary>
 public sealed class GemdosBpb {
-    /// <summary>
+  /// <summary>
   /// Defines the gemdos jump constant value.
   /// </summary>
 public const byte GemdosJump = 0x60;
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid.
   /// </summary>
 public bool Valid { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the jump byte.
   /// </summary>
 public byte JumpByte { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the bytes per sector.
   /// </summary>
 public ushort BytesPerSector { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per cluster.
   /// </summary>
 public byte SectorsPerCluster { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the reserved sectors.
   /// </summary>
 public ushort ReservedSectors { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the num fats.
   /// </summary>
 public byte NumFats { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root entries.
   /// </summary>
 public ushort RootEntries { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the total sectors.
   /// </summary>
 public ushort TotalSectors { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the media descriptor.
   /// </summary>
 public byte MediaDescriptor { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per fat.
   /// </summary>
 public ushort SectorsPerFat { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per track.
   /// </summary>
 public ushort SectorsPerTrack { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sides.
   /// </summary>
 public ushort Sides { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the raw bytes.
   /// </summary>
 public byte[] RawBytes { get; init; } = [];
 
-    /// <summary>
+  /// <summary>
   /// Attempts to parse the value from the supplied data.
   /// </summary>
 public static GemdosBpb TryParse(ReadOnlySpan<byte> image) {

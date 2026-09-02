@@ -56,30 +56,30 @@ namespace FileSystem.Nilfs2;
 /// </remarks>
 public static class Nilfs2Superblock {
 
-    /// <summary>
+  /// <summary>
   /// Defines the magic constant value.
   /// </summary>
 public const ushort Magic = 0x3434;
-    /// <summary>
+  /// <summary>
   /// Defines the s bytes constant value.
   /// </summary>
 public const ushort SBytes = 280;
-    /// <summary>
+  /// <summary>
   /// Defines the size constant value.
   /// </summary>
 public const int Size = 1024;
-    /// <summary>
+  /// <summary>
   /// Defines the primary offset constant value.
   /// </summary>
 public const int PrimaryOffset = 1024;
   /// <summary>The secondary superblock sits one block (4096 B) before EOF.</summary>
   public const int SecondaryBackOffset = 4096;
 
-    /// <summary>
+  /// <summary>
   /// Defines the state valid constant value.
   /// </summary>
 public const ushort StateValid = 0x0001;        // NILFS_VALID_FS
-    /// <summary>
+  /// <summary>
   /// Defines the errors continue constant value.
   /// </summary>
 public const ushort ErrorsContinue = 0x0001;    // NILFS_ERRORS_CONTINUE

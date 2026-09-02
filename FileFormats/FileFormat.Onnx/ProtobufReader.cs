@@ -17,27 +17,27 @@ namespace FileFormat.Onnx;
 /// </remarks>
 public ref struct ProtobufReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the wire varint constant value.
   /// </summary>
 public const int WireVarint = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the wire fixed 64 constant value.
   /// </summary>
 public const int WireFixed64 = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the wire length delimited constant value.
   /// </summary>
 public const int WireLengthDelimited = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the wire start group constant value.
   /// </summary>
 public const int WireStartGroup = 3;   // proto2 groups, deprecated
-    /// <summary>
+  /// <summary>
   /// Defines the wire end group constant value.
   /// </summary>
 public const int WireEndGroup = 4;     // proto2 groups, deprecated
-    /// <summary>
+  /// <summary>
   /// Defines the wire fixed 32 constant value.
   /// </summary>
 public const int WireFixed32 = 5;
@@ -45,7 +45,7 @@ public const int WireFixed32 = 5;
   private ReadOnlySpan<byte> _data;
   private int _pos;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ProtobufReader"/>.
   /// </summary>
 public ProtobufReader(ReadOnlySpan<byte> data) {
@@ -53,15 +53,15 @@ public ProtobufReader(ReadOnlySpan<byte> data) {
     this._pos = 0;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the position.
   /// </summary>
 public readonly int Position => this._pos;
-    /// <summary>
+  /// <summary>
   /// Gets the remaining.
   /// </summary>
 public readonly int Remaining => this._data.Length - this._pos;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether at end.
   /// </summary>
 public readonly bool AtEnd => this._pos >= this._data.Length;
@@ -89,16 +89,16 @@ public readonly bool AtEnd => this._pos >= this._data.Length;
     throw new InvalidDataException("protobuf: truncated varint.");
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the int 32 from the supplied input.
   /// </summary>
 public int ReadInt32() => (int)this.ReadVarint();
-    /// <summary>
+  /// <summary>
   /// Reads the int 64 from the supplied input.
   /// </summary>
 public long ReadInt64() => (long)this.ReadVarint();
 
-    /// <summary>
+  /// <summary>
   /// Reads the fixed 32 from the supplied input.
   /// </summary>
 public uint ReadFixed32() {
@@ -108,7 +108,7 @@ public uint ReadFixed32() {
     return v;
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the fixed 64 from the supplied input.
   /// </summary>
 public ulong ReadFixed64() {
@@ -128,7 +128,7 @@ public ulong ReadFixed64() {
     return s;
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the string from the supplied input.
   /// </summary>
 public string ReadString() => System.Text.Encoding.UTF8.GetString(this.ReadBytes());

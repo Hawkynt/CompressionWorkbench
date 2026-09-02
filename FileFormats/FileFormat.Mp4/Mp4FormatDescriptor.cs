@@ -11,60 +11,60 @@ namespace FileFormat.Mp4;
 /// output is elementary streams, not playable MP4 fragments.
 /// </summary>
 public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap, IFileInternalChunkMover {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Mp4";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "MP4 / MOV (demuxed)";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Video;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".mp4";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".mp4", ".m4v", ".m4a", ".mov", ".3gp", ".3g2"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("ftyp"u8.ToArray(), Offset: 4, Confidence: 0.9),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "MP4/MOV container; each track extractable as an elementary stream.";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
@@ -74,7 +74,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
       Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -85,7 +85,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
 public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
@@ -168,15 +168,15 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   private readonly Mp4LayoutMap _layoutMap = new();
   private readonly Mp4FastStart _fastStart = new();
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the chunks.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => this._layoutMap.EnumerateChunks(file);
-    /// <summary>
+  /// <summary>
   /// Performs the optimize operation.
   /// </summary>
 public void Optimize(Stream file) => this._fastStart.Optimize(file);
-    /// <summary>
+  /// <summary>
   /// Performs the optimize operation.
   /// </summary>
 public void Optimize(Stream file, MetadataPlacementProfile? profile) => this._fastStart.Optimize(file, profile);

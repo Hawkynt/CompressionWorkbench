@@ -30,7 +30,7 @@ namespace FileFormat.Caf;
 /// <see cref="ParsedCaf.OtherChunks"/>.
 /// </summary>
 public sealed class CafReader {
-    /// <summary>
+  /// <summary>
   /// Represents a parsed caf.
   /// </summary>
 public sealed record ParsedCaf(
@@ -47,7 +47,7 @@ public sealed record ParsedCaf(
   private const uint FlagIsFloat = 0x1;
   private const uint FlagIsLittleEndian = 0x2;
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedCaf Read(ReadOnlySpan<byte> data) {

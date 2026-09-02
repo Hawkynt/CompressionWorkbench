@@ -35,7 +35,7 @@ public interface IBitOrder {
 /// </summary>
 public readonly struct LsbBitOrder : IBitOrder {
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the insert byte operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -43,7 +43,7 @@ public readonly struct LsbBitOrder : IBitOrder {
     buffer | ((ulong)b << bitsInBuffer);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the extract bit operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -51,7 +51,7 @@ public readonly struct LsbBitOrder : IBitOrder {
     (buffer & 1, buffer >> 1);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the peek operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -59,7 +59,7 @@ public readonly struct LsbBitOrder : IBitOrder {
     (uint)(buffer & ((1UL << count) - 1));
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the drop operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -67,7 +67,7 @@ public readonly struct LsbBitOrder : IBitOrder {
     buffer >> count;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the place bit operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -75,7 +75,7 @@ public readonly struct LsbBitOrder : IBitOrder {
     buffer | ((bit & 1) << bitsInBuffer);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the accumulate bits operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -83,7 +83,7 @@ public readonly struct LsbBitOrder : IBitOrder {
     result | ((uint)bit << index);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Writes the bit index to the supplied output.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -96,7 +96,7 @@ public readonly struct LsbBitOrder : IBitOrder {
 /// </summary>
 public readonly struct MsbBitOrder : IBitOrder {
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the insert byte operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -104,7 +104,7 @@ public readonly struct MsbBitOrder : IBitOrder {
     (buffer << 8) | (uint)(byte)b;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the extract bit operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -112,7 +112,7 @@ public readonly struct MsbBitOrder : IBitOrder {
     ((buffer >> 7) & 1, (buffer << 1) & 0xFF);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the peek operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -120,7 +120,7 @@ public readonly struct MsbBitOrder : IBitOrder {
     (uint)(buffer >> (bitsInBuffer - count)) & (uint)((1UL << count) - 1);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the drop operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -128,7 +128,7 @@ public readonly struct MsbBitOrder : IBitOrder {
     buffer & ((1UL << (bitsInBuffer - count)) - 1);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the place bit operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -136,7 +136,7 @@ public readonly struct MsbBitOrder : IBitOrder {
     buffer | ((bit & 1) << (7 - bitsInBuffer));
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the accumulate bits operation.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -144,7 +144,7 @@ public readonly struct MsbBitOrder : IBitOrder {
     (result << 1) | (uint)bit;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Writes the bit index to the supplied output.
   /// </summary>
 [MethodImpl(MethodImplOptions.AggressiveInlining)]

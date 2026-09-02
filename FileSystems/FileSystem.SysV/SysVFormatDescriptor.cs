@@ -57,38 +57,38 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Description: "s5fs volume name stored in s_fname (max 6 ASCII chars)."),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "SysV";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "UNIX System V FS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".s5";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".s5", ".sysv"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
@@ -96,19 +96,19 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
     // superblock sits at block 0 + BLOCK_SIZE/2, where the Linux sysv driver reads it.
     new([0x20, 0x7E, 0x18, 0xFD], Offset: 1016, Confidence: 0.90),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
@@ -118,7 +118,7 @@ public string Description =>
     "cache + s_inode[100] cache with re-scan refill; Linux sysv kernel " +
     "driver mountable when host ships sysv.ko).";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -127,7 +127,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -139,7 +139,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the open entry operation.
   /// </summary>
 public Stream OpenEntry(Stream archive, string entryName, string? password) {
@@ -156,7 +156,7 @@ public Stream OpenEntry(Stream archive, string entryName, string? password) {
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract entry to memory operation.
   /// </summary>
 public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
@@ -261,7 +261,7 @@ public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? pas
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -342,7 +342,7 @@ public void Defragment(Stream archive)
   public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the rebuild streaming operation.
   /// </summary>
 public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
@@ -369,7 +369,7 @@ public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions 
     options.OnProgress?.Invoke(target.Length, target.Length);
   }
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the extents.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)

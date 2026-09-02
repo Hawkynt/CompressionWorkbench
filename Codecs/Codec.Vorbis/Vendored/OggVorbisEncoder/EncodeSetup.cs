@@ -36,7 +36,7 @@ public class EncodeSetup
 
     private static readonly IEnumerable<ISetupTemplate> SetupTemplates = CreateTemplates();
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="EncodeSetup"/>.
     /// </summary>
 public EncodeSetup(ISetupTemplate template, double baseSetting)
@@ -69,32 +69,32 @@ public EncodeSetup(ISetupTemplate template, double baseSetting)
             AmplitudeTrackDbPerSec = -99999;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the template.
     /// </summary>
 public ISetupTemplate Template { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the base setting.
     /// </summary>
 public double BaseSetting { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the low pass kilohertz.
     /// </summary>
 public double LowPassKilohertz { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the ath floating decibel.
     /// </summary>
 public double AthFloatingDecibel { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the ath absolute decibel.
     /// </summary>
 public double AthAbsoluteDecibel { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the amplitude track db per sec.
     /// </summary>
 public double AmplitudeTrackDbPerSec { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the best match.
     /// </summary>
 public static EncodeSetup GetBestMatch(

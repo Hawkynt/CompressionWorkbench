@@ -7,7 +7,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class Floor
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="Floor"/>.
     /// </summary>
 public Floor(
@@ -76,32 +76,32 @@ public Floor(
     public int[] PostList { get; }
 
     /* encode side analysis parameters */
-        /// <summary>
+    /// <summary>
     /// Gets the max over.
     /// </summary>
 public float MaxOver { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the max under.
     /// </summary>
 public float MaxUnder { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the max error.
     /// </summary>
 public float MaxError { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the two fit weight.
     /// </summary>
 public float TwoFitWeight { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the two fit atten.
     /// </summary>
 public float TwoFitAtten { get; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the n.
     /// </summary>
 public int N { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the clone operation.
     /// </summary>
 public Floor Clone() =>

@@ -30,7 +30,7 @@ namespace FileSystem.Nilfs1;
 /// </summary>
 public static class Nilfs1ExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

@@ -13,7 +13,7 @@ namespace FileFormat.Avi;
 /// </summary>
 public static class AviLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {

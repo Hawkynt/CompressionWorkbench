@@ -11,7 +11,7 @@ namespace FileSystem.Vdfs;
 public sealed class VdfsWriter {
   private readonly List<(string Name, FilePayload Payload)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) => _files.Add((name, FilePayload.FromBytes(data)));

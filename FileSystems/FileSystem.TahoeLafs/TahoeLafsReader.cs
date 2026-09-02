@@ -28,29 +28,29 @@ public sealed class TahoeLafsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<TahoeLafsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<TahoeLafsEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the version.
   /// </summary>
 public uint Version { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data size.
   /// </summary>
 public uint DataSize { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the lease count.
   /// </summary>
 public uint LeaseCount { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
 public bool ValidHeader { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="TahoeLafsReader"/>.
   /// </summary>
 public TahoeLafsReader(Stream stream) {
@@ -101,7 +101,7 @@ public TahoeLafsReader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(TahoeLafsEntry entry) {
@@ -109,7 +109,7 @@ public byte[] Extract(TahoeLafsEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

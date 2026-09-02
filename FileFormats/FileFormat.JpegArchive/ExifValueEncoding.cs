@@ -82,7 +82,7 @@ public static class ExifValueEncoding {
     return degrees.Value + minutes.Value / 60.0 + seconds.Value / 3600.0;
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the rational from the supplied data.
   /// </summary>
 public static double? ParseRational(TiffEntry entry, bool littleEndian) {
@@ -91,7 +91,7 @@ public static double? ParseRational(TiffEntry entry, bool littleEndian) {
     return ReadRational(entry.ValueBytes, 0, littleEndian);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the ascii from the supplied data.
   /// </summary>
 public static string? ParseAscii(TiffEntry entry) {

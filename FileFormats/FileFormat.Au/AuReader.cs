@@ -20,7 +20,7 @@ namespace FileFormat.Au;
 /// annotation string.
 /// </summary>
 public sealed class AuReader {
-    /// <summary>
+  /// <summary>
   /// Represents a parsed au.
   /// </summary>
 public sealed record ParsedAu(
@@ -30,7 +30,7 @@ public sealed record ParsedAu(
     byte[] SoundData,
     string Annotation);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedAu Read(ReadOnlySpan<byte> data) {

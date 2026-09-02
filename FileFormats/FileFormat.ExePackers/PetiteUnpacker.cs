@@ -46,12 +46,12 @@ namespace FileFormat.ExePackers;
 /// </summary>
 public static class PetiteUnpacker {
 
-    /// <summary>
+  /// <summary>
   /// Represents a petite block.
   /// </summary>
 public readonly record struct PetiteBlock(uint SourceRva, uint DestinationRva, byte[] Data, bool BranchFilterReversed);
 
-    /// <summary>
+  /// <summary>
   /// Represents a petite image.
   /// </summary>
 public sealed record PetiteImage(
@@ -62,7 +62,7 @@ public sealed record PetiteImage(
 
   private const int MaxRecords = 512;
 
-    /// <summary>
+  /// <summary>
   /// Performs the try unpack operation.
   /// </summary>
 public static bool TryUnpack(ReadOnlySpan<byte> image, long maximumDecompressedSize, out PetiteImage? result, out string error) {
@@ -354,7 +354,7 @@ public static class PetiteInflate {
     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Performs the try inflate operation.
   /// </summary>
 public static bool TryInflate(ReadOnlySpan<byte> input, int start, int expectedSize, out byte[]? output) {

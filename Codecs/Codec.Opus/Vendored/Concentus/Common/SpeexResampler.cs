@@ -698,7 +698,7 @@ namespace Concentus.Common
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Performs the process operation.
         /// </summary>
 public void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)
@@ -759,7 +759,7 @@ public void Process(int channel_index, Span<float> input, ref int in_len, Span<f
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Performs the process operation.
         /// </summary>
 public void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)
@@ -835,7 +835,7 @@ public void Process(int channel_index, Span<short> input, ref int in_len, Span<s
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Performs the process interleaved operation.
         /// </summary>
 public void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)
@@ -861,7 +861,7 @@ public void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> ou
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Performs the process interleaved operation.
         /// </summary>
 public void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)
@@ -918,7 +918,7 @@ public void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> ou
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
 public void Dispose()

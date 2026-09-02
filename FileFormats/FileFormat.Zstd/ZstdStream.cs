@@ -44,7 +44,7 @@ public sealed class ZstdStream : CompressionStream {
     : this(stream, mode, (int)level, leaveOpen, dictionary) { }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the decompress block operation.
   /// </summary>
 protected override int DecompressBlock(byte[] buffer, int offset, int count) {
@@ -69,7 +69,7 @@ protected override int DecompressBlock(byte[] buffer, int offset, int count) {
   private long _pendingFrameBytes;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the compress block operation.
   /// </summary>
 protected override void CompressBlock(byte[] buffer, int offset, int count) {
@@ -92,7 +92,7 @@ protected override void CompressBlock(byte[] buffer, int offset, int count) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the finish compression operation.
   /// </summary>
 protected override void FinishCompression() {

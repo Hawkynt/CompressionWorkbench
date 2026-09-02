@@ -16,27 +16,27 @@ namespace FileSystem.AppleDos;
 /// </remarks>
 public sealed class AppleDosReader : IDisposable {
 
-    /// <summary>
+  /// <summary>
   /// Defines the standard size constant value.
   /// </summary>
 public const int StandardSize = 143360;
-    /// <summary>
+  /// <summary>
   /// Defines the tracks per disk constant value.
   /// </summary>
 public const int TracksPerDisk = 35;
-    /// <summary>
+  /// <summary>
   /// Defines the sectors per track constant value.
   /// </summary>
 public const int SectorsPerTrack = 16;
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 256;
-    /// <summary>
+  /// <summary>
   /// Defines the catalog track constant value.
   /// </summary>
 public const int CatalogTrack = 17;
-    /// <summary>
+  /// <summary>
   /// Defines the vtoc sector constant value.
   /// </summary>
 public const int VtocSector = 0;
@@ -44,12 +44,12 @@ public const int VtocSector = 0;
   private readonly byte[] _data;
   private readonly List<AppleDosEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<AppleDosEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AppleDosReader"/>.
   /// </summary>
 public AppleDosReader(Stream stream) {
@@ -60,7 +60,7 @@ public AppleDosReader(Stream stream) {
     Parse();
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AppleDosReader"/>.
   /// </summary>
 public AppleDosReader(byte[] data) {
@@ -200,7 +200,7 @@ public AppleDosReader(byte[] data) {
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(AppleDosEntry entry) {
@@ -222,7 +222,7 @@ public byte[] Extract(AppleDosEntry entry) {
     return trimmed;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

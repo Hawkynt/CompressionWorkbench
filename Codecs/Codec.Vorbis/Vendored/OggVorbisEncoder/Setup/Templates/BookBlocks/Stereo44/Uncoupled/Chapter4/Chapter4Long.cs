@@ -5,12 +5,12 @@ namespace OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter
 /// </summary>
 public class Chapter4Long : IStaticCodeBook
 {
-        /// <summary>
+    /// <summary>
     /// Gets the dimensions.
     /// </summary>
 public int Dimensions { get; } = 2;
 
-        /// <summary>
+    /// <summary>
     /// Gets the length list.
     /// </summary>
 public byte[] LengthList { get; } = {
@@ -20,28 +20,28 @@ public byte[] LengthList { get; } = {
         10, 8, 8, 7, 7, 5, 3, 8,10,12,13,12,12, 9, 6, 7,
     };
 
-        /// <summary>
+    /// <summary>
     /// Gets the map type.
     /// </summary>
 public CodeBookMapType MapType { get; } = (CodeBookMapType)0;
-        /// <summary>
+    /// <summary>
     /// Gets the quant min.
     /// </summary>
 public int QuantMin { get; } = 0;
-        /// <summary>
+    /// <summary>
     /// Gets the quant delta.
     /// </summary>
 public int QuantDelta { get; } = 0;
-        /// <summary>
+    /// <summary>
     /// Gets the quant.
     /// </summary>
 public int Quant { get; } = 0;
-        /// <summary>
+    /// <summary>
     /// Gets the quant sequence p.
     /// </summary>
 public int QuantSequenceP { get; } = 0;
 
-        /// <summary>
+    /// <summary>
     /// Gets the quant list.
     /// </summary>
 public int[] QuantList { get; } = null;

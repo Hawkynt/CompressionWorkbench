@@ -17,7 +17,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     IArchiveWriteConstraints, IFormatOptionsSchema, ILayoutOptimizable,
     IFilesystemExtentMap, IWipeEmpty {
 
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
@@ -26,19 +26,19 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
       description: "Total image capacity. Must be at least 128 MB so the superblock copies fit."),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BcacheFs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BcacheFS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -46,58 +46,58 @@ public FormatCapabilities Capabilities =>
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsOptimize |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".bcachefs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".bcachefs"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(BcacheFsSuperblock.MagicUuid, Offset: BcacheFsSuperblock.MagicOffset, Confidence: 0.85f),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
     "BcacheFS Linux filesystem image — native b-tree R/W with true in-place add/replace/remove, "
     + "purge, defragment, optimize/layout maintenance and free-space/slack wiping.";
 
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => null;
-    /// <summary>
+  /// <summary>
   /// Gets the min total archive size.
   /// </summary>
 public long? MinTotalArchiveSize => BcacheFsWriter.MinImageSize;
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription =>
     "Regular files and nested directories; each UTF-8 path component is limited to 255 bytes.";
 
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) {
@@ -127,7 +127,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     return true;
   }
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -182,7 +182,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     return entries;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -235,7 +235,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     if (sb.Valid) WriteIfMatch(outputDir, "superblock.bin", sb.RawBytes, files);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the open entry operation.
   /// </summary>
 public Stream OpenEntry(Stream archive, string entryName, string? password) {
@@ -264,7 +264,7 @@ public Stream OpenEntry(Stream archive, string entryName, string? password) {
     return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract entry to memory operation.
   /// </summary>
 public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
@@ -274,7 +274,7 @@ public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? pas
     return output.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -303,7 +303,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
     WriteVolume(writer, output);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create from streams operation.
   /// </summary>
 public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs,
@@ -389,7 +389,7 @@ public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> 
       input.CopyTo(output);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -439,7 +439,7 @@ public void Defragment(Stream archive)
     };
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the patch in place operation.
   /// </summary>
 public void PatchInPlace(Stream image, LayoutPatch patch) {
@@ -530,7 +530,7 @@ public void PatchInPlace(Stream image, LayoutPatch patch) {
       "complete", 1, -1, -1, archive.Length, post, "Defragmentation complete"));
   }
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the extents.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {

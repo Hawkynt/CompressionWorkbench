@@ -33,7 +33,7 @@ public sealed class SidChip {
   private double _clocksPerSample;
   private double _sampleError;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="SidChip"/>.
   /// </summary>
 public SidChip(SidModel model, double clockHz, int outputRate = OutputSampleRate) {

@@ -18,7 +18,7 @@ namespace FileFormat.Zip;
 public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -34,7 +34,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
   ];
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Enumerates the layout.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -105,19 +105,19 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayout
       });
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Zip";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "ZIP";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -148,26 +148,26 @@ public FormatCapabilities Capabilities =>
       ZipModifier.RemoveFile(archive, name, wipeData: true);
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".zip";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".zip", ".zipx"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'K', 0x03, 0x04], Confidence: 0.95),
     new([(byte)'P', (byte)'K', 0x05, 0x06], Confidence: 0.90)
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [
@@ -175,20 +175,20 @@ public IReadOnlyList<FormatMethodInfo> Methods => [
     new("store", "Store"), new("deflate64", "Deflate64"),
     new("bzip2", "BZip2"), new("lzma", "LZMA"), new("zstd", "Zstandard"), new("ppmd", "PPMd")
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Universal archive with multiple compression methods";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -197,7 +197,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       e.CompressionMethod.ToString(), e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -411,7 +411,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
@@ -460,7 +460,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
       Level = ValidationLevel.Header, Issues = issues };
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateStructure(Stream stream) {
@@ -531,7 +531,7 @@ public ValidationResult ValidateStructure(Stream stream) {
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateIntegrity(Stream stream) {

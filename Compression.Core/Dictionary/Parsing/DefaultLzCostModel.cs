@@ -41,13 +41,13 @@ public sealed class DefaultLzCostModel : ILzCostModel {
   public static DefaultLzCostModel Instance { get; } = new();
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Performs the literal cost operation.
   /// </summary>
 public double LiteralCost(byte value) => this._literalCost;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Performs the match cost operation.
   /// </summary>
 public double MatchCost(int length, int distance) {

@@ -5,31 +5,31 @@ namespace FileSystem.Ti99;
 /// Represents a ti 99 entry.
 /// </summary>
 public sealed class Ti99Entry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the first sector.
   /// </summary>
 public int FirstSector { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sector count.
   /// </summary>
 public int SectorCount { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the file flags.
   /// </summary>
 public byte FileFlags { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the records per sector.
   /// </summary>
 public byte RecordsPerSector { get; init; }

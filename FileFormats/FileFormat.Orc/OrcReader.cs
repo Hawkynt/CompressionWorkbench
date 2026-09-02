@@ -40,7 +40,7 @@ public sealed class OrcReader {
   /// <summary>"full" if PostScript and (when uncompressed) Footer were both walked end-to-end; "partial" otherwise.</summary>
   public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="OrcReader"/>.
   /// </summary>
 public OrcReader(Stream stream) {

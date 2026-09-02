@@ -15,7 +15,7 @@ namespace FileSystem.MinixV2;
 /// </remarks>
 public static class MinixV2ExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

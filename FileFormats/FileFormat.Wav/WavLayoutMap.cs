@@ -13,7 +13,7 @@ namespace FileFormat.Wav;
 /// </summary>
 public static class WavLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {

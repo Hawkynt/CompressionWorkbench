@@ -32,7 +32,7 @@ public static class BscStream {
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public static void Compress(Stream input, Stream output) {
@@ -84,7 +84,7 @@ public static void Compress(Stream input, Stream output) {
     output.Write(payload);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public static void Decompress(Stream input, Stream output) {

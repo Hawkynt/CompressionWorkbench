@@ -25,7 +25,7 @@ public static class S3mModule {
     return (pcm, pcm.Length / 4.0 / outputRate);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the estimate seconds operation.
   /// </summary>
 public static double? EstimateSeconds(byte[] blob) {

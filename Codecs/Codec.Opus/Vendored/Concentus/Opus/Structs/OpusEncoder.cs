@@ -163,7 +163,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Performs the reset state operation.
         /// </summary>
 public void ResetState()
@@ -2082,7 +2082,7 @@ public void ResetState()
         }
 
         /// <inheritdoc/>
-                /// <summary>
+        /// <summary>
         /// Gets the version string.
         /// </summary>
 public string GetVersionString()
@@ -2090,7 +2090,7 @@ public string GetVersionString()
             return CodecHelpers.GetVersionString();
         }
 
-                /// <summary>
+        /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
 public void Dispose() { }

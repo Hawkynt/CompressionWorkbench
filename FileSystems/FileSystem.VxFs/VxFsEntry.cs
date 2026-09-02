@@ -9,19 +9,19 @@ namespace FileSystem.VxFs;
 /// read-only pattern of HAMMER / AdvFS / VDFS descriptors.
 /// </summary>
 public sealed class VxFsEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the last modified.
   /// </summary>
 public DateTime? LastModified { get; init; }

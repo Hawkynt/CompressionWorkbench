@@ -13,7 +13,7 @@ public sealed class TtcReader {
   /// <summary>One sliced member font.</summary>
   public sealed record Member(int Index, string Extension, byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public List<Member> Read(ReadOnlySpan<byte> data) {

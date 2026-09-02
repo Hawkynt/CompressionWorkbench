@@ -8,56 +8,56 @@ namespace FileFormat.Iceberg;
 /// </summary>
 public sealed class IcebergReader {
 
-    /// <summary>
+  /// <summary>
   /// Gets the format version.
   /// </summary>
 public int FormatVersion { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the table uuid.
   /// </summary>
 public string TableUuid { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the location.
   /// </summary>
 public string Location { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the last updated ms.
   /// </summary>
 public long LastUpdatedMs { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the last column id.
   /// </summary>
 public int LastColumnId { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the current schema id.
   /// </summary>
 public int CurrentSchemaId { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the current snapshot id.
   /// </summary>
 public long CurrentSnapshotId { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the snapshot count.
   /// </summary>
 public int SnapshotCount { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the partition spec count.
   /// </summary>
 public int PartitionSpecCount { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the sort order count.
   /// </summary>
 public int SortOrderCount { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the schema columns.
   /// </summary>
 public IReadOnlyList<string> SchemaColumns { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the parse status.
   /// </summary>
 public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="IcebergReader"/>.
   /// </summary>
 public IcebergReader(Stream stream) {

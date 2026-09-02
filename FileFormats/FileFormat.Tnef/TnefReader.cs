@@ -10,7 +10,7 @@ namespace FileFormat.Tnef;
 /// </summary>
 public sealed class TnefReader : IDisposable {
   // TNEF signature: 0x223E9F78 (LE)
-    /// <summary>
+  /// <summary>
   /// Defines the tnef signature constant value.
   /// </summary>
 public const uint TnefSignature = 0x223E9F78;
@@ -27,16 +27,16 @@ public const uint TnefSignature = 0x223E9F78;
   private readonly byte[] _data;
   private readonly List<TnefEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<TnefEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets the key.
   /// </summary>
 public ushort Key { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="TnefReader"/>.
   /// </summary>
 public TnefReader(Stream stream, bool leaveOpen = false) {
@@ -112,7 +112,7 @@ public TnefReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(TnefEntry entry) {
@@ -120,7 +120,7 @@ public byte[] Extract(TnefEntry entry) {
     return entry.Data ?? [];
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

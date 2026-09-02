@@ -16,7 +16,7 @@ public sealed class DtsBitReader {
   private int _bytePos;
   private int _bitPos;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="DtsBitReader"/>.
   /// </summary>
 public DtsBitReader(byte[] data, int offset, int length) {

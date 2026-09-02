@@ -13,31 +13,31 @@ namespace FileFormat.Wem;
 /// </summary>
 public sealed class WemReader {
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the format tag.
   /// </summary>
 public int FormatTag { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the channels.
   /// </summary>
 public int Channels { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sample rate.
   /// </summary>
 public int SampleRate { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the bits per sample.
   /// </summary>
 public int BitsPerSample { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block align.
   /// </summary>
 public int BlockAlign { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the channel mask.
   /// </summary>
 public ulong ChannelMask { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data.
   /// </summary>
 public byte[] Data { get; private set; } = [];
@@ -46,7 +46,7 @@ public byte[] Data { get; private set; } = [];
   public IReadOnlyList<(string Id, byte[] Data)> ExtraChunks => this._extra;
   private readonly List<(string Id, byte[] Data)> _extra = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="WemReader"/>.
   /// </summary>
 public WemReader(ReadOnlySpan<byte> data) {

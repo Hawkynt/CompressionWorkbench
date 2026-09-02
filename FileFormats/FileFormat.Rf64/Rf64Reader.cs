@@ -12,7 +12,7 @@ namespace FileFormat.Rf64;
 /// 64-bit size lives in the <c>ds64</c> chunk".
 /// </summary>
 public sealed class Rf64Reader {
-    /// <summary>
+  /// <summary>
   /// Represents a parsed rf 64.
   /// </summary>
 public sealed record ParsedRf64(
@@ -26,7 +26,7 @@ public sealed record ParsedRf64(
 
   private const uint SizeSentinel = 0xFFFFFFFF;
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedRf64 Read(ReadOnlySpan<byte> data) {

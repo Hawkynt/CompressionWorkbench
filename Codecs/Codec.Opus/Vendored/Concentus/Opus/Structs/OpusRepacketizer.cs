@@ -44,7 +44,7 @@ using System.Text;
 
 namespace Concentus.Structs
 {
-        /// <summary>
+    /// <summary>
     /// Represents an opus repacketizer.
     /// </summary>
 public class OpusRepacketizer
@@ -72,7 +72,7 @@ public class OpusRepacketizer
   * @param rp <tt>OpusRepacketizer*</tt>: The repacketizer state to
   *                                       (re)initialize.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the reset operation.
         /// </summary>
 public void Reset()
@@ -173,7 +173,7 @@ public void Reset()
   *                              audio stored in the repacketizer state to more
   *                              than 120 ms.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the add packet operation.
         /// </summary>
 public int AddPacket(Span<byte> data, int data_offset, int len)
@@ -191,7 +191,7 @@ public int AddPacket(Span<byte> data, int data_offset, int len)
   * @returns The total number of frames contained in the packet data submitted
   *          to the repacketizer state.
   */
-                /// <summary>
+        /// <summary>
         /// Gets the num frames.
         /// </summary>
 public int GetNumFrames()
@@ -369,7 +369,7 @@ public int GetNumFrames()
   * @retval #OPUS_BUFFER_TOO_SMALL \a maxlen was insufficient to contain the
   *                                complete output packet.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the create packet operation.
         /// </summary>
 public int CreatePacket(int begin, int end, byte[] data, int data_offset, int maxlen)
@@ -406,7 +406,7 @@ public int CreatePacket(int begin, int end, byte[] data, int data_offset, int ma
   * @retval #OPUS_BUFFER_TOO_SMALL \a maxlen was insufficient to contain the
   *                                complete output packet.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the create packet operation.
         /// </summary>
 public int CreatePacket(byte[] data, int data_offset, int maxlen)
@@ -426,7 +426,7 @@ public int CreatePacket(byte[] data, int data_offset, int maxlen)
   * @retval #OPUS_BAD_ARG \a len was less than 1 or new_len was less than len.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the pad packet operation.
         /// </summary>
 public static int PadPacket(Span<byte> data, int data_offset, int len, int new_len)
@@ -462,7 +462,7 @@ public static int PadPacket(Span<byte> data, int data_offset, int len, int new_l
   * @retval #OPUS_BAD_ARG \a len was less than 1.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the unpad packet operation.
         /// </summary>
 public static int UnpadPacket(byte[] data, int data_offset, int len)
@@ -496,7 +496,7 @@ public static int UnpadPacket(byte[] data, int data_offset, int len)
   * @retval #OPUS_BAD_ARG \a len was less than 1.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the pad multistream packet operation.
         /// </summary>
 public static int PadMultistreamPacket(byte[] data, int data_offset, int len, int new_len, int nb_streams)
@@ -545,7 +545,7 @@ public static int PadMultistreamPacket(byte[] data, int data_offset, int len, in
   * @retval #OPUS_BAD_ARG \a len was less than 1 or new_len was less than len.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
-                /// <summary>
+        /// <summary>
         /// Performs the unpad multistream packet operation.
         /// </summary>
 public static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)

@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class CompandBlock
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="CompandBlock"/>.
     /// </summary>
 public CompandBlock(int[] data)
@@ -13,7 +13,7 @@ public CompandBlock(int[] data)
         Data = data;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the data.
     /// </summary>
 public int[] Data { get; }

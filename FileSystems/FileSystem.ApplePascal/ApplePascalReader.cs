@@ -37,23 +37,23 @@ namespace FileSystem.ApplePascal;
 /// </para>
 /// </summary>
 public sealed class ApplePascalReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the block size constant value.
   /// </summary>
 public const int BlockSize = 512;
-    /// <summary>
+  /// <summary>
   /// Defines the directory block constant value.
   /// </summary>
 public const int DirectoryBlock = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the directory offset constant value.
   /// </summary>
 public const int DirectoryOffset = DirectoryBlock * BlockSize;
-    /// <summary>
+  /// <summary>
   /// Defines the entry size constant value.
   /// </summary>
 public const int EntrySize = 26;
-    /// <summary>
+  /// <summary>
   /// Defines the max entries constant value.
   /// </summary>
 public const int MaxEntries = 77;
@@ -61,28 +61,28 @@ public const int MaxEntries = 77;
   private readonly byte[] _data;
   private readonly List<ApplePascalEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ApplePascalEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid volume.
   /// </summary>
 public bool ValidVolume { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
 public string VolumeName { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the total blocks.
   /// </summary>
 public int TotalBlocks { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the file count.
   /// </summary>
 public int FileCount { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ApplePascalReader"/>.
   /// </summary>
 public ApplePascalReader(Stream stream) {
@@ -161,7 +161,7 @@ public ApplePascalReader(Stream stream) {
     return baseName + ext;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ApplePascalEntry entry) {
@@ -172,7 +172,7 @@ public byte[] Extract(ApplePascalEntry entry) {
     return _data.AsSpan(offset, (int)entry.Size).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
 public byte[] BuildSurfaceMetadata() {
@@ -185,7 +185,7 @@ public byte[] BuildSurfaceMetadata() {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

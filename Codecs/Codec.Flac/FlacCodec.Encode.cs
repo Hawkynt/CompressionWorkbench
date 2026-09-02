@@ -8,31 +8,31 @@ namespace Codec.Flac;
 /// Specifies flac subframe mode values.
 /// </summary>
 public enum FlacSubframeMode {
-    /// <summary>
+  /// <summary>
   /// Selects the value automatically.
   /// </summary>
 Auto,
-    /// <summary>
+  /// <summary>
   /// Specifies the verbatim option.
   /// </summary>
 Verbatim,
-    /// <summary>
+  /// <summary>
   /// Specifies the fixed 0 option.
   /// </summary>
 Fixed0,
-    /// <summary>
+  /// <summary>
   /// Specifies the fixed 1 option.
   /// </summary>
 Fixed1,
-    /// <summary>
+  /// <summary>
   /// Specifies the fixed 2 option.
   /// </summary>
 Fixed2,
-    /// <summary>
+  /// <summary>
   /// Specifies the fixed 3 option.
   /// </summary>
 Fixed3,
-    /// <summary>
+  /// <summary>
   /// Specifies the fixed 4 option.
   /// </summary>
 Fixed4,
@@ -42,23 +42,23 @@ Fixed4,
 /// Specifies flac stereo mode values.
 /// </summary>
 public enum FlacStereoMode {
-    /// <summary>
+  /// <summary>
   /// Selects the value automatically.
   /// </summary>
 Auto,
-    /// <summary>
+  /// <summary>
   /// Specifies the independent option.
   /// </summary>
 Independent,
-    /// <summary>
+  /// <summary>
   /// Specifies the left side option.
   /// </summary>
 LeftSide,
-    /// <summary>
+  /// <summary>
   /// Specifies the right side option.
   /// </summary>
 RightSide,
-    /// <summary>
+  /// <summary>
   /// Specifies the mid side option.
   /// </summary>
 MidSide,
@@ -104,7 +104,7 @@ public static partial class FlacCodec {
     return output.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels,

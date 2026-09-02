@@ -28,7 +28,7 @@ public sealed class JfsReader : IDisposable {
   public int BlockSize => this._blockSize;
   private long _filesetInodeTableOffset;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<JfsEntry> Entries => _entries;
@@ -43,7 +43,7 @@ public IReadOnlyList<JfsEntry> Entries => _entries;
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._len;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="JfsReader"/>.
   /// </summary>
 public JfsReader(Stream stream, bool leaveOpen = true) {
@@ -273,7 +273,7 @@ public JfsReader(Stream stream, bool leaveOpen = true) {
     return sb.ToString();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(JfsEntry entry) {
@@ -390,7 +390,7 @@ public byte[] Extract(JfsEntry entry) {
     return written;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._img.Dispose();

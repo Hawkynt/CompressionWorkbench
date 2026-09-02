@@ -10,7 +10,7 @@ public class DrftLookup
     private readonly int[] _splitCache;
     private readonly float[] _trigCache;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="DrftLookup"/>.
     /// </summary>
 public DrftLookup(int n)
@@ -23,7 +23,7 @@ public DrftLookup(int n)
         Fdrffti(n);
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the n.
     /// </summary>
 public int N { get; }
@@ -115,7 +115,7 @@ public int N { get; }
         }
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the forward operation.
     /// </summary>
 public void Forward(float[] data)

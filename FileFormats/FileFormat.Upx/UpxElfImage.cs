@@ -60,7 +60,7 @@ public static class UpxElfImage {
   /// <summary>A PT_LOAD of the original (unpacked) image, in file-offset order.</summary>
   public sealed record LoadSegment(long FileOffset, long FileSize);
 
-    /// <summary>
+  /// <summary>
   /// Represents an image.
   /// </summary>
 public sealed record Image(

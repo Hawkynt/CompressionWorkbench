@@ -22,17 +22,17 @@ namespace FileFormat.EspsSd;
 /// </summary>
 public sealed class EspsSdReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the check offset constant value.
   /// </summary>
 public const int CheckOffset = 16;
-    /// <summary>
+  /// <summary>
   /// Defines the check code constant value.
   /// </summary>
 public const uint CheckCode = 0x00006A1A;
   private const int DefaultRate = 16000;
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed esps.
   /// </summary>
 public sealed record ParsedEsps(
@@ -42,7 +42,7 @@ public sealed record ParsedEsps(
     bool RateFromHeader,
     byte[] SampleData);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedEsps Read(ReadOnlySpan<byte> data) {

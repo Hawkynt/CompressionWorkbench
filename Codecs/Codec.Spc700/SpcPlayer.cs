@@ -15,7 +15,7 @@ namespace Codec.Spc700;
 /// </summary>
 public sealed class SpcPlayer {
 
-    /// <summary>
+  /// <summary>
   /// Defines the sample rate constant value.
   /// </summary>
 public const int SampleRate = 32000;

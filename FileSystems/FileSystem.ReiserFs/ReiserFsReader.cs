@@ -45,7 +45,7 @@ public sealed class ReiserFsReader : IDisposable {
 
   private readonly record struct DirEntry(string Name, uint PointedDirId, uint PointedObjId);
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ReiserFsEntry> Entries => _entries;
@@ -53,7 +53,7 @@ public IReadOnlyList<ReiserFsEntry> Entries => _entries;
   /// <summary>Volume label from the superblock <c>s_label</c> field (16 bytes, NUL-trimmed ASCII).</summary>
   public string Label { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ReiserFsReader"/>.
   /// </summary>
 public ReiserFsReader(Stream stream, bool leaveOpen = true) {
@@ -242,7 +242,7 @@ public ReiserFsReader(Stream stream, bool leaveOpen = true) {
     return (int)typeV2;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ReiserFsEntry entry) {
@@ -457,7 +457,7 @@ public byte[] Extract(ReiserFsEntry entry) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._img.Dispose();

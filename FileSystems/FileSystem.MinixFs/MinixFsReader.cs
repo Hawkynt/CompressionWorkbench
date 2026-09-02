@@ -13,7 +13,7 @@ public sealed class MinixFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<MinixFsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<MinixFsEntry> Entries => _entries;
@@ -46,7 +46,7 @@ public IReadOnlyList<MinixFsEntry> Entries => _entries;
   // V1 inode size (bytes)
   private const int V1InodeSize = 32;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MinixFsReader"/>.
   /// </summary>
 public MinixFsReader(Stream stream, bool leaveOpen = false) {
@@ -373,7 +373,7 @@ public MinixFsReader(Stream stream, bool leaveOpen = false) {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(MinixFsEntry entry) {
@@ -396,7 +396,7 @@ public byte[] Extract(MinixFsEntry entry) {
     return data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

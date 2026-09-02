@@ -35,32 +35,32 @@
 
 namespace Concentus.Enums
 {
-        /// <summary>
+    /// <summary>
     /// Specifies opus bandwidth values.
     /// </summary>
 public enum OpusBandwidth
     {
-                /// <summary>
+        /// <summary>
         /// Specifies the opus bandwidth auto option.
         /// </summary>
 OPUS_BANDWIDTH_AUTO = -1000, 
-                /// <summary>
+        /// <summary>
         /// Specifies the opus bandwidth narrowband option.
         /// </summary>
 OPUS_BANDWIDTH_NARROWBAND = 1101,
-                /// <summary>
+        /// <summary>
         /// Specifies the opus bandwidth mediumband option.
         /// </summary>
 OPUS_BANDWIDTH_MEDIUMBAND = 1102,
-                /// <summary>
+        /// <summary>
         /// Specifies the opus bandwidth wideband option.
         /// </summary>
 OPUS_BANDWIDTH_WIDEBAND = 1103,
-                /// <summary>
+        /// <summary>
         /// Specifies the opus bandwidth superwideband option.
         /// </summary>
 OPUS_BANDWIDTH_SUPERWIDEBAND = 1104,
-                /// <summary>
+        /// <summary>
         /// Specifies the opus bandwidth fullband option.
         /// </summary>
 OPUS_BANDWIDTH_FULLBAND = 1105

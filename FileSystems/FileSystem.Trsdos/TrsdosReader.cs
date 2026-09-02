@@ -31,19 +31,19 @@ namespace FileSystem.Trsdos;
 /// </para>
 /// </summary>
 public sealed class TrsdosReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 256;
-    /// <summary>
+  /// <summary>
   /// Defines the directory track constant value.
   /// </summary>
 public const int DirectoryTrack = 17;
-    /// <summary>
+  /// <summary>
   /// Defines the sectors per track default constant value.
   /// </summary>
 public const int SectorsPerTrackDefault = 18;
-    /// <summary>
+  /// <summary>
   /// Defines the directory entry size constant value.
   /// </summary>
 public const int DirectoryEntrySize = 32;
@@ -51,24 +51,24 @@ public const int DirectoryEntrySize = 32;
   private readonly byte[] _data;
   private readonly List<TrsdosEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<TrsdosEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid volume.
   /// </summary>
 public bool ValidVolume { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the directory track offset.
   /// </summary>
 public int DirectoryTrackOffset { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per track.
   /// </summary>
 public int SectorsPerTrack { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="TrsdosReader"/>.
   /// </summary>
 public TrsdosReader(Stream stream) {
@@ -146,7 +146,7 @@ public TrsdosReader(Stream stream) {
     return new string(chars[..len]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(TrsdosEntry entry) {
@@ -158,7 +158,7 @@ public byte[] Extract(TrsdosEntry entry) {
     return size <= 0 ? [] : _data.AsSpan(offset, size).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
 public byte[] BuildSurfaceMetadata() {
@@ -171,7 +171,7 @@ public byte[] BuildSurfaceMetadata() {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

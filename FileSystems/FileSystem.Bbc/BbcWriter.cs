@@ -20,34 +20,34 @@ namespace FileSystem.Bbc;
 /// </remarks>
 public sealed class BbcWriter {
 
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = BbcReader.SectorSize;        // 256
-    /// <summary>
+  /// <summary>
   /// Defines the sectors per track constant value.
   /// </summary>
 public const int SectorsPerTrack = BbcReader.SectorsPerTrack;  // 10
-    /// <summary>
+  /// <summary>
   /// Defines the default tracks constant value.
   /// </summary>
 public const int DefaultTracks = 40;
-    /// <summary>
+  /// <summary>
   /// Defines the total sectors 40 constant value.
   /// </summary>
 public const int TotalSectors40 = DefaultTracks * SectorsPerTrack;   // 400
-    /// <summary>
+  /// <summary>
   /// Defines the disk size 40 constant value.
   /// </summary>
 public const int DiskSize40 = TotalSectors40 * SectorSize;           // 102 400 (some tools call this 100 KB)
-    /// <summary>
+  /// <summary>
   /// Defines the max entries constant value.
   /// </summary>
 public const int MaxEntries = BbcReader.MaxEntries;        // 31
 
   private readonly List<(string Name, char Dir, byte[] Data, uint LoadAddr, uint ExecAddr, bool Locked)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data, char directory = '$', uint loadAddr = 0x1900, uint execAddr = 0x1900, bool locked = false)

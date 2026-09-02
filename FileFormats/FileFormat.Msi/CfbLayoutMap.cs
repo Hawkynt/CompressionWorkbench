@@ -15,7 +15,7 @@ public static class CfbLayoutMap {
   private const uint EndOfChain = 0xFFFFFFFE;
   private const uint FreeSect = 0xFFFFFFFF;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

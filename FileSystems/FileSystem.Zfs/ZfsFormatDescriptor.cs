@@ -60,15 +60,15 @@ public sealed class ZfsFormatDescriptor :
       description: "Total pool image size (at least 64 MB)."),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Zfs";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "ZFS";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
@@ -77,22 +77,22 @@ public FormatCategory Category => FormatCategory.Archive;
   // shapes the in-place adder does not handle; Remove is rebuild-based. CanModify is
   // advertised because the in-place add genuinely mutates the image without re-laying
   // untouched data (verified by ZfsReader round-trip + the CoW-offset proof).
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".zfs";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".zfs", ".zpool"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
@@ -100,26 +100,26 @@ public IReadOnlyList<string> CompoundExtensions => [];
   // VTOC pad. The uberblock array starts 128 KB in, and slot 0 begins with
   // UBERBLOCK_MAGIC (0x00bab10c, little-endian). Without this the detector has
   // nothing to go on and a pool image named ".img" falls through to FAT.
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x0C, 0xB1, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00],
       Offset: ZfsConstants.UberblockArrayOffset, Confidence: 0.9),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
@@ -127,21 +127,21 @@ public string Description =>
     "Fletcher-4 checksums, NV_BIG_ENDIAN XDR label, pool version 28.";
 
   // Write constraints.
-    /// <summary>
+  /// <summary>
   /// Gets the max total archive size.
   /// </summary>
 public long? MaxTotalArchiveSize => null;
-    /// <summary>
+  /// <summary>
   /// Gets the min total archive size.
   /// </summary>
 public long? MinTotalArchiveSize => 64L * 1024 * 1024; // 64 MB minimum image size.
-    /// <summary>
+  /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
 public string AcceptedInputsDescription =>
     "ZFS pool image (WORM); flat root directory, no subdirectories, up to 14 files.";
 
-    /// <summary>
+  /// <summary>
   /// Performs the can accept operation.
   /// </summary>
 public bool CanAccept(ArchiveInputInfo input, out string? reason) {
@@ -160,7 +160,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     return true;
   }
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -170,7 +170,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     )).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -185,7 +185,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -210,7 +210,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
     w.WriteTo(output, Math.Max(sizeBytes, needed));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -297,7 +297,7 @@ public void Defragment(Stream archive)
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive, DefragOptions options) {
@@ -354,7 +354,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   // in-place adder cannot do it falls back to the read-all/rebuild path the
   // defragmentor uses. Remove is rebuild-based.
 
-    /// <summary>
+  /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
 public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
@@ -374,7 +374,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ZfsModifier.AddOrReplace(archive, toAdd);
   }
 
-    /// <summary>
+  /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
 public void Remove(Stream archive, string[] entryNames) {

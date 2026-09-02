@@ -15,15 +15,15 @@ namespace FileFormat.Upx;
 /// Represents an upx executable packer handler.
 /// </summary>
 public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "upx";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "UPX-packed executable";
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -40,7 +40,7 @@ public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.SupportsArm32 |
     ExecutableUnpackCapabilities.SupportsArm64;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -59,7 +59,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
     }, diagnostics);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -78,7 +78,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
       });
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

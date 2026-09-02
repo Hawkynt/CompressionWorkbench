@@ -37,11 +37,11 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "mpress";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "MPRESS executable packer";
@@ -55,7 +55,7 @@ public string DisplayName => "MPRESS executable packer";
   /// <summary>The two parameter bytes are counted as part of the packed size.</summary>
   private const int ParameterSize = 2;
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -67,7 +67,7 @@ public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.SupportsX86 |
     ExecutableUnpackCapabilities.SupportsX64;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -89,7 +89,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
     ]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -108,7 +108,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
       });
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

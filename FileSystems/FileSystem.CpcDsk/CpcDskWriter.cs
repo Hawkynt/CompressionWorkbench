@@ -30,7 +30,7 @@ public sealed class CpcDskWriter : IDisposable {
   private readonly List<(string Name, byte[] Data)> _files = [];
   private bool _finished;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="CpcDskWriter"/>.
   /// </summary>
 public CpcDskWriter(Stream stream, bool leaveOpen = false,
@@ -49,7 +49,7 @@ public CpcDskWriter(Stream stream, bool leaveOpen = false,
   internal Geometry Layout => Geometry.Standard(this._tracks, this._sides,
     this._sectorsPerTrack, this._sectorSize);
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -152,7 +152,7 @@ public void AddFile(string name, byte[] data) {
     return code;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

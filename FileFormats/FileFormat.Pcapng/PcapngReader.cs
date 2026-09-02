@@ -12,33 +12,33 @@ namespace FileFormat.Pcapng;
 public sealed class PcapngReader {
 
   // Block type constants — pcapng §11.
-    /// <summary>
+  /// <summary>
   /// Defines the bt section header constant value.
   /// </summary>
 public const uint BtSectionHeader = 0x0A0D0D0Au;
-    /// <summary>
+  /// <summary>
   /// Defines the bt interface description constant value.
   /// </summary>
 public const uint BtInterfaceDescription = 0x00000001u;
-    /// <summary>
+  /// <summary>
   /// Defines the bt enhanced packet constant value.
   /// </summary>
 public const uint BtEnhancedPacket = 0x00000006u;
-    /// <summary>
+  /// <summary>
   /// Defines the bt simple packet constant value.
   /// </summary>
 public const uint BtSimplePacket = 0x00000003u;
-    /// <summary>
+  /// <summary>
   /// Defines the byte order magic constant value.
   /// </summary>
 public const uint ByteOrderMagic = 0x1A2B3C4Du;
 
-    /// <summary>
+  /// <summary>
   /// Represents an interface.
   /// </summary>
 public sealed record Interface(uint LinkType, uint Snaplen);
 
-    /// <summary>
+  /// <summary>
   /// Represents a packet.
   /// </summary>
 public sealed record Packet(int InterfaceId, ulong TimestampRaw, byte[] Data, uint OriginalLength) {
@@ -56,7 +56,7 @@ public sealed record Packet(int InterfaceId, ulong TimestampRaw, byte[] Data, ui
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents a capture.
   /// </summary>
 public sealed record Capture(
@@ -66,7 +66,7 @@ public sealed record Capture(
     IReadOnlyList<Interface> Interfaces,
     IReadOnlyList<Packet> Packets);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static Capture Read(ReadOnlySpan<byte> data) {

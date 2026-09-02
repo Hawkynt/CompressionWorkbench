@@ -10,7 +10,7 @@ using GroovyCodecs.Types;
 namespace GroovyCodecs.Mp3
 {
 
-        /// <summary>
+    /// <summary>
     /// Decodes mp 3 data.
     /// </summary>
 public class Mp3Decoder : IMp3Decoder
@@ -55,7 +55,7 @@ public class Mp3Decoder : IMp3Decoder
 
         private int wavsize;
 
-                /// <summary>
+        /// <summary>
         /// Initializes a new instance of <see cref="Mp3Decoder"/>.
         /// </summary>
 public Mp3Decoder(string mp3File)
@@ -158,7 +158,7 @@ public Mp3Decoder(string mp3File)
             Debug.Assert(gfp.num_channels >= 1 && gfp.num_channels <= 2);
         }
 
-                /// <summary>
+        /// <summary>
         /// Performs the decode operation.
         /// </summary>
 public virtual void decode(MemoryStream sampleBuffer, bool playOriginal)
@@ -188,7 +188,7 @@ public virtual void decode(MemoryStream sampleBuffer, bool playOriginal)
 
         }
 
-                /// <summary>
+        /// <summary>
         /// Performs the close operation.
         /// </summary>
 public virtual void close()

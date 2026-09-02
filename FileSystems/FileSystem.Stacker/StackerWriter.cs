@@ -18,15 +18,15 @@ public sealed class StackerWriter {
 
   private readonly List<(string name, byte[] data)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per cluster.
   /// </summary>
 public int SectorsPerCluster { get; init; } = 4;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the version.
   /// </summary>
 public int Version { get; init; } = 3;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the volume path.
   /// </summary>
 public string VolumePath { get; init; } = "C:\\STACVOL.DSK";
@@ -34,7 +34,7 @@ public string VolumePath { get; init; } = "C:\\STACVOL.DSK";
   /// <summary>When true, clusters are LZS-compressed if that shrinks them; else STORED.</summary>
   public bool Compress { get; init; } = true;
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -43,7 +43,7 @@ public void AddFile(string name, byte[] data) {
     this._files.Add((name.ToUpperInvariant(), data));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build() {

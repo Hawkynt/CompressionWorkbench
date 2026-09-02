@@ -88,16 +88,16 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "molebox";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "Molebox";
 
-    /// <summary>
+  /// <summary>
   /// Performs the is packer section operation.
   /// </summary>
 protected override bool IsPackerSection(string name) =>
@@ -105,12 +105,12 @@ protected override bool IsPackerSection(string name) =>
     name.Contains("mbx", StringComparison.OrdinalIgnoreCase) ||
     int.TryParse(name, out _);
 
-    /// <summary>
+  /// <summary>
   /// Gets the literal signature.
   /// </summary>
 protected override ReadOnlySpan<byte> LiteralSignature => "Molebox"u8;
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public override ExecutableUnpackCapabilities Capabilities =>
@@ -146,7 +146,7 @@ public override ExecutableUnpackCapabilities Capabilities =>
 
   private readonly record struct RecoveredSection(string Name, ExecutableRegion Region, byte[]? Data, string Method);
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) =>

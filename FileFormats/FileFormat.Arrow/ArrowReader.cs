@@ -37,7 +37,7 @@ public sealed class ArrowReader {
   /// <summary>"full" when the entire stream walked without errors, "partial" if any structural error was encountered partway through.</summary>
   public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ArrowReader"/>.
   /// </summary>
 public ArrowReader(Stream stream) {

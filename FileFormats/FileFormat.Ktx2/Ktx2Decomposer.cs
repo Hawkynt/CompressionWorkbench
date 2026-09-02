@@ -14,25 +14,25 @@ namespace FileFormat.Ktx2;
 /// </summary>
 public static class Ktx2Decomposer {
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry kinds.
   /// </summary>
 public static class EntryKinds {
-        /// <summary>
+    /// <summary>
     /// Defines the track constant value.
     /// </summary>
 public const string Track = "Track";
-        /// <summary>
+    /// <summary>
     /// Defines the tag constant value.
     /// </summary>
 public const string Tag = "Tag";
-        /// <summary>
+    /// <summary>
     /// Defines the frame constant value.
     /// </summary>
 public const string Frame = "Frame";
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry.
   /// </summary>
 public readonly record struct Entry(string Name, byte[] Data, string Kind);
@@ -44,7 +44,7 @@ public readonly record struct Entry(string Name, byte[] Data, string Kind);
   private static readonly string[] Supercompression =
     ["none", "BasisLZ", "Zstandard", "ZLIB"];
 
-    /// <summary>
+  /// <summary>
   /// Performs the decompose operation.
   /// </summary>
 public static List<Entry> Decompose(byte[] file) {

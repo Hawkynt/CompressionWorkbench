@@ -86,7 +86,7 @@ public sealed class PsfWriter : IDisposable {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

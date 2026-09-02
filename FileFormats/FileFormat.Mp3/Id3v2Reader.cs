@@ -11,7 +11,7 @@ namespace FileFormat.Mp3;
 /// the same layout and read correctly against this parser.
 /// </summary>
 public sealed class Id3v2Reader {
-    /// <summary>
+  /// <summary>
   /// Represents a frame.
   /// </summary>
 public sealed record Frame(string Id, string MimeType, string Description, byte[] Payload);

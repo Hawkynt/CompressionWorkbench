@@ -11,7 +11,7 @@ namespace FileFormat.Ampk;
 /// and LZH compressed data.
 /// </summary>
 public sealed class AmpkReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Provides the ampk magic value.
   /// </summary>
 public static readonly byte[] AmpkMagic = "AMPK"u8.ToArray();
@@ -19,12 +19,12 @@ public static readonly byte[] AmpkMagic = "AMPK"u8.ToArray();
   private readonly byte[] _data;
   private readonly List<AmpkEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<AmpkEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AmpkReader"/>.
   /// </summary>
 public AmpkReader(Stream stream, bool leaveOpen = false) {
@@ -75,7 +75,7 @@ public AmpkReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(AmpkEntry entry) {
@@ -95,7 +95,7 @@ public byte[] Extract(AmpkEntry entry) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

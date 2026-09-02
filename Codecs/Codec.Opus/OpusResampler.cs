@@ -25,15 +25,15 @@ public sealed class OpusResampler {
     this.Channels = channels;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the input rate.
   /// </summary>
 public int InputRate { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the output rate.
   /// </summary>
 public int OutputRate { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the channels.
   /// </summary>
 public int Channels { get; }

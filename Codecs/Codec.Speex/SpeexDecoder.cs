@@ -183,7 +183,7 @@ public sealed class SpeexDecoder {
   /// <summary>Frames carried per Ogg packet.</summary>
   public int FramesPerPacket => this._header.FramesPerPacket;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="SpeexDecoder"/>.
   /// </summary>
 public SpeexDecoder(SpeexHeader header) {

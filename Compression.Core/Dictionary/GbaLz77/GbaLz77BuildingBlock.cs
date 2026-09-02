@@ -54,26 +54,26 @@ namespace Compression.Core.Dictionary.GbaLz77;
 public sealed class GbaLz77BuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_GbaLz77";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Nintendo GBA/NDS LZ77 (type 0x10)";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
     "GBA/NDS BIOS LZSS (SWI 0x11) — flag-byte literals plus 4-bit length / 12-bit distance back-references";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
@@ -97,7 +97,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   private const int HashBits = 16;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {
@@ -146,7 +146,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) {

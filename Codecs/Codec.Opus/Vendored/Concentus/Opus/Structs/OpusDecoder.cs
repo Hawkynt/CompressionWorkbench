@@ -902,7 +902,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the final range.
         /// </summary>
 public uint FinalRange
@@ -995,7 +995,7 @@ public uint FinalRange
         }
 
         /// <inheritdoc/>
-                /// <summary>
+        /// <summary>
         /// Gets the version string.
         /// </summary>
 public string GetVersionString()
@@ -1004,7 +1004,7 @@ public string GetVersionString()
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
 public void Dispose() { }

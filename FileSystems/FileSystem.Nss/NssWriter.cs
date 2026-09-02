@@ -26,7 +26,7 @@ public sealed class NssWriter {
   /// <summary>The volume name written next to the volume anchor.</summary>
   public string VolumeName { get; init; } = "POOL1";
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {

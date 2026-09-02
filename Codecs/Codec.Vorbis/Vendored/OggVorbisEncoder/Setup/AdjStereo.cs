@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class AdjStereo
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="AdjStereo"/>.
     /// </summary>
 public AdjStereo(
@@ -20,19 +20,19 @@ public AdjStereo(
         LowPassKilohertz = lowPassKilohertz;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the pre.
     /// </summary>
 public int[] Pre { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the post.
     /// </summary>
 public int[] Post { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the kilohertz.
     /// </summary>
 public float[] Kilohertz { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the low pass kilohertz.
     /// </summary>
 public float[] LowPassKilohertz { get; }

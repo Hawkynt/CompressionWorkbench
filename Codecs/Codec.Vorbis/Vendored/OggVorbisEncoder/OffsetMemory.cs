@@ -9,7 +9,7 @@ public class OffsetMemory<T>
 {
     private readonly Memory<T> _memory;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="OffsetMemory"/>.
     /// </summary>
 public OffsetMemory(in Memory<T> memory, int offset)
@@ -18,12 +18,12 @@ public OffsetMemory(in Memory<T> memory, int offset)
         Offset = offset;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the offset.
     /// </summary>
 public int Offset { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the value at the specified index.
     /// </summary>
 public T this[int index]

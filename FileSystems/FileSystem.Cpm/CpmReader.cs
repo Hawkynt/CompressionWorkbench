@@ -11,7 +11,7 @@ namespace FileSystem.Cpm;
 /// </summary>
 public sealed class CpmReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a cpm file.
   /// </summary>
 public sealed record CpmFile(
@@ -24,19 +24,19 @@ public sealed record CpmFile(
     int RecordCount,
     byte[] Data
   ) {
-        /// <summary>
+    /// <summary>
     /// Gets the full name.
     /// </summary>
 public string FullName =>
       string.IsNullOrEmpty(this.Extension) ? this.Name : $"{this.Name}.{this.Extension}";
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents a volume.
   /// </summary>
 public sealed record Volume(IReadOnlyList<CpmFile> Files, byte[] Image);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static Volume Read(ReadOnlySpan<byte> image) {

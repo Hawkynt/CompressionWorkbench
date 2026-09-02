@@ -12,7 +12,7 @@ namespace FileSystem.Ti99;
 /// </summary>
 public static class Ti99ExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

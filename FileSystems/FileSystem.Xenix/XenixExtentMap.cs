@@ -15,7 +15,7 @@ namespace FileSystem.Xenix;
 /// </remarks>
 public static class XenixExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

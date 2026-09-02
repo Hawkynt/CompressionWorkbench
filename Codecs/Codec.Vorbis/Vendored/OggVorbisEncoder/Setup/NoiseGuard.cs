@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class NoiseGuard
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="NoiseGuard"/>.
     /// </summary>
 public NoiseGuard(int low, int high, int fix)
@@ -15,15 +15,15 @@ public NoiseGuard(int low, int high, int fix)
         Fixed = fix;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the low.
     /// </summary>
 public int Low { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the high.
     /// </summary>
 public int High { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the fixed.
     /// </summary>
 public int Fixed { get; }

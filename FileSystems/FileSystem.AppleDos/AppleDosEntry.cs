@@ -5,15 +5,15 @@ namespace FileSystem.AppleDos;
 /// Directory entry in an Apple DOS 3.3 disk image.
 /// </summary>
 public sealed class AppleDosEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory => false;

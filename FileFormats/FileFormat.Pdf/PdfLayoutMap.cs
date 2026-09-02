@@ -12,7 +12,7 @@ namespace FileFormat.Pdf;
 /// </summary>
 public static partial class PdfLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

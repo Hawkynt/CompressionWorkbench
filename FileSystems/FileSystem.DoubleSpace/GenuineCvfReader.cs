@@ -33,7 +33,7 @@ public sealed class GenuineCvfReader : IDisposable {
   private int _rootStart;
   private int _rootEntries;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<DoubleSpaceEntry> Entries => this._entries;
@@ -41,7 +41,7 @@ public IReadOnlyList<DoubleSpaceEntry> Entries => this._entries;
   /// <summary>The inner volume label (0x08 root entry), or "" when none was written.</summary>
   public string VolumeLabel { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GenuineCvfReader"/>.
   /// </summary>
 public GenuineCvfReader(Stream stream) {
@@ -109,7 +109,7 @@ public GenuineCvfReader(Stream stream) {
     return (cluster & 1) == 0 ? pair & 0xFFF : (pair >> 4) & 0xFFF;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(DoubleSpaceEntry entry) {
@@ -152,7 +152,7 @@ public byte[] Extract(DoubleSpaceEntry entry) {
     return output;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

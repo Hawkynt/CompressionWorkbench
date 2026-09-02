@@ -13,7 +13,7 @@ namespace FileFormat.Umx;
 public sealed class UmxWriter {
   private const uint UmxMagic = 0x9E2A83C1;
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output, byte[]? embeddedData = null) {

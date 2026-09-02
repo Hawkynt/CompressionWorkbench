@@ -32,7 +32,7 @@ public static class D71ExtentMap {
     17, 17, 17, 17, 17,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

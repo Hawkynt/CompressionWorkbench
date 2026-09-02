@@ -46,12 +46,12 @@ public sealed class Qnx4Reader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<Qnx4Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Qnx4Entry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Defines the block size constant value.
   /// </summary>
 public const int BlockSize = 512;
@@ -68,7 +68,7 @@ public const int BlockSize = 512;
   // File type bits in di_mode are standard UNIX (S_IFDIR = 0x4000).
   private const ushort SIfdir = 0x4000;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Qnx4Reader"/>.
   /// </summary>
 public Qnx4Reader(Stream stream) {
@@ -179,7 +179,7 @@ public Qnx4Reader(Stream stream) {
     this._data.CopyTo(offset, destination, Math.Min(entry.Size, this._data.Length - offset));
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Qnx4Entry entry) {
@@ -191,7 +191,7 @@ public byte[] Extract(Qnx4Entry entry) {
     return this._data.Read(offset, take);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

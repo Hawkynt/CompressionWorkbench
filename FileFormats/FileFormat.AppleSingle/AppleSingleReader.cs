@@ -13,21 +13,21 @@ namespace FileFormat.AppleSingle;
 /// </summary>
 public sealed class AppleSingleReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the magic single constant value.
   /// </summary>
 public const uint MagicSingle = 0x00051600;
-    /// <summary>
+  /// <summary>
   /// Defines the magic double constant value.
   /// </summary>
 public const uint MagicDouble = 0x00051607;
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry.
   /// </summary>
 public sealed record Entry(uint EntryId, string Name, byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Represents a container.
   /// </summary>
 public sealed record Container(
@@ -35,7 +35,7 @@ public sealed record Container(
     uint Version,
     IReadOnlyList<Entry> Entries);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static Container Read(ReadOnlySpan<byte> data) {

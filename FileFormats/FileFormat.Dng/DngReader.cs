@@ -12,77 +12,77 @@ namespace FileFormat.Dng;
 /// Also walks the EXIF sub-IFD (tag 0x8769) so the MakerNote (0x927C) is visible.
 /// </summary>
 public sealed class DngReader {
-    /// <summary>
+  /// <summary>
   /// Defines the tag sub if ds constant value.
   /// </summary>
 public const ushort TagSubIFDs = 0x014A;
-    /// <summary>
+  /// <summary>
   /// Defines the tag strip offsets constant value.
   /// </summary>
 public const ushort TagStripOffsets = 0x0111;
-    /// <summary>
+  /// <summary>
   /// Defines the tag strip byte counts constant value.
   /// </summary>
 public const ushort TagStripByteCounts = 0x0117;
-    /// <summary>
+  /// <summary>
   /// Defines the tag jpeg interchange format constant value.
   /// </summary>
 public const ushort TagJpegInterchangeFormat = 0x0201;
-    /// <summary>
+  /// <summary>
   /// Defines the tag jpeg interchange format length constant value.
   /// </summary>
 public const ushort TagJpegInterchangeFormatLength = 0x0202;
-    /// <summary>
+  /// <summary>
   /// Defines the tag compression constant value.
   /// </summary>
 public const ushort TagCompression = 0x0103;
-    /// <summary>
+  /// <summary>
   /// Defines the tag photometric interpretation constant value.
   /// </summary>
 public const ushort TagPhotometricInterpretation = 0x0106;
-    /// <summary>
+  /// <summary>
   /// Defines the tag new sub file type constant value.
   /// </summary>
 public const ushort TagNewSubFileType = 0x00FE;
-    /// <summary>
+  /// <summary>
   /// Defines the tag exif ifd constant value.
   /// </summary>
 public const ushort TagExifIfd = 0x8769;
-    /// <summary>
+  /// <summary>
   /// Defines the tag maker note constant value.
   /// </summary>
 public const ushort TagMakerNote = 0x927C;
-    /// <summary>
+  /// <summary>
   /// Defines the tag dng version constant value.
   /// </summary>
 public const ushort TagDngVersion = 0xC612;
 
-    /// <summary>
+  /// <summary>
   /// Represents an ifd.
   /// </summary>
 public sealed record Ifd(long Offset, IReadOnlyList<Entry> Entries);
-    /// <summary>
+  /// <summary>
   /// Represents an entry.
   /// </summary>
 public sealed record Entry(ushort Tag, ushort Type, uint Count, uint ValueOrOffset);
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is big endian.
   /// </summary>
 public bool IsBigEndian { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the top level ifds.
   /// </summary>
 public IReadOnlyList<Ifd> TopLevelIfds { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the sub ifds.
   /// </summary>
 public IReadOnlyList<Ifd> SubIfds { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the exif ifd.
   /// </summary>
 public Ifd? ExifIfd { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the raw.
   /// </summary>
 public byte[] Raw { get; }
@@ -91,7 +91,7 @@ public byte[] Raw { get; }
 
   private readonly byte[] _data;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="DngReader"/>.
   /// </summary>
 public DngReader(byte[] data) {
@@ -153,7 +153,7 @@ public DngReader(byte[] data) {
     return new Ifd(offset, entries);
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the values as u int 32 from the supplied input.
   /// </summary>
 public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) {
@@ -211,7 +211,7 @@ public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) {
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the bytes at from the supplied input.
   /// </summary>
 public byte[] ReadBytesAt(long offset, long length) {

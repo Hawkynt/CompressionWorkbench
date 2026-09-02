@@ -33,7 +33,7 @@ public sealed class GhostCrc16Cipher {
   private static ushort Update(ushort crc, byte b)
     => (ushort)((crc >> 8) ^ Table[(crc ^ b) & 0xFF]);
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GhostCrc16Cipher"/>.
   /// </summary>
 public GhostCrc16Cipher(string password) {

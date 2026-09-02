@@ -35,7 +35,7 @@ public sealed class VocReader {
 
   private static readonly byte[] Magic = "Creative Voice File"u8.ToArray();
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedVoc Read(ReadOnlySpan<byte> data) {

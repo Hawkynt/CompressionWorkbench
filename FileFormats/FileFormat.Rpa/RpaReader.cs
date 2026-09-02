@@ -16,28 +16,28 @@ public sealed class RpaReader {
   private readonly Stream _stream;
   private readonly List<RpaEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<RpaEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets the version.
   /// </summary>
 public string Version { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the index offset.
   /// </summary>
 public long IndexOffset { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the xor key.
   /// </summary>
 public uint XorKey { get; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether pickle parsed.
   /// </summary>
 public bool PickleParsed { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="RpaReader"/>.
   /// </summary>
 public RpaReader(Stream stream) {

@@ -87,16 +87,16 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class BeRoExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "beroexepacker";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "BeRoEXEPacker";
 
-    /// <summary>
+  /// <summary>
   /// Performs the is packer section operation.
   /// </summary>
 protected override bool IsPackerSection(string name) =>
@@ -104,12 +104,12 @@ protected override bool IsPackerSection(string name) =>
     name.Equals("gu_idata", StringComparison.Ordinal) ||
     name.Equals("gu_rsrc", StringComparison.Ordinal);
 
-    /// <summary>
+  /// <summary>
   /// Gets the literal signature.
   /// </summary>
 protected override ReadOnlySpan<byte> LiteralSignature => "BeRo"u8;
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public override ExecutableUnpackCapabilities Capabilities =>
@@ -141,7 +141,7 @@ public override ExecutableUnpackCapabilities Capabilities =>
     uint OriginalEntryPointRva,
     uint ImportDescriptorRva);
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) =>

@@ -78,7 +78,7 @@ public sealed class Sn76489Codec {
   private double _cycleAccumulator;
 
   /// <param name="clock">PSG input clock in Hz (e.g. 3579545 for the Mega Drive).</param>
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Sn76489Codec"/>.
   /// </summary>
 public Sn76489Codec(double clock = 3579545.0) {

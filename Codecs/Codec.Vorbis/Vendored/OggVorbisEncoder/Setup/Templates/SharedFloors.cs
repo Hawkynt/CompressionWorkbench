@@ -144,7 +144,7 @@ public static class SharedFloors
         new Line512X17_3Sub3()
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the floor books value.
     /// </summary>
 public static readonly IStaticCodeBook[][] FloorBooks =
@@ -161,7 +161,7 @@ public static readonly IStaticCodeBook[][] FloorBooks =
         Floor512X17Books
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the floor value.
     /// </summary>
 public static readonly Floor[] Floor =

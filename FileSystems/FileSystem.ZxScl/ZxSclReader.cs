@@ -21,11 +21,11 @@ namespace FileSystem.ZxScl;
 /// </remarks>
 public sealed class ZxSclReader : IDisposable {
 
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 256;
-    /// <summary>
+  /// <summary>
   /// Defines the header size constant value.
   /// </summary>
 public const int HeaderSize = 14;
@@ -38,12 +38,12 @@ public const int HeaderSize = 14;
   private readonly byte[] _data;
   private readonly List<ZxSclEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ZxSclEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ZxSclReader"/>.
   /// </summary>
 public ZxSclReader(Stream stream) {
@@ -54,7 +54,7 @@ public ZxSclReader(Stream stream) {
     Parse();
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ZxSclReader"/>.
   /// </summary>
 public ZxSclReader(byte[] data) {
@@ -120,7 +120,7 @@ public ZxSclReader(byte[] data) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ZxSclEntry entry) {
@@ -134,7 +134,7 @@ public byte[] Extract(ZxSclEntry entry) {
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

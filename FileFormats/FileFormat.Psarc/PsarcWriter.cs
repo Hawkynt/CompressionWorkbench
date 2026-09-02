@@ -185,7 +185,7 @@ public sealed class PsarcWriter : IDisposable {
     => name.Replace('\\', '/').TrimStart('/').ToLowerInvariant();
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

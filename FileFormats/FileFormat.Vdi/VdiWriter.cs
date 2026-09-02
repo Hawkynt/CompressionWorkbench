@@ -37,7 +37,7 @@ public sealed class VdiWriter : IDisposable {
   /// blocks; other values produce a readable-by-us image that external tools
   /// reject.
   /// </param>
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="VdiWriter"/>.
   /// </summary>
 public VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, uint blockSize = DefaultBlockSize) {
@@ -164,7 +164,7 @@ public VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, ui
     g.CopyTo(buf, offset);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

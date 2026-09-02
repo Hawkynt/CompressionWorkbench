@@ -89,7 +89,7 @@ public sealed class BtrfsBlockMover : IFilesystemBlockMover {
   /// <summary>Bytes an extent's address is aligned to, as the superblock says.</summary>
   private int _sectorSize = 4096;
 
-    /// <summary>
+  /// <summary>
   /// Performs the init operation.
   /// </summary>
 public void Init(Stream image) {
@@ -120,7 +120,7 @@ public void Init(Stream image) {
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -154,7 +154,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// initialises from the stream — callers may pass an uninitialised mover and
   /// it still works, mirroring the FAT/ext patterns.</para>
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {

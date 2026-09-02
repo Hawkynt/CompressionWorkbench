@@ -67,7 +67,7 @@ public sealed class UfsWriter {
   /// </summary>
   private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -172,7 +172,7 @@ public void AddFile(string name, byte[] data) {
     return root;
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

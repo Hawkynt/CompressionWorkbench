@@ -62,16 +62,16 @@ public sealed class Qnx6Reader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<Qnx6Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Qnx6Entry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the magic.
   /// </summary>
 public uint Magic { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block size.
   /// </summary>
 public int BlockSize { get; private set; } = 1024;
@@ -80,7 +80,7 @@ public int BlockSize { get; private set; } = 1024;
   internal const int SuperblockOffset = 0x2000;
   internal const int InodeSize = 128;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Qnx6Reader"/>.
   /// </summary>
 public Qnx6Reader(Stream stream) {
@@ -211,7 +211,7 @@ public Qnx6Reader(Stream stream) {
     return pointer;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Qnx6Entry entry) {
@@ -231,7 +231,7 @@ public byte[] Extract(Qnx6Entry entry) {
     return this._data.Read(blockOff, take).AsSpan().ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

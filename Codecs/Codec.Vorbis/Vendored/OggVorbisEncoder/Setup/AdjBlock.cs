@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class AdjBlock
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="AdjBlock"/>.
     /// </summary>
 public AdjBlock(int[] block)
@@ -13,7 +13,7 @@ public AdjBlock(int[] block)
         Block = block;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the block.
     /// </summary>
 public int[] Block { get; }

@@ -4,11 +4,11 @@ namespace Codec.Aac;
 
 /// <summary>AAC long-window shape.</summary>
 public enum AacEncoderWindowShape {
-    /// <summary>
+  /// <summary>
   /// Specifies the sine option.
   /// </summary>
 Sine = 0,
-    /// <summary>
+  /// <summary>
   /// Specifies the kbd option.
   /// </summary>
 Kbd = 1,
@@ -16,15 +16,15 @@ Kbd = 1,
 
 /// <summary>Stereo spectral coding mode for AAC channel-pair elements.</summary>
 public enum AacStereoCodingMode {
-    /// <summary>
+  /// <summary>
   /// Specifies the independent option.
   /// </summary>
 Independent,
-    /// <summary>
+  /// <summary>
   /// Specifies the mid side option.
   /// </summary>
 MidSide,
-    /// <summary>
+  /// <summary>
   /// Selects the value automatically.
   /// </summary>
 Auto,
@@ -51,11 +51,11 @@ public sealed record AacEncoderOptions(
 /// a monotonic global-gain search targets the requested average bits per 1024-sample frame.
 /// </summary>
 public static class AacEncoder {
-    /// <summary>
+  /// <summary>
   /// Defines the frame samples constant value.
   /// </summary>
 public const int FrameSamples = 1024;
-    /// <summary>
+  /// <summary>
   /// Defines the encoder delay samples constant value.
   /// </summary>
 public const int EncoderDelaySamples = 1024;

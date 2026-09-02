@@ -9,23 +9,23 @@ namespace FileSystem.MooseFs;
 /// servers — not in this image — so no path-tree entries are surfaced.
 /// </summary>
 public sealed class MooseFsEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the offset.
   /// </summary>
 public long Offset { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data.
   /// </summary>
 public byte[] Data { get; init; } = [];

@@ -16,16 +16,16 @@ public sealed class VpkReader {
   /// <summary>Gets the byte offset where embedded file data begins.</summary>
   public long DataOffset => _dataOffset;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<VpkEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets the version.
   /// </summary>
 public int Version => _version;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="VpkReader"/>.
   /// </summary>
 public VpkReader(Stream stream) {

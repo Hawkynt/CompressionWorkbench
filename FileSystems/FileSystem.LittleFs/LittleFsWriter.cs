@@ -25,7 +25,7 @@ public sealed class LittleFsWriter {
   private readonly uint _blockSize;
   private readonly DirNode _root = new(string.Empty);
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="LittleFsWriter"/>.
   /// </summary>
 public LittleFsWriter(uint blockSize = DefaultBlockSize) {
@@ -53,7 +53,7 @@ public LittleFsWriter(uint blockSize = DefaultBlockSize) {
     dir.Files[leaf] = data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build() {
@@ -62,7 +62,7 @@ public byte[] Build() {
     return ms.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

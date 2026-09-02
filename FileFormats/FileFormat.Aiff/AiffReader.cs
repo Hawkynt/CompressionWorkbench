@@ -17,7 +17,7 @@ namespace FileFormat.Aiff;
 /// </para>
 /// </summary>
 public sealed class AiffReader {
-    /// <summary>
+  /// <summary>
   /// Represents a parsed aiff.
   /// </summary>
 public sealed record ParsedAiff(
@@ -35,7 +35,7 @@ public sealed record ParsedAiff(
     byte[]? Id3,                     // ID3 chunk, null if absent
     IReadOnlyList<(string Id, byte[] Data)> OtherChunks);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedAiff Read(ReadOnlySpan<byte> data) {

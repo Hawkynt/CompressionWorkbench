@@ -19,7 +19,7 @@ public sealed class UdfReader : IDisposable {
   private long _partitionStart; // in sectors
   private int _blockSize = SectorSize;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<UdfEntry> Entries => _entries;
@@ -27,7 +27,7 @@ public IReadOnlyList<UdfEntry> Entries => _entries;
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._len;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="UdfReader"/>.
   /// </summary>
 public UdfReader(Stream stream, bool leaveOpen = false) {
@@ -298,7 +298,7 @@ public UdfReader(Stream stream, bool leaveOpen = false) {
     return ms.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(UdfEntry entry) {
@@ -322,7 +322,7 @@ public byte[] Extract(UdfEntry entry) {
     return take;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._img.Dispose();

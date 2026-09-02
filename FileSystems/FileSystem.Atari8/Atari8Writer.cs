@@ -28,7 +28,7 @@ public sealed class Atari8Writer {
   private const int AtrHeaderSize = Atari8Reader.AtrHeaderSize;        // 16
   private const int TotalSectors = 720;                                // SS/SD
   private const int DataSize = TotalSectors * SectorSize;              // 92 160
-    /// <summary>
+  /// <summary>
   /// Defines the image size constant value.
   /// </summary>
 public const int ImageSize = AtrHeaderSize + DataSize;               // 92 176
@@ -42,7 +42,7 @@ public const int ImageSize = AtrHeaderSize + DataSize;               // 92 176
 
   private readonly List<(string Name, byte[] Data)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) => this._files.Add((name, data));

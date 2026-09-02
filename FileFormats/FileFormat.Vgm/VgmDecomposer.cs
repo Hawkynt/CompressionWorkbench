@@ -16,21 +16,21 @@ namespace FileFormat.Vgm;
 /// </summary>
 public static class VgmDecomposer {
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry kinds.
   /// </summary>
 public static class EntryKinds {
-        /// <summary>
+    /// <summary>
     /// Defines the track constant value.
     /// </summary>
 public const string Track = "Track";
-        /// <summary>
+    /// <summary>
     /// Defines the tag constant value.
     /// </summary>
 public const string Tag = "Tag";
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry.
   /// </summary>
 public readonly record struct Entry(string Name, byte[] Data, string Kind);
@@ -50,7 +50,7 @@ public readonly record struct Entry(string Name, byte[] Data, string Kind);
     (0xE0, "GA20"),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Performs the decompose operation.
   /// </summary>
 public static List<Entry> Decompose(byte[] file) {

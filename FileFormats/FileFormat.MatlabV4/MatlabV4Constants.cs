@@ -13,75 +13,75 @@ public static class MatlabV4Constants {
   public const int MaxNameLength = 256;
 
   // M-digit (high digit of MOPT) — host machine endianness/format
-    /// <summary>
+  /// <summary>
   /// Defines the machine le constant value.
   /// </summary>
 public const uint MachineLE = 0;       // Intel little-endian
-    /// <summary>
+  /// <summary>
   /// Defines the machine be constant value.
   /// </summary>
 public const uint MachineBE = 1;       // Motorola/Sun big-endian
-    /// <summary>
+  /// <summary>
   /// Defines the machine vax d constant value.
   /// </summary>
 public const uint MachineVaxD = 2;     // VAX D-float
-    /// <summary>
+  /// <summary>
   /// Defines the machine vax g constant value.
   /// </summary>
 public const uint MachineVaxG = 3;     // VAX G-float
-    /// <summary>
+  /// <summary>
   /// Defines the machine cray constant value.
   /// </summary>
 public const uint MachineCray = 4;     // Cray
-    /// <summary>
+  /// <summary>
   /// Defines the max machine constant value.
   /// </summary>
 public const uint MaxMachine = 4;
 
   // P-digit — element precision
-    /// <summary>
+  /// <summary>
   /// Defines the precision double constant value.
   /// </summary>
 public const uint PrecisionDouble = 0; // 8 bytes
-    /// <summary>
+  /// <summary>
   /// Defines the precision single constant value.
   /// </summary>
 public const uint PrecisionSingle = 1; // 4 bytes
-    /// <summary>
+  /// <summary>
   /// Defines the precision int 32 constant value.
   /// </summary>
 public const uint PrecisionInt32 = 2;  // 4 bytes
-    /// <summary>
+  /// <summary>
   /// Defines the precision int 16 constant value.
   /// </summary>
 public const uint PrecisionInt16 = 3;  // 2 bytes
-    /// <summary>
+  /// <summary>
   /// Defines the precision u int 16 constant value.
   /// </summary>
 public const uint PrecisionUInt16 = 4; // 2 bytes
-    /// <summary>
+  /// <summary>
   /// Defines the precision u int 8 constant value.
   /// </summary>
 public const uint PrecisionUInt8 = 5;  // 1 byte
-    /// <summary>
+  /// <summary>
   /// Defines the max precision constant value.
   /// </summary>
 public const uint MaxPrecision = 5;
 
   // T-digit — matrix type
-    /// <summary>
+  /// <summary>
   /// Defines the type full numeric constant value.
   /// </summary>
 public const uint TypeFullNumeric = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the type text constant value.
   /// </summary>
 public const uint TypeText = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the type sparse constant value.
   /// </summary>
 public const uint TypeSparse = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the max type constant value.
   /// </summary>
 public const uint MaxType = 2;

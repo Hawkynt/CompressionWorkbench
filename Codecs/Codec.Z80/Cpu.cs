@@ -33,34 +33,34 @@ public sealed partial class Cpu {
   private readonly IBusZ80 _bus;
 
   // ── main register file ──────────────────────────────────────────────────────
-    /// <summary>
+  /// <summary>
   /// Provides the a and f and b and c and d and e and h and l value.
   /// </summary>
 public byte A, F, B, C, D, E, H, L;
   // alternate set
-    /// <summary>
+  /// <summary>
   /// Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value.
   /// </summary>
 public byte A2, F2, B2, C2, D2, E2, H2, L2;
   // index + special
-    /// <summary>
+  /// <summary>
   /// Provides the ix and iy and sp and pc value.
   /// </summary>
 public ushort IX, IY, SP, PC;
-    /// <summary>
+  /// <summary>
   /// Provides the i and r value.
   /// </summary>
 public byte I, R;
   // interrupt state
-    /// <summary>
+  /// <summary>
   /// Provides the iff 1 and iff 2 value.
   /// </summary>
 public bool IFF1, IFF2;
-    /// <summary>
+  /// <summary>
   /// Provides the interrupt mode value.
   /// </summary>
 public int InterruptMode; // 0, 1 or 2
-    /// <summary>
+  /// <summary>
   /// Provides the halted value.
   /// </summary>
 public bool Halted;
@@ -68,41 +68,41 @@ public bool Halted;
   /// <summary>Status-register flag bits (the F register layout).</summary>
   [Flags]
   public enum Flags : byte {
-        /// <summary>
+    /// <summary>
     /// Specifies the c option.
     /// </summary>
 C = 0x01,  // carry
-        /// <summary>
+    /// <summary>
     /// Specifies the n option.
     /// </summary>
 N = 0x02,  // add/subtract
-        /// <summary>
+    /// <summary>
     /// Specifies the pv option.
     /// </summary>
 PV = 0x04, // parity / overflow
-        /// <summary>
+    /// <summary>
     /// Specifies the x option.
     /// </summary>
 X = 0x08,  // undocumented (copy of result bit 3)
-        /// <summary>
+    /// <summary>
     /// Specifies the h option.
     /// </summary>
 H = 0x10,  // half-carry
-        /// <summary>
+    /// <summary>
     /// Specifies the y option.
     /// </summary>
 Y = 0x20,  // undocumented (copy of result bit 5)
-        /// <summary>
+    /// <summary>
     /// Specifies the z option.
     /// </summary>
 Z = 0x40,  // zero
-        /// <summary>
+    /// <summary>
     /// Specifies the s option.
     /// </summary>
 S = 0x80,  // sign
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Cpu"/>.
   /// </summary>
 public Cpu(IBusZ80 bus) {
@@ -125,19 +125,19 @@ public Cpu(IBusZ80 bus) {
   }
 
   // ── 16-bit register pair accessors ──────────────────────────────────────────
-    /// <summary>
+  /// <summary>
   /// Gets or sets the af.
   /// </summary>
 public ushort AF { get => (ushort)((this.A << 8) | this.F); set { this.A = (byte)(value >> 8); this.F = (byte)value; } }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the bc.
   /// </summary>
 public ushort BC { get => (ushort)((this.B << 8) | this.C); set { this.B = (byte)(value >> 8); this.C = (byte)value; } }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the de.
   /// </summary>
 public ushort DE { get => (ushort)((this.D << 8) | this.E); set { this.D = (byte)(value >> 8); this.E = (byte)value; } }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the hl.
   /// </summary>
 public ushort HL { get => (ushort)((this.H << 8) | this.L); set { this.H = (byte)(value >> 8); this.L = (byte)value; } }

@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class Att3
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="Att3"/>.
     /// </summary>
 public Att3(int[] att, float boost, float decay)
@@ -15,15 +15,15 @@ public Att3(int[] att, float boost, float decay)
         Decay = decay;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the att.
     /// </summary>
 public int[] Att { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the boost.
     /// </summary>
 public float Boost { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the decay.
     /// </summary>
 public float Decay { get; }

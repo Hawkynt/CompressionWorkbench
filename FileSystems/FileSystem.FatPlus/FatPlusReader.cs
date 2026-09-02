@@ -52,7 +52,7 @@ public sealed class FatPlusReader : IDisposable {
   private readonly bool _leaveOpen;
   private readonly List<FatPlusEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<FatPlusEntry> Entries => this._entries;
@@ -73,7 +73,7 @@ public IReadOnlyList<FatPlusEntry> Entries => this._entries;
   private int _rootCluster;
   private int _clusterBytes;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="FatPlusReader"/>.
   /// </summary>
 public FatPlusReader(Stream stream, bool leaveOpen = false) {
@@ -348,7 +348,7 @@ public FatPlusReader(Stream stream, bool leaveOpen = false) {
     _ => true
   };
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

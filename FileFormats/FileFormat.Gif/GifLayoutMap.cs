@@ -11,7 +11,7 @@ namespace FileFormat.Gif;
 /// </summary>
 public static class GifLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {

@@ -57,62 +57,62 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     new("VolumeLabel", "Volume label", FormatOptionKind.String, "",
       Description: "Up to 16 ASCII characters written into the superblock volume-label slot."),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Nilfs2";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "NILFS2";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".nilfs2";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".nilfs2", ".nilfs"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     // NILFS_SUPER_MAGIC == 0x3434, little-endian at superblock+6 == file offset 1030.
     new([0x34, 0x34], Offset: 1030, Confidence: 0.85),
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "NILFS2 continuous-snapshot log-structured filesystem — Create emits a kernel-mountable single-checkpoint image: a byte-accurate, CRC-valid superblock pair (primary at 1024 + backup before EOF, s_bytes=280, crc32_le-sealed s_sum, label at +0xA8) plus the full log (super root with DAT/cpfile/sufile inodes + CRC, segment summary with ss_sumsum/ss_datasum, ifile holding the root-dir inode, DAT table, flat root directory with the files). The real nilfs2 kernel driver mounts it and reads the files back (verified via the libguestfs appliance). Add/Replace/Remove append a fresh log segment at the tail and bump s_last_cno (spec-sanctioned in-place edit); prior segments stay byte-identical (continuous-snapshot invariant). The reader validates real mkfs.nilfs2 superblocks (checksum + dual-SB selection). Subdirectories / large files and multi-checkpoint snapshots remain out of scope.";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -121,7 +121,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -202,7 +202,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     Nilfs2InPlaceModifier.Remove(archive, entryNames);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive)
@@ -272,7 +272,7 @@ public void Defragment(Stream archive)
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive, DefragOptions options) {
@@ -341,7 +341,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   private static readonly int[] BlockCandidates = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the analyze layout operation.
   /// </summary>
 public LayoutAnalysis AnalyzeLayout(Stream image) {
@@ -371,7 +371,7 @@ public LayoutAnalysis AnalyzeLayout(Stream image) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the patch in place operation.
   /// </summary>
 public void PatchInPlace(Stream image, LayoutPatch patch) {
@@ -397,7 +397,7 @@ public void PatchInPlace(Stream image, LayoutPatch patch) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the rebuild streaming operation.
   /// </summary>
 public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
@@ -473,7 +473,7 @@ public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions 
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
 public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {

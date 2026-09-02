@@ -82,7 +82,7 @@ public sealed class ZipReader : IDisposable {
     return true;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
 public byte[] ExtractEntry(ZipEntry entry) {
@@ -217,7 +217,7 @@ public byte[] ExtractEntry(ZipEntry entry) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

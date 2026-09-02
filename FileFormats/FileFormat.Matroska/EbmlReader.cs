@@ -7,13 +7,13 @@ namespace FileFormat.Matroska;
 /// opaque bytes or a nested sequence of EBML elements depending on the schema.
 /// </summary>
 public sealed class EbmlReader {
-    /// <summary>
+  /// <summary>
   /// Represents an element.
   /// </summary>
 public readonly record struct Element(ulong Id, long BodyOffset, long BodyLength);
 
   private readonly byte[] _data;
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="EbmlReader"/>.
   /// </summary>
 public EbmlReader(byte[] data) { _data = data; }
@@ -52,12 +52,12 @@ public EbmlReader(byte[] data) { _data = data; }
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the body operation.
   /// </summary>
 public ReadOnlySpan<byte> Body(Element el) => _data.AsSpan((int)el.BodyOffset, (int)el.BodyLength);
 
-    /// <summary>
+  /// <summary>
   /// Reads the unsigned from the supplied input.
   /// </summary>
 public ulong ReadUnsigned(Element el) {
@@ -67,7 +67,7 @@ public ulong ReadUnsigned(Element el) {
     return v;
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the signed from the supplied input.
   /// </summary>
 public long ReadSigned(Element el) {
@@ -78,12 +78,12 @@ public long ReadSigned(Element el) {
     return v;
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the string from the supplied input.
   /// </summary>
 public string ReadString(Element el) => System.Text.Encoding.UTF8.GetString(Body(el)).TrimEnd('\0');
 
-    /// <summary>
+  /// <summary>
   /// Reads the binary from the supplied input.
   /// </summary>
 public byte[] ReadBinary(Element el) => Body(el).ToArray();

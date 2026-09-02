@@ -16,19 +16,19 @@ namespace FileSystem.ProDos;
 /// </remarks>
 public sealed class ProDosReader : IDisposable {
 
-    /// <summary>
+  /// <summary>
   /// Defines the block size constant value.
   /// </summary>
 public const int BlockSize = 512;
-    /// <summary>
+  /// <summary>
   /// Defines the volume dir start block constant value.
   /// </summary>
 public const int VolumeDirStartBlock = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the entries per block constant value.
   /// </summary>
 public const int EntriesPerBlock = 13;
-    /// <summary>
+  /// <summary>
   /// Defines the entry size constant value.
   /// </summary>
 public const int EntrySize = 39;
@@ -77,16 +77,16 @@ public const int EntrySize = 39;
   private readonly int _imageStart;  // Offset into _image where block 0 starts (0 for .po, 64 for .2mg).
   private readonly List<ProDosEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ProDosEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
 public string VolumeName { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ProDosReader"/>.
   /// </summary>
 public ProDosReader(Stream stream) {
@@ -98,7 +98,7 @@ public ProDosReader(Stream stream) {
     Parse();
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ProDosReader"/>.
   /// </summary>
 public ProDosReader(byte[] data) {
@@ -201,7 +201,7 @@ public ProDosReader(byte[] data) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ProDosEntry entry) {
@@ -268,7 +268,7 @@ public byte[] Extract(ProDosEntry entry) {
     src.Slice(0, count).CopyTo(dst.AsSpan(dstOffset, count));
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

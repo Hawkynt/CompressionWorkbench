@@ -38,7 +38,7 @@ public sealed class Ym2608Codec {
   private bool _adpcmBRequested;
 
   /// <param name="clock">Chip input clock in Hz (7987200 on the PC-88/98).</param>
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Ym2608Codec"/>.
   /// </summary>
 public Ym2608Codec(double clock = 7987200.0) {

@@ -10,32 +10,32 @@ namespace Compression.Core.Transforms;
 /// <summary>Exposes the x86 BCJ filter as a building block.</summary>
 public sealed class BcjX86BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjX86";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ x86";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "x86 branch/call/jump filter, converts relative CALL/JMP targets to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodeX86(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeX86(data);
@@ -44,32 +44,32 @@ public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeX86(data);
 /// <summary>Exposes the ARM BCJ filter as a building block.</summary>
 public sealed class BcjArmBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjArm";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ ARM";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "32-bit ARM branch/call/jump filter, converts relative BL targets to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodeArm(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeArm(data);
@@ -78,32 +78,32 @@ public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeArm(data);
 /// <summary>Exposes the ARM Thumb BCJ filter as a building block.</summary>
 public sealed class BcjArmThumbBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjArmThumb";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ ARM Thumb";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "ARM Thumb branch/call/jump filter, converts relative BL targets to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodeArmThumb(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeArmThumb(data);
@@ -112,32 +112,32 @@ public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeArmThumb(da
 /// <summary>Exposes the ARM64 (AArch64) BCJ filter as a building block.</summary>
 public sealed class BcjArm64BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjArm64";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ ARM64";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "ARM64/AArch64 branch/call/jump filter, converts relative BL and ADRP targets to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodeArm64(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeArm64(data);
@@ -146,32 +146,32 @@ public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeArm64(data)
 /// <summary>Exposes the PowerPC BCJ filter as a building block.</summary>
 public sealed class BcjPowerPcBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjPowerPc";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ PowerPC";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "PowerPC branch/call/jump filter, converts relative B/BL targets to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodePowerPC(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodePowerPC(data);
@@ -180,32 +180,32 @@ public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodePowerPC(dat
 /// <summary>Exposes the SPARC BCJ filter as a building block.</summary>
 public sealed class BcjSparcBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjSparc";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ SPARC";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "SPARC branch/call/jump filter, converts relative CALL targets to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodeSparc(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeSparc(data);
@@ -214,32 +214,32 @@ public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeSparc(data)
 /// <summary>Exposes the IA-64 (Itanium) BCJ filter as a building block.</summary>
 public sealed class BcjIa64BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjIa64";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ IA-64";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "IA-64 (Itanium) branch/call/jump filter, converts relative branch targets to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodeIA64(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeIA64(data);
@@ -248,32 +248,32 @@ public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeIA64(data);
 /// <summary>Exposes the RISC-V BCJ filter as a building block.</summary>
 public sealed class BcjRiscVBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_BcjRiscV";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "BCJ RISC-V";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "RISC-V branch/call/jump filter, converts JAL and AUIPC+inst2 pc-relative references to absolute";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Transform;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) => BcjFilter.EncodeRiscV(data);
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) => BcjFilter.DecodeRiscV(data);

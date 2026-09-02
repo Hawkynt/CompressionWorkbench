@@ -55,42 +55,42 @@ namespace FileFormat.Partclone;
 public sealed class PartcloneReader {
 
   // "partclone-image" — 15 ASCII bytes, no terminating NUL in the on-disk struct.
-    /// <summary>
+  /// <summary>
   /// Provides the magic value.
   /// </summary>
 public static readonly byte[] Magic = Encoding.ASCII.GetBytes("partclone-image");
-    /// <summary>
+  /// <summary>
   /// Defines the magic size constant value.
   /// </summary>
 public const int MagicSize = 15;
-    /// <summary>
+  /// <summary>
   /// Defines the fs magic size constant value.
   /// </summary>
 public const int FsMagicSize = 15;
-    /// <summary>
+  /// <summary>
   /// Defines the version size v 2 constant value.
   /// </summary>
 public const int VersionSizeV2 = 14;
-    /// <summary>
+  /// <summary>
   /// Defines the endian magic constant value.
   /// </summary>
 public const ushort EndianMagic = 0xC0DE;
 
   // Bitmap encoding modes from partclone's image.h.
-    /// <summary>
+  /// <summary>
   /// Defines the bm none constant value.
   /// </summary>
 public const int BmNone = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the bm bit constant value.
   /// </summary>
 public const int BmBit = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the bm byte constant value.
   /// </summary>
 public const int BmByte = 2;
 
-    /// <summary>
+  /// <summary>
   /// Represents a partclone image.
   /// </summary>
 public sealed record PartcloneImage(
@@ -111,12 +111,12 @@ public sealed record PartcloneImage(
   private readonly Stream _stream;
   private readonly PartcloneImage _info;
 
-    /// <summary>
+  /// <summary>
   /// Gets the info.
   /// </summary>
 public PartcloneImage Info => _info;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="PartcloneReader"/>.
   /// </summary>
 public PartcloneReader(Stream stream) {

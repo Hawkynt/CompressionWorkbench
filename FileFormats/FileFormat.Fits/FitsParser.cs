@@ -8,39 +8,39 @@ namespace FileFormat.Fits;
 /// One Header-Data Unit extracted from a FITS file.
 /// </summary>
 public sealed class FitsHdu {
-    /// <summary>
+  /// <summary>
   /// Gets the cards.
   /// </summary>
 public List<string> Cards { get; } = new();
-    /// <summary>
+  /// <summary>
   /// Gets or sets the xtension.
   /// </summary>
 public string? Xtension { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the bitpix.
   /// </summary>
 public int Bitpix { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the naxis.
   /// </summary>
 public int Naxis { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets the axis sizes.
   /// </summary>
 public List<long> AxisSizes { get; } = new();
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data offset.
   /// </summary>
 public long DataOffset { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data length.
   /// </summary>
 public long DataLength { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the object.
   /// </summary>
 public string? Object { get; set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the telescope.
   /// </summary>
 public string? Telescope { get; set; }

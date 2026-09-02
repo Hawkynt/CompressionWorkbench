@@ -12,7 +12,7 @@ public class PsyGlobalLookup
     private readonly PsyGlobal _psyGlobal;
     private float _ampMax;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="PsyGlobalLookup"/>.
     /// </summary>
 public PsyGlobalLookup(PsyGlobal global)
@@ -21,7 +21,7 @@ public PsyGlobalLookup(PsyGlobal global)
         AmpMax = NegativeInfinite;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the amp max.
     /// </summary>
 public float AmpMax
@@ -30,7 +30,7 @@ public float AmpMax
         private set { _ampMax = Math.Max(NegativeInfinite, value); }
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the decay amp max operation.
     /// </summary>
 public void DecayAmpMax(int n, int sampleRate)

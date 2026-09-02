@@ -15,12 +15,12 @@ public sealed class MinixV2Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<MinixV2Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<MinixV2Entry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the magic.
   /// </summary>
 public ushort Magic { get; private set; }
@@ -46,7 +46,7 @@ public ushort Magic { get; private set; }
       return (end + BlockSize - 1) / BlockSize * BlockSize;
     }
   }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name length.
   /// </summary>
 public int NameLength { get; private set; }
@@ -60,7 +60,7 @@ public int NameLength { get; private set; }
   private const ushort MagicV2_14 = 0x2468;
   private const ushort MagicV2_30 = 0x2478;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MinixV2Reader"/>.
   /// </summary>
 public MinixV2Reader(Stream stream) {
@@ -358,7 +358,7 @@ public MinixV2Reader(Stream stream) {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(MinixV2Entry entry) {
@@ -375,7 +375,7 @@ public byte[] Extract(MinixV2Entry entry) {
     return data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

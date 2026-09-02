@@ -9,28 +9,28 @@ namespace Compression.Core.Dictionary.Brotli;
 /// </summary>
 public sealed class BrotliBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Brotli";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Brotli";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Modern LZ77 and Huffman compression designed by Google (RFC 7932), with literal context modelling, distance ring-buffer reuse, cost-driven meta-block splitting and static dictionary references coded with the RFC's word transforms. Block-switch commands, distance context modelling and an optimal parse are not implemented, so output is smaller than a plain LZ77 and Huffman pass but still larger than the reference encoder at its highest quality.";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {
@@ -46,7 +46,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) {

@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Lookups;
 /// </summary>
 public struct Delta
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="Delta"/>.
     /// </summary>
 public Delta(
@@ -16,11 +16,11 @@ public Delta(
         Max = max;
     }
 
-        /// <summary>
+    /// <summary>
     /// Provides the min value.
     /// </summary>
 public float Min;
-        /// <summary>
+    /// <summary>
     /// Provides the max value.
     /// </summary>
 public float Max;

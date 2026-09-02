@@ -29,7 +29,7 @@ public sealed class Qcow2Writer {
 
   private byte[]? _diskData;
 
-    /// <summary>
+  /// <summary>
   /// Sets the disk image.
   /// </summary>
 public void SetDiskImage(byte[] data) {
@@ -37,7 +37,7 @@ public void SetDiskImage(byte[] data) {
     _diskData = data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

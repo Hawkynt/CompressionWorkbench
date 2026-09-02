@@ -25,20 +25,20 @@ public sealed class CpcDskReader {
   private readonly List<CpcDskEntry> _entries = [];
   private Geometry? _geometry;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<CpcDskEntry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is extended.
   /// </summary>
 public bool IsExtended { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the tracks.
   /// </summary>
 public int Tracks { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sides.
   /// </summary>
 public int Sides { get; private set; }
@@ -46,7 +46,7 @@ public int Sides { get; private set; }
   /// <summary>The disk's layout, once the header has been read.</summary>
   internal Geometry? Layout => this._geometry;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="CpcDskReader"/>.
   /// </summary>
 public CpcDskReader(Stream stream) {

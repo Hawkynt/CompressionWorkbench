@@ -34,25 +34,25 @@ namespace Compression.Core.Dictionary.Salvador;
 public sealed class SalvadorBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Salvador";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Salvador";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Emmanuel Marty's Salvador — ZX0-compatible LZ77 with inverted Elias-gamma offsets, for Amiga 4K/64K productions";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;

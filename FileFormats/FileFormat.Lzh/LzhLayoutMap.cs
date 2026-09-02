@@ -10,7 +10,7 @@ namespace FileFormat.Lzh;
 /// </summary>
 public static class LzhLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {

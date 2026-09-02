@@ -41,7 +41,7 @@ public sealed class CrunchStream : CompressionStream {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the decompress block operation.
   /// </summary>
 protected override int DecompressBlock(byte[] buffer, int offset, int count) {
@@ -65,7 +65,7 @@ protected override int DecompressBlock(byte[] buffer, int offset, int count) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the compress block operation.
   /// </summary>
 protected override void CompressBlock(byte[] buffer, int offset, int count) {
@@ -73,7 +73,7 @@ protected override void CompressBlock(byte[] buffer, int offset, int count) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the finish compression operation.
   /// </summary>
 protected override void FinishCompression() {

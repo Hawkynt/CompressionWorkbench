@@ -18,7 +18,7 @@ namespace FileFormat.SevenZip;
 public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -195,7 +195,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
 
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Enumerates the layout.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipLayoutMap.Enumerate(archive);
@@ -215,15 +215,15 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipL
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "SevenZip";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "7z";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
@@ -231,7 +231,7 @@ public FormatCategory Category => FormatCategory.Archive;
   // re-create rebuild (default IArchiveModifiable); 7z is solid-compressed, so the packed
   // streams are rewritten — moving data is acceptable for a read-write archive. See
   // FormatCapabilities.cs (WORM vs R/W).
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
@@ -239,43 +239,43 @@ public FormatCapabilities Capabilities =>
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".7z";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".7z"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'7', (byte)'z', 0xBC, 0xAF, 0x27, 0x1C], Confidence: 0.95)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [
     new("lzma2", "LZMA2"), new("lzma", "LZMA"), new("ppmd", "PPMd"),
     new("bzip2", "BZip2"), new("deflate", "Deflate"), new("copy", "Store")
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "7-Zip archive with LZMA2, high compression ratio";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -284,7 +284,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -428,7 +428,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
@@ -472,7 +472,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
       Level = ValidationLevel.Header, Issues = issues };
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateStructure(Stream stream) {
@@ -511,7 +511,7 @@ public ValidationResult ValidateStructure(Stream stream) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateIntegrity(Stream stream) {

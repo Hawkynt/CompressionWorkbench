@@ -10,23 +10,23 @@ namespace FileFormat.Avro;
 /// </summary>
 public sealed class AvroReader {
 
-    /// <summary>
+  /// <summary>
   /// Gets the schema.
   /// </summary>
 public string Schema { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the codec.
   /// </summary>
 public string Codec { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the sync marker.
   /// </summary>
 public byte[] SyncMarker { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the block count.
   /// </summary>
 public int BlockCount { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the record count.
   /// </summary>
 public long RecordCount { get; }
@@ -34,7 +34,7 @@ public long RecordCount { get; }
   /// <summary>"partial" if the file structure was walked successfully; "corrupt" if a block sync marker mismatched or a structural error was encountered partway through.</summary>
   public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AvroReader"/>.
   /// </summary>
 public AvroReader(Stream stream) {

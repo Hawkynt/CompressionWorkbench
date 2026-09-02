@@ -21,7 +21,7 @@ public sealed partial class PdfReader : IDisposable {
   private readonly Dictionary<int, ImageInfo> _images = [];
   private readonly Dictionary<int, AttachInfo> _attachments = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<PdfEntry> Entries => _entries;
@@ -33,7 +33,7 @@ public IReadOnlyList<PdfEntry> Entries => _entries;
   /// </summary>
   public IReadOnlyList<PdfEntry> PageEntries => _pages;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="PdfReader"/>.
   /// </summary>
 public PdfReader(Stream stream, bool leaveOpen = false) {
@@ -282,7 +282,7 @@ public PdfReader(Stream stream, bool leaveOpen = false) {
     return idx;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(PdfEntry entry) {
@@ -369,7 +369,7 @@ public byte[] Extract(PdfEntry entry) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

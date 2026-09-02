@@ -123,7 +123,7 @@ public sealed class ReiserFsWriter {
   /// </summary>
   public string Label { get; set; } = "worm";
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {

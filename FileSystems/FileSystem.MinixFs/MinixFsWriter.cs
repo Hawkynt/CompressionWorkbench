@@ -30,7 +30,7 @@ public sealed class MinixFsWriter : IDisposable {
   private const int SuperblockOff = 1024;
   private const int V3InodeSize = 64;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MinixFsWriter"/>.
   /// </summary>
 public MinixFsWriter(Stream output, bool leaveOpen = false) {
@@ -676,7 +676,7 @@ public MinixFsWriter(Stream output, bool leaveOpen = false) {
     data[bitmapOffset + bitIndex / 8] |= (byte)(1 << (bitIndex % 8));
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

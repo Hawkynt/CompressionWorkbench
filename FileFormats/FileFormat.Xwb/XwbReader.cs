@@ -17,7 +17,7 @@ namespace FileFormat.Xwb;
 /// </summary>
 public sealed class XwbReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a bank info.
   /// </summary>
 public sealed record BankInfo(
@@ -28,7 +28,7 @@ public sealed record BankInfo(
     int EntryNameElementSize,
     uint Alignment);
 
-    /// <summary>
+  /// <summary>
   /// Represents an entry info.
   /// </summary>
 public sealed record EntryInfo(
@@ -44,7 +44,7 @@ public sealed record EntryInfo(
     bool Decodable,
     short[]? Pcm);        // decoded PCM16 (interleaved); null when not decodable
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed xwb.
   /// </summary>
 public sealed record ParsedXwb(int Version, BankInfo Bank, IReadOnlyList<EntryInfo> Entries);
@@ -55,7 +55,7 @@ public sealed record ParsedXwb(int Version, BankInfo Bank, IReadOnlyList<EntryIn
   private const int SegEntryNames = 3;
   private const int SegEntryWaveData = 4;
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedXwb Read(ReadOnlySpan<byte> data) {

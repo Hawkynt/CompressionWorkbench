@@ -12,7 +12,7 @@ namespace FileSystem.Refs;
 public sealed class RefsBlockMover : IFilesystemBlockMover {
   private readonly int _clusterSize;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="RefsBlockMover"/>.
   /// </summary>
 public RefsBlockMover(Stream image) {
@@ -20,20 +20,20 @@ public RefsBlockMover(Stream image) {
     this._clusterSize = metadata.ClusterSize;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the allocation block size.
   /// </summary>
 public int AllocationBlockSize => this._clusterSize;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether supports scattered relink.
   /// </summary>
 public bool SupportsScatteredRelink => true;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether supports held runs.
   /// </summary>
 public bool SupportsHeldRuns => true;
 
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -42,7 +42,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
     if (zeroSource) Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, length);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -56,7 +56,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     this.UpdateAllocationScattered(image, fileName, oldBlocks, newBlocks, null);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation scattered operation.
   /// </summary>
 public void UpdateAllocationScattered(

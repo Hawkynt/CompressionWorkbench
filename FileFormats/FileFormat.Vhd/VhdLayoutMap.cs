@@ -11,7 +11,7 @@ namespace FileFormat.Vhd;
 /// </summary>
 public static class VhdLayoutMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {

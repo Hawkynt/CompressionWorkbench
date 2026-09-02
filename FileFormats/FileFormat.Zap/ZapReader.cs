@@ -9,7 +9,7 @@ namespace FileFormat.Zap;
 /// Magic: "ZAP\0" at offset 0.
 /// </summary>
 public sealed class ZapReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Provides the zap magic value.
   /// </summary>
 public static readonly byte[] ZapMagic = "ZAP\0"u8.ToArray();
@@ -18,12 +18,12 @@ public static readonly byte[] ZapMagic = "ZAP\0"u8.ToArray();
   private readonly byte[] _data;
   private readonly List<ZapEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ZapEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ZapReader"/>.
   /// </summary>
 public ZapReader(Stream stream, bool leaveOpen = false) {
@@ -66,7 +66,7 @@ public ZapReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(ZapEntry entry) {
@@ -138,7 +138,7 @@ public byte[] Extract(ZapEntry entry) {
     return output;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

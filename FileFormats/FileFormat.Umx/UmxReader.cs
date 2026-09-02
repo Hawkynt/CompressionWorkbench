@@ -9,19 +9,19 @@ namespace FileFormat.Umx;
 /// (S3M, IT, XM, MOD) from the Unreal Package container.
 /// </summary>
 public sealed class UmxReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the umx magic constant value.
   /// </summary>
 public const uint UmxMagic = 0x9E2A83C1;
   private readonly byte[] _data;
   private readonly List<UmxEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<UmxEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="UmxReader"/>.
   /// </summary>
 public UmxReader(Stream stream, bool leaveOpen = false) {
@@ -133,7 +133,7 @@ public UmxReader(Stream stream, bool leaveOpen = false) {
     return negative ? -value : value;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(UmxEntry entry) {
@@ -143,7 +143,7 @@ public byte[] Extract(UmxEntry entry) {
     return _data.AsSpan(entry.Offset, (int)entry.Size).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

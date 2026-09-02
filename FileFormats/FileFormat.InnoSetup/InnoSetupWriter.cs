@@ -13,7 +13,7 @@ namespace FileFormat.InnoSetup;
 /// requires bundling a signed PE stub which is out of scope.
 /// </summary>
 public sealed class InnoSetupWriter {
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output, byte[]? embeddedData = null) {

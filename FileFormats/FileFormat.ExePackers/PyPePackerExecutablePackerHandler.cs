@@ -11,16 +11,16 @@ namespace FileFormat.ExePackers;
 /// Represents a py pe packer executable packer handler.
 /// </summary>
 public sealed class PyPePackerExecutablePackerHandler : IExecutablePackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "pypepacker";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "PyPePacker Python PE wrapper";
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -30,7 +30,7 @@ public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanRebuildExecutable |
     ExecutableUnpackCapabilities.SupportsPe;
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -42,7 +42,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "PyPePacker zipapp payload was not found or could not be decoded.", true)]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -61,7 +61,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
       });
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {

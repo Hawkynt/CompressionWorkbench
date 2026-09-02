@@ -24,11 +24,11 @@ namespace FileFormat.ExePackers;
 /// honesty bar the UPX handler applies to its synthetic rebuild.
 /// </remarks>
 public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public abstract string Id { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public abstract string DisplayName { get; }
@@ -36,7 +36,7 @@ public abstract string DisplayName { get; }
   /// <summary>Display name of the packer as written into metadata (e.g. "FSG", "ASPack").</summary>
   protected abstract string PackerLabel { get; }
 
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public ExecutableUnpackCapabilities Capabilities =>
@@ -54,7 +54,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// </summary>
   protected abstract (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image);
 
-    /// <summary>
+  /// <summary>
   /// Performs the detect operation.
   /// </summary>
 public DetectionResult Detect(ReadOnlySpan<byte> image) {
@@ -66,7 +66,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, reason, true)]);
   }
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
@@ -85,7 +85,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
       });
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the unpack operation.
   /// </summary>
 public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
@@ -141,7 +141,7 @@ public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions option
 
   private readonly record struct Candidate(int Offset, int? ExpectedSize, byte[] Bytes);
 
-    /// <summary>
+  /// <summary>
   /// Represents a decoded.
   /// </summary>
 protected readonly record struct Decoded(int Offset, byte[] Compressed, byte[] Data);
@@ -274,7 +274,7 @@ protected readonly record struct Decoded(int Offset, byte[] Compressed, byte[] D
     name.Contains("pec", StringComparison.OrdinalIgnoreCase) ||
     name.Contains("fsg", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
+  /// <summary>
   /// Performs the build metadata json operation.
   /// </summary>
 protected byte[] BuildMetadataJson(PackedExecutable packed) {

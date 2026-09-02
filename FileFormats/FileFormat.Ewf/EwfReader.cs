@@ -31,25 +31,25 @@ namespace FileFormat.Ewf;
 /// </remarks>
 public sealed class EwfReader {
 
-    /// <summary>
+  /// <summary>
   /// Provides the evf signature value.
   /// </summary>
 public static readonly byte[] EvfSignature = [0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00]; // "EVF\t\r\n\xFF\x00"
-    /// <summary>
+  /// <summary>
   /// Provides the lvf signature value.
   /// </summary>
 public static readonly byte[] LvfSignature = [0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00]; // "LVF\t\r\n\xFF\x00"
 
-    /// <summary>
+  /// <summary>
   /// Defines the file header size constant value.
   /// </summary>
 public const int FileHeaderSize = 13;
-    /// <summary>
+  /// <summary>
   /// Defines the section descriptor size constant value.
   /// </summary>
 public const int SectionDescriptorSize = 76;
 
-    /// <summary>
+  /// <summary>
   /// Represents a section.
   /// </summary>
 public sealed record Section(
@@ -60,7 +60,7 @@ public sealed record Section(
     uint Checksum,
     byte[] Payload);
 
-    /// <summary>
+  /// <summary>
   /// Represents an ewf image.
   /// </summary>
 public sealed record EwfImage(
@@ -69,7 +69,7 @@ public sealed record EwfImage(
     List<Section> Sections,
     long TotalFileSize);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public static EwfImage Read(ReadOnlySpan<byte> data) {

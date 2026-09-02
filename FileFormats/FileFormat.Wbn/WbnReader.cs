@@ -30,7 +30,7 @@ public sealed class WbnReader {
   /// <summary>"full" when magic, version, and (for b2) primary URL plus index were all walked successfully. "partial" otherwise — never throws on structural mismatch.</summary>
   public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="WbnReader"/>.
   /// </summary>
 public WbnReader(Stream stream) {

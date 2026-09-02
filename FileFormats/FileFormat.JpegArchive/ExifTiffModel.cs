@@ -7,55 +7,55 @@ namespace FileFormat.JpegArchive;
 /// six-byte "Exif\0\0" marker) or a TIFF file.
 /// </summary>
 public enum TiffFieldType : ushort {
-    /// <summary>
+  /// <summary>
   /// Specifies the byte option.
   /// </summary>
 Byte = 1,
-    /// <summary>
+  /// <summary>
   /// Specifies the ascii option.
   /// </summary>
 Ascii = 2,
-    /// <summary>
+  /// <summary>
   /// Specifies the short option.
   /// </summary>
 Short = 3,
-    /// <summary>
+  /// <summary>
   /// Specifies the long option.
   /// </summary>
 Long = 4,
-    /// <summary>
+  /// <summary>
   /// Specifies the rational option.
   /// </summary>
 Rational = 5,
-    /// <summary>
+  /// <summary>
   /// Specifies the s byte option.
   /// </summary>
 SByte = 6,
-    /// <summary>
+  /// <summary>
   /// Specifies the undefined option.
   /// </summary>
 Undefined = 7,
-    /// <summary>
+  /// <summary>
   /// Specifies the s short option.
   /// </summary>
 SShort = 8,
-    /// <summary>
+  /// <summary>
   /// Specifies the s long option.
   /// </summary>
 SLong = 9,
-    /// <summary>
+  /// <summary>
   /// Specifies the s rational option.
   /// </summary>
 SRational = 10,
-    /// <summary>
+  /// <summary>
   /// Specifies the float option.
   /// </summary>
 Float = 11,
-    /// <summary>
+  /// <summary>
   /// Specifies the double option.
   /// </summary>
 Double = 12,
-    /// <summary>
+  /// <summary>
   /// Specifies the ifd option.
   /// </summary>
 Ifd = 13  // Used for sub-IFD pointers; same wire format as Long.
@@ -70,7 +70,7 @@ Ifd = 13  // Used for sub-IFD pointers; same wire format as Long.
 /// EXIF structure is that we preserve what we don't understand.
 /// </summary>
 public sealed record TiffEntry(ushort Tag, TiffFieldType Type, uint Count, byte[] ValueBytes) {
-    /// <summary>
+  /// <summary>
   /// Gets the value length.
   /// </summary>
 public int ValueLength => this.ValueBytes.Length;
@@ -82,11 +82,11 @@ public int ValueLength => this.ValueBytes.Length;
 /// the embedded thumbnail chain).
 /// </summary>
 public sealed class TiffIfd {
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public List<TiffEntry> Entries { get; } = new();
-    /// <summary>
+  /// <summary>
   /// Gets or sets the next.
   /// </summary>
 public TiffIfd? Next { get; set; }
@@ -98,7 +98,7 @@ public TiffIfd? Next { get; set; }
   /// </summary>
   public Dictionary<ushort, TiffIfd> SubIfds { get; } = new();
 
-    /// <summary>
+  /// <summary>
   /// Performs the find entry operation.
   /// </summary>
 public TiffEntry? FindEntry(ushort tag) => this.Entries.FirstOrDefault(e => e.Tag == tag);
@@ -110,7 +110,7 @@ public TiffEntry? FindEntry(ushort tag) => this.Entries.FirstOrDefault(e => e.Ta
     this.Entries.Sort((a, b) => a.Tag.CompareTo(b.Tag));
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the remove entry operation.
   /// </summary>
 public bool RemoveEntry(ushort tag) => this.Entries.RemoveAll(e => e.Tag == tag) > 0;
@@ -122,11 +122,11 @@ public bool RemoveEntry(ushort tag) => this.Entries.RemoveAll(e => e.Tag == tag)
 /// and GPS sub-IFDs off <see cref="TiffIfd.SubIfds"/>).
 /// </summary>
 public sealed class TiffImage {
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether little endian.
   /// </summary>
 public bool LittleEndian { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the ifd 0.
   /// </summary>
 public TiffIfd Ifd0 { get; init; } = new();
@@ -148,133 +148,133 @@ public TiffIfd Ifd0 { get; init; } = new();
 /// </summary>
 public static class TiffTags {
   // IFD1 (thumbnail) — same well-known tags as IFD0, plus the JPEG offset/length pair.
-    /// <summary>
+  /// <summary>
   /// Defines the compression constant value.
   /// </summary>
 public const ushort Compression = 0x0103;        // 6 = JPEG-compressed thumbnail
-    /// <summary>
+  /// <summary>
   /// Defines the jpeg interchange format constant value.
   /// </summary>
 public const ushort JpegInterchangeFormat       = 0x0201; // offset to thumbnail JPEG bytes
-    /// <summary>
+  /// <summary>
   /// Defines the jpeg interchange format length constant value.
   /// </summary>
 public const ushort JpegInterchangeFormatLength = 0x0202; // thumbnail JPEG length
 
   // IFD0 (main image).
-    /// <summary>
+  /// <summary>
   /// Defines the image description constant value.
   /// </summary>
 public const ushort ImageDescription = 0x010E;
-    /// <summary>
+  /// <summary>
   /// Defines the make constant value.
   /// </summary>
 public const ushort Make             = 0x010F;
-    /// <summary>
+  /// <summary>
   /// Defines the model constant value.
   /// </summary>
 public const ushort Model            = 0x0110;
-    /// <summary>
+  /// <summary>
   /// Defines the orientation constant value.
   /// </summary>
 public const ushort Orientation      = 0x0112;
-    /// <summary>
+  /// <summary>
   /// Defines the date time constant value.
   /// </summary>
 public const ushort DateTime         = 0x0132;
-    /// <summary>
+  /// <summary>
   /// Defines the software constant value.
   /// </summary>
 public const ushort Software         = 0x0131;
-    /// <summary>
+  /// <summary>
   /// Defines the artist constant value.
   /// </summary>
 public const ushort Artist           = 0x013B;
-    /// <summary>
+  /// <summary>
   /// Defines the copyright constant value.
   /// </summary>
 public const ushort Copyright        = 0x8298;
-    /// <summary>
+  /// <summary>
   /// Defines the exif sub ifd pointer constant value.
   /// </summary>
 public const ushort ExifSubIfdPointer = 0x8769;
-    /// <summary>
+  /// <summary>
   /// Defines the gps sub ifd pointer constant value.
   /// </summary>
 public const ushort GpsSubIfdPointer  = 0x8825;
 
   // EXIF sub-IFD.
-    /// <summary>
+  /// <summary>
   /// Defines the exposure time constant value.
   /// </summary>
 public const ushort ExposureTime    = 0x829A;
-    /// <summary>
+  /// <summary>
   /// Defines the f number constant value.
   /// </summary>
 public const ushort FNumber         = 0x829D;
-    /// <summary>
+  /// <summary>
   /// Defines the date time original constant value.
   /// </summary>
 public const ushort DateTimeOriginal  = 0x9003;
-    /// <summary>
+  /// <summary>
   /// Defines the date time digitized constant value.
   /// </summary>
 public const ushort DateTimeDigitized = 0x9004;
-    /// <summary>
+  /// <summary>
   /// Defines the user comment constant value.
   /// </summary>
 public const ushort UserComment     = 0x9286;
 
   // GPS sub-IFD.
-    /// <summary>
+  /// <summary>
   /// Defines the gps latitude ref constant value.
   /// </summary>
 public const ushort GpsLatitudeRef  = 0x0001;
-    /// <summary>
+  /// <summary>
   /// Defines the gps latitude constant value.
   /// </summary>
 public const ushort GpsLatitude     = 0x0002;
-    /// <summary>
+  /// <summary>
   /// Defines the gps longitude ref constant value.
   /// </summary>
 public const ushort GpsLongitudeRef = 0x0003;
-    /// <summary>
+  /// <summary>
   /// Defines the gps longitude constant value.
   /// </summary>
 public const ushort GpsLongitude    = 0x0004;
-    /// <summary>
+  /// <summary>
   /// Defines the gps altitude ref constant value.
   /// </summary>
 public const ushort GpsAltitudeRef  = 0x0005;
-    /// <summary>
+  /// <summary>
   /// Defines the gps altitude constant value.
   /// </summary>
 public const ushort GpsAltitude     = 0x0006;
-    /// <summary>
+  /// <summary>
   /// Defines the gps img direction ref constant value.
   /// </summary>
 public const ushort GpsImgDirectionRef = 0x0010;
-    /// <summary>
+  /// <summary>
   /// Defines the gps img direction constant value.
   /// </summary>
 public const ushort GpsImgDirection    = 0x0011;
-    /// <summary>
+  /// <summary>
   /// Defines the gps map datum constant value.
   /// </summary>
 public const ushort GpsMapDatum        = 0x0012;
-    /// <summary>
+  /// <summary>
   /// Defines the gps dest latitude ref constant value.
   /// </summary>
 public const ushort GpsDestLatitudeRef = 0x0013;
-    /// <summary>
+  /// <summary>
   /// Defines the gps dest latitude constant value.
   /// </summary>
 public const ushort GpsDestLatitude    = 0x0014;
-    /// <summary>
+  /// <summary>
   /// Defines the gps dest longitude ref constant value.
   /// </summary>
 public const ushort GpsDestLongitudeRef = 0x0015;
-    /// <summary>
+  /// <summary>
   /// Defines the gps dest longitude constant value.
   /// </summary>
 public const ushort GpsDestLongitude    = 0x0016;

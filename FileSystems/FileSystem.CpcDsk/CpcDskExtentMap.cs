@@ -23,7 +23,7 @@ namespace FileSystem.CpcDsk;
 /// </remarks>
 public static class CpcDskExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

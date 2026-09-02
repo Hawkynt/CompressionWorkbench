@@ -10,100 +10,100 @@ namespace Codec.TrackerXmIt;
 /// </summary>
 public sealed class ItModule {
 
-    /// <summary>
+  /// <summary>
   /// Provides the song name value.
   /// </summary>
 public string SongName = "";
-    /// <summary>
+  /// <summary>
   /// Provides the order count value.
   /// </summary>
 public int OrderCount;
-    /// <summary>
+  /// <summary>
   /// Provides the instrument count value.
   /// </summary>
 public int InstrumentCount;
-    /// <summary>
+  /// <summary>
   /// Provides the sample count value.
   /// </summary>
 public int SampleCount;
-    /// <summary>
+  /// <summary>
   /// Provides the pattern count value.
   /// </summary>
 public int PatternCount;
-    /// <summary>
+  /// <summary>
   /// Provides the flags value.
   /// </summary>
 public int Flags;
-    /// <summary>
+  /// <summary>
   /// Provides the special value.
   /// </summary>
 public int Special;
-    /// <summary>
+  /// <summary>
   /// Provides the global volume value.
   /// </summary>
 public int GlobalVolume = 128;
-    /// <summary>
+  /// <summary>
   /// Provides the mix volume value.
   /// </summary>
 public int MixVolume = 48;
-    /// <summary>
+  /// <summary>
   /// Provides the initial speed value.
   /// </summary>
 public int InitialSpeed = 6;
-    /// <summary>
+  /// <summary>
   /// Provides the initial tempo value.
   /// </summary>
 public int InitialTempo = 125;
-    /// <summary>
+  /// <summary>
   /// Provides the separation value.
   /// </summary>
 public int Separation = 128;
-    /// <summary>
+  /// <summary>
   /// Provides the instrument mode value.
   /// </summary>
 public bool InstrumentMode;     // flags bit 2 (0x04)
-    /// <summary>
+  /// <summary>
   /// Provides the linear slides value.
   /// </summary>
 public bool LinearSlides;       // flags bit 3 (0x08)
-    /// <summary>
+  /// <summary>
   /// Provides the old effects value.
   /// </summary>
 public bool OldEffects;         // flags bit 4 (0x10)
-    /// <summary>
+  /// <summary>
   /// Provides the link g effect value.
   /// </summary>
 public bool LinkGEffect;        // flags bit 5 (0x20)
-    /// <summary>
+  /// <summary>
   /// Provides the compatible version value.
   /// </summary>
 public int CompatibleVersion;   // cmwt
-    /// <summary>
+  /// <summary>
   /// Provides the order value.
   /// </summary>
 public byte[] Order = [];
-    /// <summary>
+  /// <summary>
   /// Provides the channel pan value.
   /// </summary>
 public byte[] ChannelPan = new byte[64];
-    /// <summary>
+  /// <summary>
   /// Provides the channel volume value.
   /// </summary>
 public byte[] ChannelVolume = new byte[64];
-    /// <summary>
+  /// <summary>
   /// Provides the instruments value.
   /// </summary>
 public ItInstrument[] Instruments = [];
-    /// <summary>
+  /// <summary>
   /// Provides the samples value.
   /// </summary>
 public ItSample[] Samples = [];
-    /// <summary>
+  /// <summary>
   /// Provides the patterns value.
   /// </summary>
 public ItPattern[] Patterns = [];
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public static ItModule Parse(byte[] blob) {
@@ -182,39 +182,39 @@ public static ItModule Parse(byte[] blob) {
 
 /// <summary>An IT envelope (volume, panning, or pitch/filter) with node ticks and y-values.</summary>
 public sealed class ItEnvelope {
-    /// <summary>
+  /// <summary>
   /// Provides the enabled value.
   /// </summary>
 public bool Enabled;
-    /// <summary>
+  /// <summary>
   /// Provides the loop value.
   /// </summary>
 public bool Loop;
-    /// <summary>
+  /// <summary>
   /// Provides the sustain value.
   /// </summary>
 public bool Sustain;
-    /// <summary>
+  /// <summary>
   /// Provides the is filter value.
   /// </summary>
 public bool IsFilter;       // pitch envelope flag 0x80 → acts as filter cutoff envelope
-    /// <summary>
+  /// <summary>
   /// Provides the loop start value.
   /// </summary>
 public int LoopStart;
-    /// <summary>
+  /// <summary>
   /// Provides the loop end value.
   /// </summary>
 public int LoopEnd;
-    /// <summary>
+  /// <summary>
   /// Provides the sustain start value.
   /// </summary>
 public int SustainStart;
-    /// <summary>
+  /// <summary>
   /// Provides the sustain end value.
   /// </summary>
 public int SustainEnd;
-    /// <summary>
+  /// <summary>
   /// Provides the nodes value.
   /// </summary>
 public (int Tick, int Y)[] Nodes = [];
@@ -222,76 +222,76 @@ public (int Tick, int Y)[] Nodes = [];
 
 /// <summary>A parsed IT instrument (new IMPI format; NNA, DCT/DCA, envelopes, sample map).</summary>
 public sealed class ItInstrument {
-    /// <summary>
+  /// <summary>
   /// Provides the name value.
   /// </summary>
 public string Name = "";
-    /// <summary>
+  /// <summary>
   /// Provides the new note action value.
   /// </summary>
 public int NewNoteAction;   // 0 cut, 1 continue, 2 off, 3 fade
-    /// <summary>
+  /// <summary>
   /// Provides the duplicate check type value.
   /// </summary>
 public int DuplicateCheckType;   // 0 off, 1 note, 2 sample, 3 instrument
-    /// <summary>
+  /// <summary>
   /// Provides the duplicate check action value.
   /// </summary>
 public int DuplicateCheckAction; // 0 cut, 1 off, 2 fade
-    /// <summary>
+  /// <summary>
   /// Provides the fadeout value.
   /// </summary>
 public int Fadeout;         // 0..128, applied >>? (ITTECH: /512 per tick scaled)
-    /// <summary>
+  /// <summary>
   /// Provides the global volume value.
   /// </summary>
 public int GlobalVolume = 128;
-    /// <summary>
+  /// <summary>
   /// Provides the default pan value.
   /// </summary>
 public int DefaultPan = 32; // 0..64, 32 = centre; bit7 = "don't use"
-    /// <summary>
+  /// <summary>
   /// Provides the use pan value.
   /// </summary>
 public bool UsePan;
-    /// <summary>
+  /// <summary>
   /// Provides the pitch pan separation value.
   /// </summary>
 public int PitchPanSeparation;
-    /// <summary>
+  /// <summary>
   /// Provides the pitch pan center value.
   /// </summary>
 public int PitchPanCenter = 60;
-    /// <summary>
+  /// <summary>
   /// Provides the note sample map value.
   /// </summary>
 public byte[] NoteSampleMap = new byte[120]; // note→ (note, sample) pairs flattened: sample index
-    /// <summary>
+  /// <summary>
   /// Provides the note map value.
   /// </summary>
 public byte[] NoteMap = new byte[120];       // note→ remapped note
-    /// <summary>
+  /// <summary>
   /// Provides the volume envelope value.
   /// </summary>
 public ItEnvelope VolumeEnvelope = new();
-    /// <summary>
+  /// <summary>
   /// Provides the panning envelope value.
   /// </summary>
 public ItEnvelope PanningEnvelope = new();
-    /// <summary>
+  /// <summary>
   /// Provides the pitch envelope value.
   /// </summary>
 public ItEnvelope PitchEnvelope = new();
-    /// <summary>
+  /// <summary>
   /// Provides the initial filter cutoff value.
   /// </summary>
 public int InitialFilterCutoff = -1;   // from IFC (bit7 set = enabled)
-    /// <summary>
+  /// <summary>
   /// Provides the initial filter resonance value.
   /// </summary>
 public int InitialFilterResonance = -1;
 
-    /// <summary>
+  /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
 public static ItInstrument Parse(byte[] blob, int off, int cmwt) {

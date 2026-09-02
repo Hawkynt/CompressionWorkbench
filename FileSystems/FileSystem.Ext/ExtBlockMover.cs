@@ -86,11 +86,11 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
       : (_blocksCount - _firstDataBlock + _blocksPerGroup - 1) / _blocksPerGroup;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the first data byte.
   /// </summary>
 public long FirstDataByte => (long)_firstDataBlock * _blockSize;
-    /// <summary>
+  /// <summary>
   /// Gets the block size.
   /// </summary>
 public int BlockSize => _blockSize;
@@ -126,7 +126,7 @@ public int BlockSize => _blockSize;
   private static string InodeTableName(uint group) => $"ext inode table (group {group})";
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update metadata after move operation.
   /// </summary>
 public void UpdateMetadataAfterMove(Stream image, string metadataName,
@@ -260,7 +260,7 @@ public void UpdateMetadataAfterMove(Stream image, string metadataName,
   // understood a fragmented owner goes through the rebuild, as it always did.
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -285,14 +285,14 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// Crash mid-3: file reachable via new pointers, old blocks still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,

@@ -238,7 +238,7 @@ public sealed class VppV2Writer : IDisposable {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

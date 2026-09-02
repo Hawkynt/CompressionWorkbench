@@ -31,7 +31,7 @@ public sealed class OpenVmsVolume : IDisposable {
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._accessor.Length;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="OpenVmsVolume"/>.
   /// </summary>
 public OpenVmsVolume(Stream image, bool leaveOpen = true) {
@@ -100,7 +100,7 @@ public OpenVmsVolume(Stream image, bool leaveOpen = true) {
     return entries;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._accessor.Dispose();

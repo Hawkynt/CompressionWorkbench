@@ -7,7 +7,7 @@ namespace OggVorbisEncoder;
 /// </summary>
 public static class FloatExtensions
 {
-        /// <summary>
+    /// <summary>
     /// Performs the to decibel operation.
     /// </summary>
 public static float ToDecibel(this float x)

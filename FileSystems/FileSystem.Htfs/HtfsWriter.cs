@@ -46,7 +46,7 @@ public sealed class HtfsWriter {
     _blockSize = blockSize;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {

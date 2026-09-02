@@ -14,7 +14,7 @@ public sealed class TapWriter : IDisposable {
   private readonly bool _leaveOpen;
   private readonly List<(string Name, byte[] Data, byte FileType)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="TapWriter"/>.
   /// </summary>
 public TapWriter(Stream output, bool leaveOpen = false) {
@@ -92,7 +92,7 @@ public TapWriter(Stream output, bool leaveOpen = false) {
     _output.Write(buf);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

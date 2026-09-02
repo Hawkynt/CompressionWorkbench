@@ -21,7 +21,7 @@ namespace FileSystem.Erofs;
 /// </para>
 /// </summary>
 public sealed class ErofsReader {
-    /// <summary>
+  /// <summary>
   /// Represents an entry.
   /// </summary>
 public sealed record Entry(string Path, long Size, bool IsDirectory, ulong Nid,
@@ -45,7 +45,7 @@ public sealed record Entry(string Path, long Size, bool IsDirectory, ulong Nid,
   private readonly List<Entry> _entries = [];
   private readonly HashSet<ulong> _visited = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Entry> Entries => this._entries;
@@ -61,7 +61,7 @@ public IReadOnlyList<Entry> Entries => this._entries;
     this.Parse();
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ErofsReader"/>.
   /// </summary>
 public ErofsReader(byte[] data) {

@@ -37,7 +37,7 @@ public sealed class JpegFrameSource : IFrameSource {
   private readonly byte[] _bytes;
   private RawImage? _cachedFrame;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="JpegFrameSource"/>.
   /// </summary>
 public JpegFrameSource(Stream stream) {
@@ -53,12 +53,12 @@ public JpegFrameSource(Stream stream) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the frame count.
   /// </summary>
 public int FrameCount => 1;
 
-    /// <summary>
+  /// <summary>
   /// Gets the metadata.
   /// </summary>
 public FrameMetadata GetMetadata(int frameIndex) {
@@ -66,7 +66,7 @@ public FrameMetadata GetMetadata(int frameIndex) {
     return JpegMetadataScanner.ScanBytes(_bytes);
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the frame.
   /// </summary>
 public RawImage GetFrame(int frameIndex) {

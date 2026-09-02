@@ -31,23 +31,23 @@ public static class StructuralArchiveHelper {
 
   /// <summary>Canonical <see cref="ArchiveEntryInfo.Kind"/> strings used here.</summary>
   public static class EntryKinds {
-        /// <summary>
+    /// <summary>
     /// Defines the track constant value.
     /// </summary>
 public const string Track = "Track";
-        /// <summary>
+    /// <summary>
     /// Defines the tag constant value.
     /// </summary>
 public const string Tag = "Tag";
-        /// <summary>
+    /// <summary>
     /// Defines the chunk constant value.
     /// </summary>
 public const string Chunk = "Chunk";
-        /// <summary>
+    /// <summary>
     /// Defines the frame constant value.
     /// </summary>
 public const string Frame = "Frame";
-        /// <summary>
+    /// <summary>
     /// Defines the sample constant value.
     /// </summary>
 public const string Sample = "Sample";

@@ -14,56 +14,56 @@ namespace FileFormat.PngCrushAdapters;
 /// </list>
 /// </summary>
 public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Tiff";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "TIFF (multi-page)";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".tif";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".tif", ".tiff"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x49, 0x49, 0x2A, 0x00], Confidence: 0.85), // little-endian TIFF
     new([0x4D, 0x4D, 0x00, 0x2A], Confidence: 0.85), // big-endian TIFF
   ];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
@@ -71,21 +71,21 @@ public string Description =>
     "(byte-order, page count) + one self-contained single-page TIFF per IFD " +
     "(pages/page_NNN.tif) with strip/tile data re-based into each page.";
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     StructuralArchiveHelper.ToArchiveEntries(
       StructuralArchiveHelper.DecomposeTiff(StructuralArchiveHelper.ReadAllBytes(stream)));
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     StructuralArchiveExtract.Extract(
       StructuralArchiveHelper.DecomposeTiff(StructuralArchiveHelper.ReadAllBytes(stream)), outputDir, files);
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
 public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
@@ -93,7 +93,7 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
       StructuralArchiveHelper.DecomposeTiff(StructuralArchiveHelper.ReadAllBytes(input)), entryName, output);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Enumerates the chunks.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => TiffLayoutMap.Enumerate(file);

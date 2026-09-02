@@ -28,13 +28,13 @@ public sealed class ZxSclWriter {
 
   private readonly List<(string Name, char Type, ushort Param1, ushort Param2, byte[] Data)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data, char fileType = 'C', ushort param1 = 0x8000, ushort param2 = 0)
     => this._files.Add((name, fileType, param1, param2 == 0 ? (ushort)data.Length : param2, data));
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build() {

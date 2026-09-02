@@ -6,27 +6,27 @@ namespace FileFormat.Pdf;
 /// file attachment, or a synthesised single-page slice.
 /// </summary>
 public sealed class PdfEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the object number.
   /// </summary>
 public int ObjectNumber { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the filter.
   /// </summary>
 public string Filter { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the width.
   /// </summary>
 public int Width { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the height.
   /// </summary>
 public int Height { get; init; }

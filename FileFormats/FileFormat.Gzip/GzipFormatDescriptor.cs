@@ -10,53 +10,53 @@ namespace FileFormat.Gzip;
 /// Describes gzip format.
 /// </summary>
 public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Gzip";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "GZIP";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Stream;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".gz";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".gz", ".gzip"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
-    /// <summary>
+  /// <summary>
   /// Gets the magic signatures.
   /// </summary>
 public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x1F, 0x8B], Confidence: 0.80)];
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate", SupportsOptimize: true)];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "Deflate with CRC32, the ubiquitous HTTP/file compression standard";
@@ -85,7 +85,7 @@ public string Description => "Deflate with CRC32, the ubiquitous HTTP/file compr
   /// both, <see cref="DeflateCompressionLevel.Default"/>.</summary>
   internal static DeflateCompressionLevel ParseLevel(FormatCreateOptions options) => DeflateLevelOption.Parse(options);
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Decompress(Stream input, Stream output) {
@@ -93,7 +93,7 @@ public void Decompress(Stream input, Stream output) {
     ds.CopyTo(output);
   }
 
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public void Compress(Stream input, Stream output) {
@@ -101,7 +101,7 @@ public void Compress(Stream input, Stream output) {
     input.CopyTo(cs);
   }
 
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public void Compress(Stream input, Stream output, FormatCreateOptions options) {
@@ -110,7 +110,7 @@ public void Compress(Stream input, Stream output, FormatCreateOptions options) {
     input.CopyTo(cs);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the compress optimal operation.
   /// </summary>
 public void CompressOptimal(Stream input, Stream output) {
@@ -119,13 +119,13 @@ public void CompressOptimal(Stream input, Stream output) {
     input.CopyTo(cs);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the wrap decompress operation.
   /// </summary>
 public Stream? WrapDecompress(Stream input) =>
     new GzipStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
 
-    /// <summary>
+  /// <summary>
   /// Performs the wrap compress operation.
   /// </summary>
 public Stream? WrapCompress(Stream output) =>
@@ -133,7 +133,7 @@ public Stream? WrapCompress(Stream output) =>
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
@@ -172,7 +172,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
       Level = ValidationLevel.Header, Issues = issues };
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateStructure(Stream stream) {
@@ -198,7 +198,7 @@ public ValidationResult ValidateStructure(Stream stream) {
       Level = ValidationLevel.Structure, Issues = issues };
   }
 
-    /// <summary>
+  /// <summary>
   /// Validates the supplied data.
   /// </summary>
 public ValidationResult ValidateIntegrity(Stream stream) {

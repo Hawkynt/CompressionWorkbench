@@ -106,7 +106,7 @@ public sealed class MooseFsReader : IDisposable {
   /// </summary>
   public string ParseStatus { get; private set; } = "unsupported-header";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MooseFsReader"/>.
   /// </summary>
 public MooseFsReader(Stream stream) {
@@ -298,7 +298,7 @@ public MooseFsReader(Stream stream) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

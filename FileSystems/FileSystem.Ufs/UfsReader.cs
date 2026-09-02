@@ -37,7 +37,7 @@ public sealed class UfsReader : IDisposable {
   private int _fsbtodb;        // log2(fs_fsize/DEV_BSIZE)
   private int _inodesPerBlock; // fs_inopb
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<UfsEntry> Entries => _entries;
@@ -54,7 +54,7 @@ public IReadOnlyList<UfsEntry> Entries => _entries;
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="UfsReader"/>.
   /// </summary>
 public UfsReader(Stream stream, bool leaveOpen = true) {
@@ -256,7 +256,7 @@ public UfsReader(Stream stream, bool leaveOpen = true) {
     return Encoding.ASCII.GetString(data, 0, n);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(UfsEntry entry) {
@@ -286,7 +286,7 @@ public byte[] Extract(UfsEntry entry) {
     return this.WriteInodeData(InodeOffset(entry.Inode), destination);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._img.Dispose();

@@ -24,12 +24,12 @@ public sealed class ApfsReader : IDisposable {
   /// <summary>Container block size from the superblock.</summary>
   public uint BlockSize => this._blockSize;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<ApfsEntry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ApfsReader"/>.
   /// </summary>
 public ApfsReader(Stream stream, bool leaveOpen = false) {
@@ -447,7 +447,7 @@ public ApfsReader(Stream stream, bool leaveOpen = false) {
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

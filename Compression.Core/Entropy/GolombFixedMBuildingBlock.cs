@@ -31,26 +31,26 @@ namespace Compression.Core.Entropy;
 public sealed class GolombFixedMBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_GolombFixedM";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Golomb/Rice (fixed M=2)";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
     "Golomb/Rice with a constant parameter M=2 and a varint element count — Rice k=1 for zero-heavy residuals";
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Entropy;
@@ -59,14 +59,14 @@ public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   private const int Parameter = 2;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data)
     => GolombBuildingBlock.Compress(data, GolombProfile.FixedParameter, Parameter);
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data)

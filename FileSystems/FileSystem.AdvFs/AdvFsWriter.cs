@@ -59,7 +59,7 @@ public sealed class AdvFsWriter : IDisposable {
   private readonly List<(string Name, FilePayload Payload)> _files = [];
   private string _volumeTag = "";
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AdvFsWriter"/>.
   /// </summary>
 public AdvFsWriter(Stream output, bool leaveOpen = false) {
@@ -251,7 +251,7 @@ public AdvFsWriter(Stream output, bool leaveOpen = false) {
     return uuid;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

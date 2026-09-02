@@ -6,7 +6,7 @@
 
 namespace GroovyCodecs.Types
 {
-        /// <summary>
+    /// <summary>
     /// Represents a mp 3 version.
     /// </summary>
 public class Mp3Version

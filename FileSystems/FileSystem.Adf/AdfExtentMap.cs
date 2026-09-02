@@ -37,7 +37,7 @@ public static class AdfExtentMap {
   private const int SecTypeWordOff = 508;
   private const int BitmapPagesOffset = 318; // root: 25 bitmap-block pointers
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

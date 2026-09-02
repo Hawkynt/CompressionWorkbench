@@ -16,7 +16,7 @@ namespace FileFormat.Swav;
 /// </summary>
 public sealed class SwavReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed swav.
   /// </summary>
 public sealed record ParsedSwav(

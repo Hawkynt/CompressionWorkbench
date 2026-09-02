@@ -25,7 +25,7 @@ public sealed class ElfReader {
   private const int ShtSymtab = 2;
   private const int ShtDynsym = 11;
 
-    /// <summary>
+  /// <summary>
   /// Reads the all from the supplied input.
   /// </summary>
 public List<Entry> ReadAll(Stream stream) {

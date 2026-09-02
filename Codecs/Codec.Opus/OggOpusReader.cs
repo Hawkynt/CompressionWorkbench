@@ -39,12 +39,12 @@ public sealed class OggOpusReader {
   private OpusHeadPacket? _head;
   private bool _readHead;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="OggOpusReader"/>.
   /// </summary>
 public OggOpusReader(Stream stream) => this._stream = stream;
 
-    /// <summary>
+  /// <summary>
   /// Reads the head from the supplied input.
   /// </summary>
 public OpusHeadPacket ReadHead() {
@@ -89,7 +89,7 @@ public OpusHeadPacket ReadHead() {
     return this._head;
   }
 
-    /// <summary>
+  /// <summary>
   /// Attempts to read the tags from the supplied input.
   /// </summary>
 public OpusTagsPacket? TryReadTags() {
@@ -129,7 +129,7 @@ public OpusTagsPacket? TryReadTags() {
     return new OpusTagsPacket(vendor, comments);
   }
 
-    /// <summary>
+  /// <summary>
   /// Attempts to read the packet from the supplied input.
   /// </summary>
 public bool TryReadPacket(out byte[] packet) {

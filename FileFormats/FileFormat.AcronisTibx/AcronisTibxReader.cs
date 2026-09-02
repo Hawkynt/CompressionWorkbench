@@ -208,7 +208,7 @@ public sealed class AcronisTibxReader : IDisposable {
     int ScannedItemNameCount
   );
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<AcronisTibxEntry> Entries => _entries;
@@ -284,7 +284,7 @@ public IReadOnlyList<AcronisTibxEntry> Entries => _entries;
   /// <summary>Parsed dump-field cluster (8 BE32 words) starting at offset <see cref="DumpFieldsStart"/>.</summary>
   public uint[] DumpFields { get; private set; } = new uint[8];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AcronisTibxReader"/>.
   /// </summary>
 public AcronisTibxReader(Stream stream) {
@@ -670,7 +670,7 @@ public AcronisTibxReader(Stream stream) {
     return sb.ToString();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(AcronisTibxEntry entry) {
@@ -678,7 +678,7 @@ public byte[] Extract(AcronisTibxEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

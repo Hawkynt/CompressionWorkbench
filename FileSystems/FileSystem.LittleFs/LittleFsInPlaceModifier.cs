@@ -35,7 +35,7 @@ namespace FileSystem.LittleFs;
 /// </summary>
 public static class LittleFsInPlaceModifier {
 
-    /// <summary>
+  /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
 public static void Add(Stream image, IReadOnlyList<Compression.Registry.ArchiveInputInfo> inputs) {
@@ -59,7 +59,7 @@ public static void Add(Stream image, IReadOnlyList<Compression.Registry.ArchiveI
     WriteBack(image, img, blockSize, files);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the replace operation.
   /// </summary>
 public static void Replace(Stream image, string name, byte[] newData) {
@@ -77,7 +77,7 @@ public static void Replace(Stream image, string name, byte[] newData) {
     WriteBack(image, img, blockSize, files);
   }
 
-    /// <summary>
+  /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
 public static void Remove(Stream image, string[] entryNames) {

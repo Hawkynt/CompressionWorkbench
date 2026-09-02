@@ -17,7 +17,7 @@ public sealed class Id3v1Reader {
   public sealed record Tag(string Title, string Artist, string Album, string Year,
                            string Comment, int? Track, byte GenreByte);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public Tag? Read(ReadOnlySpan<byte> file) {

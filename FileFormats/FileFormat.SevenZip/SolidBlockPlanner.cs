@@ -45,22 +45,22 @@ public static class SolidBlockPlanner {
 
   /// <summary>A block of files to be compressed together in one solid stream.</summary>
   public sealed class SolidBlock {
-        /// <summary>
+    /// <summary>
     /// Gets the files.
     /// </summary>
 public List<(ArchiveInputInfo Input, byte[] Data)> Files { get; } = [];
-        /// <summary>
+    /// <summary>
     /// Gets or sets the total size.
     /// </summary>
 public long TotalSize { get; private set; }
-        /// <summary>
+    /// <summary>
     /// Gets a value indicating whether is incompressible.
     /// </summary>
 public bool IsIncompressible { get; init; }
     /// <summary>Extension group index (-1 for catch-all, -2 for incompressible).</summary>
     public int GroupIndex { get; init; } = -1;
 
-        /// <summary>
+    /// <summary>
     /// Adds the supplied entry to the target container.
     /// </summary>
 public void Add(ArchiveInputInfo input, byte[] data) {

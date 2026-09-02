@@ -88,35 +88,35 @@ public sealed class Reiser4MasterSb {
   public byte[] Format40Raw { get; private init; } = [];
 
   // Format40 fields
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block count.
   /// </summary>
 public ulong BlockCount { get; private init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the free blocks.
   /// </summary>
 public ulong FreeBlocks { get; private init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the root block.
   /// </summary>
 public ulong RootBlock { get; private init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the file count.
   /// </summary>
 public ulong FileCount { get; private init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the mkfs id.
   /// </summary>
 public uint MkfsId { get; private init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the tree height.
   /// </summary>
 public ushort TreeHeight { get; private init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the policy.
   /// </summary>
 public ushort Policy { get; private init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the format 40 version.
   /// </summary>
 public uint Format40Version { get; private init; }

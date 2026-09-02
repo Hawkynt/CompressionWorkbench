@@ -5,15 +5,15 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public enum ResidueType
 {
-        /// <summary>
+    /// <summary>
     /// Specifies the zero option.
     /// </summary>
 Zero = 0,
-        /// <summary>
+    /// <summary>
     /// Specifies the one option.
     /// </summary>
 One = 1,
-        /// <summary>
+    /// <summary>
     /// Specifies the two option.
     /// </summary>
 Two = 2

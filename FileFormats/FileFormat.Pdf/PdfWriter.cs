@@ -13,7 +13,7 @@ namespace FileFormat.Pdf;
 public sealed class PdfWriter {
   private readonly List<(string name, byte[] data)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -22,7 +22,7 @@ public void AddFile(string name, byte[] data) {
     _files.Add((name, data));
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

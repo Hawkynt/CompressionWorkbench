@@ -16,51 +16,51 @@ namespace FileFormat.ExePackers;
 /// clear, so reading it back off the stub reverses the encryption exactly.
 /// </remarks>
 public enum YodaByteOpKind {
-    /// <summary>
+  /// <summary>
   /// Specifies the add immediate option.
   /// </summary>
 AddImmediate,
-    /// <summary>
+  /// <summary>
   /// Specifies the subtract immediate option.
   /// </summary>
 SubtractImmediate,
-    /// <summary>
+  /// <summary>
   /// Specifies the xor immediate option.
   /// </summary>
 XorImmediate,
-    /// <summary>
+  /// <summary>
   /// Specifies the add counter option.
   /// </summary>
 AddCounter,
-    /// <summary>
+  /// <summary>
   /// Specifies the subtract counter option.
   /// </summary>
 SubtractCounter,
-    /// <summary>
+  /// <summary>
   /// Specifies the xor counter option.
   /// </summary>
 XorCounter,
-    /// <summary>
+  /// <summary>
   /// Specifies the rotate left option.
   /// </summary>
 RotateLeft,
-    /// <summary>
+  /// <summary>
   /// Specifies the rotate right option.
   /// </summary>
 RotateRight,
-    /// <summary>
+  /// <summary>
   /// Specifies the increment option.
   /// </summary>
 Increment,
-    /// <summary>
+  /// <summary>
   /// Specifies the decrement option.
   /// </summary>
 Decrement,
-    /// <summary>
+  /// <summary>
   /// Specifies the not option.
   /// </summary>
 Not,
-    /// <summary>
+  /// <summary>
   /// Specifies the negate option.
   /// </summary>
 Negate,
@@ -112,7 +112,7 @@ public static class YodaCrypterStub {
   /// <summary>Longest junk gap a polymorphic short jump is allowed to skip over.</summary>
   private const int _MAX_JUNK_JUMP = 0x20;
 
-    /// <summary>
+  /// <summary>
   /// Performs the try unpack operation.
   /// </summary>
 public static bool TryUnpack(ReadOnlySpan<byte> image, out YodaCrypterStubInfo? info) {

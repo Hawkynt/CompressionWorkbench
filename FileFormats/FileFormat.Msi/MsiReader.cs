@@ -10,12 +10,12 @@ public sealed class MsiReader : IDisposable {
   private readonly List<MsiEntry> _entries = [];
   private bool _disposed;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<MsiEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MsiReader"/>.
   /// </summary>
 public MsiReader(Stream stream, bool leaveOpen = false) {
@@ -97,7 +97,7 @@ public MsiReader(Stream stream, bool leaveOpen = false) {
     return null;
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(MsiEntry entry) {
@@ -113,7 +113,7 @@ public byte[] Extract(MsiEntry entry) {
     return _cfb.ExtractStream(cfbEntry);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

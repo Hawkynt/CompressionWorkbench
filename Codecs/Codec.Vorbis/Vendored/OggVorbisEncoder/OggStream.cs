@@ -93,7 +93,7 @@ public class OggStream
     private int _pageNumber;
     private bool _writesHaveStarted;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="OggStream"/>.
     /// </summary>
 public OggStream(int serialNumber)
@@ -101,12 +101,12 @@ public OggStream(int serialNumber)
         _serialNumber = serialNumber;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets a value indicating whether finished.
     /// </summary>
 public bool Finished { get; private set; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the packet in operation.
     /// </summary>
 public void PacketIn(OggPacket packet)

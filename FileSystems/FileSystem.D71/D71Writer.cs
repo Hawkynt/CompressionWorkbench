@@ -33,12 +33,12 @@ public sealed class D71Writer {
 
   private readonly List<(string Name, byte FileType, byte[] Data)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte fileType, byte[] data) => _files.Add((name, fileType, data));
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default

@@ -13,7 +13,7 @@ public class ResidueLookup
     private readonly ResidueEntry _residue;
     private readonly int _stages;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="ResidueLookup"/>.
     /// </summary>
 public ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)
@@ -46,7 +46,7 @@ public ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)
         _stages = maxstage;
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the forward operation.
     /// </summary>
 public int Forward(
@@ -234,7 +234,7 @@ public int Forward(
         return index;
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the class operation.
     /// </summary>
 public int[][] Class(int[][] couples, bool[] nonzero, int channels)

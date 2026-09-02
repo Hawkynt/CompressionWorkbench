@@ -338,7 +338,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Decodes the supplied input.
         /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
@@ -362,7 +362,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Decodes the supplied input.
         /// </summary>
 public int DecodeMultistream(
@@ -387,7 +387,7 @@ public int DecodeMultistream(
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Decodes the supplied input.
         /// </summary>
 [Obsolete("Use Span<> overrides if possible")]
@@ -405,7 +405,7 @@ public int DecodeMultistream(
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Decodes the supplied input.
         /// </summary>
 public int DecodeMultistream(
@@ -433,7 +433,7 @@ public int DecodeMultistream(
         #region Getters and setters
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the bandwidth.
         /// </summary>
 public OpusBandwidth Bandwidth
@@ -447,7 +447,7 @@ public OpusBandwidth Bandwidth
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the sample rate.
         /// </summary>
 public int SampleRate
@@ -461,7 +461,7 @@ public int SampleRate
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the num channels.
         /// </summary>
 public int NumChannels
@@ -473,7 +473,7 @@ public int NumChannels
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets or sets the gain.
         /// </summary>
 public int Gain
@@ -494,7 +494,7 @@ public int Gain
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the last packet duration.
         /// </summary>
 public int LastPacketDuration
@@ -508,7 +508,7 @@ public int LastPacketDuration
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Gets the final range.
         /// </summary>
 public uint FinalRange
@@ -525,7 +525,7 @@ public uint FinalRange
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Performs the reset state operation.
         /// </summary>
 public void ResetState()
@@ -537,7 +537,7 @@ public void ResetState()
         }
 
         /// <inheritdoc/>
-                /// <summary>
+        /// <summary>
         /// Gets the version string.
         /// </summary>
 public string GetVersionString()
@@ -556,7 +556,7 @@ public string GetVersionString()
         }
 
         /// <inheritdoc />
-                /// <summary>
+        /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
 public void Dispose() { }

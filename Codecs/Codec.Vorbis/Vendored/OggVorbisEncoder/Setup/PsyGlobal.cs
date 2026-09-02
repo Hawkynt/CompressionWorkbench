@@ -7,16 +7,16 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class PsyGlobal
 {
-        /// <summary>
+    /// <summary>
     /// Defines the envelope bands constant value.
     /// </summary>
 public const int EnvelopeBands = 7;
-        /// <summary>
+    /// <summary>
     /// Defines the packet blobs constant value.
     /// </summary>
 public const int PacketBlobs = 15;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="PsyGlobal"/>.
     /// </summary>
 public PsyGlobal(
@@ -49,56 +49,56 @@ public PsyGlobal(
         SlidingLowPass = slidingLowPass.Select(s => s.ToFixedLength(PacketBlobs)).ToArray();
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the eighth octave lines.
     /// </summary>
 public int EighthOctaveLines { get; }
 
     // for block long/short tuning; encode only 
-        /// <summary>
+    /// <summary>
     /// Gets the pre echo threshold.
     /// </summary>
 public float[] PreEchoThreshold { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the post echo threshold.
     /// </summary>
 public float[] PostEchoThreshold { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the stretch penalty.
     /// </summary>
 public float StretchPenalty { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the pre echo min energy.
     /// </summary>
 public float PreEchoMinEnergy { get; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the amp max att per sec.
     /// </summary>
 public float AmpMaxAttPerSec { get; set; }
 
     // channel coupling config 
-        /// <summary>
+    /// <summary>
     /// Gets the coupling per kilohertz.
     /// </summary>
 public int[] CouplingPerKilohertz { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the coupling point limit.
     /// </summary>
 public int[][] CouplingPointLimit { get; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the coupling pre point amp.
     /// </summary>
 public int[] CouplingPrePointAmp { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the coupling post point amp.
     /// </summary>
 public int[] CouplingPostPointAmp { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets the sliding low pass.
     /// </summary>
 public int[][] SlidingLowPass { get; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the clone operation.
     /// </summary>
 public PsyGlobal Clone() => new PsyGlobal(

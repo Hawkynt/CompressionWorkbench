@@ -5,15 +5,15 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public enum CodeBookMapType : int
 {
-        /// <summary>
+    /// <summary>
     /// Specifies that no option is selected.
     /// </summary>
 None = 0,
-        /// <summary>
+    /// <summary>
     /// Specifies the implicit option.
     /// </summary>
 Implicit = 1, // implicitly populated values from map column
-        /// <summary>
+    /// <summary>
     /// Specifies the listed option.
     /// </summary>
 Listed = 2 // listed arbitrary values

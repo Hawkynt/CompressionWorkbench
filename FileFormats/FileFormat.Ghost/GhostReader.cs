@@ -112,7 +112,7 @@ public sealed class GhostReader : IDisposable {
   /// </summary>
   public IReadOnlyList<GhostAnnotation> Annotations => this._annotations;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GhostReader"/>.
   /// </summary>
 public GhostReader(Stream stream, bool isSpannedSegment = false, string? password = null) {
@@ -525,7 +525,7 @@ public GhostReader(Stream stream, bool isSpannedSegment = false, string? passwor
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(GhostEntry entry) {
@@ -533,7 +533,7 @@ public byte[] Extract(GhostEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

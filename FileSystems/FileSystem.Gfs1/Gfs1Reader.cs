@@ -20,7 +20,7 @@ public sealed class Gfs1Reader {
   private readonly int _inodesPerBlock;
   private readonly List<Gfs1Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Gfs1Reader"/>.
   /// </summary>
 public Gfs1Reader(Stream stream) {
@@ -36,12 +36,12 @@ public Gfs1Reader(Stream stream) {
     Recurse(2, "");
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Gfs1Entry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Gfs1Entry entry) {

@@ -44,11 +44,11 @@ namespace FileSystem.Ti99;
 /// </para>
 /// </summary>
 public sealed class Ti99Reader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
 public const int SectorSize = 256;
-    /// <summary>
+  /// <summary>
   /// Defines the tifiles header size constant value.
   /// </summary>
 public const int TifilesHeaderSize = 128;
@@ -56,44 +56,44 @@ public const int TifilesHeaderSize = 128;
   private readonly byte[] _data;
   private readonly List<Ti99Entry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<Ti99Entry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid volume.
   /// </summary>
 public bool ValidVolume { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is tifiles wrapper.
   /// </summary>
 public bool IsTifilesWrapper { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
 public string VolumeName { get; private set; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the total sectors.
   /// </summary>
 public int TotalSectors { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sectors per track.
   /// </summary>
 public int SectorsPerTrack { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the tracks.
   /// </summary>
 public int Tracks { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sides.
   /// </summary>
 public int Sides { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the density.
   /// </summary>
 public int Density { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Ti99Reader"/>.
   /// </summary>
 public Ti99Reader(Stream stream) {
@@ -204,7 +204,7 @@ public Ti99Reader(Stream stream) {
     return new string(chars);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(Ti99Entry entry) {
@@ -222,7 +222,7 @@ public byte[] Extract(Ti99Entry entry) {
     return size <= 0 ? [] : _data.AsSpan(offset, size).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
 public byte[] BuildSurfaceMetadata() {
@@ -239,7 +239,7 @@ public byte[] BuildSurfaceMetadata() {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

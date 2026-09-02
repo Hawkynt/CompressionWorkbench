@@ -26,7 +26,7 @@ namespace FileFormat.Hps;
 /// </summary>
 public sealed class HpsReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a header.
   /// </summary>
 public sealed record Header(
@@ -34,7 +34,7 @@ public sealed record Header(
     int NumChannels,
     int SampleCount);
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed hps.
   /// </summary>
 public sealed record ParsedHps(
@@ -46,7 +46,7 @@ public sealed record ParsedHps(
 
   private const int ChannelHeaderSize = 0x38;
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedHps Read(ReadOnlySpan<byte> data) {

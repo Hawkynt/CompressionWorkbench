@@ -18,7 +18,7 @@ public sealed class MachOReader {
   /// <summary>One logical entry surfaced from a Mach-O or fat Mach-O file.</summary>
   public sealed record Entry(string Name, byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Reads the all from the supplied input.
   /// </summary>
 public List<Entry> ReadAll(Stream stream) {

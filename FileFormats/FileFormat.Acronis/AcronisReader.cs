@@ -65,19 +65,19 @@ public sealed class AcronisReader {
       ? entry.Name
       : entry.Path.TrimEnd('/', '\\') + "/" + entry.Name;
 
-    /// <summary>
+  /// <summary>
   /// Gets the header.
   /// </summary>
 public AcronisVolumeHeader Header { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the trailer.
   /// </summary>
 public AcronisSliceTrailer? Trailer { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<AcronisFileEntry> Entries { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the config attributes.
   /// </summary>
 public IReadOnlyList<AcronisConfigAttribute> ConfigAttributes { get; }
@@ -166,7 +166,7 @@ public IReadOnlyList<AcronisConfigAttribute> ConfigAttributes { get; }
   // recordOffset (relative to end of header) → Blob record (for fast lookup during extraction).
   private readonly Dictionary<long, AcronisRecord> _blobsByRecordOffset;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AcronisReader"/>.
   /// </summary>
 public AcronisReader(Stream stream) {

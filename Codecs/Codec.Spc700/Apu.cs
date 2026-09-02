@@ -17,7 +17,7 @@ namespace Codec.Spc700;
 /// </summary>
 public sealed class Apu {
 
-    /// <summary>
+  /// <summary>
   /// Defines the ram size constant value.
   /// </summary>
 public const int RamSize = 0x10000;
@@ -25,7 +25,7 @@ public const int RamSize = 0x10000;
   /// <summary>The 64&#160;KB audio RAM; also the DSP's sample memory.</summary>
   public readonly byte[] Ram = new byte[RamSize];
 
-    /// <summary>
+  /// <summary>
   /// Provides the dsp value.
   /// </summary>
 public readonly SDsp Dsp;
@@ -47,14 +47,14 @@ public readonly SDsp Dsp;
   private byte _control;       // $F1
   private bool _iplRomEnabled; // tracks CONTROL bit 7; the IPL ROM is mapped only while it is set
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Apu"/>.
   /// </summary>
 public Apu() => this.Dsp = new SDsp(this.Ram);
 
   // ── memory access ─────────────────────────────────────────────────────────────
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public byte Read(ushort address) {
@@ -82,7 +82,7 @@ public byte Read(ushort address) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public void Write(ushort address, byte value) {

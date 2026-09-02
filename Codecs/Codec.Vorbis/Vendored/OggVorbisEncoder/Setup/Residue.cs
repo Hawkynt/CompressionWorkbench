@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class ResidueEntry
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="ResidueEntry"/>.
     /// </summary>
 public ResidueEntry(
@@ -34,53 +34,53 @@ public ResidueEntry(
         ResidueType = residueType;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the begin.
     /// </summary>
 public int Begin { get; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the end.
     /// </summary>
 public int End { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets the partitions.
     /// </summary>
 public int Partitions { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the partition values.
     /// </summary>
 public int PartitionValues { get; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the group book.
     /// </summary>
 public int GroupBook { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets the second stages.
     /// </summary>
 public int[] SecondStages { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the book list.
     /// </summary>
 public int[] BookList { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the class metric 1.
     /// </summary>
 public int[] ClassMetric1 { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the class metric 2.
     /// </summary>
 public int[] ClassMetric2 { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the residue type.
     /// </summary>
 public ResidueType ResidueType { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the grouping.
     /// </summary>
 public int Grouping { get; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the clone operation.
     /// </summary>
 public ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)

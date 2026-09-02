@@ -14,7 +14,7 @@ public sealed class PartitionWindowStream : Stream {
   private readonly bool _leaveOpen;
   private long _position;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="PartitionWindowStream"/>.
   /// </summary>
 public PartitionWindowStream(Stream inner, long offset, long length, bool leaveOpen = true) {
@@ -28,23 +28,23 @@ public PartitionWindowStream(Stream inner, long offset, long length, bool leaveO
     _leaveOpen = leaveOpen;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
 public override bool CanRead => _inner.CanRead;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
 public override bool CanSeek => true;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
 public override bool CanWrite => _inner.CanWrite;
-    /// <summary>
+  /// <summary>
   /// Gets the length.
   /// </summary>
 public override long Length => _length;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the position.
   /// </summary>
 public override long Position {
@@ -55,7 +55,7 @@ public override long Position {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public override int Read(byte[] buffer, int offset, int count) {
@@ -68,7 +68,7 @@ public override int Read(byte[] buffer, int offset, int count) {
     return n;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the seek operation.
   /// </summary>
 public override long Seek(long offset, SeekOrigin origin) {
@@ -81,11 +81,11 @@ public override long Seek(long offset, SeekOrigin origin) {
     return _position;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the flush operation.
   /// </summary>
 public override void Flush() => _inner.Flush();
-    /// <summary>
+  /// <summary>
   /// Sets the length.
   /// </summary>
 public override void SetLength(long value) {
@@ -95,7 +95,7 @@ public override void SetLength(long value) {
     // outside [0, value) remain in place as unused space inside the partition.
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public override void Write(byte[] buffer, int offset, int count) {
@@ -107,7 +107,7 @@ public override void Write(byte[] buffer, int offset, int count) {
     _position += count;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 protected override void Dispose(bool disposing) {

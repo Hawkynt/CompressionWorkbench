@@ -27,30 +27,30 @@ public sealed class NssVolume {
 
   private readonly byte[] _image;
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid.
   /// </summary>
 public bool Valid { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the status.
   /// </summary>
 public string Status { get; } = "unparsed";
-    /// <summary>
+  /// <summary>
   /// Gets the block size.
   /// </summary>
 public int BlockSize => NssLayout.BlockSize;
-    /// <summary>
+  /// <summary>
   /// Gets the image length.
   /// </summary>
 public long ImageLength => this._image.LongLength;
 
-    /// <summary>
+  /// <summary>
   /// Gets the files.
   /// </summary>
 public IReadOnlyList<VolumeFile> Files => this._files;
   private readonly List<VolumeFile> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="NssVolume"/>.
   /// </summary>
 public NssVolume(Stream image) {

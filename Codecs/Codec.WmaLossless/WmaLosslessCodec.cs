@@ -143,7 +143,7 @@ public sealed class WmaLosslessCodec {
   internal static int TestScalarProductAndMadd(short[] coefs, int[] prev, short[] updates, int order, int mul)
     => ScalarProductAndMadd(coefs, prev, updates, 0, order, mul);
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="WmaLosslessCodec"/>.
   /// </summary>
 public WmaLosslessCodec(int channels, int sampleRate, int blockAlign, ReadOnlySpan<byte> extradata) {

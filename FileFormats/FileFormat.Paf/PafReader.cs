@@ -19,21 +19,21 @@ namespace FileFormat.Paf;
 /// </summary>
 public sealed class PafReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the data offset constant value.
   /// </summary>
 public const int DataOffset = 2048;
 
-    /// <summary>
+  /// <summary>
   /// Defines the format pcm 16 constant value.
   /// </summary>
 public const int FormatPcm16 = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the format pcm 24 constant value.
   /// </summary>
 public const int FormatPcm24 = 1;
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed paf.
   /// </summary>
 public sealed record ParsedPaf(
@@ -44,7 +44,7 @@ public sealed record ParsedPaf(
     int NumChannels,
     byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedPaf Read(ReadOnlySpan<byte> data) {

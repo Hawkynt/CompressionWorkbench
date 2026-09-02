@@ -33,15 +33,15 @@ public sealed class XenixReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<XenixEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<XenixEntry> Entries => this._entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the magic.
   /// </summary>
 public uint Magic { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the block size.
   /// </summary>
 public int BlockSize { get; private set; } = 1024;
@@ -56,7 +56,7 @@ public int BlockSize { get; private set; } = 1024;
   internal const int TypeOffset = 0x3FC;
   private const int RootInode = 2;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="XenixReader"/>.
   /// </summary>
 public XenixReader(Stream stream) {
@@ -381,7 +381,7 @@ public XenixReader(Stream stream) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(XenixEntry entry) {
@@ -395,7 +395,7 @@ public byte[] Extract(XenixEntry entry) {
     return data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

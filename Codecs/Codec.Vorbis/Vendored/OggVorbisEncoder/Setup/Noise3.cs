@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class Noise3
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="Noise3"/>.
     /// </summary>
 public Noise3(int[][] data)
@@ -13,7 +13,7 @@ public Noise3(int[][] data)
         Data = data;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the data.
     /// </summary>
 public int[][] Data { get; }

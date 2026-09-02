@@ -35,19 +35,19 @@ public static class GhostConstants {
   public const int FastLzHashSize = 4096;
 
   // Record type codes (low 16 bits of the 32-bit type field).
-    /// <summary>
+  /// <summary>
   /// Defines the record type track 0 constant value.
   /// </summary>
 public const ushort RecordTypeTrack0 = 0x0006;
-    /// <summary>
+  /// <summary>
   /// Defines the record type partition constant value.
   /// </summary>
 public const ushort RecordTypePartition = 0x0603;
-    /// <summary>
+  /// <summary>
   /// Defines the record type continuation constant value.
   /// </summary>
 public const ushort RecordTypeContinuation = 0x0703;
-    /// <summary>
+  /// <summary>
   /// Defines the record type end constant value.
   /// </summary>
 public const ushort RecordTypeEnd = 0x0023;
@@ -80,43 +80,43 @@ public const ushort RecordTypeEnd = 0x0023;
   public const byte AnnotationOpReplace = 0x02;
 
   // Compression byte (offset 3 of the file/partition header).
-    /// <summary>
+  /// <summary>
   /// Defines the compression none constant value.
   /// </summary>
 public const byte CompressionNone = 0;
-    /// <summary>
+  /// <summary>
   /// Defines the compression old constant value.
   /// </summary>
 public const byte CompressionOld = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the compression fast constant value.
   /// </summary>
 public const byte CompressionFast = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the compression high 3 constant value.
   /// </summary>
 public const byte CompressionHigh3 = 3;
-    /// <summary>
+  /// <summary>
   /// Defines the compression high 4 constant value.
   /// </summary>
 public const byte CompressionHigh4 = 4;
-    /// <summary>
+  /// <summary>
   /// Defines the compression high 5 constant value.
   /// </summary>
 public const byte CompressionHigh5 = 5;
-    /// <summary>
+  /// <summary>
   /// Defines the compression high 6 constant value.
   /// </summary>
 public const byte CompressionHigh6 = 6;
-    /// <summary>
+  /// <summary>
   /// Defines the compression high 7 constant value.
   /// </summary>
 public const byte CompressionHigh7 = 7;
-    /// <summary>
+  /// <summary>
   /// Defines the compression high 8 constant value.
   /// </summary>
 public const byte CompressionHigh8 = 8;
-    /// <summary>
+  /// <summary>
   /// Defines the compression high 9 constant value.
   /// </summary>
 public const byte CompressionHigh9 = 9;

@@ -7,7 +7,7 @@ namespace OggVorbisEncoder.Lookups;
 /// </summary>
 public class EnvelopeBand
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="EnvelopeBand"/>.
     /// </summary>
 public EnvelopeBand(
@@ -26,15 +26,15 @@ public EnvelopeBand(
         Total = (float)(1.0 / Total);
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the begin.
     /// </summary>
 public int Begin { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the window.
     /// </summary>
 public float[] Window { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the total.
     /// </summary>
 public float Total { get; }

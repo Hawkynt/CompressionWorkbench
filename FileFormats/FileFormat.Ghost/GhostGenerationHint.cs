@@ -23,15 +23,15 @@ namespace FileFormat.Ghost;
 /// </para>
 /// </remarks>
 public enum GhostGenerationHint {
-    /// <summary>
+  /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
 Unknown = 0,
-    /// <summary>
+  /// <summary>
   /// Specifies the possibly legacy 4 to 7 option.
   /// </summary>
 PossiblyLegacy4To7 = 1,
-    /// <summary>
+  /// <summary>
   /// Specifies the possibly modern 8 plus option.
   /// </summary>
 PossiblyModern8Plus = 2,

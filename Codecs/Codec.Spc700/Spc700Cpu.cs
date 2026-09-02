@@ -27,32 +27,32 @@ public sealed class Spc700Cpu {
 
   private readonly Apu _apu;
 
-    /// <summary>
+  /// <summary>
   /// Provides the pc value.
   /// </summary>
 public ushort Pc;
-    /// <summary>
+  /// <summary>
   /// Provides the a value.
   /// </summary>
 public byte A;
-    /// <summary>
+  /// <summary>
   /// Provides the x value.
   /// </summary>
 public byte X;
-    /// <summary>
+  /// <summary>
   /// Provides the y value.
   /// </summary>
 public byte Y;
-    /// <summary>
+  /// <summary>
   /// Provides the sp value.
   /// </summary>
 public byte Sp;
-    /// <summary>
+  /// <summary>
   /// Provides the psw value.
   /// </summary>
 public byte Psw;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Spc700Cpu"/>.
   /// </summary>
 public Spc700Cpu(Apu apu) => this._apu = apu;

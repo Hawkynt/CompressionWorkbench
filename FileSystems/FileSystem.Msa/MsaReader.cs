@@ -8,7 +8,7 @@ namespace FileSystem.Msa;
 /// MSA uses simple RLE compression on individual tracks.
 /// </summary>
 public sealed class MsaReader : IDisposable {
-    /// <summary>
+  /// <summary>
   /// Defines the msa magic constant value.
   /// </summary>
 public const ushort MsaMagic = 0x0E0F;
@@ -17,28 +17,28 @@ public const ushort MsaMagic = 0x0E0F;
   private readonly byte[] _diskData;
   private readonly List<MsaEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the sectors per track.
   /// </summary>
 public ushort SectorsPerTrack { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the sides.
   /// </summary>
 public ushort Sides { get; } // 0=single, 1=double
-    /// <summary>
+  /// <summary>
   /// Gets the start track.
   /// </summary>
 public ushort StartTrack { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the end track.
   /// </summary>
 public ushort EndTrack { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<MsaEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="MsaReader"/>.
   /// </summary>
 public MsaReader(Stream stream, bool leaveOpen = false) {
@@ -110,7 +110,7 @@ public MsaReader(Stream stream, bool leaveOpen = false) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(MsaEntry entry) {
@@ -118,7 +118,7 @@ public byte[] Extract(MsaEntry entry) {
     return _diskData.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

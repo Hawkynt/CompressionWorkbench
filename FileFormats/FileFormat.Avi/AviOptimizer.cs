@@ -13,13 +13,13 @@ namespace FileFormat.Avi;
 public sealed class AviOptimizer : IFileInternalChunkMover {
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the optimize operation.
   /// </summary>
 public void Optimize(Stream file) => Optimize(file, null);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the optimize operation.
   /// </summary>
 public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {

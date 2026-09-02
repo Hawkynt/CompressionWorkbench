@@ -18,7 +18,7 @@ public sealed class RarcReader {
   private readonly List<FileRecord> _fileRecords;
   private readonly List<RarcEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="RarcReader"/>.
   /// </summary>
 public RarcReader(Stream stream) {
@@ -118,12 +118,12 @@ public RarcReader(Stream stream) {
     VisitDirectory(0, string.Empty, stack);
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<RarcEntry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(RarcEntry entry) {
@@ -139,7 +139,7 @@ public byte[] Extract(RarcEntry entry) {
     return result;
   }
 
-    /// <summary>
+  /// <summary>
   /// Computes the name hash for the supplied data.
   /// </summary>
 public static ushort CalculateNameHash(string name) {

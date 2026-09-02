@@ -44,7 +44,7 @@ public sealed class AdfsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<AdfsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<AdfsEntry> Entries => this._entries;
@@ -68,7 +68,7 @@ public IReadOnlyList<AdfsEntry> Entries => this._entries;
   // The 4-byte directory marker at offset 0 + offset 0x4CB.
   // We accept "Hugo" (master variant) and "Nick" (BBC Micro variant).
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AdfsReader"/>.
   /// </summary>
 public AdfsReader(Stream stream) {
@@ -346,7 +346,7 @@ public AdfsReader(Stream stream) {
     return (Encoding.ASCII.GetString(nameBytes, 0, n), attrs);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(AdfsEntry entry) {
@@ -359,7 +359,7 @@ public byte[] Extract(AdfsEntry entry) {
     return this._data.AsSpan((int)offset, take).ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

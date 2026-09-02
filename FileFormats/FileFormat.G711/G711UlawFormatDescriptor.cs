@@ -6,32 +6,32 @@ namespace FileFormat.G711;
 /// LE PCM via <c>Codec.MuLaw</c>; see <see cref="G711FormatDescriptorBase"/>.
 /// </summary>
 public sealed class G711UlawFormatDescriptor : G711FormatDescriptorBase {
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public override string Id => "G711Ulaw";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public override string DisplayName => "Raw µ-law (G.711)";
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public override string DefaultExtension => ".ul";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public override IReadOnlyList<string> Extensions => [".ul", ".ulaw"];
 
-    /// <summary>
+  /// <summary>
   /// Gets the variant.
   /// </summary>
 protected override string Variant => "µ-law";
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 protected override short[] Decode(byte[] companded) => Codec.MuLaw.MuLawCodec.Decode(companded);
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 protected override byte[] Encode(short[] linear) => Codec.MuLaw.MuLawCodec.Encode(linear);

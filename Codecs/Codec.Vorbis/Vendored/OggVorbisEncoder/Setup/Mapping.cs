@@ -8,7 +8,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class Mapping
 {
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="Mapping"/>.
     /// </summary>
 public Mapping(
@@ -35,40 +35,40 @@ public Mapping(
         CouplingAng = couplingAng;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the sub maps.
     /// </summary>
 public int SubMaps { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the channel mux list.
     /// </summary>
 public int[] ChannelMuxList { get; } // up to 256 channels in a Vorbis stream
 
-        /// <summary>
+    /// <summary>
     /// Gets the floor sub map.
     /// </summary>
 public int[] FloorSubMap { get; } // [mux] submap to floors
-        /// <summary>
+    /// <summary>
     /// Gets the residue sub map.
     /// </summary>
 public int[] ResidueSubMap { get; } // [mux] submap to residue
 
-        /// <summary>
+    /// <summary>
     /// Gets the coupling steps.
     /// </summary>
 public int CouplingSteps { get; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the coupling mag.
     /// </summary>
 public int[] CouplingMag { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the coupling ang.
     /// </summary>
 public int[] CouplingAng { get; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the clone operation.
     /// </summary>
 public Mapping Clone() => new Mapping(

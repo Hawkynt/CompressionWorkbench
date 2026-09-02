@@ -1,23 +1,23 @@
 namespace GroovyCodecs.Types
 {
-        /// <summary>
+    /// <summary>
     /// Specifies mime type values.
     /// </summary>
 public enum MimeType
     {
-                /// <summary>
+        /// <summary>
         /// Specifies the mimetype none option.
         /// </summary>
 MIMETYPE_NONE = 0,
-                /// <summary>
+        /// <summary>
         /// Specifies the mimetype jpeg option.
         /// </summary>
 MIMETYPE_JPEG,
-                /// <summary>
+        /// <summary>
         /// Specifies the mimetype png option.
         /// </summary>
 MIMETYPE_PNG,
-                /// <summary>
+        /// <summary>
         /// Specifies the mimetype gif option.
         /// </summary>
 MIMETYPE_GIF

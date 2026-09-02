@@ -12,7 +12,7 @@ namespace FileFormat.LhF;
 /// shortcut.
 /// </summary>
 public sealed class LhFWriter {
-    /// <summary>
+  /// <summary>
   /// Defines the track size constant value.
   /// </summary>
 public const int TrackSize = 11 * 512;
@@ -32,7 +32,7 @@ public const int TrackSize = 11 * 512;
     _tracks.Add((trackNumber, buf));
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

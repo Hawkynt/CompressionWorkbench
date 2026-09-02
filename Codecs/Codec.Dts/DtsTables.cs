@@ -12,14 +12,14 @@ namespace Codec.Dts;
 /// </summary>
 public static class DtsTables {
 
-    /// <summary>
+  /// <summary>
   /// Provides the sample rates value.
   /// </summary>
 public static readonly int[] SampleRates = [
     0, 8000, 16000, 32000, 0, 0, 11025, 22050, 44100, 0, 0, 12000, 24000, 48000, 96000, 192000,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the bit rates value.
   /// </summary>
 public static readonly int[] BitRates = [
@@ -29,21 +29,21 @@ public static readonly int[] BitRates = [
     1536000, 1920000, 2048000, 3072000, 3840000, 1, 2, 3,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the channels value.
   /// </summary>
 public static readonly int[] Channels = [
     1, 2, 2, 2, 2, 3, 3, 4, 4, 5, 6, 6, 6, 7, 8, 8,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the lfe index value.
   /// </summary>
 public static readonly int[] LfeIndex = [
     1, 2, 2, 2, 2, 3, 2, 3, 2, 3, 2, 3, 1, 3, 2, 3,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the scale factor quant 6 value.
   /// </summary>
 public static readonly uint[] ScaleFactorQuant6 = [
@@ -57,7 +57,7 @@ public static readonly uint[] ScaleFactorQuant6 = [
     1819701, 2344229, 3019952, 3890451, 5011872, 6456542, 8317638, 0,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the scale factor quant 7 value.
   /// </summary>
 public static readonly uint[] ScaleFactorQuant7 = [
@@ -79,7 +79,7 @@ public static readonly uint[] ScaleFactorQuant7 = [
     5011872, 5688529, 6456542, 7328245, 8317638, 0, 0, 0,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the lossy quant value.
   /// </summary>
 public static readonly float[] LossyQuant = [
@@ -89,7 +89,7 @@ public static readonly float[] LossyQuant = [
     0.00002f, 0.00001f, 0.000005f, 0f, 0f, 0f, 0f, 0f,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the lossless quant value.
   /// </summary>
 public static readonly float[] LosslessQuant = [
@@ -100,7 +100,7 @@ public static readonly float[] LosslessQuant = [
   ];
 
   private static short[][]? _adpcmVb;
-    /// <summary>
+  /// <summary>
   /// Gets the adpcm vb.
   /// </summary>
 public static short[][] AdpcmVb => _adpcmVb ??= BuildAdpcmVb();
@@ -111,7 +111,7 @@ public static short[][] AdpcmVb => _adpcmVb ??= BuildAdpcmVb();
     return r;
   }
 
-    /// <summary>
+  /// <summary>
   /// Provides the adpcm vb flat value.
   /// </summary>
 public static readonly short[] AdpcmVbFlat = [
@@ -1142,7 +1142,7 @@ public static readonly short[] AdpcmVbFlat = [
   ];
 
   private static sbyte[][]? _highFreqVq;
-    /// <summary>
+  /// <summary>
   /// Gets the high freq vq.
   /// </summary>
 public static sbyte[][] HighFreqVq => _highFreqVq ??= BuildHighFreqVq();
@@ -1153,7 +1153,7 @@ public static sbyte[][] HighFreqVq => _highFreqVq ??= BuildHighFreqVq();
     return r;
   }
 
-    /// <summary>
+  /// <summary>
   /// Provides the high freq vq flat value.
   /// </summary>
 public static readonly sbyte[] HighFreqVqFlat = [
@@ -2183,7 +2183,7 @@ public static readonly sbyte[] HighFreqVqFlat = [
     5, 0, -6, 5, 6, 3, 3, -10, -5, 1, -1, 4, 3, -11, -8, 5, 4, -5, 5, -5, -7, -5, 11, 5, 20, -8, -16, 21, -4, 27, 23, -5,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the fir 32 perfect value.
   /// </summary>
 public static readonly float[] Fir32Perfect = [
@@ -2253,7 +2253,7 @@ public static readonly float[] Fir32Perfect = [
     +3.970030775E-007f, +7.342250683E-007f, +3.961981463E-007f, +1.543309907E-007f, +5.083275667E-008f, +1.608403011E-008f, -7.018770981E-011f, -1.135985195E-010f,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the fir 32 non perfect value.
   /// </summary>
 public static readonly float[] Fir32NonPerfect = [
@@ -2323,7 +2323,7 @@ public static readonly float[] Fir32NonPerfect = [
     +4.347855338E-007f, +3.784752209E-007f, +3.276689142E-007f, +2.818143514E-007f, +2.404238444E-007f, +2.030677564E-007f, +1.693738625E-007f, +1.390191784E-007f,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the lfe fir 64 value.
   /// </summary>
 public static readonly float[] LfeFir64 = [
@@ -2361,7 +2361,7 @@ public static readonly float[] LfeFir64 = [
     1.700990043262962e-10f, 3.649616830969648e-09f, 1.8080587693702913e-08f, 3.737578424534149e-08f, 3.758063016334746e-08f, 1.8397818379867197e-08f, 3.7741418879022595e-09f, 1.8213150432266903e-10f,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the lfe fir 128 value.
   /// </summary>
 public static readonly float[] LfeFir128 = [
@@ -2399,7 +2399,7 @@ public static readonly float[] LfeFir128 = [
     1.9620927107334136e-09f, 5.653273404955864e-08f, 5.8458656581640244e-08f, 2.2532782304286955e-09f, 2.0557171523571015e-09f, 5.717811646342278e-08f, 5.782016998529434e-08f, 2.152755751609802e-09f,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the channel reorder no lfe value.
   /// </summary>
 public static readonly sbyte[][] ChannelReorderNoLfe = [
@@ -2421,7 +2421,7 @@ public static readonly sbyte[][] ChannelReorderNoLfe = [
     [3, 2, 4, 0, 1, 5, 7, 6, -1],
   ];
 
-    /// <summary>
+  /// <summary>
   /// Provides the channel reorder lfe value.
   /// </summary>
 public static readonly sbyte[][] ChannelReorderLfe = [

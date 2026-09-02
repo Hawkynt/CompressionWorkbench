@@ -10,7 +10,7 @@ public sealed class SparsebundleStream : Stream {
   private readonly SparsebundleReader _reader;
   private long _position;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="SparsebundleStream"/>.
   /// </summary>
 public SparsebundleStream(SparsebundleReader reader) {
@@ -18,23 +18,23 @@ public SparsebundleStream(SparsebundleReader reader) {
     this._reader = reader;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
 public override bool CanRead => true;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
 public override bool CanSeek => true;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
 public override bool CanWrite => false;
-    /// <summary>
+  /// <summary>
   /// Gets the length.
   /// </summary>
 public override long Length => this._reader.VirtualSize;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the position.
   /// </summary>
 public override long Position {
@@ -45,7 +45,7 @@ public override long Position {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public override int Read(byte[] buffer, int offset, int count) {
@@ -56,7 +56,7 @@ public override int Read(byte[] buffer, int offset, int count) {
     return n;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the seek operation.
   /// </summary>
 public override long Seek(long offset, SeekOrigin origin) {
@@ -71,15 +71,15 @@ public override long Seek(long offset, SeekOrigin origin) {
     return this._position;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the flush operation.
   /// </summary>
 public override void Flush() { /* read-only */ }
-    /// <summary>
+  /// <summary>
   /// Sets the length.
   /// </summary>
 public override void SetLength(long value) => throw new NotSupportedException();
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();

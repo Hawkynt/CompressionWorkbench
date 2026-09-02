@@ -35,12 +35,12 @@
 
 namespace Concentus.Enums
 {
-        /// <summary>
+    /// <summary>
     /// Specifies opus application values.
     /// </summary>
 public enum OpusApplication
     {
-                /// <summary>
+        /// <summary>
         /// Specifies the opus application unimplemented option.
         /// </summary>
 OPUS_APPLICATION_UNIMPLEMENTED = 0,

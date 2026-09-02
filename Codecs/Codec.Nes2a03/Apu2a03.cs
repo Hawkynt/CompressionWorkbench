@@ -86,7 +86,7 @@ public sealed class Apu2a03 {
   private readonly float[] _pulseTable = new float[31];
   private readonly float[] _tndTable = new float[203];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Apu2a03"/>.
   /// </summary>
 public Apu2a03(IBus6502 bus, double clockHz = NtscClockHz, int outputRate = OutputSampleRate) {

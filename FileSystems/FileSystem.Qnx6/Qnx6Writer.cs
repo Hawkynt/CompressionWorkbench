@@ -61,7 +61,7 @@ public sealed class Qnx6Writer {
   /// free: they cost two of the entries a directory block holds.
   /// </summary>
   private const int DotEntries = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the max files constant value.
   /// </summary>
 public const int MaxFiles = MaxDirents - DotEntries;

@@ -11,7 +11,7 @@ public static class LzhamStream {
 
   private static readonly byte[] Magic = [0x4C, 0x5A, 0x48, 0x4D]; // "LZHM"
 
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public static void Compress(Stream input, Stream output) {
@@ -26,7 +26,7 @@ public static void Compress(Stream input, Stream output) {
     output.Write(compressed);
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public static void Decompress(Stream input, Stream output) {

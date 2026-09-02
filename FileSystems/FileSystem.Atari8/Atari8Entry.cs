@@ -5,15 +5,15 @@ namespace FileSystem.Atari8;
 /// Directory entry in an Atari 8-bit AtariDOS 2.x <c>.atr</c> disk image.
 /// </summary>
 public sealed class Atari8Entry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory => false;

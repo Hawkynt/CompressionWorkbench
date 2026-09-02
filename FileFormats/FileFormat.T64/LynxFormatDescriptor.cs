@@ -19,33 +19,33 @@ public sealed class LynxFormatDescriptor :
     IArchiveLayoutMap,
     IFormatOptionsSchema {
 
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "Lynx";
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "Commodore Lynx archive";
-    /// <summary>
+  /// <summary>
   /// Gets the category.
   /// </summary>
 public FormatCategory Category => FormatCategory.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the capabilities.
   /// </summary>
 public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-    /// <summary>
+  /// <summary>
   /// Gets the default extension.
   /// </summary>
 public string DefaultExtension => ".lnx";
-    /// <summary>
+  /// <summary>
   /// Gets the extensions.
   /// </summary>
 public IReadOnlyList<string> Extensions => [".lnx"];
-    /// <summary>
+  /// <summary>
   /// Gets the compound extensions.
   /// </summary>
 public IReadOnlyList<string> CompoundExtensions => [];
@@ -59,19 +59,19 @@ public IReadOnlyList<string> CompoundExtensions => [];
     new("LYNX"u8.ToArray(), Offset: 0x3C, Confidence: 0.92),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets the methods.
   /// </summary>
 public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-    /// <summary>
+  /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
 public string? TarCompressionFormatId => null;
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Archive;
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description =>
@@ -79,7 +79,7 @@ public string Description =>
     "creation, REL read/remove support, and genuine in-place add/replace/remove by shifting only " +
     "the affected directory/data block ranges. No compression or checksum exists in the format.";
 
-    /// <summary>
+  /// <summary>
   /// Gets the options schema.
   /// </summary>
 public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -89,7 +89,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
       Description: "Exactly 24 printable ASCII characters containing LYNX."),
   ];
 
-    /// <summary>
+  /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
 public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -105,7 +105,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
       null)).ToList();
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -117,7 +117,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the open entry operation.
   /// </summary>
 public Stream OpenEntry(Stream archive, string entryName, string? password) {
@@ -130,7 +130,7 @@ public Stream OpenEntry(Stream archive, string entryName, string? password) {
     return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the extract entry to memory operation.
   /// </summary>
 public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
@@ -140,7 +140,7 @@ public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? pas
     return memory.ToArray();
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the create operation.
   /// </summary>
 public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -199,7 +199,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
     archive.Position = 0;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the defragment operation.
   /// </summary>
 public void Defragment(Stream archive, DefragOptions options) {
@@ -209,7 +209,7 @@ public void Defragment(Stream archive, DefragOptions options) {
     this.Defragment(archive);
   }
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the layout.
   /// </summary>
 public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {

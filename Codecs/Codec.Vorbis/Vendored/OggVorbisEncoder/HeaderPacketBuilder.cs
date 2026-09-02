@@ -11,7 +11,7 @@ public static class HeaderPacketBuilder
     private const string VorbisString = "vorbis";
     private const string VendorString = "OggVorbisEncoder";
 
-        /// <summary>
+    /// <summary>
     /// Performs the build info packet operation.
     /// </summary>
 public static OggPacket BuildInfoPacket(VorbisInfo info)
@@ -24,7 +24,7 @@ public static OggPacket BuildInfoPacket(VorbisInfo info)
         return new OggPacket(bytes, false, 0, 0);
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the build comments packet operation.
     /// </summary>
 public static OggPacket BuildCommentsPacket(Comments comments)
@@ -37,7 +37,7 @@ public static OggPacket BuildCommentsPacket(Comments comments)
         return new OggPacket(bytes, false, 0, 1);
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the build books packet operation.
     /// </summary>
 public static OggPacket BuildBooksPacket(VorbisInfo info)

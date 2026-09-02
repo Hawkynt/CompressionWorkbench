@@ -55,15 +55,15 @@ public sealed class AdvFsReader {
     0x00, 0x00, 0x00, 0x00,
   ];
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid.
   /// </summary>
 public bool Valid { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the parse status.
   /// </summary>
 public string ParseStatus { get; private set; } = "unparsed";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the header raw.
   /// </summary>
 public byte[] HeaderRaw { get; private set; } = [];
@@ -93,7 +93,7 @@ public byte[] HeaderRaw { get; private set; } = [];
   /// <summary>Optional textual volume tag captured from the RBMT page.</summary>
   public string VolumeTag { get; private set; } = "";
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public List<AdvFsEntry> Entries { get; } = new();
@@ -104,7 +104,7 @@ public List<AdvFsEntry> Entries { get; } = new();
   /// </summary>
   private readonly ImageAccessor? _source;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AdvFsReader"/>.
   /// </summary>
 public AdvFsReader(Stream stream) {

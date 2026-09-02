@@ -33,24 +33,24 @@ public sealed class VhdxStream : Stream {
     _batEntries = batEntries;
   }
 
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
 public override bool CanRead => true;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
 public override bool CanSeek => true;
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
 public override bool CanWrite => _backing.CanWrite;
-    /// <summary>
+  /// <summary>
   /// Gets the length.
   /// </summary>
 public override long Length => _dataLength;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the position.
   /// </summary>
 public override long Position {
@@ -61,7 +61,7 @@ public override long Position {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public override int Read(byte[] buffer, int offset, int count) {
@@ -101,7 +101,7 @@ public override int Read(byte[] buffer, int offset, int count) {
     return totalRead;
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public override void Write(byte[] buffer, int offset, int count) {
@@ -140,7 +140,7 @@ public override void Write(byte[] buffer, int offset, int count) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the seek operation.
   /// </summary>
 public override long Seek(long offset, SeekOrigin origin) {
@@ -155,7 +155,7 @@ public override long Seek(long offset, SeekOrigin origin) {
     return _position;
   }
 
-    /// <summary>
+  /// <summary>
   /// Sets the length.
   /// </summary>
 public override void SetLength(long value) {
@@ -165,12 +165,12 @@ public override void SetLength(long value) {
         $"(current={_dataLength}, requested={value}).");
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the flush operation.
   /// </summary>
 public override void Flush() => _backing.Flush();
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 protected override void Dispose(bool disposing) {

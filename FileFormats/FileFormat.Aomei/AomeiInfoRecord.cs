@@ -29,7 +29,7 @@ public sealed class AomeiInfoRecord {
   /// (i.e. relative to the BIFH magic at file offset 0).</summary>
   public long FileOffset { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AomeiInfoRecord"/>.
   /// </summary>
 public AomeiInfoRecord(BrStandardHeader header, bool crcValid, byte[] body, long fileOffset) {

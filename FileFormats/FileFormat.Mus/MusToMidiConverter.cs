@@ -17,11 +17,11 @@ namespace FileFormat.Mus;
 public static class MusToMidiConverter {
 
   // SMF division and tempo chosen so that ticks advance at 140 Hz (DMX rate).
-    /// <summary>
+  /// <summary>
   /// Defines the division constant value.
   /// </summary>
 public const int Division = 70;
-    /// <summary>
+  /// <summary>
   /// Defines the tempo micros per quarter constant value.
   /// </summary>
 public const int TempoMicrosPerQuarter = 681818;
@@ -47,7 +47,7 @@ public const int TempoMicrosPerQuarter = 681818;
     return musChannel < 9 ? musChannel : musChannel + 1;
   }
 
-    /// <summary>
+  /// <summary>
   /// Represents a result.
   /// </summary>
 public sealed record Result(byte[] Midi, int EventCount);

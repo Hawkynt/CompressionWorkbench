@@ -5,7 +5,7 @@ namespace OggVorbisEncoder.Setup.Templates;
 /// </summary>
 public static class Psy
 {
-        /// <summary>
+    /// <summary>
     /// Provides the ath floater value.
     /// </summary>
 public static readonly int[] AthFloater =
@@ -19,29 +19,29 @@ public static readonly int[] AthFloater =
         -130, -130, -130, -130, -140, -140, -140, -140, -140, -140, -140, -150
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the compand short mapping value.
     /// </summary>
 public static readonly double[] CompandShortMapping = { 0.5, 1, 1, 1.3, 1.6, 2, 2, 2, 2, 2, 2, 2 };
-        /// <summary>
+    /// <summary>
     /// Provides the compand long mapping value.
     /// </summary>
 public static readonly double[] CompandLongMapping = { 3.5, 4, 4, 4.3, 4.6, 5, 5, 5, 5, 5, 5, 5 };
 
-        /// <summary>
+    /// <summary>
     /// Provides the tone suppress value.
     /// </summary>
 public static readonly int[] ToneSuppress = { -20, -20, -20, -20, -20, -24, -30, -40, -40, -45, -45, -45 };
-        /// <summary>
+    /// <summary>
     /// Provides the tone zero decibel value.
     /// </summary>
 public static readonly int[] ToneZeroDecibel = { 90, 90, 95, 95, 95, 95, 105, 105, 105, 105, 105, 105 };
-        /// <summary>
+    /// <summary>
     /// Provides the noise suppress value.
     /// </summary>
 public static readonly int[] NoiseSuppress = { -20, -20, -24, -24, -24, -24, -30, -40, -40, -45, -45, -45 };
 
-        /// <summary>
+    /// <summary>
     /// Provides the noise bias impulse value.
     /// </summary>
 public static readonly Noise3[] NoiseBiasImpulse =
@@ -133,7 +133,7 @@ public static readonly Noise3[] NoiseBiasImpulse =
         })
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the noise bias padding value.
     /// </summary>
 public static readonly Noise3[] NoiseBiasPadding =
@@ -225,7 +225,7 @@ public static readonly Noise3[] NoiseBiasPadding =
         })
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the noise bias transition value.
     /// </summary>
 public static readonly Noise3[] NoiseBiasTransition =
@@ -317,7 +317,7 @@ public static readonly Noise3[] NoiseBiasTransition =
         })
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the noise bias long block value.
     /// </summary>
 public static readonly Noise3[] NoiseBiasLongBlock =
@@ -409,7 +409,7 @@ public static readonly Noise3[] NoiseBiasLongBlock =
         })
     };
 
-        /// <summary>
+    /// <summary>
     /// Provides the psy info template value.
     /// </summary>
 public static readonly PsyInfo PsyInfoTemplate =

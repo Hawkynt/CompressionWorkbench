@@ -29,12 +29,12 @@ public sealed class XfsReader : IDisposable {
   private const uint XfsFeatIncompatFtype = 0x1;
   private bool HasFtype => (this._featuresIncompat & XfsFeatIncompatFtype) != 0;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<XfsEntry> Entries => _entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="XfsReader"/>.
   /// </summary>
 public XfsReader(Stream stream, bool leaveOpen = true) {
@@ -309,7 +309,7 @@ public XfsReader(Stream stream, bool leaveOpen = true) {
     }
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(XfsEntry entry) {
@@ -382,7 +382,7 @@ public byte[] Extract(XfsEntry entry) {
     return written;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._img.Dispose();

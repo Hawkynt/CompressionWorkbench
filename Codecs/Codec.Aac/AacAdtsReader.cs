@@ -7,59 +7,59 @@ namespace Codec.Aac;
 /// ADTS stores this minus 1 in its 2-bit <c>profile</c> field.
 /// </summary>
 public enum AacObjectType {
-    /// <summary>
+  /// <summary>
   /// Specifies the null option.
   /// </summary>
 Null = 0,
-    /// <summary>
+  /// <summary>
   /// Specifies the aac main option.
   /// </summary>
 AacMain = 1,
-    /// <summary>
+  /// <summary>
   /// Specifies the aac lc option.
   /// </summary>
 AacLc = 2,
-    /// <summary>
+  /// <summary>
   /// Specifies the aac ssr option.
   /// </summary>
 AacSsr = 3,
-    /// <summary>
+  /// <summary>
   /// Specifies the aac ltp option.
   /// </summary>
 AacLtp = 4,
-    /// <summary>
+  /// <summary>
   /// Specifies the sbr option.
   /// </summary>
 Sbr = 5,         // HE-AAC extension (Spectral Band Replication)
-    /// <summary>
+  /// <summary>
   /// Specifies the aac scalable option.
   /// </summary>
 AacScalable = 6,
-    /// <summary>
+  /// <summary>
   /// Specifies the twin vq option.
   /// </summary>
 TwinVQ = 7,
-    /// <summary>
+  /// <summary>
   /// Specifies the celp option.
   /// </summary>
 Celp = 8,
-    /// <summary>
+  /// <summary>
   /// Specifies the hvxc option.
   /// </summary>
 Hvxc = 9,
-    /// <summary>
+  /// <summary>
   /// Specifies the er aac lc option.
   /// </summary>
 Er_AacLc = 17,
-    /// <summary>
+  /// <summary>
   /// Specifies the er aac ltp option.
   /// </summary>
 Er_AacLtp = 19,
-    /// <summary>
+  /// <summary>
   /// Specifies the er aac scalable option.
   /// </summary>
 Er_AacScalable = 20,
-    /// <summary>
+  /// <summary>
   /// Specifies the ps option.
   /// </summary>
 Ps = 29,          // HE-AAC v2 (Parametric Stereo)

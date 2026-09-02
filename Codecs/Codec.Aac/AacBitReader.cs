@@ -14,12 +14,12 @@ public sealed class AacBitReader {
   private int _bytePos;
   private int _bitPos;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AacBitReader"/>.
   /// </summary>
 public AacBitReader(byte[] data) : this(data, 0, data?.Length ?? 0) { }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="AacBitReader"/>.
   /// </summary>
 public AacBitReader(byte[] data, int offset, int length) {

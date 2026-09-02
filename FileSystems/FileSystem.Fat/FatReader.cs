@@ -18,11 +18,11 @@ public sealed class FatReader : IDisposable {
   private readonly ImageAccessor _img;
   private readonly List<FatEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<FatEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the fat type.
   /// </summary>
 public int FatType { get; private set; } // 12, 16, or 32
@@ -39,7 +39,7 @@ public int FatType { get; private set; } // 12, 16, or 32
   private int _totalDataClusters;
   private int _rootCluster; // FAT32 only
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="FatReader"/>.
   /// </summary>
 public FatReader(Stream stream, bool leaveOpen = false) {
@@ -255,7 +255,7 @@ public FatReader(Stream stream, bool leaveOpen = false) {
     _ => true
   };
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(FatEntry entry) {
@@ -290,7 +290,7 @@ public byte[] Extract(FatEntry entry) {
       _reservedSectors, _fatCount, _fatSize, _firstDataSector);
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

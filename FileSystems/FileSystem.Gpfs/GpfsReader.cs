@@ -28,24 +28,24 @@ public sealed class GpfsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<GpfsEntry> _entries = [];
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<GpfsEntry> Entries => _entries;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the magic word.
   /// </summary>
 public uint MagicWord { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the trailing word.
   /// </summary>
 public uint TrailingWord { get; private set; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
 public bool ValidHeader { get; private set; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="GpfsReader"/>.
   /// </summary>
 public GpfsReader(Stream stream) {
@@ -88,7 +88,7 @@ public GpfsReader(Stream stream) {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(GpfsEntry entry) {
@@ -96,7 +96,7 @@ public byte[] Extract(GpfsEntry entry) {
     return entry.Data;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() { }

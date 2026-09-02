@@ -23,7 +23,7 @@ namespace FileFormat.Bfstm;
 /// </summary>
 public sealed class BfstmReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a stream info.
   /// </summary>
 public sealed record StreamInfo(
@@ -42,7 +42,7 @@ public sealed record StreamInfo(
     int FinalBlockSizePadded,
     bool BigEndian);
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed stream.
   /// </summary>
 public sealed record ParsedStream(
@@ -53,7 +53,7 @@ public sealed record ParsedStream(
   private const int SectionInfo = 0x4000;
   private const int SectionData = 0x4002;
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedStream Read(ReadOnlySpan<byte> data) {

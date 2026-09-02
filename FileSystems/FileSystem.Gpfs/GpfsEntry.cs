@@ -5,23 +5,23 @@ namespace FileSystem.Gpfs;
 /// Represents a gpfs entry.
 /// </summary>
 public sealed class GpfsEntry {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the name.
   /// </summary>
 public string Name { get; init; } = "";
-    /// <summary>
+  /// <summary>
   /// Gets or sets the size.
   /// </summary>
 public long Size { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
 public bool IsDirectory { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the offset.
   /// </summary>
 public long Offset { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the data.
   /// </summary>
 public byte[] Data { get; init; } = [];

@@ -28,7 +28,7 @@ public sealed class ResourceDllReader {
     ushort LanguageId,
     byte[] Data);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public List<Entry> Read(Stream stream) =>
@@ -37,7 +37,7 @@ public List<Entry> Read(Stream stream) =>
       .Select(r => new Entry(r.NameString!, r.Data))
       .ToList();
 
-    /// <summary>
+  /// <summary>
   /// Reads the all from the supplied input.
   /// </summary>
 public List<RawResource> ReadAll(Stream stream) {

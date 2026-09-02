@@ -102,7 +102,7 @@ public sealed class UbifsWriter {
   private readonly int _lebSize;
   private ulong _sqnum;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="UbifsWriter"/>.
   /// </summary>
 public UbifsWriter(int lebSize = DefaultLebSize) {

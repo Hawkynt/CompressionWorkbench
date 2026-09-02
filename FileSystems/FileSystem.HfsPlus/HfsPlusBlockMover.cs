@@ -34,7 +34,7 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
   private uint _totalBlocks;
   private long _imageLength;
 
-    /// <summary>
+  /// <summary>
   /// Gets the first data byte.
   /// </summary>
 public long FirstDataByte => 0;
@@ -71,7 +71,7 @@ public long FirstDataByte => 0;
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
@@ -108,7 +108,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
 public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
@@ -223,7 +223,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
     ForkOffsets.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the update metadata after move operation.
   /// </summary>
 public void UpdateMetadataAfterMove(Stream image, string metadataName,

@@ -12,7 +12,7 @@ public static class VdiLayoutMap {
 
   private const uint VdiSignature = 0xBEDA107F;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {

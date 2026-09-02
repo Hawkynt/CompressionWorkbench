@@ -57,12 +57,12 @@ public sealed class F2fsReader : IDisposable {
   private int _natBlkAddr; // in blocks
   private int _mainBlkAddr;
 
-    /// <summary>
+  /// <summary>
   /// Gets the entries.
   /// </summary>
 public IReadOnlyList<F2fsEntry> Entries => this._entries;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="F2fsReader"/>.
   /// </summary>
 public F2fsReader(Stream stream, bool leaveOpen = true) {
@@ -332,7 +332,7 @@ public F2fsReader(Stream stream, bool leaveOpen = true) {
     return (long)BinaryPrimitives.ReadUInt64LittleEndian(inode.AsSpan(InodeSizeOff));
   }
 
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Extract(F2fsEntry entry) {
@@ -388,7 +388,7 @@ public byte[] Extract(F2fsEntry entry) {
     return written;
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() => this._data.Dispose();

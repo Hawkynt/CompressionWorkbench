@@ -10,19 +10,19 @@ namespace FileFormat.T64;
 public sealed class T64Writer {
   private readonly List<(string Name, ushort StartAddress, byte[] Data)> _files = [];
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, ushort startAddress, byte[] data) =>
     _files.Add((name, startAddress, data));
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) =>
     _files.Add((name, 0x0801, data)); // default BASIC start address
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build(string tapeName = "TAPE") {

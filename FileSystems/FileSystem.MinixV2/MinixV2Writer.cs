@@ -115,7 +115,7 @@ public sealed class MinixV2Writer : IDisposable {
   /// <summary>Zones a 16-bit zone number can address.</summary>
   private const long MaxZones = (1L << 16) - 1;
 
-    /// <summary>
+  /// <summary>
   /// Performs the build operation.
   /// </summary>
 public byte[] Build() {
@@ -456,7 +456,7 @@ public byte[] Build() {
     data[bitmapOffset + bitIndex / 8] |= (byte)(1 << (bitIndex % 8));
   }
 
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 public void Dispose() {

@@ -10,7 +10,7 @@ public static class Encoding
     private const int Man = 21;
     private const int ExpBias = 768; // bias toward values smaller than 1.
 
-        /// <summary>
+    /// <summary>
     /// Performs the log operation.
     /// </summary>
 public static int Log(int value)
@@ -23,7 +23,7 @@ public static int Log(int value)
         return ret;
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the unpack float operation.
     /// </summary>
 public static float UnpackFloat(int value)
@@ -41,7 +41,7 @@ public static float UnpackFloat(int value)
     //given a list of word lengths, generate a list of codewords.  Works
     //  for length ordered or unordered, always assigns the lowest valued
     //  codewords first.  Extended to handle unused entries (length 0) 
-        /// <summary>
+    /// <summary>
     /// Performs the make words operation.
     /// </summary>
 public static uint[] MakeWords(byte[] l, int sparsecount)

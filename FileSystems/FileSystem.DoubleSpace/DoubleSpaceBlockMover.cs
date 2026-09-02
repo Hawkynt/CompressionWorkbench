@@ -67,7 +67,7 @@ public sealed class DoubleSpaceBlockMover : IFilesystemBlockMover {
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Performs the move extent operation.
   /// </summary>
 public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {

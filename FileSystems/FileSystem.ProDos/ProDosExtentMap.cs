@@ -21,7 +21,7 @@ public static class ProDosExtentMap {
   private const int EntrySize = 39;
   private static readonly byte[] TwoImgMagic = "2IMG"u8.ToArray();
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

@@ -66,7 +66,7 @@ public sealed class Jffs2Writer {
   /// <summary>S_IFDIR | 0755</summary>
   private const uint ModeDirectory = 0x41ED;
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="Jffs2Writer"/>.
   /// </summary>
 public Jffs2Writer(int eraseBlockSize = DefaultEraseBlockSize) {

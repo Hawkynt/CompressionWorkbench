@@ -2,7 +2,7 @@ using System.IO;
 
 namespace GroovyCodecs.Mp3
 {
-        /// <summary>
+    /// <summary>
     /// Decodes i mp 3 data.
     /// </summary>
 public interface IMp3Decoder

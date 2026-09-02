@@ -15,7 +15,7 @@ namespace FileSystem.SysV;
 /// </remarks>
 public static class SysVExtentMap {
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

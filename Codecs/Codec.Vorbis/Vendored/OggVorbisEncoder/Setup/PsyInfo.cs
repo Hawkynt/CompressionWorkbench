@@ -7,7 +7,7 @@ namespace OggVorbisEncoder.Setup;
 /// </summary>
 public class PsyInfo
 {
-        /// <summary>
+    /// <summary>
     /// Defines the bands constant value.
     /// </summary>
 public const int Bands = 17;
@@ -19,7 +19,7 @@ public const int Bands = 17;
 
     private float[] _toneMasterAtt;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="PsyInfo"/>.
     /// </summary>
 public PsyInfo(
@@ -70,21 +70,21 @@ public PsyInfo(
         NormalThreshold = normalThreshold;
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the block flag.
     /// </summary>
 public int BlockFlag { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the ath adj att.
     /// </summary>
 public float AthAdjAtt { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the ath max att.
     /// </summary>
 public float AthMaxAtt { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the tone master att.
     /// </summary>
 public float[] ToneMasterAtt
@@ -93,20 +93,20 @@ public float[] ToneMasterAtt
         private set { _toneMasterAtt = value.ToFixedLength(NoiseCurves); }
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the tone center boost.
     /// </summary>
 public float ToneCenterBoost { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the tone decay.
     /// </summary>
 public float ToneDecay { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the tone abs limit.
     /// </summary>
 public float ToneAbsLimit { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the tone att.
     /// </summary>
 public float[] ToneAtt
@@ -115,36 +115,36 @@ public float[] ToneAtt
         private set { _toneAtt = value.ToFixedLength(Bands); }
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets the noise mask p.
     /// </summary>
 public int NoiseMaskP { get; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the noise max suppress.
     /// </summary>
 public float NoiseMaxSuppress { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets the noise window low.
     /// </summary>
 public float NoiseWindowLow { get; }
-        /// <summary>
+    /// <summary>
     /// Gets the noise window high.
     /// </summary>
 public float NoiseWindowHigh { get; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the noise window low min.
     /// </summary>
 public int NoiseWindowLowMin { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the noise window high min.
     /// </summary>
 public int NoiseWindowHighMin { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the noise window fixed.
     /// </summary>
 public int NoiseWindowFixed { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the noise offset.
     /// </summary>
 public float[][] NoiseOffset
@@ -157,7 +157,7 @@ public float[][] NoiseOffset
         }
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the noise compand.
     /// </summary>
 public float[] NoiseCompand
@@ -166,29 +166,29 @@ public float[] NoiseCompand
         private set { _noiseCompand = value.ToFixedLength(NoiseCompandLevels); }
     }
 
-        /// <summary>
+    /// <summary>
     /// Gets or sets the max curve decibel.
     /// </summary>
 public float MaxCurveDecibel { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Gets a value indicating whether normalize.
     /// </summary>
 public bool Normalize { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the normal start.
     /// </summary>
 public int NormalStart { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the normal partition.
     /// </summary>
 public int NormalPartition { get; set; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the normal threshold.
     /// </summary>
 public double NormalThreshold { get; set; }
 
-        /// <summary>
+    /// <summary>
     /// Performs the clone operation.
     /// </summary>
 public PsyInfo Clone() => new PsyInfo(

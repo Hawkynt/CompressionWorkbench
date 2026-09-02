@@ -8,48 +8,48 @@ namespace FileFormat.Zarr;
 /// </summary>
 public sealed class ZarrReader {
 
-    /// <summary>
+  /// <summary>
   /// Gets the zarr format.
   /// </summary>
 public int ZarrFormat { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the node type.
   /// </summary>
 public string NodeType { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the shape.
   /// </summary>
 public IReadOnlyList<long> Shape { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the chunks.
   /// </summary>
 public IReadOnlyList<long> Chunks { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the data type.
   /// </summary>
 public string DataType { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the compressor.
   /// </summary>
 public string Compressor { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the filters count.
   /// </summary>
 public int FiltersCount { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the codecs count.
   /// </summary>
 public int CodecsCount { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the order.
   /// </summary>
 public string Order { get; }
-    /// <summary>
+  /// <summary>
   /// Gets the parse status.
   /// </summary>
 public string ParseStatus { get; }
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="ZarrReader"/>.
   /// </summary>
 public ZarrReader(Stream stream) {

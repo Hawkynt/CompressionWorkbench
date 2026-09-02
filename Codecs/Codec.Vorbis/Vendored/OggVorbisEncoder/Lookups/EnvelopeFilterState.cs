@@ -18,7 +18,7 @@ public class EnvelopeFilterState
 
     private int _nearPointer;
 
-        /// <summary>
+    /// <summary>
     /// Performs the spread near dc operation.
     /// </summary>
 public float SpreadNearDc(float input)
@@ -48,7 +48,7 @@ public float SpreadNearDc(float input)
         return (float)(decay.ToDecibel() * .5 - 15f);
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the convert amplitude to delta operation.
     /// </summary>
 public Delta ConvertAmplitudeToDelta(float amplitude, int stretch)

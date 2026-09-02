@@ -18,7 +18,7 @@ public static class Mfs1ExtentMap {
   /// <summary>Sectors the catalog occupies before any file data.</summary>
   public const int CatalogSectors = 2;
 
-    /// <summary>
+  /// <summary>
   /// Enumerates the value.
   /// </summary>
 public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {

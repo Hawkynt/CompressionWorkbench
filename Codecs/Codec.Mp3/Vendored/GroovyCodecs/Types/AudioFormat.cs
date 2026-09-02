@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace GroovyCodecs.Types
 {
-        /// <summary>
+    /// <summary>
     /// Represents an audio format.
     /// </summary>
 public class AudioFormat
@@ -10,7 +10,7 @@ public class AudioFormat
         /// <summary>for buffer estimation</summary>
         public int AverageBytesPerSecond { get; set; }
 
-                /// <summary>
+        /// <summary>
         /// Gets a value indicating whether big endian.
         /// </summary>
 public bool BigEndian { get; set; }
@@ -24,7 +24,7 @@ public bool BigEndian { get; set; }
         /// <summary>number of channels</summary>
         public short Channels { get; set; }
 
-                /// <summary>
+        /// <summary>
         /// Gets or sets the properties.
         /// </summary>
 public Dictionary<string, object> Properties { get; set; }
@@ -32,7 +32,7 @@ public Dictionary<string, object> Properties { get; set; }
         /// <summary>sample rate</summary>
         public int SampleRate { get; set; }
 
-                /// <summary>
+        /// <summary>
         /// Gets a value indicating whether is floating point.
         /// </summary>
 public bool IsFloatingPoint { get; set; }

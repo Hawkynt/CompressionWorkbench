@@ -11,7 +11,7 @@ namespace Compression.Core.Dictionary.QuickLz;
 /// </remarks>
 public sealed class QuickLzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_QuickLz";
@@ -20,13 +20,13 @@ public string Id => "BB_QuickLz";
   /// <inheritdoc/>
   public string Description => "QuickLZ 1.5 level-1 hash-indexed LZ77 payload coding";
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {

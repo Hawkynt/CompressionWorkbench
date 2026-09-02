@@ -35,11 +35,11 @@ public sealed class Jfs1Writer {
   private int _blockSize = DefaultBlockSize;
   private int _aggregateBlockSize = DefaultBlockSize;
 
-    /// <summary>
+  /// <summary>
   /// Sets the volume label.
   /// </summary>
 public void SetVolumeLabel(string? s) { if (!string.IsNullOrWhiteSpace(s)) _volumeLabel = s; }
-    /// <summary>
+  /// <summary>
   /// Sets the block size.
   /// </summary>
 public void SetBlockSize(int bs) {
@@ -47,7 +47,7 @@ public void SetBlockSize(int bs) {
       throw new ArgumentOutOfRangeException(nameof(bs), "JFS1 block size must be 1024/2048/4096.");
     _blockSize = bs;
   }
-    /// <summary>
+  /// <summary>
   /// Sets the aggregate block size.
   /// </summary>
 public void SetAggregateBlockSize(int abs) {
@@ -56,7 +56,7 @@ public void SetAggregateBlockSize(int abs) {
     _aggregateBlockSize = abs;
   }
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {

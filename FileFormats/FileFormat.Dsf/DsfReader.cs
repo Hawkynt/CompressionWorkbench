@@ -23,7 +23,7 @@ namespace FileFormat.Dsf;
 /// </summary>
 public sealed class DsfReader {
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed dsf.
   /// </summary>
 public sealed record ParsedDsf(
@@ -36,7 +36,7 @@ public sealed record ParsedDsf(
     byte[][] ChannelDsd,
     byte[]? Id3);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedDsf Read(ReadOnlySpan<byte> data) {

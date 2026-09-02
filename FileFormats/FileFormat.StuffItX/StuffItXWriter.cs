@@ -14,7 +14,7 @@ public sealed class StuffItXWriter {
   private const int MinHeaderSize = 0x60;
   private static readonly byte[] MagicFull = "StuffIt!"u8.ToArray();
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output, byte[]? embeddedData = null) {

@@ -170,23 +170,23 @@ public static class JpegMetadataEditor {
 /// fields are left unchanged; setting a field overwrites whatever was there.
 /// </summary>
 public sealed class ExifPatch {
-    /// <summary>
+  /// <summary>
   /// Gets or sets the gps.
   /// </summary>
 public GpsPoint? Gps { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the target gps.
   /// </summary>
 public GpsPoint? TargetGps { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the image direction degrees.
   /// </summary>
 public double? ImageDirectionDegrees { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether image direction is magnetic.
   /// </summary>
 public bool ImageDirectionIsMagnetic { get; init; }
-    /// <summary>
+  /// <summary>
   /// Gets or sets the image description.
   /// </summary>
 public string? ImageDescription { get; init; }

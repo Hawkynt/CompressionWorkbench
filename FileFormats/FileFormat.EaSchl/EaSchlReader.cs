@@ -25,11 +25,11 @@ public sealed class EaSchlReader {
 
   /// <summary>EA-XA / EA-ADPCM compression types as encoded by the PT <c>0xA0</c> field.</summary>
   public const int CompressionEaXa = 0x07;
-    /// <summary>
+  /// <summary>
   /// Defines the compression ea xa alt constant value.
   /// </summary>
 public const int CompressionEaXaAlt = 0x00;
-    /// <summary>
+  /// <summary>
   /// Defines the compression pcm 16 constant value.
   /// </summary>
 public const int CompressionPcm16 = 0x14;
@@ -42,19 +42,19 @@ public const int CompressionPcm16 = 0x14;
   private const byte PtCompression = 0xA0;
   private const byte PtEnd = 0x8A;
 
-    /// <summary>
+  /// <summary>
   /// Gets or sets the channels.
   /// </summary>
 public int Channels { get; private set; } = 1;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the sample rate.
   /// </summary>
 public int SampleRate { get; private set; } = 22050;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the compression.
   /// </summary>
 public int Compression { get; private set; } = CompressionEaXa;
-    /// <summary>
+  /// <summary>
   /// Gets or sets the total samples.
   /// </summary>
 public long TotalSamples { get; private set; }
@@ -62,7 +62,7 @@ public long TotalSamples { get; private set; }
   /// <summary>Concatenated coded audio bytes from every SCDl block (header stripped).</summary>
   public byte[] CodedData { get; private set; } = [];
 
-    /// <summary>
+  /// <summary>
   /// Initializes a new instance of <see cref="EaSchlReader"/>.
   /// </summary>
 public EaSchlReader(ReadOnlySpan<byte> data) {

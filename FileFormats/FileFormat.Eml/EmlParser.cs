@@ -11,41 +11,41 @@ namespace FileFormat.Eml;
 /// </summary>
 public static class EmlParser {
 
-    /// <summary>
+  /// <summary>
   /// Represents a part.
   /// </summary>
 public sealed class Part {
-        /// <summary>
+    /// <summary>
     /// Gets or sets the headers.
     /// </summary>
 public required IReadOnlyDictionary<string, string> Headers { get; init; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the raw body.
     /// </summary>
 public required byte[] RawBody { get; init; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the decoded body.
     /// </summary>
 public required byte[] DecodedBody { get; init; }
-        /// <summary>
+    /// <summary>
     /// Gets or sets the sub parts.
     /// </summary>
 public IReadOnlyList<Part>? SubParts { get; init; }
 
-        /// <summary>
+    /// <summary>
     /// Gets the content type.
     /// </summary>
 public string? ContentType => GetHeader("Content-Type");
-        /// <summary>
+    /// <summary>
     /// Gets the content disposition.
     /// </summary>
 public string? ContentDisposition => GetHeader("Content-Disposition");
-        /// <summary>
+    /// <summary>
     /// Gets the content transfer encoding.
     /// </summary>
 public string? ContentTransferEncoding => GetHeader("Content-Transfer-Encoding");
 
-        /// <summary>
+    /// <summary>
     /// Gets the header.
     /// </summary>
 public string? GetHeader(string name) =>

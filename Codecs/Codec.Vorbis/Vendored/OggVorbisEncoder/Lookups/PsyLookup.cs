@@ -26,7 +26,7 @@ public class PsyLookup
     private readonly float[][][] _toneCurves;
     private readonly int _totalOctaveLines;
 
-        /// <summary>
+    /// <summary>
     /// Initializes a new instance of <see cref="PsyLookup"/>.
     /// </summary>
 public PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)
@@ -370,7 +370,7 @@ public PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)
         return newToneCurves;
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the tone mask operation.
     /// </summary>
 public void ToneMask(
@@ -406,7 +406,7 @@ public void ToneMask(
             ArrayPool<float>.Shared.Return(seedArr);
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the offset and mix operation.
     /// </summary>
 public void OffsetAndMix(
@@ -473,7 +473,7 @@ public void OffsetAndMix(
         }
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the noise mask operation.
     /// </summary>
 public void NoiseMask(in Span<float> logmdct, float[] logmask)
@@ -676,7 +676,7 @@ public void NoiseMask(in Span<float> logmdct, float[] logmask)
         ArrayPool<float>.Shared.Return(arr);
     }
 
-        /// <summary>
+    /// <summary>
     /// Performs the couple quantize normalize operation.
     /// </summary>
 public void CoupleQuantizeNormalize(

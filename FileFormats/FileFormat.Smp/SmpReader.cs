@@ -18,41 +18,41 @@ namespace FileFormat.Smp;
 /// </summary>
 public sealed class SmpReader {
 
-    /// <summary>
+  /// <summary>
   /// Defines the magic constant value.
   /// </summary>
 public const string Magic = "SOUND SAMPLE DATA ";
-    /// <summary>
+  /// <summary>
   /// Defines the magic length constant value.
   /// </summary>
 public const int MagicLength = 18;
-    /// <summary>
+  /// <summary>
   /// Defines the header size constant value.
   /// </summary>
 public const int HeaderSize = 18 + 4 + 60 + 30; // 112: magic + version + comment + name
-    /// <summary>
+  /// <summary>
   /// Defines the loop record size constant value.
   /// </summary>
 public const int LoopRecordSize = 4 + 4 + 1 + 2;  // 11
-    /// <summary>
+  /// <summary>
   /// Defines the marker record size constant value.
   /// </summary>
 public const int MarkerRecordSize = 10 + 4;       // 14
-    /// <summary>
+  /// <summary>
   /// Defines the loop count constant value.
   /// </summary>
 public const int LoopCount = 8;
-    /// <summary>
+  /// <summary>
   /// Defines the marker count constant value.
   /// </summary>
 public const int MarkerCount = 8;
   // trailer after the samples: loops + markers + MIDI unity byte + uint32 rate.
-    /// <summary>
+  /// <summary>
   /// Defines the trailer size constant value.
   /// </summary>
 public const int TrailerSize = LoopCount * LoopRecordSize + MarkerCount * MarkerRecordSize + 1 + 4;
 
-    /// <summary>
+  /// <summary>
   /// Represents a parsed smp.
   /// </summary>
 public sealed record ParsedSmp(
@@ -64,7 +64,7 @@ public sealed record ParsedSmp(
     int MidiUnity,
     byte[] SamplesLe);
 
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public ParsedSmp Read(ReadOnlySpan<byte> data) {

@@ -52,28 +52,28 @@ public sealed class RaidAssembledStream : Stream {
   };
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
 public override bool CanRead => true;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
 public override bool CanSeek => true;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
 public override bool CanWrite => false;
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets the length.
   /// </summary>
 public override long Length => this._length;
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Gets or sets the position.
   /// </summary>
 public override long Position {
@@ -85,7 +85,7 @@ public override long Position {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Performs the seek operation.
   /// </summary>
 public override long Seek(long offset, SeekOrigin origin) {
@@ -99,7 +99,7 @@ public override long Seek(long offset, SeekOrigin origin) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public override int Read(byte[] buffer, int offset, int count) {
@@ -108,7 +108,7 @@ public override int Read(byte[] buffer, int offset, int count) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
 public override int Read(Span<byte> buffer) {
@@ -317,23 +317,23 @@ public override int Read(Span<byte> buffer) {
   }
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Performs the flush operation.
   /// </summary>
 public override void Flush() { }
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Sets the length.
   /// </summary>
 public override void SetLength(long value) => throw new NotSupportedException();
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
 public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException("RAID assembly is read-only.");
 
   /// <inheritdoc/>
-    /// <summary>
+  /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
 protected override void Dispose(bool disposing) {

@@ -27,7 +27,7 @@ namespace FileSystem.Jfs;
 public sealed class JfsWriter {
   // ── spec constants ────────────────────────────────────────────────────────
   internal const int SuperblockOffset = 0x8000;   // 64 × 512 = 32768
-    /// <summary>
+  /// <summary>
   /// Defines the block size constant value.
   /// </summary>
 public const int BlockSize = 4096;
@@ -250,7 +250,7 @@ public const int BlockSize = 4096;
   private readonly byte[] _logUuid = Guid.NewGuid().ToByteArray(bigEndian: true);
   private uint _writeTimestamp;                                                           // captured at WriteTo() start so primary/secondary copies match byte-for-byte
 
-    /// <summary>
+  /// <summary>
   /// Performs the add file operation.
   /// </summary>
 public void AddFile(string name, byte[] data) {
@@ -351,7 +351,7 @@ public void AddFile(string name, byte[] data) {
     return ordered;
   }
 
-    /// <summary>
+  /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
 public void WriteTo(Stream output) {

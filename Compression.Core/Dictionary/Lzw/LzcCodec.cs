@@ -315,28 +315,28 @@ public static class LzcCodec {
 /// </remarks>
 public sealed class LzcBuildingBlock : IBuildingBlock {
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the id.
   /// </summary>
 public string Id => "BB_Lzc";
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the display name.
   /// </summary>
 public string DisplayName => "LZC (UNIX compress)";
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the description.
   /// </summary>
 public string Description => "UNIX compress LZW with 9-16 bit codes and eight-code width-transition packing";
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Gets the family.
   /// </summary>
 public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Encodes the supplied input.
   /// </summary>
 public byte[] Compress(ReadOnlySpan<byte> data) {
@@ -348,7 +348,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   }
 
   /// <inheritdoc />
-    /// <summary>
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
 public byte[] Decompress(ReadOnlySpan<byte> data) {

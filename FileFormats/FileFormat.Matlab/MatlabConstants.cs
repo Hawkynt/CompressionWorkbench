@@ -31,137 +31,137 @@ public static class MatlabConstants {
   public static readonly byte[] Magic = "MATLAB"u8.ToArray();
 
   // MAT v5 data element type codes
-    /// <summary>
+  /// <summary>
   /// Defines the mi int 8 constant value.
   /// </summary>
 public const uint MiINT8 = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the mi uint 8 constant value.
   /// </summary>
 public const uint MiUINT8 = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the mi int 16 constant value.
   /// </summary>
 public const uint MiINT16 = 3;
-    /// <summary>
+  /// <summary>
   /// Defines the mi uint 16 constant value.
   /// </summary>
 public const uint MiUINT16 = 4;
-    /// <summary>
+  /// <summary>
   /// Defines the mi int 32 constant value.
   /// </summary>
 public const uint MiINT32 = 5;
-    /// <summary>
+  /// <summary>
   /// Defines the mi uint 32 constant value.
   /// </summary>
 public const uint MiUINT32 = 6;
-    /// <summary>
+  /// <summary>
   /// Defines the mi single constant value.
   /// </summary>
 public const uint MiSINGLE = 7;
-    /// <summary>
+  /// <summary>
   /// Defines the mi double constant value.
   /// </summary>
 public const uint MiDOUBLE = 9;
-    /// <summary>
+  /// <summary>
   /// Defines the mi int 64 constant value.
   /// </summary>
 public const uint MiINT64 = 12;
-    /// <summary>
+  /// <summary>
   /// Defines the mi uint 64 constant value.
   /// </summary>
 public const uint MiUINT64 = 13;
-    /// <summary>
+  /// <summary>
   /// Defines the mi matrix constant value.
   /// </summary>
 public const uint MiMATRIX = 14;
-    /// <summary>
+  /// <summary>
   /// Defines the mi compressed constant value.
   /// </summary>
 public const uint MiCOMPRESSED = 15;
-    /// <summary>
+  /// <summary>
   /// Defines the mi utf 8 constant value.
   /// </summary>
 public const uint MiUTF8 = 16;
-    /// <summary>
+  /// <summary>
   /// Defines the mi utf 16 constant value.
   /// </summary>
 public const uint MiUTF16 = 17;
-    /// <summary>
+  /// <summary>
   /// Defines the mi utf 32 constant value.
   /// </summary>
 public const uint MiUTF32 = 18;
 
   // MATLAB array class codes (low byte of ArrayFlags first uint32)
-    /// <summary>
+  /// <summary>
   /// Defines the mx cell class constant value.
   /// </summary>
 public const byte MxCELL_CLASS = 1;
-    /// <summary>
+  /// <summary>
   /// Defines the mx struct class constant value.
   /// </summary>
 public const byte MxSTRUCT_CLASS = 2;
-    /// <summary>
+  /// <summary>
   /// Defines the mx object class constant value.
   /// </summary>
 public const byte MxOBJECT_CLASS = 3;
-    /// <summary>
+  /// <summary>
   /// Defines the mx char class constant value.
   /// </summary>
 public const byte MxCHAR_CLASS = 4;
-    /// <summary>
+  /// <summary>
   /// Defines the mx sparse class constant value.
   /// </summary>
 public const byte MxSPARSE_CLASS = 5;
-    /// <summary>
+  /// <summary>
   /// Defines the mx double class constant value.
   /// </summary>
 public const byte MxDOUBLE_CLASS = 6;
-    /// <summary>
+  /// <summary>
   /// Defines the mx single class constant value.
   /// </summary>
 public const byte MxSINGLE_CLASS = 7;
-    /// <summary>
+  /// <summary>
   /// Defines the mx int 8 class constant value.
   /// </summary>
 public const byte MxINT8_CLASS = 8;
-    /// <summary>
+  /// <summary>
   /// Defines the mx uint 8 class constant value.
   /// </summary>
 public const byte MxUINT8_CLASS = 9;
-    /// <summary>
+  /// <summary>
   /// Defines the mx int 16 class constant value.
   /// </summary>
 public const byte MxINT16_CLASS = 10;
-    /// <summary>
+  /// <summary>
   /// Defines the mx uint 16 class constant value.
   /// </summary>
 public const byte MxUINT16_CLASS = 11;
-    /// <summary>
+  /// <summary>
   /// Defines the mx int 32 class constant value.
   /// </summary>
 public const byte MxINT32_CLASS = 12;
-    /// <summary>
+  /// <summary>
   /// Defines the mx uint 32 class constant value.
   /// </summary>
 public const byte MxUINT32_CLASS = 13;
-    /// <summary>
+  /// <summary>
   /// Defines the mx int 64 class constant value.
   /// </summary>
 public const byte MxINT64_CLASS = 14;
-    /// <summary>
+  /// <summary>
   /// Defines the mx uint 64 class constant value.
   /// </summary>
 public const byte MxUINT64_CLASS = 15;
-    /// <summary>
+  /// <summary>
   /// Defines the mx function class constant value.
   /// </summary>
 public const byte MxFUNCTION_CLASS = 16;
-    /// <summary>
+  /// <summary>
   /// Defines the mx opaque class constant value.
   /// </summary>
 public const byte MxOPAQUE_CLASS = 17;
-    /// <summary>
+  /// <summary>
   /// Defines the mx logical class constant value.
   /// </summary>
 public const byte MxLOGICAL_CLASS = 18;
