@@ -7266,7 +7266,7 @@ Operations for single-stream compression formats.
 
 #### `IWipeEmpty`
 
-Opt-in capability: the descriptor can zero-fill all unused bytes in an image or archive — free clusters/sectors, cluster-tip slack, deleted directory entries, padding regions, and dead archive bytes. This is a forensic-cleanliness tool ensuring no deleted file remnants survive. The default implementation is deliberately conservative. It is available only when the same descriptor exposes an exact filesystem extent map or archive layout map; unknown/undecoded regions must therefore be emitted as `MetadataReserved` by those maps rather than omitted. An empty map is treated as "cannot prove anything is free" and wipes nothing.
+Opt-in capability: the descriptor can zero-fill all unused bytes in an image or archive — free clusters/sectors, cluster-tip slack, deleted directory entries, padding regions, and dead archive bytes. This is a forensic-cleanliness tool ensuring no deleted file remnants survive. The default implementation is deliberately conservative. It is available only when the same descriptor exposes a filesystem extent map or an archive layout map, and it zeroes only what that map states outright: regions marked `Free`, plus the cluster tips of Used extents whose logical size is known. A region the map never mentions is left alone, because a map is free to enumerate the entries it understands and stay silent about the header, entry table or index that make the container readable at all — reading that silence as free space zeroes the structure. A descriptor whose map does account for the whole image, or that knows its own dead regions, overrides this and calls `Wipe` directly.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7274,11 +7274,11 @@ Opt-in capability: the descriptor can zero-fill all unused bytes in an image or 
 
 #### `InnerFsDetector`
 
-Detects the filesystem contained within a virtual disk stream by scanning `FormatRegistry` magic signatures against the stream header. Falls back to heuristic BPB checks for FAT (which has no magic signature). Returns the inner descriptor if it implements the required archive operations.
+Detects the filesystem contained within a virtual disk stream by scanning the registered CompressionWorkbench filesystem descriptors against the stream header. Falls back to heuristic BPB checks for FAT (which has no magic signature).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Detect` | `static IFormatDescriptor Detect(Stream virtualDisk)` | Tries to detect the inner filesystem descriptor from a virtual disk stream. Returns the descriptor if one is found and it implements `IArchiveFormatOperations`; otherwise `null`. |
+| `Detect` | `static IFormatDescriptor Detect(Stream virtualDisk)` | Tries to detect the inner filesystem descriptor from a virtual disk stream. Returns only descriptors registered as filesystem formats and exposing `IArchiveFormatOperations`; otherwise `null`. |
 
 #### `IssueSeverity`
 
@@ -7580,6 +7580,7 @@ Generic unused-space wiper that works with any format exposing an extent or layo
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ComputeUnusedBytes` | `static long ComputeUnusedBytes(IEnumerable<DefragBlockInfo> extents, long imageSize, bool includeClusterTips = false, Func<string, long> fileSizeLookup = null)` | Read-only companion to `Wipe`: returns the total number of bytes in `imageSize` that are NOT covered by a live extent. Useful for telling the user how much of their image is unused *before* the I/O-skipping optimisation in `Wipe` hides the fact that most unused bytes were already zero. |
+| `WipeDeclaredFree` | `static long WipeDeclaredFree(Stream image, IEnumerable<DefragBlockInfo> extents, long imageSize, bool wipeClusterTips = true, Func<string, long> fileSizeLookup = null)` | Zero-fills only the regions a map positively declares`Free`, plus the cluster tips of Used extents when a size lookup can prove one. Silence about a region means nothing here. |
 | `Wipe` | `static long Wipe(Stream image, IEnumerable<DefragBlockInfo> extents, long imageSize, bool wipeClusterTips = true, Func<string, long> fileSizeLookup = null)` | Zero-fills every byte in `image` that is not covered by a live (non-Free) extent in `extents`. Optionally wipes cluster tips when `fileSizeLookup` is provided. |
 
 #### `ValidationIssue`
