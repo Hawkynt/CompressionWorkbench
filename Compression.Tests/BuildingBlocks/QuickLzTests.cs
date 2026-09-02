@@ -85,7 +85,7 @@ public class QuickLzTests {
   [Test, Category("EdgeCase")]
   public void BbRegistry_ExposesMetadata() {
     Assert.That(Bb.Id, Is.EqualTo("BB_QuickLz"));
-    Assert.That(Bb.DisplayName, Is.EqualTo("QuickLZ"));
+    Assert.That(Bb.DisplayName, Is.EqualTo("QuickLZ 1.5 level 1"));
     Assert.That(Bb.Family, Is.EqualTo(AlgorithmFamily.Dictionary));
   }
 }
