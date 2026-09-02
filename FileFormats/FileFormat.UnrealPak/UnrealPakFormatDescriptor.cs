@@ -50,7 +50,8 @@ public sealed class UnrealPakFormatDescriptor :
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "Unreal legacy Pak index: v1-v7 read with SHA-1 verification and block-aware Stored/Zlib extraction; " +
-    "deterministic v3 Stored/Zlib creation. v8+ modern indexes and IoStore are not falsely claimed.";
+    "deterministic v3 creation plus trailer-only v3 add/replace/remove with verified rebuild fallback. " +
+    "v8+ modern indexes and IoStore are not falsely claimed.";
 
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("CompressionBlockSize", "Zlib block size", FormatOptionKind.Integer, "65536",
@@ -128,10 +129,21 @@ public sealed class UnrealPakFormatDescriptor :
     => UnrealPakWriter.Write(output, inputs, options);
 
   /// <summary>
-  /// Adds or replaces files through the repository's verified extract/re-create path. This is
-  /// WORM rebuild behavior and therefore does not advertise <see cref="FormatCapabilities.CanModify"/>.
+  /// Adds or replaces files. Pak v3 takes the random-access trailer path: changed payload
+  /// records are written where the old index began, then only the monolithic index and fixed
+  /// footer are regenerated. Untouched payloads remain byte-identical at their original
+  /// offsets. Older supported legacy versions fall back to the verified extract/re-create
+  /// path because their record/footer profiles have not yet been proven for in-place edits.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    try {
+      UnrealPakModifier.Add(archive, inputs);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
     EnsureRebuildable(archive);
     RebuildVerb.EditViaRebuild(archive, this, this, temporaryDirectory => {
       foreach (var input in inputs) {
@@ -147,8 +159,20 @@ public sealed class UnrealPakFormatDescriptor :
     });
   }
 
-  /// <summary>Removes files through verified full rebuild, wiping stale Pak bytes on commit.</summary>
+  /// <summary>
+  /// Removes files. Pak v3 rewrites only the trailing index/footer, then zeros the removed
+  /// local record and payload ranges; surviving payloads are neither moved nor recompressed.
+  /// Unsupported legacy profiles keep the verified full-rebuild fallback.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    try {
+      UnrealPakModifier.Remove(archive, entryNames);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
     EnsureRebuildable(archive);
     var remove = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, temporaryDirectory => {

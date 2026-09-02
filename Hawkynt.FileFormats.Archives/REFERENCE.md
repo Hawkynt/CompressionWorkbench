@@ -14819,14 +14819,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files through the repository's verified extract/re-create path. This is WORM rebuild behavior and therefore does not advertise `CanModify`. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files. Pak v3 takes the random-access trailer path: changed payload records are written where the old index began, then only the monolithic index and fixed footer are regenerated. Untouched payloads remain byte-identical at their original offsets. Older supported legacy versions fall back to the verified extract/re-create path because their record/footer profiles have not yet been proven for in-place edits. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a deterministic Pak v3 archive. `MethodName` may be `auto`, `stored`, or `zlib`; v3 deliberately keeps the legacy index and absolute compression-block offsets for broad UE4-era interoperability. |
 | `Defragment` | `void Defragment(Stream archive)` | Rewrites live entries contiguously as a verified Pak v3 rebuild. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one verified entry as a bounded in-memory stream. Unsupported/encrypted/deleted entries return an empty bounded stream rather than leaking raw ciphertext or tombstones. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files through verified full rebuild, wiping stale Pak bytes on commit. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files. Pak v3 rewrites only the trailing index/footer, then zeros the removed local record and payload ranges; surviving payloads are neither moved nor recompressed. Unsupported legacy profiles keep the verified full-rebuild fallback. |
 
 #### `UnrealPakReader`
 
