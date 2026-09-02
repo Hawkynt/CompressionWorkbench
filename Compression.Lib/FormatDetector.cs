@@ -256,6 +256,20 @@ public static partial class FormatDetector {
         return pak;
     }
 
+    // ".mcr" is a PlayStation memory card and, as the pre-Anvil name, a
+    // Minecraft region file. The card carries an "MC" magic and the region file
+    // carries none, so an existing file is decided by looking; a path that does
+    // not exist yet is a Create target, and only the card descriptor has a
+    // writer, so routing that to the region reader turns every "save it as
+    // .mcr" into "no creatable descriptor".
+    if (singleExt == ".mcr") {
+      var mcr = DetectPs1MemoryCardByMagic(path);
+      if (mcr != Format.Unknown)
+        return mcr;
+      if (!File.Exists(path))
+        return Format.Ps1MemoryCard;
+    }
+
     // ".vib" is both a VMware installation bundle (an AR archive) and a Veeam
     // incremental backup. Only one of the two says what it is up front.
     if (singleExt == ".vib") {
@@ -358,6 +372,20 @@ public static partial class FormatDetector {
   /// Tells a VMware installation bundle from a Veeam incremental backup. The
   /// bundle is an AR archive and says so in its first eight bytes.
   /// </summary>
+  private static Format DetectPs1MemoryCardByMagic(string path) {
+    try {
+      if (!File.Exists(path)) return Format.Unknown;
+      using var fs = File.OpenRead(path);
+      Span<byte> magic = stackalloc byte[2];
+      if (fs.Read(magic) < 2) return Format.Unknown;
+      if (magic.SequenceEqual("MC"u8))
+        return Format.Ps1MemoryCard;
+    } catch {
+      /* ignore detection failure */
+    }
+    return Format.Unknown;
+  }
+
   private static Format DetectVibByMagic(string path) {
     try {
       if (!File.Exists(path)) return Format.Unknown;

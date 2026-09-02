@@ -70,7 +70,10 @@ internal static class UefiFvInPlaceModifier {
     var pos = Align8(checked(fvStart + fv.Header.HeaderLength));
     var result = new List<Slot>();
     while (pos + UefiFvWriter.FfsHeaderLength <= fvEnd) {
-      if (IsErased(image.AsSpan(pos, UefiFvWriter.FfsHeaderLength))) {
+      // One quantum at a time, and only the quantum is tested — see the same
+      // walk in UefiFvReader: testing a whole header straddles the end of an
+      // erased gap and reads the next file's GUID as a length.
+      if (IsErased(image.AsSpan(pos, UefiFvWriter.Alignment))) {
         pos += UefiFvWriter.Alignment;
         continue;
       }

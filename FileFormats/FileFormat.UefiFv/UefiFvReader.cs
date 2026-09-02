@@ -86,13 +86,20 @@ public sealed class UefiFvReader {
     var files = new List<FfsFile>();
     var pos = Align8(start);
     while (pos + 24 <= end) {
-      var header = data.Slice(pos, 24);
-      if (IsErased(header)) {
-        // Free/deleted regions may occur between live files after offline
-        // mutation. Advance one alignment quantum until the next header.
+      // Free/deleted regions may occur between live files after offline
+      // mutation, so a gap has to be walked over one alignment quantum at a
+      // time. Only the quantum itself is tested: asking whether a whole 24-byte
+      // header is erased reads past the end of the gap, and the last two
+      // quanta of a gap then look half-written — the walk parsed that overlap
+      // as a file, took its size from the middle of the real header's GUID, and
+      // gave up on the volume. An FFS file starts on this boundary and opens
+      // with its GUID, which is never all-ones.
+      if (IsErased(data.Slice(pos, 8))) {
         pos += 8;
         continue;
       }
+
+      var header = data.Slice(pos, 24);
 
       var name = new Guid(header[..16]);
       var type = header[18];
