@@ -39,12 +39,10 @@ public static class Sha1HashSizeExtensions {
 /// Provides supported hash-output size metadata for <see cref="Sha256"/>.
 /// </summary>
 public static class Sha256HashSizeExtensions {
-  extension(Sha256) {
-    /// <summary>
-    /// Gets the supported hash-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits256;
-  }
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits256;
 }
 /// <summary>
 /// Provides supported hash-output size metadata for <see cref="XxHash32"/>.

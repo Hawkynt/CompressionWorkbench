@@ -139,12 +139,10 @@ public static class ParityChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Nmea0183"/>.
 /// </summary>
 public static class Nmea0183ChecksumSizeExtensions {
-  extension(Nmea0183) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8;
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Crc"/>.

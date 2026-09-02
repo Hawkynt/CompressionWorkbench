@@ -28,12 +28,10 @@ public static class Crc16ChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Crc16Ccitt"/>.
 /// </summary>
 public static class Crc16CcittChecksumSizeExtensions {
-  extension(Crc16Ccitt) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16;
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Crc32"/>.

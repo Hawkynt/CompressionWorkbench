@@ -719,12 +719,10 @@ public static class SubterraneanHashSizeExtensions {
 /// Provides supported hash-output size metadata for <see cref="Whirlpool"/>.
 /// </summary>
 public static class WhirlpoolHashSizeExtensions {
-  extension(Whirlpool) {
-    /// <summary>
-    /// Gets the supported hash-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits512;
-  }
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits512;
 }
 /// <summary>
 /// Provides supported hash-output size metadata for <see cref="XoodyakHash"/>.

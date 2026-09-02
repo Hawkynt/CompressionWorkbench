@@ -5,6 +5,11 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Whirlpool as standardized in ISO/IEC 10118-3.</summary>
 public static class Whirlpool {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
+  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits512;
+
   private static readonly ulong[] RoundConstants = [
     0x1823C6E887B8014FUL,0x36A6D2F5796F9152UL,0x60BC9B8EA30C7B35UL,0x1DE0D7C22E4BFE57UL,0x157737E59FF04ADAUL,
     0x58C9290AB1A06B85UL,0xBD5D10F4CB3E0567UL,0xE427418BA77D95D8UL,0xFBEE7C66DD17479EUL,0xCA2DBF07AD5A8333UL
