@@ -122,13 +122,6 @@ jobs:
           dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj --configuration Release --output dist-nuget -p:Version=0.0.0-ci
           ls -la dist-nuget/
 
-      # The package READMEs must follow the house template, and their API reference must still match
-      # the assemblies just built. The template itself lives in RepositoryTemplate -- nothing about
-      # it is copied into this repo.
-      - name: Check package READMEs
-        if: matrix.os == 'ubuntu-latest'
-        uses: Hawkynt/RepositoryTemplate/package-readme@v1
-
       # Core tests -- always run (no external tools required).
       - name: Core tests
         run: >
@@ -205,6 +198,18 @@ jobs:
           --configuration Release --no-build
           --filter "Category=Performance"
           --logger "trx;LogFileName=perf-tests.trx"
+
+      # AFTER every test leg, and it runs even when one of them failed. Ordered before them it
+      # masks the suite completely: this step going red stopped the job, no test ran at all, and
+      # the pull request looked merely blocked rather than failing. That is how twenty-five failing
+      # tests once reached main. The tests are the primary signal and must always produce one.
+      #
+      # The package READMEs must follow the house template, and their API reference must still match
+      # the assemblies just built. The template itself lives in RepositoryTemplate -- nothing about
+      # it is copied into this repo.
+      - name: Check package READMEs
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        uses: Hawkynt/RepositoryTemplate/package-readme@v1
 
       - name: Upload test results
         if: always()
