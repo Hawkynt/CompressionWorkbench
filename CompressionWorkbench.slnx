@@ -7,6 +7,8 @@
     <Project Path="Compression.Registry.Generator/Compression.Registry.Generator.csproj" />
     <Project Path="Compression.Lib/Compression.Lib.csproj" />
     <Project Path="Compression.Analysis/Compression.Analysis.csproj" />
+    <Project Path="Compression.Mounting/Compression.Mounting.csproj" />
+    <Project Path="Compression.Mounting.Dokan/Compression.Mounting.Dokan.csproj" />
   </Folder>
   <Folder Name="/MetaPackages/">
     <Project Path="Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj" />
