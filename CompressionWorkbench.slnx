@@ -9,6 +9,7 @@
     <Project Path="Compression.Analysis/Compression.Analysis.csproj" />
     <Project Path="Compression.Mounting/Compression.Mounting.csproj" />
     <Project Path="Compression.Mounting.Dokan/Compression.Mounting.Dokan.csproj" />
+    <Project Path="Compression.NativeUI/Compression.NativeUI.csproj" />
   </Folder>
   <Folder Name="/MetaPackages/">
     <Project Path="Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj" />

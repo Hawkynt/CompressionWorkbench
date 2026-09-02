@@ -1,4 +1,8 @@
+// Program.cs is top-level statements, so it sits in the GLOBAL namespace while MainForm,
+// RegistryMountLauncher and IMountLauncher all declare `namespace Compression.NativeUI`. Without
+// this using it cannot see its own project's types, which is why the project did not compile.
 using Compression.Lib;
+using Compression.NativeUI;
 using Compression.Mounting;
 using Compression.Mounting.Dokan;
 using Hawkynt.NativeForms;
