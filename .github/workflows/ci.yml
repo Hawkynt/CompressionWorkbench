@@ -123,11 +123,19 @@ jobs:
           ls -la dist-nuget/
 
       # Core tests -- always run (no external tools required).
+      #
+      # NOTE the two similar category names, which are NOT spellings of each other:
+      #   End2End    (95 uses) in-process create/extract round trips - Ace, Arj, Arc and friends.
+      #              No external process, so it belongs here and GATES the pull request.
+      #   EndToEnd   (10 uses) oracle comparisons against real 7-Zip / RAR / SFX binaries. Needs
+      #              the tools installed below, hence its own advisory step.
+      # Renaming one to the other would move 95 gating tests into an advisory tier that installs
+      # tools they never use. Leave them distinct.
       - name: Core tests
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
+          --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
           --logger "trx;LogFileName=core-tests.trx"
 
       # Interop tools for E2E tests.
@@ -159,6 +167,18 @@ jobs:
           --configuration Release --no-build
           --filter "Category=ExternalInterop"
           --logger "trx;LogFileName=external-tests.trx"
+
+      # mkfs.*, 7z and friends. Advisory for the same reason the neighbours are: a runner without
+      # one of the tools must not fail the build. These used to sit in the CORE tier, which runs
+      # BEFORE the tools above are installed -- so they were reached with nothing to interoperate
+      # with and skipped themselves, every run, invisibly.
+      - name: External filesystem interop tests
+        continue-on-error: true
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "Category=ExternalFsInterop"
+          --logger "trx;LogFileName=external-fs-tests.trx"
 
       - name: OS integration tests
         continue-on-error: true
