@@ -153,9 +153,6 @@ public sealed class G64FormatDescriptor :
   /// Gets the magic signatures.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
     [new("GCR-1541"u8.ToArray(), Offset: 0, Confidence: 0.90)];
   /// <summary>
   /// Gets the methods.
