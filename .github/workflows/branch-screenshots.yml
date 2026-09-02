@@ -82,16 +82,27 @@ jobs:
           path: docs/screenshots/*.png
           retention-days: 14
 
-      - name: Commit refreshed screenshots
-        shell: bash
-        run: |
-          if [ -z "$(git status --porcelain -- README.md docs/screenshots)" ]; then
-            echo "Screenshots and README are already current."
-            exit 0
-          fi
+      # Through the shared action, never a raw `git commit && git push`. A commit made by git on a
+      # runner is UNSIGNED, and required_signatures is evaluated over a pull request's commits --
+      # a squash merge does not launder it -- so a raw push here makes the branch unmergeable
+      # later, with an error that points at the merge rather than at this step. The action goes
+      # through the contents API, which GitHub signs.
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: README.md
+          message: '* refresh the screenshot section'
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md docs/screenshots
-          git commit -m "docs: refresh branch screenshots [skip ci]"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: docs/screenshots/archive-browser.png
+          message: '* refresh the archive browser screenshot'
+
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: docs/screenshots/analysis.png
+          message: '* refresh the analysis window screenshot'
+
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: docs/screenshots/maintenance.png
+          message: '* refresh the maintenance window screenshot'
