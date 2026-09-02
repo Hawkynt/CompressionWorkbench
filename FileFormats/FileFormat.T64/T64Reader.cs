@@ -5,7 +5,7 @@ using System.Text;
 namespace FileFormat.T64;
 
 /// <summary>
-/// Reads t 64 data.
+/// Reads a Commodore 64 T64 tape container and exposes the program entries recorded in its directory.
 /// </summary>
 public sealed class T64Reader : IDisposable {
   private readonly byte[] _data;

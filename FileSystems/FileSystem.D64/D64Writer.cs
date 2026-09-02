@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.D64;
 
 /// <summary>
-/// Writes d 64 data.
+/// Builds a Commodore 1541 D64 disk image from a set of files, filling in the BAM and directory.
 /// </summary>
 public sealed class D64Writer {
   private const int StandardSize = 174848;

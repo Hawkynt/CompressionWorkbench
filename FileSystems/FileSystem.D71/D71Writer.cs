@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.D71;
 
 /// <summary>
-/// Writes d 71 data.
+/// Builds a double-sided Commodore 1571 D71 disk image from a set of files, filling in both BAM sides and the directory.
 /// </summary>
 public sealed class D71Writer {
   private const int StandardSize = 349696;

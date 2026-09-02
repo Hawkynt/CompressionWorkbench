@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.D64;
 
 /// <summary>
-/// Reads d 64 data.
+/// Reads the directory of a Commodore 1541 D64 disk image and extracts the files it holds.
 /// </summary>
 public sealed class D64Reader : IDisposable {
   private readonly byte[] _data;

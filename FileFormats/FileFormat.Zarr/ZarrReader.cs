@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace FileFormat.Zarr;
 
 /// <summary>
-/// Reads zarr data.
+/// Reads Zarr v2 and v3 array metadata and exposes the chunks of the array as archive entries.
 /// </summary>
 public sealed class ZarrReader {
 

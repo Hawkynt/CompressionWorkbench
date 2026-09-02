@@ -6,7 +6,7 @@ using System.Text;
 namespace FileSystem.Udf;
 
 /// <summary>
-/// Reads udf data.
+/// Reads the directory tree of a UDF volume image and extracts the files it holds.
 /// </summary>
 public sealed class UdfReader : IDisposable {
   private const int SectorSize = 2048;

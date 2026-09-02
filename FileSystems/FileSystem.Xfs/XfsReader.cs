@@ -6,7 +6,7 @@ using System.Text;
 namespace FileSystem.Xfs;
 
 /// <summary>
-/// Reads xfs data.
+/// Reads the directory tree of an SGI XFS filesystem image and extracts the files it holds.
 /// </summary>
 public sealed class XfsReader : IDisposable {
   private const uint XfsMagic = 0x58465342; // "XFSB"

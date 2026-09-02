@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.D81;
 
 /// <summary>
-/// Writes d 81 data.
+/// Builds a Commodore 1581 D81 disk image from a set of files, filling in the header block, BAM and directory.
 /// </summary>
 public sealed class D81Writer {
   private const int StandardSize = 819200;

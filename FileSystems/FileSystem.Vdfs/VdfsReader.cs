@@ -6,7 +6,7 @@ using System.Text;
 namespace FileSystem.Vdfs;
 
 /// <summary>
-/// Reads vdfs data.
+/// Reads the entry table of a Gothic-engine VDFS archive and extracts the files it holds.
 /// </summary>
 public sealed class VdfsReader : IDisposable {
   private static readonly byte[] Magic = "PSVDSC_V2.00\n\r\n\r"u8.ToArray();

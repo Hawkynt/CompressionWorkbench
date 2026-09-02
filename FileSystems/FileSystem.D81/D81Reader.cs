@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.D81;
 
 /// <summary>
-/// Reads d 81 data.
+/// Reads the directory of a Commodore 1581 D81 disk image and extracts the files it holds.
 /// </summary>
 public sealed class D81Reader : IDisposable {
   private readonly byte[] _data;

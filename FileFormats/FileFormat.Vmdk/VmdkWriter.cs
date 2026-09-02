@@ -5,7 +5,7 @@ using System.Text;
 namespace FileFormat.Vmdk;
 
 /// <summary>
-/// Writes vmdk data.
+/// Writes a VMware VMDK virtual disk, emitting the descriptor and the grain directory for the extent data.
 /// </summary>
 public sealed class VmdkWriter {
   private byte[]? _diskData;

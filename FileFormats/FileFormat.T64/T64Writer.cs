@@ -5,7 +5,7 @@ using System.Text;
 namespace FileFormat.T64;
 
 /// <summary>
-/// Writes t 64 data.
+/// Writes a Commodore 64 T64 tape container, building the tape record and the directory of program entries.
 /// </summary>
 public sealed class T64Writer {
   private readonly List<(string Name, ushort StartAddress, byte[] Data)> _files = [];

@@ -53,6 +53,10 @@ the bytes that actually move rather than the whole volume.
 
 R/W descriptor for SGI XFS filesystem images ("XFSB" superblock magic) at `mkfs.xfs`-faithful defaults. References:
 
+### XfsReader
+
+Reads the directory tree of an SGI XFS filesystem image and extracts the files it holds.
+
 ### XfsWriter
 
 Writes a minimal XFS v5 filesystem image that `xfs_repair -n -f` accepts.

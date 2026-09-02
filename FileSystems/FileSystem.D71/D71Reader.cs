@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.D71;
 
 /// <summary>
-/// Reads d 71 data.
+/// Reads the directory of a double-sided Commodore 1571 D71 disk image and extracts the files it holds.
 /// </summary>
 public sealed class D71Reader : IDisposable {
   private readonly byte[] _data;

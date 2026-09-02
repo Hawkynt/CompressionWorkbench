@@ -5,7 +5,7 @@ using System.Text;
 namespace FileFormat.Rarc;
 
 /// <summary>
-/// Reads rarc data.
+/// Reads a Nintendo RARC resource archive, walking its directory nodes to enumerate the files it holds.
 /// </summary>
 public sealed class RarcReader {
   private readonly Stream _stream;

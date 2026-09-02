@@ -5,7 +5,7 @@ using System.Text;
 namespace FileFormat.Rarc;
 
 /// <summary>
-/// Writes rarc data.
+/// Writes a Nintendo RARC resource archive, laying out the directory nodes and aligning file data to 32 bytes.
 /// </summary>
 public sealed class RarcWriter : IDisposable {
   private const RarcEntryAttributes LoadMask =

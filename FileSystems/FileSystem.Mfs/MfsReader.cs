@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.Mfs;
 
 /// <summary>
-/// Reads mfs data.
+/// Reads the flat directory of a Classic Macintosh MFS volume and extracts the files it holds.
 /// </summary>
 public sealed class MfsReader : IDisposable {
   private const ushort MfsMagic = 0xD2D7;

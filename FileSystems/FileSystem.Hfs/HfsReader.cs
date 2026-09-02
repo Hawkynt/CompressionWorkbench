@@ -5,7 +5,7 @@ using System.Text;
 namespace FileSystem.Hfs;
 
 /// <summary>
-/// Reads hfs data.
+/// Reads the catalog of a Classic Macintosh HFS volume and extracts the files it holds.
 /// </summary>
 public sealed class HfsReader : IDisposable {
   private const ushort HfsMagic = 0x4244;

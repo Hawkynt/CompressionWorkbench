@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace FileFormat.Iceberg;
 
 /// <summary>
-/// Reads iceberg data.
+/// Reads Apache Iceberg table metadata and exposes the manifests and data files it references as archive entries.
 /// </summary>
 public sealed class IcebergReader {
 
