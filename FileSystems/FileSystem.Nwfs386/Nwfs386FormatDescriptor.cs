@@ -30,36 +30,36 @@ public sealed class Nwfs386FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Nwfs386";
+  public string Id => "Nwfs386";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "NWFS386 (Novell NetWare 386 raw)";
+  public string DisplayName => "NWFS386 (Novell NetWare 386 raw)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".nwfs386";
+  public string DefaultExtension => ".nwfs386";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".nwfs386", ".nw386"];
+  public IReadOnlyList<string> Extensions => [".nwfs386", ".nw386"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "NetW" ASCII at offset 0 — proprietary marker present in some NWFS386
     // raw partition dumps. Confidence 0.60 — short ASCII string at fixed
     // offset, not from a published vendor spec.
@@ -68,24 +68,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Novell NetWare 386 raw partition — opaque single-entry surface.";
+  public string Description => "Novell NetWare 386 raw partition — opaque single-entry surface.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -104,7 +104,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAll(stream);

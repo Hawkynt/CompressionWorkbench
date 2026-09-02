@@ -25,7 +25,7 @@ public sealed class CoherentReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<CoherentEntry> Entries => this._entries;
+  public IReadOnlyList<CoherentEntry> Entries => this._entries;
   /// <summary>True once a valid coh_super_block (s_fname/s_fpack volume strings) was found.</summary>
   public bool Valid { get; private set; }
   /// <summary>Volume name from the superblock s_fname field (e.g. "noname").</summary>
@@ -33,7 +33,7 @@ public IReadOnlyList<CoherentEntry> Entries => this._entries;
   /// <summary>
   /// Gets or sets the block size.
   /// </summary>
-public int BlockSize { get; private set; } = 512;
+  public int BlockSize { get; private set; } = 512;
 
   // The coh_super_block sits at file offset 0 (the copy the Linux sysv driver
   // reads fields from); a second identical copy lives at offset 512 (the one
@@ -48,7 +48,7 @@ public int BlockSize { get; private set; } = 512;
   /// <summary>
   /// Initializes a new instance of <see cref="CoherentReader"/>.
   /// </summary>
-public CoherentReader(Stream stream) {
+  public CoherentReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -228,7 +228,7 @@ public CoherentReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(CoherentEntry entry) {
+  public byte[] Extract(CoherentEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var inode = this.ReadInode((uint)entry.InodeNumber);
@@ -242,5 +242,5 @@ public byte[] Extract(CoherentEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

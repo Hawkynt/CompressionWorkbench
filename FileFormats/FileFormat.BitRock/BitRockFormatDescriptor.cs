@@ -21,57 +21,57 @@ public sealed class BitRockFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BitRock";
+  public string Id => "BitRock";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "BitRock / InstallBuilder";
+  public string DisplayName => "BitRock / InstallBuilder";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".exe";
+  public string DefaultExtension => ".exe";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [];
+  public IReadOnlyList<string> Extensions => [];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   // The identifying bytes live at EOF, not at a fixed start offset, so detection
   // is performed by the installer tail scan in FormatDetector. No start-magic.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("zlib", "zlib/deflate"), new("gzip", "gzip/deflate")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("zlib", "zlib/deflate"), new("gzip", "gzip/deflate")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "BitRock/InstallBuilder installer (tclkit runtime VFS + gzip-tar payload)";
+  public string Description => "BitRock/InstallBuilder installer (tclkit runtime VFS + gzip-tar payload)";
 
   // Entries are namespaced so callers can tell the tclkit runtime apart from the real deliverable:
   //   runtime/…                       — files from the embedded Metakit (Mk4) VFS
@@ -82,7 +82,7 @@ public string Description => "BitRock/InstallBuilder installer (tclkit runtime V
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var reader = BitRockReader.Open(stream);
     var result = new List<ArchiveEntryInfo>();
     var index = 0;
@@ -120,7 +120,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var reader = BitRockReader.Open(stream);
 
     foreach (var file in reader.Files) {

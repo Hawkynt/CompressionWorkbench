@@ -13,7 +13,7 @@ public static class ExifIfdParser {
   /// <summary>
   /// Represents an ifd 1 thumbnail.
   /// </summary>
-public sealed record Ifd1Thumbnail(int Offset, int Length);
+  public sealed record Ifd1Thumbnail(int Offset, int Length);
 
   /// <summary>
   /// Parses an EXIF APP1 segment payload (excluding the leading "Exif\0\0" 6-byte

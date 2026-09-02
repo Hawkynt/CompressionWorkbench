@@ -56,62 +56,62 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "AdvFs";
+  public string Id => "AdvFs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "AdvFS (Tru64 UNIX)";
+  public string DisplayName => "AdvFS (Tru64 UNIX)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".advfs";
+  public string DefaultExtension => ".advfs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".advfs"];
+  public IReadOnlyList<string> Extensions => [".advfs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(AdvFsReader.DetectionCookie, Offset: (int)AdvFsReader.RbmtPageOffset, Confidence: 0.80f),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "AdvFS (Tru64 UNIX Advanced File System) image — header parse + WORM emit of a clean-room storage-domain layout (RBMT page 0 cookie + DMN/VD/MATTR fields + AdvFS-WB file-table extension).";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -145,7 +145,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // A seekable domain is walked in place: ReadAllBounded stops at FullReadCap,
     // so buffering silently truncated anything larger -- and FULL.advfs would
     // double the image in memory on top of that.
@@ -247,7 +247,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier reads the volume into an array to walk its
     // structures, which a volume past two gigabytes does not fit in. Above that
     // the edit is applied by unpacking and relaying the volume out instead.
@@ -263,7 +263,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames) {
+  public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
       ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
@@ -277,13 +277,13 @@ public void Remove(Stream archive, string[] entryNames) {
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
@@ -482,7 +482,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
-public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
     if (extents.Count == 0) return 0;

@@ -36,7 +36,7 @@ public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveF
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag delegating to ZIP (AAB/APKS is a ZIP variant).</summary>
   public void Defragment(Stream archive)
@@ -102,15 +102,15 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayout
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "AndroidBundle";
+  public string Id => "AndroidBundle";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Android App Bundle / split-APK set";
+  public string DisplayName => "Android App Bundle / split-APK set";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable ZIP-based build artifact (bundles are signed at APK-generation
   // time, not in the .aab itself). Add/Replace/Remove are genuine in-place ZIP
   // edits (ZipModifier), matching the sibling APPX/APK descriptors. See
@@ -118,7 +118,7 @@ public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
@@ -126,19 +126,19 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".aab";
+  public string DefaultExtension => ".aab";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".aab", ".apks"];
+  public IReadOnlyList<string> Extensions => [".aab", ".apks"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // PK local-file header. Intentionally low confidence so Zip/Apk outrank us on
     // extensionless inputs — AAB/APKS detection really wants the file extension.
     new([0x50, 0x4B, 0x03, 0x04], Confidence: 0.15),
@@ -146,26 +146,26 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Android App Bundle (.aab) or split-APK set (.apks) re-surfaced so split boundaries " +
     "are visible (base/, splits/, BundleConfig.pb).";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new ZipReader(stream, leaveOpen: true, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, RewriteName(e.FileName), e.UncompressedSize, e.CompressedSize,
@@ -176,7 +176,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new ZipReader(stream, leaveOpen: true, password: password);
     foreach (var e in r.Entries) {
       var rewritten = RewriteName(e.FileName);

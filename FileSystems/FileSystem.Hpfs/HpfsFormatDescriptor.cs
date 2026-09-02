@@ -33,20 +33,20 @@ public sealed class HpfsFormatDescriptor
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Hpfs";
+  public string Id => "Hpfs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "HPFS";
+  public string DisplayName => "HPFS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
@@ -54,41 +54,41 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".img";
+  public string DefaultExtension => ".img";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".img", ".hpfs"];
+  public IReadOnlyList<string> Extensions => [".img", ".hpfs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   // Superblock magic at LBA 16 (offset 8192): 0xF995E849 stored little-endian.
   // The first 4 bytes are sufficient for detection.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x49, 0xE8, 0x95, 0xF9], Offset: 8192, Confidence: 0.85),
   ];
 
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "OS/2 High Performance File System — read/write with direct-allocation layout.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
@@ -96,7 +96,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new HpfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null
@@ -106,7 +106,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new HpfsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -155,7 +155,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HpfsWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
@@ -242,13 +242,13 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
@@ -332,7 +332,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     // Walked from the stream, never copied into a byte[]. Buffering a volume past
     // the array limit threw, and the empty list that came back reads as "the whole

@@ -133,7 +133,7 @@ public sealed class DebReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!_disposed) {
       _ar.Dispose();
       _disposed = true;

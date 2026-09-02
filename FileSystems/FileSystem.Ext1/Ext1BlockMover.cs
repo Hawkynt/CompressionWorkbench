@@ -57,11 +57,11 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
   /// <summary>
   /// Gets the first data byte.
   /// </summary>
-public long FirstDataByte => (long)_firstDataBlock * _blockSize;
+  public long FirstDataByte => (long)_firstDataBlock * _blockSize;
   /// <summary>
   /// Gets the block size.
   /// </summary>
-public int BlockSize => _blockSize;
+  public int BlockSize => _blockSize;
 
   private uint OffsetToBlock(long offset) => (uint)(offset / _blockSize);
 
@@ -69,7 +69,7 @@ public int BlockSize => _blockSize;
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -94,7 +94,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var blockCount = (int)((length + _blockSize - 1) / _blockSize);
     var oldFirstBlock = OffsetToBlock(oldOffset);
     var newFirstBlock = OffsetToBlock(newOffset);
@@ -351,13 +351,13 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Gets the allocation block size.
   /// </summary>
-public int AllocationBlockSize => _blockSize;
+  public int AllocationBlockSize => _blockSize;
 
   /// <inheritdoc />
   /// <summary>
   /// Gets a value indicating whether supports scattered relink.
   /// </summary>
-public bool SupportsScatteredRelink => true;
+  public bool SupportsScatteredRelink => true;
 
   /// <summary>
   /// Rewrites one file's whole allocation once every byte has moved.

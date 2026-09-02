@@ -11,22 +11,22 @@ public sealed class ArithmeticBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Arithmetic";
+  public string Id => "BB_Arithmetic";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Arithmetic Coding";
+  public string DisplayName => "Arithmetic Coding";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Order-0 arithmetic coding with frequency table";
+  public string Description => "Order-0 arithmetic coding with frequency table";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   private const uint Half = 0x80000000u;
   private const uint Quarter = 0x40000000u;
@@ -38,7 +38,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write header: 4-byte LE original size.
@@ -97,7 +97,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     // Read 4-byte LE original size.

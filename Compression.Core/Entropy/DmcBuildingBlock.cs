@@ -15,22 +15,22 @@ public sealed class DmcBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Dmc";
+  public string Id => "BB_Dmc";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "DMC";
+  public string DisplayName => "DMC";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Dynamic Markov Compression, bit-level FSM with state cloning";
+  public string Description => "Dynamic Markov Compression, bit-level FSM with state cloning";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   // Binary tree: nodes 1..255 (internal), 256..511 (leaves for each byte value).
   private const int InitialStates = 512;
@@ -43,7 +43,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -140,7 +140,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

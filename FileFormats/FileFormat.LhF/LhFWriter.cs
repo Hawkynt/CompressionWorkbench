@@ -15,7 +15,7 @@ public sealed class LhFWriter {
   /// <summary>
   /// Defines the track size constant value.
   /// </summary>
-public const int TrackSize = 11 * 512;
+  public const int TrackSize = 11 * 512;
   private static readonly byte[] Magic = "LhF\0"u8.ToArray();
 
   private readonly List<(int trackNum, byte[] data)> _tracks = [];
@@ -35,7 +35,7 @@ public const int TrackSize = 11 * 512;
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     if (_tracks.Count > ushort.MaxValue)
       throw new InvalidOperationException($"LhF supports at most {ushort.MaxValue} tracks.");
 

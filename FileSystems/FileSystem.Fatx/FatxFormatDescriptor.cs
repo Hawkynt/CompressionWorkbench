@@ -37,61 +37,61 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Fatx";
+  public string Id => "Fatx";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "FATX (Xbox)";
+  public string DisplayName => "FATX (Xbox)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".fatx";
+  public string DefaultExtension => ".fatx";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".fatx"];
+  public IReadOnlyList<string> Extensions => [".fatx"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'F', (byte)'A', (byte)'T', (byte)'X'], Offset: 0, Confidence: 0.95),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Xbox/Xbox 360 FATX filesystem image (R/W: list/extract/create/add/remove at root; FAT16+FAT32 width-aware).";
+  public string Description => "Xbox/Xbox 360 FATX filesystem image (R/W: list/extract/create/add/remove at root; FAT16+FAT32 width-aware).";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new FatxReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
@@ -100,7 +100,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new FatxReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -114,7 +114,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the open entry operation.
   /// </summary>
-public Stream OpenEntry(Stream archive, string entryName, string? password) {
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
@@ -131,7 +131,7 @@ public Stream OpenEntry(Stream archive, string entryName, string? password) {
   /// <summary>
   /// Performs the extract entry to memory operation.
   /// </summary>
-public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var memoryStream = new MemoryStream();
     s.CopyTo(memoryStream);
@@ -253,7 +253,7 @@ public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? pas
   /// <summary>
   /// Performs the analyze layout operation.
   /// </summary>
-public LayoutAnalysis AnalyzeLayout(Stream image) {
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
     var reader = new FatxReader(image);
@@ -290,7 +290,7 @@ public LayoutAnalysis AnalyzeLayout(Stream image) {
   /// <summary>
   /// Performs the patch in place operation.
   /// </summary>
-public void PatchInPlace(Stream image, LayoutPatch patch) {
+  public void PatchInPlace(Stream image, LayoutPatch patch) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
     if (patch.SerialNumber is { } serial) {
@@ -307,7 +307,7 @@ public void PatchInPlace(Stream image, LayoutPatch patch) {
   /// <summary>
   /// Performs the rebuild streaming operation.
   /// </summary>
-public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(options);
@@ -397,7 +397,7 @@ public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions 
   /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
-public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
     if (extents.Count == 0) return 0;
@@ -432,7 +432,7 @@ public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipe
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

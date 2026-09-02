@@ -96,7 +96,7 @@ public sealed class Ym2413Codec {
   /// <summary>
   /// Initializes a new instance of <see cref="Ym2413Codec"/>.
   /// </summary>
-public Ym2413Codec(double clock = 3579545.0) : this(clock, null) { }
+  public Ym2413Codec(double clock = 3579545.0) : this(clock, null) { }
 
   /// <summary>
   /// Constructs the OPLL core with an optional substitute instrument patch ROM. The Konami

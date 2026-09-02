@@ -479,28 +479,28 @@ public sealed class NuLzwBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_NuLzw";
+  public string Id => "BB_NuLzw";
   /// <inheritdoc />
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "NuLZW (ShrinkIt LZW/2)";
+  public string DisplayName => "NuLZW (ShrinkIt LZW/2)";
   /// <inheritdoc />
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Apple II GS/ShrinkIt 4 KiB RLE + early-change 9-12 bit LZW/2";
+  public string Description => "Apple II GS/ShrinkIt 4 KiB RLE + early-change 9-12 bit LZW/2";
   /// <inheritdoc />
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc />
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var native = NuLzwCodec.Compress(data, NuLzwVariant.Lzw2);
     var result = new byte[4 + native.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
@@ -512,7 +512,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4)
       throw new InvalidDataException("NuLZW building-block envelope is truncated.");
     var length = BinaryPrimitives.ReadInt32LittleEndian(data);

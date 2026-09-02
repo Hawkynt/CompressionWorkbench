@@ -13,28 +13,28 @@ public sealed class Lzrw1BuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Lzrw1";
+  public string Id => "BB_Lzrw1";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZRW1";
+  public string DisplayName => "LZRW1";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Single-pass hash-matched LZ77 with a 4096-entry table and 16-item control words";
+  public string Description => "Single-pass hash-matched LZ77 with a 4096-entry table and 16-item control words";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressed = Lzrw1Compressor.Compress(data);
     var result = new byte[4 + compressed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
@@ -46,7 +46,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     return originalSize == 0 ? [] : Lzrw1Decompressor.Decompress(data[4..], originalSize);
   }

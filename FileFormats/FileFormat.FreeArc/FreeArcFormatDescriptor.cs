@@ -38,7 +38,7 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new FreeArcReader(archive);
     foreach (var e in r.Entries) {
@@ -51,19 +51,19 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "FreeArc";
+  public string Id => "FreeArc";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "FreeArc";
+  public string DisplayName => "FreeArc";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
@@ -72,7 +72,7 @@ public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
@@ -81,19 +81,19 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".arc";
+  public string DefaultExtension => ".arc";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".arc"];
+  public IReadOnlyList<string> Extensions => [".arc"];
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
   // "ArC\x01" — the four-byte signature that opens every FreeArc archive.
@@ -102,38 +102,38 @@ public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([(byte)'A', (byte)'r', (byte)'C', 0x01], Confidence: 0.95)];
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("freearc", "FreeArc")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("freearc", "FreeArc")];
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "FreeArc compressed archive";
+  public string Description => "FreeArc compressed archive";
 
   /// <inheritdoc/>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new FreeArcReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) =>
       new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize, e.Method, false, false, null))
@@ -144,7 +144,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new FreeArcReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
@@ -156,7 +156,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new FreeArcWriter();
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);

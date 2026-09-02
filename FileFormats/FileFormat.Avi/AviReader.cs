@@ -18,7 +18,7 @@ public sealed class AviReader {
   /// <summary>
   /// Represents a track.
   /// </summary>
-public sealed record Track(
+  public sealed record Track(
     int Index,
     string StreamType,         // "vids" or "auds" (or raw FourCC)
     uint Handler,              // codec FourCC for video, format tag for audio
@@ -36,7 +36,7 @@ public sealed record Track(
   /// <summary>
   /// Represents a parsed avi.
   /// </summary>
-public sealed record ParsedAvi(
+  public sealed record ParsedAvi(
     int Width,
     int Height,
     uint MicroSecPerFrame,
@@ -46,7 +46,7 @@ public sealed record ParsedAvi(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedAvi Read(ReadOnlySpan<byte> data) {
+  public ParsedAvi Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("AVI too short for RIFF header.");
     if (data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F')

@@ -40,7 +40,7 @@ public sealed class VdiWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="VdiWriter"/>.
   /// </summary>
-public VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, uint blockSize = DefaultBlockSize) {
+  public VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, uint blockSize = DefaultBlockSize) {
     _output = output;
     _leaveOpen = leaveOpen;
     _virtualSize = virtualSize;
@@ -167,7 +167,7 @@ public VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, ui
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!_leaveOpen) _output.Dispose();
   }
 }

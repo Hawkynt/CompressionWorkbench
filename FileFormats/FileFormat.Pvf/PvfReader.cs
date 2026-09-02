@@ -24,7 +24,7 @@ public sealed class PvfReader {
   /// <summary>
   /// Represents a parsed pvf.
   /// </summary>
-public sealed record ParsedPvf(
+  public sealed record ParsedPvf(
     bool Ascii,
     int NumChannels,
     int SampleRate,
@@ -34,7 +34,7 @@ public sealed record ParsedPvf(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedPvf Read(ReadOnlySpan<byte> data) {
+  public ParsedPvf Read(ReadOnlySpan<byte> data) {
     if (data.Length < 5 || data[0] != 'P' || data[1] != 'V' || data[2] != 'F')
       throw new InvalidDataException("Missing PVF magic.");
 

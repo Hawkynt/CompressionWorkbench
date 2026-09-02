@@ -24,11 +24,11 @@ public sealed class FixedLzCostModel : ILzCostModel {
   /// <summary>
   /// Performs the literal cost operation.
   /// </summary>
-public double LiteralCost(byte value) => this._literalCost;
+  public double LiteralCost(byte value) => this._literalCost;
 
   /// <inheritdoc/>
   /// <summary>
   /// Performs the match cost operation.
   /// </summary>
-public double MatchCost(int length, int distance) => this._matchCost;
+  public double MatchCost(int length, int distance) => this._matchCost;
 }

@@ -27,12 +27,12 @@ public sealed class D64Writer {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte fileType, byte[] data) => _files.Add((name, fileType, data));
+  public void AddFile(string name, byte fileType, byte[] data) => _files.Add((name, fileType, data));
 
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
+  public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
 
   /// <summary>
   /// Builds the complete D64 image.

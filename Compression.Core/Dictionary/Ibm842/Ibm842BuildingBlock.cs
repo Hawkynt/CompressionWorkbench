@@ -14,22 +14,22 @@ public sealed class Ibm842BuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_842";
+  public string Id => "BB_842";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "842";
+  public string DisplayName => "842";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "IBM 842 hardware compression with 2/4/8-byte template matching";
+  public string Description => "IBM 842 hardware compression with 2/4/8-byte template matching";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   // Dictionary sizes for each entry width.
   private const int Dict2Size = 256;
@@ -51,7 +51,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -169,7 +169,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

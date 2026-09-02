@@ -36,38 +36,38 @@ public sealed class EfsFormatDescriptor :
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Efs";
+  public string Id => "Efs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "EFS (SGI Extent File System)";
+  public string DisplayName => "EFS (SGI Extent File System)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".efs";
+  public string DefaultExtension => ".efs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".efs", ".efsimg"];
+  public IReadOnlyList<string> Extensions => [".efs", ".efsimg"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // fs_magic sits at 0x1C of the superblock, and the superblock is at block
     // 1 — block 0 is the SGI volume header. Both positions are listed because
     // this project wrote the older, wrong one for a while.
@@ -77,25 +77,25 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "SGI EFS (pre-XFS IRIX filesystem) — WORM writer + hierarchical reader.";
+  public string Description => "SGI EFS (pre-XFS IRIX filesystem) — WORM writer + hierarchical reader.";
 
   // ── Options schema ──────────────────────────────────────────────────────
   /// <summary>
   /// Gets the options schema.
   /// </summary>
-public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "512", AllowedValues: ["512"],
       Description: "EFS basic-block size in bytes (always 512 per IRIX spec)."),
     new("CylinderGroupSize", "Cylinder group size (BB)", FormatOptionKind.Integer, "32",
@@ -106,7 +106,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var r = new EfsReader(stream);
       return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -125,7 +125,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     try {
       var r = new EfsReader(stream);
       foreach (var e in r.Entries) {
@@ -146,7 +146,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new EfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
     foreach (var i in inputs) {
@@ -213,18 +213,18 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => EfsExtentMap.Enumerate(image);
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => EfsExtentMap.Enumerate(image);
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
@@ -287,7 +287,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
-public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
     var size = image.Length;

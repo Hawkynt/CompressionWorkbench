@@ -20,56 +20,56 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Mbox";
+  public string Id => "Mbox";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "mbox (Unix mailbox)";
+  public string DisplayName => "mbox (Unix mailbox)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".mbox";
+  public string DefaultExtension => ".mbox";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".mbox", ".mbx"];
+  public IReadOnlyList<string> Extensions => [".mbox", ".mbx"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // "From " at offset 0 is a weak marker — plain text files can legitimately
   // start that way — so keep confidence low and rely on extension as the firm hit.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("From "u8.ToArray(), Confidence: 0.70)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Unix mbox mailbox: flat stream of RFC 822 messages separated by \"From \" lines. " +
     "True in-place R/W: Add appends a new \"From \" separator + message at EOF (every " +
     "pre-existing byte byte-identical); Remove tombstones a record with an X-Status: D " +
@@ -79,7 +79,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var messages = Load(stream);
     var result = new List<ArchiveEntryInfo>(messages.Count);
     for (var i = 0; i < messages.Count; i++) {
@@ -110,7 +110,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var messages = Load(stream);
     for (var i = 0; i < messages.Count; i++) {
       var m = messages[i];
@@ -155,7 +155,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     var messages = Load(input);
     for (var i = 0; i < messages.Count; i++) {
       var name = EntryName(messages[i], i);

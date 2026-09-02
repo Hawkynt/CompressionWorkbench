@@ -26,7 +26,7 @@ public sealed class BfstmReader {
   /// <summary>
   /// Represents a stream info.
   /// </summary>
-public sealed record StreamInfo(
+  public sealed record StreamInfo(
     int Codec,
     bool Loop,
     int NumChannels,
@@ -45,7 +45,7 @@ public sealed record StreamInfo(
   /// <summary>
   /// Represents a parsed stream.
   /// </summary>
-public sealed record ParsedStream(
+  public sealed record ParsedStream(
     StreamInfo Info,
     short[][] Coefs,
     short[][] Pcm);
@@ -56,7 +56,7 @@ public sealed record ParsedStream(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedStream Read(ReadOnlySpan<byte> data) {
+  public ParsedStream Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x40)
       throw new InvalidDataException("Stream too short for FSTM header.");
     if (data[0] != 'F' || data[1] != 'S' || data[2] != 'T' || data[3] != 'M')

@@ -33,7 +33,7 @@ public sealed class CpcDskWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="CpcDskWriter"/>.
   /// </summary>
-public CpcDskWriter(Stream stream, bool leaveOpen = false,
+  public CpcDskWriter(Stream stream, bool leaveOpen = false,
       int tracks = 40, int sides = 1,
       int sectorsPerTrack = SectorsPerTrack, int sectorSize = SectorSize) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -52,7 +52,7 @@ public CpcDskWriter(Stream stream, bool leaveOpen = false,
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     if (this._finished)
@@ -155,7 +155,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._finished) this.Finish();
     if (!this._leaveOpen) this._stream.Dispose();
   }

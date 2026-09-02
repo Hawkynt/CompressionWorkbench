@@ -28,7 +28,7 @@ public static class S3mModule {
   /// <summary>
   /// Performs the estimate seconds operation.
   /// </summary>
-public static double? EstimateSeconds(byte[] blob) {
+  public static double? EstimateSeconds(byte[] blob) {
     var song = TryParse(blob);
     return song == null ? null : SongLength.Estimate(song);
   }

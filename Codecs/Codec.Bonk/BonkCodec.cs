@@ -28,7 +28,7 @@ public static class BonkCodec {
   /// <summary>
   /// Defines the header bytes constant value.
   /// </summary>
-public const int HeaderBytes = 17;
+  public const int HeaderBytes = 17;
 
   /// <summary>Decoded stream geometry.</summary>
   public readonly record struct BonkStreamInfo(

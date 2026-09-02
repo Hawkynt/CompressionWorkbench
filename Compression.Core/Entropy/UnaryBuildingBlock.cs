@@ -12,28 +12,28 @@ public sealed class UnaryBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Unary";
+  public string Id => "BB_Unary";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Unary Coding";
+  public string DisplayName => "Unary Coding";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Simplest universal code, encodes N as N ones followed by a zero";
+  public string Description => "Simplest universal code, encodes N as N ones followed by a zero";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -61,7 +61,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

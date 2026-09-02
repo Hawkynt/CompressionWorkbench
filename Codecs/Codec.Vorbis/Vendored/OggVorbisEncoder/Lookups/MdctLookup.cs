@@ -21,7 +21,7 @@ public class MdctLookup
     /// <summary>
     /// Initializes a new instance of <see cref="MdctLookup"/>.
     /// </summary>
-public MdctLookup(int n)
+    public MdctLookup(int n)
     {
         _n = n;
         var n2 = n >> 1;
@@ -64,7 +64,7 @@ public MdctLookup(int n)
     /// <summary>
     /// Performs the forward operation.
     /// </summary>
-public void Forward(in Span<float> input, in Span<float> output)
+    public void Forward(in Span<float> input, in Span<float> output)
     {
         var n = _n;
         var n2 = n >> 1;

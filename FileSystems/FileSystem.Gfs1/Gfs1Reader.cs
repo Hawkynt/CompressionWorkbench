@@ -23,7 +23,7 @@ public sealed class Gfs1Reader {
   /// <summary>
   /// Initializes a new instance of <see cref="Gfs1Reader"/>.
   /// </summary>
-public Gfs1Reader(Stream stream) {
+  public Gfs1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     _image = new ImageAccessor(stream, leaveOpen: true);
@@ -39,12 +39,12 @@ public Gfs1Reader(Stream stream) {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Gfs1Entry> Entries => _entries;
+  public IReadOnlyList<Gfs1Entry> Entries => _entries;
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Gfs1Entry entry) {
+  public byte[] Extract(Gfs1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Size == 0 || entry.FirstBlock == 0) return [];

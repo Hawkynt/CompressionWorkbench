@@ -20,7 +20,7 @@ public static class RefsExtentMap {
   /// <summary>
   /// Enumerates the value.
   /// </summary>
-public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanRead || !image.CanSeek || image.Length < 512) yield break;
 

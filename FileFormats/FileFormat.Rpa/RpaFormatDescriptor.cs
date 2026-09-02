@@ -21,7 +21,7 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     RpaReader r;
     try {
       archive.Position = 0;
@@ -46,41 +46,41 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Rpa";
+  public string Id => "Rpa";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Ren'Py Archive";
+  public string DisplayName => "Ren'Py Archive";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".rpa";
+  public string DefaultExtension => ".rpa";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".rpa"];
+  public IReadOnlyList<string> Extensions => [".rpa"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("RPA-2.0 "u8.ToArray(), Confidence: 0.95),
     new("RPA-3.0 "u8.ToArray(), Confidence: 0.95),
     new("RPA-3.2 "u8.ToArray(), Confidence: 0.95)
@@ -88,24 +88,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("rpa", "Ren'Py RPA")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("rpa", "Ren'Py RPA")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Ren'Py visual-novel resource archive (pickle-indexed, zlib header)";
+  public string Description => "Ren'Py visual-novel resource archive (pickle-indexed, zlib header)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RpaReader(stream);
     var list = new List<ArchiveEntryInfo>();
     int idx = 0;
@@ -173,7 +173,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new RpaReader(stream);
 
     // FULL passthrough

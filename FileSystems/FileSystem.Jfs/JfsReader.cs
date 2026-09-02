@@ -31,7 +31,7 @@ public sealed class JfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<JfsEntry> Entries => _entries;
+  public IReadOnlyList<JfsEntry> Entries => _entries;
 
   private ushort U16(long off) => this._len >= off + 2 ? this._img.ReadUInt16(off) : (ushort)0;
   private uint U32(long off) => this._len >= off + 4 ? this._img.ReadUInt32(off) : 0u;
@@ -46,7 +46,7 @@ public IReadOnlyList<JfsEntry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="JfsReader"/>.
   /// </summary>
-public JfsReader(Stream stream, bool leaveOpen = true) {
+  public JfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the metadata is a small fraction of an
@@ -276,7 +276,7 @@ public JfsReader(Stream stream, bool leaveOpen = true) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(JfsEntry entry) {
+  public byte[] Extract(JfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
 
@@ -393,7 +393,7 @@ public byte[] Extract(JfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._img.Dispose();
+  public void Dispose() => this._img.Dispose();
 
   // ── pxd_t helpers ─────────────────────────────────────────────────────
   // len_addr (le32): bits 0..23 = length, bits 24..31 = high 8 bits of address

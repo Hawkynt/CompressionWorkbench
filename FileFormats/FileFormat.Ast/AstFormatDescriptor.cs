@@ -19,72 +19,72 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Ast";
+  public string Id => "Ast";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "AST (GameCube/Wii stream)";
+  public string DisplayName => "AST (GameCube/Wii stream)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".ast";
+  public string DefaultExtension => ".ast";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".ast"];
+  public IReadOnlyList<string> Extensions => [".ast"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("STRM"u8.ToArray(), Confidence: 0.90),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "AST (GameCube/Wii STRM stream); full file + per-channel decoded WAVs (PCM16) + metadata.";
+  public string Description => "AST (GameCube/Wii STRM stream); full file + per-channel decoded WAVs (PCM16) + metadata.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password)
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveCreatable: FULL passthrough OR per-channel mono WAVs → PCM16BE AST ──
@@ -92,7 +92,7 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
     var full = fileList.FirstOrDefault(f =>
@@ -138,17 +138,17 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "AST archive accepts: FULL.ast, or LEFT/RIGHT/CENTER/… .wav (per-channel mono 16-bit)";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
     if (dir == "" && (name == "full.ast" || name.EndsWith(".wav"))) { reason = null; return true; }

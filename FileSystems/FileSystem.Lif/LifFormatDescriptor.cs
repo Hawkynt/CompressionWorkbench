@@ -61,77 +61,77 @@ public sealed class LifFormatDescriptor :
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Lif";
+  public string Id => "Lif";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "HP LIF (Logical Interchange Format)";
+  public string DisplayName => "HP LIF (Logical Interchange Format)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".lif";
+  public string DefaultExtension => ".lif";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".lif"];
+  public IReadOnlyList<string> Extensions => [".lif"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x80, 0x00], Confidence: 0.40),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "HP LIF volume — flat directory at sector 2, files stored contiguously in 256-byte sectors. " +
     "Common in HP Series 80 / HP-71 / HP-75 / HP-85 disk and tape images.";
 
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the min total archive size.
   /// </summary>
-public long? MinTotalArchiveSize => null;
+  public long? MinTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "Up to 14 files at 10-character names; flat root only; contents stored verbatim in 256-byte sectors.";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = "Flat root only; no subdirectories."; return false; }
     if (input.ArchiveName.Length > 10) {
       reason = "LIF filenames limited to 10 characters.";
@@ -144,7 +144,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var v = ReadVolume(stream);
     return v.Files.Select((f, i) => new ArchiveEntryInfo(
       i, f.Name, f.ByteLength, f.ByteLength, "stored",
@@ -154,7 +154,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var v = ReadVolume(stream);
     foreach (var f in v.Files) {
       if (files != null && files.Length > 0 && !MatchesFilter(f.Name, files)) continue;
@@ -165,7 +165,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var files = inputs
       .Where(i => !i.IsDirectory)
       .Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()))
@@ -213,7 +213,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new LifBlockMover();
     mover.Init(image);
     mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
@@ -223,7 +223,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new LifBlockMover();
     mover.Init(image);
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
@@ -232,7 +232,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

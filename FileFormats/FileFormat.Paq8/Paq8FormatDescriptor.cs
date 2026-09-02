@@ -10,61 +10,61 @@ public sealed class Paq8FormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Paq8";
+  public string Id => "Paq8";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "PAQ8";
+  public string DisplayName => "PAQ8";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Stream;
+  public FormatCategory Category => FormatCategory.Stream;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".paq8l";
+  public string DefaultExtension => ".paq8l";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".paq8l", ".paq8"];
+  public IReadOnlyList<string> Extensions => [".paq8l", ".paq8"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x70, 0x61, 0x71, 0x38, 0x6C, 0x20, 0x2D], Confidence: 0.95)
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [];
+  public IReadOnlyList<FormatMethodInfo> Methods => [];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "PAQ8 context-mixing compressor by Matt Mahoney";
+  public string Description => "PAQ8 context-mixing compressor by Matt Mahoney";
 
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) => Paq8Stream.Compress(input, output);
+  public void Compress(Stream input, Stream output) => Paq8Stream.Compress(input, output);
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) => Paq8Stream.Decompress(input, output);
+  public void Decompress(Stream input, Stream output) => Paq8Stream.Decompress(input, output);
 }

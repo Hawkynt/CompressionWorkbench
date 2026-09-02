@@ -42,7 +42,7 @@ public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new ArcReader(archive);
     while (r.GetNextEntry() is { } e) {
@@ -65,19 +65,19 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Arc";
+  public string Id => "Arc";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "ARC";
+  public string DisplayName => "ARC";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
@@ -102,43 +102,43 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".arc";
+  public string DefaultExtension => ".arc";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".arc"];
+  public IReadOnlyList<string> Extensions => [".arc"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x1A], Confidence: 0.20)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x1A], Confidence: 0.20)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("crunch", "Crunched"), new("store", "Store"), new("pack", "Packed"),
     new("squeeze", "Squeezed"), new("squash", "Squashed")
   ];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "ARC archive, one of the first PC compression formats";
+  public string Description => "ARC archive, one of the first PC compression formats";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ArcReader(stream);
     var entries = new List<ArchiveEntryInfo>();
     var i = 0;
@@ -151,7 +151,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ArcReader(stream);
     while (r.GetNextEntry() is { } e) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
@@ -162,7 +162,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var arcMethod = options.MethodName switch {
       "store" => ArcCompressionMethod.Stored,
       "pack" or "packed" => ArcCompressionMethod.Packed,

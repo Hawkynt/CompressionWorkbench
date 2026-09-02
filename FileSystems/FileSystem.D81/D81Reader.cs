@@ -14,7 +14,7 @@ public sealed class D81Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<D81Entry> Entries => _entries;
+  public IReadOnlyList<D81Entry> Entries => _entries;
 
   // Standard D81 size: 80 tracks x 40 sectors
   private const int StandardSize = 819200;
@@ -32,7 +32,7 @@ public IReadOnlyList<D81Entry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="D81Reader"/>.
   /// </summary>
-public D81Reader(Stream stream, bool leaveOpen = false) {
+  public D81Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -122,7 +122,7 @@ public D81Reader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(D81Entry entry) {
+  public byte[] Extract(D81Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
 
@@ -155,5 +155,5 @@ public byte[] Extract(D81Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

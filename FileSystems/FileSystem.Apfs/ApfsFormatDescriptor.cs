@@ -30,19 +30,19 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Apfs";
+  public string Id => "Apfs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "APFS";
+  public string DisplayName => "APFS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
@@ -50,32 +50,32 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".apfs";
+  public string DefaultExtension => ".apfs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".apfs"];
+  public IReadOnlyList<string> Extensions => [".apfs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("NXSB"u8.ToArray(), Offset: 32, Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// APFS container image. The writer emits real NXSB/APSB superblocks,
   /// container/volume object maps, and a populated FS-tree B-tree with inode +
@@ -98,19 +98,19 @@ public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the min total archive size.
   /// </summary>
-public long? MinTotalArchiveSize => ApfsConstants.MIN_APFS_IMAGE_SIZE;
+  public long? MinTotalArchiveSize => ApfsConstants.MIN_APFS_IMAGE_SIZE;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription => "APFS volume image; any files, flat root directory.";
+  public string AcceptedInputsDescription => "APFS volume image; any files, flat root directory.";
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     reason = null;
     return true;
   }
@@ -118,7 +118,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ApfsReader(stream, leaveOpen: true);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified,
@@ -130,7 +130,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ApfsReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -176,7 +176,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ApfsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label)) w.SetVolumeName(label);
@@ -224,7 +224,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -455,7 +455,7 @@ public void Defragment(Stream archive)
   /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
-public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
     if (extents.Count == 0) return 0;

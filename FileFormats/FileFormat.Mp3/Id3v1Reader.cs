@@ -20,7 +20,7 @@ public sealed class Id3v1Reader {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public Tag? Read(ReadOnlySpan<byte> file) {
+  public Tag? Read(ReadOnlySpan<byte> file) {
     if (file.Length < 128) return null;
     var tag = file[^128..];
     if (tag[0] != (byte)'T' || tag[1] != (byte)'A' || tag[2] != (byte)'G') return null;

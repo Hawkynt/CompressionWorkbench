@@ -35,7 +35,7 @@ public sealed class DriveSpace3Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
+  public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
 
   // MDBPB fields
   private int _bytesPerSector;
@@ -290,5 +290,5 @@ public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

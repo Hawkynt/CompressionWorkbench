@@ -21,7 +21,7 @@ public static class ZlingStream {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -56,7 +56,7 @@ public static void Compress(Stream input, Stream output) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public static void Decompress(Stream input, Stream output) {
+  public static void Decompress(Stream input, Stream output) {
     while (true) {
       var flag = input.ReadByte();
       if (flag < 0) break;

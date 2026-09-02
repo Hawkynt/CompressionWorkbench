@@ -34,7 +34,7 @@ public readonly struct BrFileTail {
   /// <summary>
   /// Initializes a new instance of <see cref="BrFileTail"/>.
   /// </summary>
-public BrFileTail(uint flag, uint size, uint crc32, byte[] bodyRaw) {
+  public BrFileTail(uint flag, uint size, uint crc32, byte[] bodyRaw) {
     this.Flag = flag;
     this.Size = size;
     this.Crc32 = crc32;

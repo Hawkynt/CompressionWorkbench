@@ -21,29 +21,29 @@ public sealed class MaudReader {
   /// <summary>
   /// Defines the compression none constant value.
   /// </summary>
-public const int CompressionNone = 0;
+  public const int CompressionNone = 0;
   /// <summary>
   /// Defines the compression a law constant value.
   /// </summary>
-public const int CompressionALaw = 2;
+  public const int CompressionALaw = 2;
   /// <summary>
   /// Defines the compression u law constant value.
   /// </summary>
-public const int CompressionULaw = 3;
+  public const int CompressionULaw = 3;
 
   /// <summary>
   /// Defines the channel info mono constant value.
   /// </summary>
-public const int ChannelInfoMono = 0;
+  public const int ChannelInfoMono = 0;
   /// <summary>
   /// Defines the channel info stereo constant value.
   /// </summary>
-public const int ChannelInfoStereo = 1;
+  public const int ChannelInfoStereo = 1;
 
   /// <summary>
   /// Represents a parsed maud.
   /// </summary>
-public sealed record ParsedMaud(
+  public sealed record ParsedMaud(
     uint SampleCount,
     int BitsCompressed,
     int BitsUncompressed,
@@ -56,7 +56,7 @@ public sealed record ParsedMaud(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedMaud Read(ReadOnlySpan<byte> data) {
+  public ParsedMaud Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("MAUD too short for FORM header.");
     if (data[0] != 'F' || data[1] != 'O' || data[2] != 'R' || data[3] != 'M')

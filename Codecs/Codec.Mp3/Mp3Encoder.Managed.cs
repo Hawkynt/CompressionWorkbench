@@ -11,23 +11,23 @@ public enum Mp3EncoderChannelMode {
   /// <summary>
   /// Selects the value automatically.
   /// </summary>
-Auto = -1,
+  Auto = -1,
   /// <summary>
   /// Specifies the stereo option.
   /// </summary>
-Stereo = 0,
+  Stereo = 0,
   /// <summary>
   /// Specifies the joint stereo option.
   /// </summary>
-JointStereo = 1,
+  JointStereo = 1,
   /// <summary>
   /// Specifies the dual channel option.
   /// </summary>
-DualChannel = 2,
+  DualChannel = 2,
   /// <summary>
   /// Specifies the mono option.
   /// </summary>
-Mono = 3,
+  Mono = 3,
 }
 
 /// <summary>

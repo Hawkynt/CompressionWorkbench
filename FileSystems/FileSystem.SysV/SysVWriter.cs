@@ -107,7 +107,7 @@ public sealed class SysVWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="SysVWriter"/>.
   /// </summary>
-public SysVWriter(Stream output, bool leaveOpen = false) {
+  public SysVWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
     this._leaveOpen = leaveOpen;
@@ -640,7 +640,7 @@ public SysVWriter(Stream output, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }
 }

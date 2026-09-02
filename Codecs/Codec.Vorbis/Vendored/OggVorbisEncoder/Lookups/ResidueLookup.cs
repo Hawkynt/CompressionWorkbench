@@ -16,7 +16,7 @@ public class ResidueLookup
     /// <summary>
     /// Initializes a new instance of <see cref="ResidueLookup"/>.
     /// </summary>
-public ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)
+    public ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)
     {
         _residue = residue;
 
@@ -49,7 +49,7 @@ public ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)
     /// <summary>
     /// Performs the forward operation.
     /// </summary>
-public int Forward(
+    public int Forward(
         EncodeBuffer buffer,
         int pcmend,
         int[][] couples,
@@ -237,7 +237,7 @@ public int Forward(
     /// <summary>
     /// Performs the class operation.
     /// </summary>
-public int[][] Class(int[][] couples, bool[] nonzero, int channels)
+    public int[][] Class(int[][] couples, bool[] nonzero, int channels)
     {
         for (var channel = 0; channel < channels; channel++)
         {

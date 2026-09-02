@@ -23,60 +23,60 @@ public sealed class WordPerfectFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "WordPerfect";
+  public string Id => "WordPerfect";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "WordPerfect";
+  public string DisplayName => "WordPerfect";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".wpd";
+  public string DefaultExtension => ".wpd";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".wpd", ".wp", ".wp5", ".wp6", ".wp7"];
+  public IReadOnlyList<string> Extensions => [".wpd", ".wp", ".wp5", ".wp6", ".wp7"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0xFF, 0x57, 0x50, 0x43], Confidence: 0.95),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Corel/Novell WordPerfect document";
+  public string Description => "Corel/Novell WordPerfect document";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var result = new List<ArchiveEntryInfo>();
     try {
       var view = BuildView(stream);
@@ -97,7 +97,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var view = BuildView(stream);
     if (files == null || MatchesFilter("FULL.wpd", files))
       WriteFile(outputDir, "FULL.wpd", view.FullBytes);

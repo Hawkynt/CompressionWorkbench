@@ -54,7 +54,7 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the options schema.
   /// </summary>
-public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.ImageSize(
       ["512 MB", "1 GB", "2 GB", "4 GB", "16 GB", "64 GB"],
       "Total image capacity. Auto fits the files (minimum 100 MB to stay in FAT32). " +
@@ -67,15 +67,15 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "FatPlus";
+  public string Id => "FatPlus";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "FAT+ Filesystem Image (large-file extension)";
+  public string DisplayName => "FAT+ Filesystem Image (large-file extension)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // R/W: Add/Remove edit the FAT, clusters and directory in place
   // (FatPlusInPlaceAdder reusing FatModifier/FatRemover, plus the FAT+
   // extended-size dirent patch); existing files and the boot sector stay
@@ -84,57 +84,57 @@ public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".img";
+  public string DefaultExtension => ".img";
 
   // Empty extensions list: FAT+ shares .img with FAT/exFAT. Detection is
   // strictly by the BPB OEM signature so we don't grab unrelated .img files.
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [];
+  public IReadOnlyList<string> Extensions => [];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   // Magic: OEM signature "FAT+    " at offset 3 of the boot sector.
   // High confidence — this is the defining mark of a FAT+ volume.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new MagicSignature(FatPlusReader.OemSignature, Offset: 3, Confidence: 0.95),
   ];
 
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "FAT32/FAT16 image with the FAT+ 256 GiB-file extension (FATPLUS.TXT draft rev 2/3).";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new FatPlusReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified
@@ -144,7 +144,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new FatPlusReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -264,7 +264,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var items = FormatHelpers.FilesOnly(inputs).ToList();
     try {
       foreach (var (name, data) in items)
@@ -455,7 +455,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
-public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var imageSize = image.Length;
 

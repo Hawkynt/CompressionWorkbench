@@ -28,37 +28,37 @@ public sealed class PeResourcesFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "PeResources";
+  public string Id => "PeResources";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "PE Resources (Windows binary)";
+  public string DisplayName => "PE Resources (Windows binary)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".dll";
+  public string DefaultExtension => ".dll";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".dll", ".exe", ".ocx", ".cpl", ".sys", ".mui", ".mun"];
+  public IReadOnlyList<string> Extensions => [".dll", ".exe", ".ocx", ".cpl", ".sys", ".mui", ".mun"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 'MZ' DOS header — every PE starts with this, but many things do; confidence
     // stays modest since InnoSetup/Nsis/Sfx overlap.
     new([(byte)'M', (byte)'Z'], Confidence: 0.25),
@@ -66,26 +66,26 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Windows PE file as a resource archive; extracts icons, bitmaps, manifests, " +
     "version info, strings, and custom RT_RCDATA blobs.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var items = Materialize(new ResourceDllReader().ReadAll(stream));
     return items.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Data.Length, e.Data.Length, "Stored", false, false, null
@@ -95,7 +95,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in Materialize(new ResourceDllReader().ReadAll(stream))) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);

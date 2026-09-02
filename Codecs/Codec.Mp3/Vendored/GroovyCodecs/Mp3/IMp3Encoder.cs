@@ -5,7 +5,7 @@ namespace GroovyCodecs.Mp3
     /// <summary>
     /// Encodes i mp 3 data.
     /// </summary>
-public interface IMp3Encoder
+    public interface IMp3Encoder
     {
         int EffectiveBitRate { get; }
 

@@ -118,7 +118,7 @@ public sealed class MinixV1Writer : IDisposable {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build() {
+  public byte[] Build() {
     var root = new TreeNode { IsDirectory = true };
     var allDirs = new List<TreeNode> { root };
     var allFiles = new List<TreeNode>();
@@ -463,7 +463,7 @@ public byte[] Build() {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!_leaveOpen) _output.Dispose();
   }
 }

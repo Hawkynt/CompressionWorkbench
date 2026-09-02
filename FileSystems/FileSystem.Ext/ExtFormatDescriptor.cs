@@ -89,19 +89,19 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Ext";
+  public string Id => "Ext";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "ext2/3/4";
+  public string DisplayName => "ext2/3/4";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -112,7 +112,7 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new ExtBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -125,7 +125,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new ExtBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -174,7 +174,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -277,41 +277,41 @@ public void Defragment(Stream archive)
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".ext2";
+  public string DefaultExtension => ".ext2";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".ext2", ".ext3", ".ext4", ".img"];
+  public IReadOnlyList<string> Extensions => [".ext2", ".ext3", ".ext4", ".img"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x53, 0xEF], 1080, 0.80f)]; // magic at superblock offset 1024 + field offset 56
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "ext2/ext3/ext4 Linux filesystem image";
+  public string Description => "ext2/ext3/ext4 Linux filesystem image";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ExtReader(stream);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified,
@@ -355,7 +355,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ExtWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
@@ -441,7 +441,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ExtReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -510,7 +510,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the analyze layout operation.
   /// </summary>
-public LayoutAnalysis AnalyzeLayout(Stream image) {
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
 
@@ -550,7 +550,7 @@ public LayoutAnalysis AnalyzeLayout(Stream image) {
   /// <summary>
   /// Performs the patch in place operation.
   /// </summary>
-public void PatchInPlace(Stream image, LayoutPatch patch) {
+  public void PatchInPlace(Stream image, LayoutPatch patch) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
     if (patch.VolumeLabel is { } label) {
@@ -574,7 +574,7 @@ public void PatchInPlace(Stream image, LayoutPatch patch) {
   /// <summary>
   /// Performs the rebuild streaming operation.
   /// </summary>
-public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(options);

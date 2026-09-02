@@ -10,61 +10,61 @@ public sealed class LzsFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Lzs";
+  public string Id => "Lzs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZS";
+  public string DisplayName => "LZS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Stream;
+  public FormatCategory Category => FormatCategory.Stream;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".lzs";
+  public string DefaultExtension => ".lzs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".lzs"];
+  public IReadOnlyList<string> Extensions => [".lzs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x1F, 0x9D, 0x8C, 0x53], Confidence: 0.90)
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("lzs", "LZS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzs", "LZS")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Stac LZS (RFC 1967), LZSS variant for networking";
+  public string Description => "Stac LZS (RFC 1967), LZSS variant for networking";
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) => LzsStream.Decompress(input, output);
+  public void Decompress(Stream input, Stream output) => LzsStream.Decompress(input, output);
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) => LzsStream.Compress(input, output);
+  public void Compress(Stream input, Stream output) => LzsStream.Compress(input, output);
 }

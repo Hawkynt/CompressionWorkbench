@@ -650,7 +650,7 @@ public sealed class SevenZipReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._disposed) {
       this._disposed = true;
       if (!this._leaveOpen)

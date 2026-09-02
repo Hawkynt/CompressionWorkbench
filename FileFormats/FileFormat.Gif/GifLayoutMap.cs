@@ -14,7 +14,7 @@ public static class GifLayoutMap {
   /// <summary>
   /// Enumerates the value.
   /// </summary>
-public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
     ArgumentNullException.ThrowIfNull(file);
     if (!file.CanRead)
       yield break;

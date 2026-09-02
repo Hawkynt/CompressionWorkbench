@@ -33,7 +33,7 @@ public sealed class DefragStagingBuffer : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="DefragStagingBuffer"/>.
   /// </summary>
-public DefragStagingBuffer(long memoryBudgetBytes = DefaultMemoryBudgetBytes)
+  public DefragStagingBuffer(long memoryBudgetBytes = DefaultMemoryBudgetBytes)
     => this._budget = Math.Max(0, memoryBudgetBytes);
 
   /// <summary>Bytes this buffer may hold in memory before spilling.</summary>
@@ -90,7 +90,7 @@ public DefragStagingBuffer(long memoryBudgetBytes = DefaultMemoryBudgetBytes)
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     this._inMemory.Clear();
     this._spilled.Clear();
     this._scratch?.Dispose();

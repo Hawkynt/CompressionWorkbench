@@ -35,7 +35,7 @@ public sealed class DmgReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="DmgReader"/>.
   /// </summary>
-public DmgReader(Stream stream, bool leaveOpen = false) {
+  public DmgReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -333,7 +333,7 @@ public DmgReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 
   // ──────────────────────────────────────────────────────────────────────────
   // Internal helpers

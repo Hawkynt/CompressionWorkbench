@@ -39,19 +39,19 @@ public sealed class Human68kFormatDescriptor :
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Human68k";
+  public string Id => "Human68k";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Sharp X68000 Human68k";
+  public string DisplayName => "Sharp X68000 Human68k";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
@@ -62,37 +62,37 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".2hd";
+  public string DefaultExtension => ".2hd";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".2hd", ".dim"];
+  public IReadOnlyList<string> Extensions => [".2hd", ".dim"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("X68K"u8.ToArray(), Offset: 0x10, Confidence: 0.90),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Sharp X68000 Human68k FAT-derived filesystem with Shift_JIS filenames; identified by 'X68K' tag at boot offset 0x10.";
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
@@ -130,7 +130,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new Human68kReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
@@ -139,7 +139,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new Human68kReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -185,7 +185,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
 
@@ -271,13 +271,13 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
 
     // An X68000 volume is laid out like FAT with several BPB fields at its own
@@ -319,7 +319,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Human68kExtentMap.Enumerate(image);
 
   // ── IWipeEmpty ─────────────────────────────────────────────────────────

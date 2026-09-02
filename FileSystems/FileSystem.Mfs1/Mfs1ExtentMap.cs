@@ -21,7 +21,7 @@ public static class Mfs1ExtentMap {
   /// <summary>
   /// Enumerates the value.
   /// </summary>
-public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
     try {

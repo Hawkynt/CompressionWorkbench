@@ -55,20 +55,20 @@ public sealed class SysVReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<SysVEntry> Entries => this._entries;
+  public IReadOnlyList<SysVEntry> Entries => this._entries;
 
   /// <summary>
   /// Gets or sets the magic.
   /// </summary>
-public uint Magic { get; private set; }
+  public uint Magic { get; private set; }
   /// <summary>
   /// Gets or sets the block size.
   /// </summary>
-public int BlockSize { get; private set; }
+  public int BlockSize { get; private set; }
   /// <summary>
   /// Gets or sets the i list blocks.
   /// </summary>
-public ushort IListBlocks { get; private set; }
+  public ushort IListBlocks { get; private set; }
 
   // Constants
   private const int SuperblockOffset = 512;
@@ -79,7 +79,7 @@ public ushort IListBlocks { get; private set; }
   /// <summary>
   /// Initializes a new instance of <see cref="SysVReader"/>.
   /// </summary>
-public SysVReader(Stream stream) {
+  public SysVReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -416,7 +416,7 @@ public SysVReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(SysVEntry entry) {
+  public byte[] Extract(SysVEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var inode = this.ReadInode((uint)entry.InodeNumber);
@@ -430,5 +430,5 @@ public byte[] Extract(SysVEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

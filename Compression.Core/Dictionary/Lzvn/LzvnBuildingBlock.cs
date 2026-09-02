@@ -15,34 +15,34 @@ public sealed class LzvnBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Lzvn";
+  public string Id => "BB_Lzvn";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZVN";
+  public string DisplayName => "LZVN";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Byte-oriented opcode LZ77 in the spirit of Apple's fast LZVN codec, with tiered distance encoding";
+  public string Description => "Byte-oriented opcode LZ77 in the spirit of Apple's fast LZVN codec, with tiered distance encoding";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) =>
+  public byte[] Compress(ReadOnlySpan<byte> data) =>
     LzvnCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) =>
+  public byte[] Decompress(ReadOnlySpan<byte> data) =>
     LzvnDecompressor.Decompress(data);
 }

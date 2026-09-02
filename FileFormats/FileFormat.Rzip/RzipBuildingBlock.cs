@@ -21,28 +21,28 @@ public sealed class RzipBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Rzip";
+  public string Id => "BB_Rzip";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "rzip";
+  public string DisplayName => "rzip";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Long-range rolling-hash match elimination over the whole input, with order-0 coded literals";
+  public string Description => "Long-range rolling-hash match elimination over the whole input, with order-0 coded literals";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     using var output = new MemoryStream();
     RzipStream.Compress(input, output);
@@ -53,7 +53,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     using var output = new MemoryStream();
     RzipStream.Decompress(input, output);

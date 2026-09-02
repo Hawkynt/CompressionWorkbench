@@ -80,7 +80,7 @@ public class ProcessingState
     /// <summary>
     /// Writes the end of stream to the supplied output.
     /// </summary>
-public void WriteEndOfStream()
+    public void WriteEndOfStream()
     {
         var ci = _vorbisInfo.CodecSetup;
 
@@ -247,7 +247,7 @@ public void WriteEndOfStream()
     /// <summary>
     /// Performs the ensure buffer size operation.
     /// </summary>
-public void EnsureBufferSize(int needed)
+    public void EnsureBufferSize(int needed)
     {
         var pcmStorage = _pcm[0].Length;
         if (_pcmCurrent + needed < pcmStorage)
@@ -266,7 +266,7 @@ public void EnsureBufferSize(int needed)
     /// <summary>
     /// Performs the packet out operation.
     /// </summary>
-public bool PacketOut(out OggPacket packet)
+    public bool PacketOut(out OggPacket packet)
     {
         packet = null;
 
@@ -417,7 +417,7 @@ public bool PacketOut(out OggPacket packet)
     /// <summary>
     /// Performs the create operation.
     /// </summary>
-public static ProcessingState Create(VorbisInfo info)
+    public static ProcessingState Create(VorbisInfo info)
     {
         if (info == null)
             throw new ArgumentNullException(nameof(info));

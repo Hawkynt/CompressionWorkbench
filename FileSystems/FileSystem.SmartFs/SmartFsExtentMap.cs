@@ -27,7 +27,7 @@ public static class SmartFsExtentMap {
   /// <summary>
   /// Enumerates the value.
   /// </summary>
-public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var volume = Read(image);
     if (volume == null) yield break;

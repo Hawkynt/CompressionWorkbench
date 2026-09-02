@@ -28,61 +28,61 @@ public sealed class LeveldbFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Leveldb";
+  public string Id => "Leveldb";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LevelDB SSTable";
+  public string DisplayName => "LevelDB SSTable";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".ldb";
+  public string DefaultExtension => ".ldb";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".ldb", ".sst"];
+  public IReadOnlyList<string> Extensions => [".ldb", ".sst"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // Magic lives in the last 8 bytes; the detector only scans a header prefix,
   // so detection happens via .ldb/.sst extensions. The magic is still verified
   // inside TryParseFooter and reported in metadata.ini as magic_ok.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "LevelDB / RocksDB SSTable (.ldb/.sst) with footer surfacing";
+  public string Description => "LevelDB / RocksDB SSTable (.ldb/.sst) with footer surfacing";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var streamLen = stream.Length;
     var entries = new List<ArchiveEntryInfo>();
     int idx = 0;
@@ -105,7 +105,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var streamLen = stream.Length;
 
     // Stream FULL.ldb directly — never buffer the whole file.

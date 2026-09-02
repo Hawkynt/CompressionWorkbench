@@ -14,32 +14,32 @@ public sealed class SequiturBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Sequitur";
+  public string Id => "BB_Sequitur";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Sequitur";
+  public string DisplayName => "Sequitur";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Online grammar inference (Nevill-Manning & Witten): enforces digram uniqueness and rule utility as symbols are appended, collapsing repeated phrases into a straight-line grammar";
+  public string Description => "Online grammar inference (Nevill-Manning & Witten): enforces digram uniqueness and rule utility as symbols are appended, collapsing repeated phrases into a straight-line grammar";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) => SequiturCompressor.Compress(data);
+  public byte[] Compress(ReadOnlySpan<byte> data) => SequiturCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) => SequiturCompressor.Decompress(data);
+  public byte[] Decompress(ReadOnlySpan<byte> data) => SequiturCompressor.Decompress(data);
 }

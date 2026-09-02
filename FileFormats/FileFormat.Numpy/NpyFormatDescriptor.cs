@@ -28,61 +28,61 @@ public sealed class NpyFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Npy";
+  public string Id => "Npy";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "NumPy NPY";
+  public string DisplayName => "NumPy NPY";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".npy";
+  public string DefaultExtension => ".npy";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".npy"];
+  public IReadOnlyList<string> Extensions => [".npy"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x93, (byte)'N', (byte)'U', (byte)'M', (byte)'P', (byte)'Y'], Confidence: 0.95),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "NumPy NPY array serialization (v1/v2/v3); surfaces dtype + shape + raw array bytes.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream)
       .Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Data.LongLength, e.Data.LongLength,
         "stored", false, false, null, e.Kind))
@@ -91,7 +91,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in this.BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);

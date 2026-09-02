@@ -12,28 +12,28 @@ public sealed class ExpGolombBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_ExpGolomb";
+  public string Id => "BB_ExpGolomb";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Exp-Golomb";
+  public string DisplayName => "Exp-Golomb";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Exponential Golomb coding, used in H.264/H.265";
+  public string Description => "Exponential Golomb coding, used in H.264/H.265";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Header: 4-byte LE original size.
@@ -55,7 +55,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0) return [];
 

@@ -217,7 +217,7 @@ public sealed class ParagonReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<ParagonEntry> Entries => _entries;
+  public IReadOnlyList<ParagonEntry> Entries => _entries;
 
   /// <summary>Detected magic variant; always <c>"PImg"</c> when <see cref="ValidHeader"/> is true.</summary>
   public string Variant { get; private set; } = "";
@@ -253,7 +253,7 @@ public IReadOnlyList<ParagonEntry> Entries => _entries;
   /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
-public bool ValidHeader { get; private set; }
+  public bool ValidHeader { get; private set; }
 
   /// <summary>
   /// True when the file carries the CWBP discriminator at offset
@@ -296,7 +296,7 @@ public bool ValidHeader { get; private set; }
   /// <summary>
   /// Initializes a new instance of <see cref="ParagonReader"/>.
   /// </summary>
-public ParagonReader(Stream stream) {
+  public ParagonReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -586,7 +586,7 @@ public ParagonReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(ParagonEntry entry) {
+  public byte[] Extract(ParagonEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
@@ -594,5 +594,5 @@ public byte[] Extract(ParagonEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

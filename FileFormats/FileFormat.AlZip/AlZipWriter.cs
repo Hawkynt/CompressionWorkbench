@@ -101,7 +101,7 @@ public sealed class AlZipWriter : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     // Write end-of-archive marker
     WriteUInt32LE(EndSig);
 

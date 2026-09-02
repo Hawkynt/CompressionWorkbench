@@ -27,12 +27,12 @@ public sealed class ApfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<ApfsEntry> Entries => this._entries;
+  public IReadOnlyList<ApfsEntry> Entries => this._entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="ApfsReader"/>.
   /// </summary>
-public ApfsReader(Stream stream, bool leaveOpen = false) {
+  public ApfsReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
@@ -450,5 +450,5 @@ public ApfsReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

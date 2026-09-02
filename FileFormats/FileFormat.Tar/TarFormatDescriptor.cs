@@ -21,7 +21,7 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the options schema.
   /// </summary>
-public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("BlockingFactor", "Blocking factor", FormatOptionKind.Integer, "20",
       AllowedValues: ["1", "10", "20"],
       Description: "Output is padded to N × 512-byte blocks. 20 = classic 10 KiB record."),
@@ -64,7 +64,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
 
   /// <summary>
   /// Zeros every dead byte in the TAR archive: intra-block padding after each
@@ -153,19 +153,19 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayout
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Tar";
+  public string Id => "Tar";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "TAR";
+  public string DisplayName => "TAR";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -195,40 +195,40 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".tar";
+  public string DefaultExtension => ".tar";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".tar"];
+  public IReadOnlyList<string> Extensions => [".tar"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x75, 0x73, 0x74, 0x61, 0x72], Offset: 257, Confidence: 0.95)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x75, 0x73, 0x74, 0x61, 0x72], Offset: 257, Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", "TAR")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", "TAR")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Unix tape archive, no compression, container only";
+  public string Description => "Unix tape archive, no compression, container only";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new TarReader(stream);
     var entries = new List<ArchiveEntryInfo>();
     var i = 0;
@@ -242,7 +242,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new TarReader(stream);
     while (r.GetNextEntry() is { } e) {
       if (files != null && !MatchesFilter(e.Name, files)) { r.Skip(); continue; }
@@ -295,7 +295,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var blockingFactor = options.GetOptionInt("BlockingFactor", 20);
     var formatName = options.GetOption("Format", "ustar").ToLowerInvariant();
     var headerFormat = formatName switch {
@@ -353,7 +353,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
+  public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < TarConstants.BlockSize) {
       issues.Add(new(ValidationLevel.Header, IssueSeverity.Error, "TAR_TOO_SHORT",
@@ -407,7 +407,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateStructure(Stream stream) {
+  public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
       stream.Seek(0, SeekOrigin.Begin);
@@ -431,7 +431,7 @@ public ValidationResult ValidateStructure(Stream stream) {
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateIntegrity(Stream stream) {
+  public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
       stream.Seek(0, SeekOrigin.Begin);

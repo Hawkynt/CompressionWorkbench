@@ -14,7 +14,7 @@ public sealed class Id3v2Reader {
   /// <summary>
   /// Represents a frame.
   /// </summary>
-public sealed record Frame(string Id, string MimeType, string Description, byte[] Payload);
+  public sealed record Frame(string Id, string MimeType, string Description, byte[] Payload);
 
   /// <summary>Returns extracted frames, or an empty list if no ID3v2 tag is present.</summary>
   public (int HeaderBytes, List<Frame> Frames) Read(ReadOnlySpan<byte> data) {

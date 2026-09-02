@@ -32,19 +32,19 @@ public sealed class HtfsFormatDescriptor :
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Htfs";
+  public string Id => "Htfs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "HTFS (SCO High Throughput File System)";
+  public string DisplayName => "HTFS (SCO High Throughput File System)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries |
@@ -52,42 +52,42 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".htfs";
+  public string DefaultExtension => ".htfs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".htfs", ".s5"];
+  public IReadOnlyList<string> Extensions => [".htfs", ".s5"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x5D, 0xD1, 0x2F, 0x01], Offset: 512, Confidence: 0.85),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "SCO HTFS — WORM writer + nested-directory reader.";
+  public string Description => "SCO HTFS — WORM writer + nested-directory reader.";
 
   /// <summary>
   /// Gets the options schema.
   /// </summary>
-public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "512",
       AllowedValues: ["512", "1024", "2048"],
       Description: "Block size in bytes (S5-style HTFS supports 512/1024/2048)."),
@@ -99,7 +99,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var r = new HtfsReader(stream);
       return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -116,7 +116,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     try {
       var r = new HtfsReader(stream);
       foreach (var e in r.Entries) {
@@ -136,7 +136,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HtfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
     // NOTE: the block-size auto-optimiser is intentionally NOT wired here. The
@@ -161,7 +161,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => HtfsExtentMap.Enumerate(image);
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => HtfsExtentMap.Enumerate(image);
 
   // ── IArchiveModifiable (true in-place R/W) ──────────────────────────
   //
@@ -175,7 +175,7 @@ public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => HtfsExtent
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier reads the volume into an array to walk its
     // structures, which a volume past two gigabytes does not fit in. Above that
     // the edit is applied by unpacking and relaying the volume out instead.
@@ -191,7 +191,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames) {
+  public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
       ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
@@ -205,13 +205,13 @@ public void Remove(Stream archive, string[] entryNames) {
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
@@ -277,7 +277,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
-public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
     var size = image.Length;

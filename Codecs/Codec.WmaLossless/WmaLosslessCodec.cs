@@ -146,7 +146,7 @@ public sealed class WmaLosslessCodec {
   /// <summary>
   /// Initializes a new instance of <see cref="WmaLosslessCodec"/>.
   /// </summary>
-public WmaLosslessCodec(int channels, int sampleRate, int blockAlign, ReadOnlySpan<byte> extradata) {
+  public WmaLosslessCodec(int channels, int sampleRate, int blockAlign, ReadOnlySpan<byte> extradata) {
     if (blockAlign is <= 0 or > (1 << 21))
       throw new ArgumentOutOfRangeException(nameof(blockAlign), "block_align is not set or invalid.");
     if (extradata.Length < 18)

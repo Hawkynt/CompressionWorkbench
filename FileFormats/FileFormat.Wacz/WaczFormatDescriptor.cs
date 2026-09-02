@@ -41,31 +41,31 @@ public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Wacz";
+  public string Id => "Wacz";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "WACZ";
+  public string DisplayName => "WACZ";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
@@ -74,19 +74,19 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".wacz";
+  public string DefaultExtension => ".wacz";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".wacz"];
+  public IReadOnlyList<string> Extensions => [".wacz"];
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
   /// <remarks>Empty: outer container is ZIP; detection is by extension to avoid
@@ -94,31 +94,31 @@ public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Web Archive Collection Zipped — ZIP container around WARC files with " +
     "datapackage.json metadata and a page index.";
 
@@ -126,7 +126,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var zip = new ZipReader(stream, leaveOpen: true, password: password);
     EnsureLooksLikeWacz(zip);
 
@@ -151,7 +151,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var zip = new ZipReader(stream, leaveOpen: true, password: password);
     EnsureLooksLikeWacz(zip);
 
@@ -216,7 +216,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
     => WaczCreator.Create(output, inputs);
 
   /// <summary>

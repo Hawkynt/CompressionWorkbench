@@ -329,7 +329,7 @@ public sealed class Hammer2Reader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._image.Dispose();
+  public void Dispose() => this._image.Dispose();
 
   private static string ReadInodeName(byte[] inode) {
     var nameLen = ReadU16(inode, 0x80);

@@ -16,16 +16,16 @@ public sealed class NssReader {
   /// <summary>
   /// Gets the headers.
   /// </summary>
-public NssHeaders Headers { get; }
+  public NssHeaders Headers { get; }
   /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
-public string VolumeName { get; private set; } = "";
+  public string VolumeName { get; private set; } = "";
 
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<NssEntry> Entries => this._entries;
+  public IReadOnlyList<NssEntry> Entries => this._entries;
 
   /// <summary>Bytes captured at the most useful anchor (pool / superblock / volume), 4 KB.</summary>
   public byte[] HeaderRaw => this.Headers.HeaderRaw;
@@ -36,12 +36,12 @@ public IReadOnlyList<NssEntry> Entries => this._entries;
   /// <summary>
   /// Gets the image length.
   /// </summary>
-public long ImageLength => this._image.LongLength;
+  public long ImageLength => this._image.LongLength;
 
   /// <summary>
   /// Initializes a new instance of <see cref="NssReader"/>.
   /// </summary>
-public NssReader(Stream stream) {
+  public NssReader(Stream stream) {
     using var ms = new MemoryStream();
     var buf = new byte[8192];
     int read;

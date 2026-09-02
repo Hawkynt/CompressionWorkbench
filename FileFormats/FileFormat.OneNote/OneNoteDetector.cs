@@ -8,15 +8,15 @@ public enum OneNoteVariant {
   /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
-Unknown,
+  Unknown,
   /// <summary>
   /// Specifies the one note 2007 option.
   /// </summary>
-OneNote2007,
+  OneNote2007,
   /// <summary>
   /// Specifies the one note 2010 plus option.
   /// </summary>
-OneNote2010Plus,
+  OneNote2010Plus,
 }
 
 /// <summary>
@@ -44,7 +44,7 @@ public static class OneNoteDetector {
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public static OneNoteVariant Detect(Stream stream) {
+  public static OneNoteVariant Detect(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

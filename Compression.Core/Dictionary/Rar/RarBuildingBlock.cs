@@ -12,28 +12,28 @@ public sealed class RarBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Rar";
+  public string Id => "BB_Rar";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "RAR5";
+  public string DisplayName => "RAR5";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "LZ+Huffman+PPM compression from the RAR5 archive format";
+  public string Description => "LZ+Huffman+PPM compression from the RAR5 archive format";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var encoder = new Rar5Encoder();
     var compressed = encoder.Compress(data);
     var result = new byte[4 + compressed.Length];
@@ -46,7 +46,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     var decoder = new Rar5Decoder(Rar5Constants.MinDictionarySize);
     return decoder.Decompress(data[4..], originalSize);

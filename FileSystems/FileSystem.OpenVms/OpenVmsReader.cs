@@ -27,7 +27,7 @@ public sealed class OpenVmsReader {
   /// <summary>
   /// Initializes a new instance of <see cref="OpenVmsReader"/>.
   /// </summary>
-public OpenVmsReader(Stream image) {
+  public OpenVmsReader(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
     using var ms = new MemoryStream();
@@ -43,7 +43,7 @@ public OpenVmsReader(Stream image) {
   /// <summary>
   /// Initializes a new instance of <see cref="OpenVmsReader"/>.
   /// </summary>
-public OpenVmsReader(byte[] image) {
+  public OpenVmsReader(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
     this.Image = image;
     this.IsCwbVolume = HasLayoutMarker(image);

@@ -75,7 +75,7 @@ namespace Concentus.Structs
         /// <summary>
         /// Performs the reset state operation.
         /// </summary>
-public void ResetState()
+        public void ResetState()
         {
             int s;
             subframe_mem[0] = subframe_mem[1] = subframe_mem[2] = 0;
@@ -864,7 +864,7 @@ public void ResetState()
         /// <summary>
         /// Encodes the supplied input.
         /// </summary>
-public int EncodeMultistream(
+        public int EncodeMultistream(
             ReadOnlySpan<short> pcm,
             int frame_size,
             Span<byte> outputBuffer,
@@ -904,7 +904,7 @@ public int EncodeMultistream(
         /// <summary>
         /// Encodes the supplied input.
         /// </summary>
-public int EncodeMultistream(
+        public int EncodeMultistream(
             ReadOnlySpan<float> pcm,
             int frame_size,
             Span<byte> outputBuffer,
@@ -932,7 +932,7 @@ public int EncodeMultistream(
         /// <summary>
         /// Gets or sets the bitrate.
         /// </summary>
-public int Bitrate
+        public int Bitrate
         {
             get
             {
@@ -960,7 +960,7 @@ public int Bitrate
         /// <summary>
         /// Gets or sets the application.
         /// </summary>
-public OpusApplication Application
+        public OpusApplication Application
         {
             get
             {
@@ -979,7 +979,7 @@ public OpusApplication Application
         /// <summary>
         /// Gets or sets the force channels.
         /// </summary>
-public int ForceChannels
+        public int ForceChannels
         {
             get
             {
@@ -998,7 +998,7 @@ public int ForceChannels
         /// <summary>
         /// Gets the num channels.
         /// </summary>
-public int NumChannels
+        public int NumChannels
         {
             get
             {
@@ -1010,7 +1010,7 @@ public int NumChannels
         /// <summary>
         /// Gets or sets the max bandwidth.
         /// </summary>
-public OpusBandwidth MaxBandwidth
+        public OpusBandwidth MaxBandwidth
         {
             get
             {
@@ -1029,7 +1029,7 @@ public OpusBandwidth MaxBandwidth
         /// <summary>
         /// Gets or sets the bandwidth.
         /// </summary>
-public OpusBandwidth Bandwidth
+        public OpusBandwidth Bandwidth
         {
             get
             {
@@ -1048,7 +1048,7 @@ public OpusBandwidth Bandwidth
         /// <summary>
         /// Gets a value indicating whether use dtx.
         /// </summary>
-public bool UseDTX
+        public bool UseDTX
         {
             get
             {
@@ -1067,7 +1067,7 @@ public bool UseDTX
         /// <summary>
         /// Gets or sets the complexity.
         /// </summary>
-public int Complexity
+        public int Complexity
         {
             get
             {
@@ -1086,7 +1086,7 @@ public int Complexity
         /// <summary>
         /// Gets or sets the force mode.
         /// </summary>
-public OpusMode ForceMode
+        public OpusMode ForceMode
         {
             get
             {
@@ -1105,7 +1105,7 @@ public OpusMode ForceMode
         /// <summary>
         /// Gets a value indicating whether use inband fec.
         /// </summary>
-public bool UseInbandFEC
+        public bool UseInbandFEC
         {
             get
             {
@@ -1124,7 +1124,7 @@ public bool UseInbandFEC
         /// <summary>
         /// Gets or sets the packet loss percent.
         /// </summary>
-public int PacketLossPercent
+        public int PacketLossPercent
         {
             get
             {
@@ -1143,7 +1143,7 @@ public int PacketLossPercent
         /// <summary>
         /// Gets a value indicating whether use vbr.
         /// </summary>
-public bool UseVBR
+        public bool UseVBR
         {
             get
             {
@@ -1162,7 +1162,7 @@ public bool UseVBR
         /// <summary>
         /// Gets a value indicating whether use constrained vbr.
         /// </summary>
-public bool UseConstrainedVBR
+        public bool UseConstrainedVBR
         {
             get
             {
@@ -1196,7 +1196,7 @@ public bool UseConstrainedVBR
         /// <summary>
         /// Gets or sets the signal type.
         /// </summary>
-public OpusSignal SignalType
+        public OpusSignal SignalType
         {
             get
             {
@@ -1215,7 +1215,7 @@ public OpusSignal SignalType
         /// <summary>
         /// Gets the lookahead.
         /// </summary>
-public int Lookahead
+        public int Lookahead
         {
             get
             {
@@ -1227,7 +1227,7 @@ public int Lookahead
         /// <summary>
         /// Gets the sample rate.
         /// </summary>
-public int SampleRate
+        public int SampleRate
         {
             get
             {
@@ -1239,7 +1239,7 @@ public int SampleRate
         /// <summary>
         /// Gets the final range.
         /// </summary>
-public uint FinalRange
+        public uint FinalRange
         {
             get
             {
@@ -1258,7 +1258,7 @@ public uint FinalRange
         /// <summary>
         /// Gets or sets the lsb depth.
         /// </summary>
-public int LSBDepth
+        public int LSBDepth
         {
             get
             {
@@ -1277,7 +1277,7 @@ public int LSBDepth
         /// <summary>
         /// Gets a value indicating whether prediction disabled.
         /// </summary>
-public bool PredictionDisabled
+        public bool PredictionDisabled
         {
             get
             {
@@ -1296,7 +1296,7 @@ public bool PredictionDisabled
         /// <summary>
         /// Gets or sets the expert frame duration.
         /// </summary>
-public OpusFramesize ExpertFrameDuration
+        public OpusFramesize ExpertFrameDuration
         {
             get
             {
@@ -1324,7 +1324,7 @@ public OpusFramesize ExpertFrameDuration
         /// <summary>
         /// Gets the version string.
         /// </summary>
-public string GetVersionString()
+        public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();
         }
@@ -1332,7 +1332,7 @@ public string GetVersionString()
         /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
-public void Dispose() { }
+        public void Dispose() { }
 
         #endregion
     }

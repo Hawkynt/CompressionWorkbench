@@ -38,53 +38,53 @@ public sealed class GsOsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<GsOsEntry> Entries => _entries;
+  public IReadOnlyList<GsOsEntry> Entries => _entries;
   /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
-public bool ValidHeader { get; private set; }
+  public bool ValidHeader { get; private set; }
   /// <summary>
   /// Gets or sets the creator.
   /// </summary>
-public string Creator { get; private set; } = "";
+  public string Creator { get; private set; } = "";
   /// <summary>
   /// Gets or sets the version.
   /// </summary>
-public int Version { get; private set; }
+  public int Version { get; private set; }
   /// <summary>
   /// Gets or sets the image format.
   /// </summary>
-public int ImageFormat { get; private set; }
+  public int ImageFormat { get; private set; }
   /// <summary>
   /// Gets or sets the flags.
   /// </summary>
-public uint Flags { get; private set; }
+  public uint Flags { get; private set; }
   /// <summary>
   /// Gets or sets the data block count.
   /// </summary>
-public uint DataBlockCount { get; private set; }
+  public uint DataBlockCount { get; private set; }
   /// <summary>
   /// Gets or sets the data offset.
   /// </summary>
-public uint DataOffset { get; private set; }
+  public uint DataOffset { get; private set; }
   /// <summary>
   /// Gets or sets the data length.
   /// </summary>
-public uint DataLength { get; private set; }
+  public uint DataLength { get; private set; }
   /// <summary>
   /// Gets or sets the comment.
   /// </summary>
-public string Comment { get; private set; } = "";
+  public string Comment { get; private set; } = "";
 
   /// <summary>
   /// Provides the magic value.
   /// </summary>
-public static readonly byte[] Magic = "2IMG"u8.ToArray();
+  public static readonly byte[] Magic = "2IMG"u8.ToArray();
 
   /// <summary>
   /// Initializes a new instance of <see cref="GsOsReader"/>.
   /// </summary>
-public GsOsReader(Stream stream) {
+  public GsOsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -138,7 +138,7 @@ public GsOsReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(GsOsEntry entry) {
+  public byte[] Extract(GsOsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.DataOffset < 0 || entry.DataOffset + entry.Size > _data.Length) return [];
@@ -148,7 +148,7 @@ public byte[] Extract(GsOsEntry entry) {
   /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
-public byte[] BuildSurfaceMetadata() {
+  public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidHeader ? "ok" : "invalid").Append('\n');
     b.Append("format=Apple IIgs GS/OS (2IMG)\n");
@@ -167,5 +167,5 @@ public byte[] BuildSurfaceMetadata() {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

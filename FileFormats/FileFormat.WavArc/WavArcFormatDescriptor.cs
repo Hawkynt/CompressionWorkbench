@@ -23,73 +23,73 @@ public sealed class WavArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "WavArc";
+  public string Id => "WavArc";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "WavArc";
+  public string DisplayName => "WavArc";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".wa";
+  public string DefaultExtension => ".wa";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".wa"];
+  public IReadOnlyList<string> Extensions => [".wa"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   // The codec tag sits after a variable-length filename, so there is no fixed-offset
   // magic — detection is by the .wa extension.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("wavarc", "WavArc")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("wavarc", "WavArc")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "WavArc lossless audio (.wa); full file + decoded per-channel PCM.";
+  public string Description => "WavArc lossless audio (.wa); full file + decoded per-channel PCM.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     AudioPseudoArchive.List(BuildEntries(stream));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
     AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── Shared archive-entry builder ─────────────────────────────────────────────

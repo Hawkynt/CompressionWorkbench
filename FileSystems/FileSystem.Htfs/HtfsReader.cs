@@ -24,7 +24,7 @@ public sealed class HtfsReader {
   /// <summary>
   /// Initializes a new instance of <see cref="HtfsReader"/>.
   /// </summary>
-public HtfsReader(Stream stream) {
+  public HtfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     _image = new ImageAccessor(stream, leaveOpen: true);

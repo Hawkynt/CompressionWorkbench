@@ -12,7 +12,7 @@ public sealed class ZapReader : IDisposable {
   /// <summary>
   /// Provides the zap magic value.
   /// </summary>
-public static readonly byte[] ZapMagic = "ZAP\0"u8.ToArray();
+  public static readonly byte[] ZapMagic = "ZAP\0"u8.ToArray();
   private const int TrackSize = 11 * 512; // Amiga DD: 11 sectors × 512 bytes
 
   private readonly byte[] _data;
@@ -21,12 +21,12 @@ public static readonly byte[] ZapMagic = "ZAP\0"u8.ToArray();
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<ZapEntry> Entries => _entries;
+  public IReadOnlyList<ZapEntry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="ZapReader"/>.
   /// </summary>
-public ZapReader(Stream stream, bool leaveOpen = false) {
+  public ZapReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -69,7 +69,7 @@ public ZapReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(ZapEntry entry) {
+  public byte[] Extract(ZapEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.CompressedSize > _data.Length)
       throw new InvalidDataException("ZAP: data extends beyond file.");
@@ -141,5 +141,5 @@ public byte[] Extract(ZapEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

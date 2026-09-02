@@ -40,7 +40,7 @@ public sealed class JpegFrameSource : IFrameSource {
   /// <summary>
   /// Initializes a new instance of <see cref="JpegFrameSource"/>.
   /// </summary>
-public JpegFrameSource(Stream stream) {
+  public JpegFrameSource(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) {
       var len = checked((int)(stream.Length - stream.Position));
@@ -56,12 +56,12 @@ public JpegFrameSource(Stream stream) {
   /// <summary>
   /// Gets the frame count.
   /// </summary>
-public int FrameCount => 1;
+  public int FrameCount => 1;
 
   /// <summary>
   /// Gets the metadata.
   /// </summary>
-public FrameMetadata GetMetadata(int frameIndex) {
+  public FrameMetadata GetMetadata(int frameIndex) {
     if (frameIndex != 0) return new FrameMetadata(0, 0, 24, false);
     return JpegMetadataScanner.ScanBytes(_bytes);
   }
@@ -69,7 +69,7 @@ public FrameMetadata GetMetadata(int frameIndex) {
   /// <summary>
   /// Gets the frame.
   /// </summary>
-public RawImage GetFrame(int frameIndex) {
+  public RawImage GetFrame(int frameIndex) {
     if (frameIndex != 0)
       throw new ArgumentOutOfRangeException(nameof(frameIndex), "JPEG has exactly one frame.");
     if (_cachedFrame is { } cached) return cached;

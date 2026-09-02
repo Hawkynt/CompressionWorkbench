@@ -30,7 +30,7 @@ public sealed class ParquetReader {
   /// <summary>
   /// Initializes a new instance of <see cref="ParquetReader"/>.
   /// </summary>
-public ParquetReader(Stream stream) {
+  public ParquetReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

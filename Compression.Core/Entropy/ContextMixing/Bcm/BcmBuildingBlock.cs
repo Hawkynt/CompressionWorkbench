@@ -17,32 +17,32 @@ public sealed class BcmBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Bcm";
+  public string Id => "BB_Bcm";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "BCM (reduced)";
+  public string DisplayName => "BCM (reduced)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Burrows-Wheeler Transform with a compact order-0..2 context-mixing back end, BCM-style";
+  public string Description => "Burrows-Wheeler Transform with a compact order-0..2 context-mixing back end, BCM-style";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) => BcmCompressor.Compress(data);
+  public byte[] Compress(ReadOnlySpan<byte> data) => BcmCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) => BcmCompressor.Decompress(data);
+  public byte[] Decompress(ReadOnlySpan<byte> data) => BcmCompressor.Decompress(data);
 }

@@ -16,7 +16,7 @@ public sealed class TtcReader {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public List<Member> Read(ReadOnlySpan<byte> data) {
+  public List<Member> Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("TTC too short for header.");
 

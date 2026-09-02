@@ -109,37 +109,37 @@ public sealed class MacriumPreXFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "MacriumPreX";
+  public string Id => "MacriumPreX";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Macrium Reflect pre-X (.mrimg/.mrbak)";
+  public string DisplayName => "Macrium Reflect pre-X (.mrimg/.mrbak)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".mrimg";
+  public string DefaultExtension => ".mrimg";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".mrimg", ".mrbak", ".mrex", ".mrsql"];
+  public IReadOnlyList<string> Extensions => [".mrimg", ".mrbak", ".mrex", ".mrsql"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // The 9-byte block-preamble structure starts at offset 0 — the flags
     // byte 0x03 is the only fixed byte. Confidence is intentionally low
     // because 0x03 alone is a weak signature; the FormatDetector also
@@ -149,22 +149,22 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("mrimg-lz", "Macrium proprietary LZ77-derived"),
     new("stored", "Stored (uncompressed)"),
   ];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Macrium Reflect pre-X disk image / backup (v6-v8). Stage-1 header surfacing only.";
+  public string Description => "Macrium Reflect pre-X disk image / backup (v6-v8). Stage-1 header surfacing only.";
 
   /// <summary>
   /// Validates that <paramref name="header"/> begins with a Macrium
@@ -189,7 +189,7 @@ public string Description => "Macrium Reflect pre-X disk image / backup (v6-v8).
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.mrimg", stream.Length, stream.Length, "stored", false, false, null, "Track"),
@@ -204,7 +204,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);
     if (files == null || files.Length == 0 || MatchesFilter("FULL.mrimg", files)) {
@@ -224,7 +224,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the open entry operation.
   /// </summary>
-public Stream OpenEntry(Stream archive, string entryName, string? password) {
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (string.Equals(entryName, "FULL.mrimg", StringComparison.OrdinalIgnoreCase)) {
@@ -244,7 +244,7 @@ public Stream OpenEntry(Stream archive, string entryName, string? password) {
   /// <summary>
   /// Performs the extract entry to memory operation.
   /// </summary>
-public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var s = this.OpenEntry(archive, entryName, password);
     using var ms = new MemoryStream();
     s.CopyTo(ms);

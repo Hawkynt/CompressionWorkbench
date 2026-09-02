@@ -40,7 +40,7 @@ public sealed class ArrowReader {
   /// <summary>
   /// Initializes a new instance of <see cref="ArrowReader"/>.
   /// </summary>
-public ArrowReader(Stream stream) {
+  public ArrowReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

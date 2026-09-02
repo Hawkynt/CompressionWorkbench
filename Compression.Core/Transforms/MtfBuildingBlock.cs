@@ -10,34 +10,34 @@ public sealed class MtfBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Mtf";
+  public string Id => "BB_Mtf";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "MTF";
+  public string DisplayName => "MTF";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Move-to-Front Transform, converts repeated patterns to small values";
+  public string Description => "Move-to-Front Transform, converts repeated patterns to small values";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Transform;
+  public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data)
+  public byte[] Compress(ReadOnlySpan<byte> data)
     => MoveToFrontTransform.Encode(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data)
+  public byte[] Decompress(ReadOnlySpan<byte> data)
     => MoveToFrontTransform.Decode(data);
 }

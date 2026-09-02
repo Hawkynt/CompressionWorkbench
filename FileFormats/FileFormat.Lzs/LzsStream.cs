@@ -14,7 +14,7 @@ public static class LzsStream {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -29,7 +29,7 @@ public static void Compress(Stream input, Stream output) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public static void Decompress(Stream input, Stream output) {
+  public static void Decompress(Stream input, Stream output) {
     Span<byte> magicBuf = stackalloc byte[4];
     input.ReadExactly(magicBuf);
     if (magicBuf[0] != Magic[0] || magicBuf[1] != Magic[1] ||

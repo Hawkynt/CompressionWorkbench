@@ -91,7 +91,7 @@ public sealed class Ym2151Codec {
   /// <summary>
   /// Initializes a new instance of <see cref="Ym2151Codec"/>.
   /// </summary>
-public Ym2151Codec(double clock = 3579545.0) => this._nativeRate = clock / Prescale;
+  public Ym2151Codec(double clock = 3579545.0) => this._nativeRate = clock / Prescale;
 
   /// <summary>The chip's native output sample rate (<c>clock / 64</c>).</summary>
   public double NativeSampleRate => this._nativeRate;

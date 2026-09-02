@@ -14,12 +14,12 @@ public sealed class OggPageParser {
   /// <summary>
   /// Represents a page.
   /// </summary>
-public readonly record struct Page(uint Serial, byte Flags, byte[][] Segments);
+  public readonly record struct Page(uint Serial, byte Flags, byte[][] Segments);
 
   /// <summary>
   /// Performs the pages operation.
   /// </summary>
-public List<Page> Pages(ReadOnlySpan<byte> data) {
+  public List<Page> Pages(ReadOnlySpan<byte> data) {
     var pages = new List<Page>();
     var pos = 0;
     while (pos + 27 <= data.Length) {

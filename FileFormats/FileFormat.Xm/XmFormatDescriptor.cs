@@ -22,60 +22,60 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Xm";
+  public string Id => "Xm";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "XM (FastTracker II)";
+  public string DisplayName => "XM (FastTracker II)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".xm";
+  public string DefaultExtension => ".xm";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".xm"];
+  public IReadOnlyList<string> Extensions => [".xm"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("Extended Module: "u8.ToArray(), Offset: 0, Confidence: 0.95),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  public AlgorithmFamily Family => AlgorithmFamily.Classic;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "FastTracker II module; full file + patterns + per-instrument raw samples.";
+  public string Description => "FastTracker II module; full file + patterns + per-instrument raw samples.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
@@ -85,7 +85,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
         continue;
@@ -96,7 +96,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);

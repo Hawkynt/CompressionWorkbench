@@ -18,28 +18,28 @@ public sealed class ReduceBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Reduce";
+  public string Id => "BB_Reduce";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Reduce";
+  public string DisplayName => "Reduce";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "PKWARE ZIP Reduce (methods 2-5) - probabilistic follower-set predictor plus RLE expansion";
+  public string Description => "PKWARE ZIP Reduce (methods 2-5) - probabilistic follower-set predictor plus RLE expansion";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var body = data.Length == 0 ? [] : ReduceEncoder.Encode(data, Factor);
     var output = new byte[5 + body.Length];
     BinaryPrimitives.WriteInt32LittleEndian(output, data.Length);
@@ -52,7 +52,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 5) throw new InvalidDataException("Reduce: input smaller than 5-byte header.");
     var size = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (size < 0) throw new InvalidDataException("Reduce: negative decompressed size.");

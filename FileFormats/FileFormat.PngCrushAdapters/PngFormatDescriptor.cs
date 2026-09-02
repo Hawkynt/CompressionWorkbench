@@ -28,55 +28,55 @@ public sealed class PngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Png";
+  public string Id => "Png";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "PNG image";
+  public string DisplayName => "PNG image";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Image;
+  public FormatCategory Category => FormatCategory.Image;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".png";
+  public string DefaultExtension => ".png";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".png"];
+  public IReadOnlyList<string> Extensions => [".png"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], Confidence: 0.99),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "PNG chunk stream surfaced as a pseudo-archive: FULL.png + metadata.ini " +
     "(IHDR width/height/bit-depth/color-type) + one chunks/NN_<TYPE>.bin per chunk, " +
     "with tEXt collected to comments.txt and iCCP/eXIf payloads to icc.bin/exif.bin.";
@@ -84,21 +84,21 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     StructuralArchiveHelper.ToArchiveEntries(
       StructuralArchiveHelper.DecomposePng(StructuralArchiveHelper.ReadAllBytes(stream)));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     StructuralArchiveExtract.Extract(
       StructuralArchiveHelper.DecomposePng(StructuralArchiveHelper.ReadAllBytes(stream)), outputDir, files);
 
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
     StructuralArchiveExtract.ExtractEntry(
       StructuralArchiveHelper.DecomposePng(StructuralArchiveHelper.ReadAllBytes(input)), entryName, output);
 
@@ -106,17 +106,17 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Enumerates the chunks.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => PngLayoutMap.Enumerate(file);
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => PngLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file) => PngOptimizer.Optimize(file);
+  public void Optimize(Stream file) => PngOptimizer.Optimize(file);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file, MetadataPlacementProfile? profile) => PngOptimizer.Optimize(file, profile);
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => PngOptimizer.Optimize(file, profile);
 }

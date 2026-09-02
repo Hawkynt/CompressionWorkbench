@@ -13,12 +13,12 @@ public sealed class TnefWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => _files.Add((name, data));
+  public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     using var bw = new BinaryWriter(output, Encoding.ASCII, leaveOpen: true);
 
     // Signature + key

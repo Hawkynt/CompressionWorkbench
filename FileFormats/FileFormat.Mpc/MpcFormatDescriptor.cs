@@ -20,73 +20,73 @@ public sealed class MpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Mpc";
+  public string Id => "Mpc";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Musepack (MPC)";
+  public string DisplayName => "Musepack (MPC)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".mpc";
+  public string DefaultExtension => ".mpc";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".mpc", ".mpp", ".mp+"];
+  public IReadOnlyList<string> Extensions => [".mpc", ".mpp", ".mp+"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("MPCK"u8.ToArray(), Confidence: 0.95),
     new("MP+"u8.ToArray(), Confidence: 0.90),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("mpc", "Musepack")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("mpc", "Musepack")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Musepack (MPC) audio; full file + decoded per-channel PCM (SV8).";
+  public string Description => "Musepack (MPC) audio; full file + decoded per-channel PCM (SV8).";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     AudioPseudoArchive.List(BuildEntries(stream));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
     AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveWriteConstraints (no Musepack encoder; archive-view inputs only) ──
@@ -94,17 +94,17 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "Musepack archive accepts: FULL.mpc, LEFT/RIGHT/… .wav (per-channel), metadata.ini";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.mpc" or "metadata.ini" || name.EndsWith(".wav")) {
       reason = null;

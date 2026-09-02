@@ -175,7 +175,7 @@ public static class AcronisRecordReader {
   /// <summary>
   /// Reads the one from the supplied input.
   /// </summary>
-public static AcronisRecord ReadOne(Stream stream, long endExclusive) {
+  public static AcronisRecord ReadOne(Stream stream, long endExclusive) {
     var start = stream.Position;
     var typeByte = stream.ReadByte();
     if (typeByte < 0) throw new EndOfStreamException("Acronis: unexpected EOF reading record type.");

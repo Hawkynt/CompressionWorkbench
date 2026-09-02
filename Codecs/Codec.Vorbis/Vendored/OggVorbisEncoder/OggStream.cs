@@ -96,7 +96,7 @@ public class OggStream
     /// <summary>
     /// Initializes a new instance of <see cref="OggStream"/>.
     /// </summary>
-public OggStream(int serialNumber)
+    public OggStream(int serialNumber)
     {
         _serialNumber = serialNumber;
     }
@@ -104,12 +104,12 @@ public OggStream(int serialNumber)
     /// <summary>
     /// Gets a value indicating whether finished.
     /// </summary>
-public bool Finished { get; private set; }
+    public bool Finished { get; private set; }
 
     /// <summary>
     /// Performs the packet in operation.
     /// </summary>
-public void PacketIn(OggPacket packet)
+    public void PacketIn(OggPacket packet)
     {
         if (packet == null)
             return;

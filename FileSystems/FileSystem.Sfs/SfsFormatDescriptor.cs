@@ -43,37 +43,37 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Sfs";
+  public string Id => "Sfs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Amiga SFS";
+  public string DisplayName => "Amiga SFS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
     | FormatCapabilities.CanCreate;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".sfs";
+  public string DefaultExtension => ".sfs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".sfs"];
+  public IReadOnlyList<string> Extensions => [".sfs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "SFS\0" at offset 0 of the root block — unique enough that 0.95 confidence
     // is honest. We probe offsets 0 / 512 / 1024 in the parser to be lenient on
     // partitioned dumps but the canonical detection point is 0.
@@ -82,25 +82,25 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Amiga Smart Filesystem volume — files, and a layout pass over them.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -140,7 +140,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAll(stream);
@@ -190,7 +190,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => SfsExtentMap.Enumerate(image);
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => SfsExtentMap.Enumerate(image);
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
@@ -214,7 +214,7 @@ public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => SfsExtentM
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>Moves the blocks that are out of place and rewrites the extent tree.</summary>

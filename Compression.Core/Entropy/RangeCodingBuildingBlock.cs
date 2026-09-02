@@ -11,22 +11,22 @@ public sealed class RangeCodingBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_RangeCoding";
+  public string Id => "BB_RangeCoding";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Range Coding";
+  public string DisplayName => "Range Coding";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Byte-oriented arithmetic coding variant with carryless normalization";
+  public string Description => "Byte-oriented arithmetic coding variant with carryless normalization";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   private const int NumSymbols = 256;
   private const uint Top = 1u << 24;
@@ -37,7 +37,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write header: 4-byte LE original size.
@@ -102,7 +102,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     // Read 4-byte LE original size.

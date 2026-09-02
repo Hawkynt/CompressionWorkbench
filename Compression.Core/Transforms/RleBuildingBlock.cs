@@ -10,34 +10,34 @@ public sealed class RleBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Rle";
+  public string Id => "BB_Rle";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "RLE";
+  public string DisplayName => "RLE";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Run-Length Encoding, replaces repeated bytes with count+value pairs";
+  public string Description => "Run-Length Encoding, replaces repeated bytes with count+value pairs";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Transform;
+  public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data)
+  public byte[] Compress(ReadOnlySpan<byte> data)
     => RunLengthEncoding.Encode(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data)
+  public byte[] Decompress(ReadOnlySpan<byte> data)
     => RunLengthEncoding.Decode(data);
 }

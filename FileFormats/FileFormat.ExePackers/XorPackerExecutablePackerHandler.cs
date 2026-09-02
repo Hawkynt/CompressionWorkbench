@@ -12,18 +12,18 @@ public sealed class XorPackerExecutablePackerHandler : IExecutablePackerHandler 
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "xor_packer";
+  public string Id => "xor_packer";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Xor_Packer .NET PE wrapper";
+  public string DisplayName => "Xor_Packer .NET PE wrapper";
 
   private static ReadOnlySpan<byte> Marker => "***"u8;
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -33,7 +33,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Xor_Packer: not a valid PE wrapper.", true)]);
 
@@ -46,7 +46,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -65,7 +65,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var artifacts = new List<UnpackArtifact> {
       new("metadata.json", BuildMetadataJson(packed), "stored"),
       new("original_packed.bin", packed.OriginalImage, "stored"),

@@ -14,7 +14,7 @@ public sealed class D71Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<D71Entry> Entries => _entries;
+  public IReadOnlyList<D71Entry> Entries => _entries;
 
   // Standard D71 size: 70 tracks (double-sided 1571)
   private const int StandardSize = 349696;
@@ -42,7 +42,7 @@ public IReadOnlyList<D71Entry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="D71Reader"/>.
   /// </summary>
-public D71Reader(Stream stream, bool leaveOpen = false) {
+  public D71Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -136,7 +136,7 @@ public D71Reader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(D71Entry entry) {
+  public byte[] Extract(D71Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
 
@@ -169,5 +169,5 @@ public byte[] Extract(D71Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

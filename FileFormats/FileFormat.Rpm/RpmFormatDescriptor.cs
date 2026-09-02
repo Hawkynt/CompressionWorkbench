@@ -50,7 +50,7 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     // RPM layout: Lead (96 B) + Signature header + Main header + Payload
     // Walk the RPM header structures to find where the payload starts.
     if (archive.Length < 96)
@@ -89,58 +89,58 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Rpm";
+  public string Id => "Rpm";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "RPM";
+  public string DisplayName => "RPM";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".rpm";
+  public string DefaultExtension => ".rpm";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".rpm"];
+  public IReadOnlyList<string> Extensions => [".rpm"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xED, 0xAB, 0xEE, 0xDB], Confidence: 0.95)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xED, 0xAB, 0xEE, 0xDB], Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("rpm", "RPM")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("rpm", "RPM")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Red Hat Package Manager archive";
+  public string Description => "Red Hat Package Manager archive";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (stream.CanSeek) stream.Position = 0;
     var r = new RpmReader(stream);
     using var payload = r.GetDecompressedPayloadStream();
@@ -158,7 +158,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (stream.CanSeek) stream.Position = 0;
     var r = new RpmReader(stream);
     using var payload = r.GetDecompressedPayloadStream();
@@ -205,7 +205,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new RpmWriter();
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);

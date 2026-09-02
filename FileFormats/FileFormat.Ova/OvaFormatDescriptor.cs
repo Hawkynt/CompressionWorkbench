@@ -35,64 +35,64 @@ public sealed class OvaFormatDescriptor
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Ova";
+  public string Id => "Ova";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "OVA/OVF Virtual Appliance";
+  public string DisplayName => "OVA/OVF Virtual Appliance";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
   // so the verb works via rebuild but nothing is modified in place. CanModify
   // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".ova";
+  public string DefaultExtension => ".ova";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".ova"];
+  public IReadOnlyList<string> Extensions => [".ova"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // OVA is a plain TAR; rely on the .ova extension plus the presence of an .ovf
   // member (verified during List). No distinguishing leading magic exists.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored (TAR)")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored (TAR)")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "OVA Open Virtual Appliance: uncompressed TAR with an .ovf descriptor, .vmdk disks and an optional .mf manifest.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.ova", fullSize, fullSize, "Stored", false, false, null),
@@ -109,7 +109,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (Wants(files, "FULL.ova")) {
       var full = ReadAll(stream);
       WriteFile(outputDir, "FULL.ova", full);

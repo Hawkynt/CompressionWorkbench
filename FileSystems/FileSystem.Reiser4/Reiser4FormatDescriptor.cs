@@ -46,36 +46,36 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Reiser4";
+  public string Id => "Reiser4";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Reiser4";
+  public string DisplayName => "Reiser4";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".reiser4";
+  public string DefaultExtension => ".reiser4";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".reiser4"];
+  public IReadOnlyList<string> Extensions => [".reiser4"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "ReIsEr4" at byte offset 65536 (= 16 * 4096). Confidence 0.9: the 7-byte
     // magic is highly unlikely to land at exactly this offset by chance, but
     // it shares the "ReIsEr" prefix with the older ReiserFS 3.6 magic
@@ -88,24 +88,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Reiser4 filesystem image — master + format40 superblock surface only.";
+  public string Description => "Reiser4 filesystem image — master + format40 superblock surface only.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -161,7 +161,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAllBounded(stream);
@@ -238,7 +238,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     var w = new Reiser4Writer();
 
@@ -278,7 +278,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -400,22 +400,22 @@ public void Defragment(Stream archive)
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     reason = null;
     return true;
   }
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the min total archive size.
   /// </summary>
-public long? MinTotalArchiveSize => Reiser4Writer.BlockSize * (long)Reiser4Writer.MinBlockCount; // 16 MB
+  public long? MinTotalArchiveSize => Reiser4Writer.BlockSize * (long)Reiser4Writer.MinBlockCount; // 16 MB
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "Reiser4 image; files are stored in the workbench-layout payload area past the reserved blocks.";
 
   // Bounded read — must NOT pull multi-GB images into memory when the carver

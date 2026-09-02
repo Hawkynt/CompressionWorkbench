@@ -16,7 +16,7 @@ public sealed class BwavReader {
   /// <summary>
   /// Represents a channel info.
   /// </summary>
-public sealed record ChannelInfo(
+  public sealed record ChannelInfo(
     int Codec,
     int ChannelPan,
     int SampleRate,
@@ -33,7 +33,7 @@ public sealed record ChannelInfo(
   /// <summary>
   /// Represents a parsed bwav.
   /// </summary>
-public sealed record ParsedBwav(
+  public sealed record ParsedBwav(
     int Version,
     uint Crc,
     int ChannelCount,
@@ -43,7 +43,7 @@ public sealed record ParsedBwav(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedBwav Read(ReadOnlySpan<byte> data) {
+  public ParsedBwav Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x10)
       throw new InvalidDataException("BWAV too short for header.");
     if (data[0] != 'B' || data[1] != 'W' || data[2] != 'A' || data[3] != 'V')

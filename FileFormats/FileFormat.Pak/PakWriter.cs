@@ -24,5 +24,5 @@ public sealed class PakWriter : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._inner.Dispose();
+  public void Dispose() => this._inner.Dispose();
 }

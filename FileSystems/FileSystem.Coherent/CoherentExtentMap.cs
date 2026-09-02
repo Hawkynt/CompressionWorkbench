@@ -22,7 +22,7 @@ public static class CoherentExtentMap {
   /// <summary>
   /// Enumerates the value.
   /// </summary>
-public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
     var layout = CoherentLayout.Read(image);

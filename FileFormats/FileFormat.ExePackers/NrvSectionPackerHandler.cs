@@ -18,16 +18,16 @@ public sealed class GenericNrvPackedPeHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "nrv_pe";
+  public string Id => "nrv_pe";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Generic NRV-packed PE";
+  public string DisplayName => "Generic NRV-packed PE";
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -38,7 +38,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Generic NRV PE: not a valid PE.", true)]);
 
@@ -54,7 +54,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -73,7 +73,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
         new(ExecutableDiagnosticCode.PayloadNotFound, "Input exceeds configured executable unpacking size limit.", true),

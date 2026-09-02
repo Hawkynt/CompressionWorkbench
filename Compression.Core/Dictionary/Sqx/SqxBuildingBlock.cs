@@ -12,22 +12,22 @@ public sealed class SqxBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Sqx";
+  public string Id => "BB_Sqx";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "SQX";
+  public string DisplayName => "SQX";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "LZ+Huffman compression from the SQX archive format";
+  public string Description => "LZ+Huffman compression from the SQX archive format";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int DictSize = 1 << 15; // 32 KB
 
@@ -35,7 +35,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressed = SqxEncoder.Encode(data, DictSize);
     var result = new byte[4 + compressed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
@@ -47,7 +47,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     return SqxDecoder.Decode(data[4..].ToArray(), originalSize, DictSize);
   }

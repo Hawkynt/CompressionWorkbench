@@ -73,44 +73,44 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Aomei";
+  public string Id => "Aomei";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "AOMEI Backupper Image (ADI/AFI)";
+  public string DisplayName => "AOMEI Backupper Image (ADI/AFI)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".adi";
+  public string DefaultExtension => ".adi";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".adi", ".afi"];
+  public IReadOnlyList<string> Extensions => [".adi", ".afi"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(AomeiReader.Magic, Offset: 0, Confidence: 0.95f),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("lz4", "LZ4 raw block"),
     new("zlib", "zlib"),
@@ -118,15 +118,15 @@ public IReadOnlyList<FormatMethodInfo> Methods => [
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "AOMEI Backupper disk (.adi) / file (.afi) image — BIFH/BIFT outer container R/W via the " +
     "BR_STANDARD_HEADER tagged-record framing recovered by reverse engineering of the vendor's " +
     "image-format library (source-tree codename BRCloudv2, embedded PDB path " +
@@ -170,7 +170,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -237,7 +237,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAllBounded(stream);

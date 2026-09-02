@@ -78,7 +78,7 @@ public sealed class Human68kWriter {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build() {
+  public byte[] Build() {
     if (this._files.Count > this._rootEntries)
       throw new InvalidOperationException(
         $"Human68k: more files ({this._files.Count}) than root entries ({this._rootEntries}).");

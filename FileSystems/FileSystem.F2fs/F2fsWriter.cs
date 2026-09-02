@@ -228,7 +228,7 @@ public sealed class F2fsWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     EnsureFileFits(name, data.LongLength);
@@ -262,7 +262,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build(int totalSegments = DefaultSegmentCount) {
+  public byte[] Build(int totalSegments = DefaultSegmentCount) {
     var image = this.BuildCore(totalSegments);
     if (image.TotalBytes > Array.MaxLength)
       throw new IOException(
@@ -724,7 +724,7 @@ public byte[] Build(int totalSegments = DefaultSegmentCount) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     var bytes = this.Build();
     output.Write(bytes, 0, bytes.Length);
   }

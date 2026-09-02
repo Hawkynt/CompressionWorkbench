@@ -33,7 +33,7 @@ public sealed class WbnReader {
   /// <summary>
   /// Initializes a new instance of <see cref="WbnReader"/>.
   /// </summary>
-public WbnReader(Stream stream) {
+  public WbnReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

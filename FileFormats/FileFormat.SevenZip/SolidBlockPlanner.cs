@@ -48,22 +48,22 @@ public static class SolidBlockPlanner {
     /// <summary>
     /// Gets the files.
     /// </summary>
-public List<(ArchiveInputInfo Input, byte[] Data)> Files { get; } = [];
+    public List<(ArchiveInputInfo Input, byte[] Data)> Files { get; } = [];
     /// <summary>
     /// Gets or sets the total size.
     /// </summary>
-public long TotalSize { get; private set; }
+    public long TotalSize { get; private set; }
     /// <summary>
     /// Gets a value indicating whether is incompressible.
     /// </summary>
-public bool IsIncompressible { get; init; }
+    public bool IsIncompressible { get; init; }
     /// <summary>Extension group index (-1 for catch-all, -2 for incompressible).</summary>
     public int GroupIndex { get; init; } = -1;
 
     /// <summary>
     /// Adds the supplied entry to the target container.
     /// </summary>
-public void Add(ArchiveInputInfo input, byte[] data) {
+    public void Add(ArchiveInputInfo input, byte[] data) {
       Files.Add((input, data));
       TotalSize += data.Length;
     }

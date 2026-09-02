@@ -28,71 +28,71 @@ public sealed class G7231FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "G7231";
+  public string Id => "G7231";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "ITU-T G.723.1";
+  public string DisplayName => "ITU-T G.723.1";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".g723";
+  public string DefaultExtension => ".g723";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".g723", ".g7231"];
+  public IReadOnlyList<string> Extensions => [".g723", ".g7231"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // Headerless: no magic — dispatch is extension-only (precedent: raw LPC-10 / CVSD / G.711).
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("g7231", "G.723.1")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("g7231", "G.723.1")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Raw ITU-T G.723.1 (5.3/6.3 kbit/s) speech stream; full file + decoded mono PCM WAV.";
+  public string Description => "Raw ITU-T G.723.1 (5.3/6.3 kbit/s) speech stream; full file + decoded mono PCM WAV.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password)
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {

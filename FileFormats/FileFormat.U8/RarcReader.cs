@@ -21,7 +21,7 @@ public sealed class RarcReader {
   /// <summary>
   /// Initializes a new instance of <see cref="RarcReader"/>.
   /// </summary>
-public RarcReader(Stream stream) {
+  public RarcReader(Stream stream) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanRead)
       throw new ArgumentException("Stream must be readable.", nameof(stream));
@@ -121,12 +121,12 @@ public RarcReader(Stream stream) {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<RarcEntry> Entries => this._entries;
+  public IReadOnlyList<RarcEntry> Entries => this._entries;
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(RarcEntry entry) {
+  public byte[] Extract(RarcEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
       throw new InvalidOperationException("Directory entries do not have payload bytes.");
@@ -142,7 +142,7 @@ public byte[] Extract(RarcEntry entry) {
   /// <summary>
   /// Computes the name hash for the supplied data.
   /// </summary>
-public static ushort CalculateNameHash(string name) {
+  public static ushort CalculateNameHash(string name) {
     ArgumentNullException.ThrowIfNull(name);
     ushort hash = 0;
     foreach (var ch in name) {

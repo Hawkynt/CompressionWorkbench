@@ -47,7 +47,7 @@ public sealed class AdfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<AdfsEntry> Entries => this._entries;
+  public IReadOnlyList<AdfsEntry> Entries => this._entries;
 
   /// <summary>Sector size — 256 bytes for old map (S/M/L), 1024 for new map (D/E/F).</summary>
   public int SectorSize { get; private set; } = 256;
@@ -71,7 +71,7 @@ public IReadOnlyList<AdfsEntry> Entries => this._entries;
   /// <summary>
   /// Initializes a new instance of <see cref="AdfsReader"/>.
   /// </summary>
-public AdfsReader(Stream stream) {
+  public AdfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -349,7 +349,7 @@ public AdfsReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(AdfsEntry entry) {
+  public byte[] Extract(AdfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (this.IsNewMap) return this.ReadObject(entry.IndirectAddress, (int)entry.Size);
@@ -362,5 +362,5 @@ public byte[] Extract(AdfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

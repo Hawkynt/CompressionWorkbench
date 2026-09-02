@@ -76,7 +76,7 @@ public sealed class GhostLegacyReader {
   /// <summary>
   /// Initializes a new instance of <see cref="GhostLegacyReader"/>.
   /// </summary>
-public GhostLegacyReader(ReadOnlySpan<byte> data) {
+  public GhostLegacyReader(ReadOnlySpan<byte> data) {
     this._data = data.ToArray();
     this.Parse();
   }

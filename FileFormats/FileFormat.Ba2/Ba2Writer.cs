@@ -22,7 +22,7 @@ public sealed class Ba2Writer : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="Ba2Writer"/>.
   /// </summary>
-public Ba2Writer(Stream stream, bool leaveOpen = false, bool compress = true) {
+  public Ba2Writer(Stream stream, bool leaveOpen = false, bool compress = true) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("BA2 writer requires a seekable stream.", nameof(stream));
@@ -169,7 +169,7 @@ public Ba2Writer(Stream stream, bool leaveOpen = false, bool compress = true) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (this._disposed)
       return;
     this._disposed = true;

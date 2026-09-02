@@ -37,25 +37,25 @@ public sealed class SalvadorBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Salvador";
+  public string Id => "BB_Salvador";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Salvador";
+  public string DisplayName => "Salvador";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Emmanuel Marty's Salvador — ZX0-compatible LZ77 with inverted Elias-gamma offsets, for Amiga 4K/64K productions";
+  public string Description => "Emmanuel Marty's Salvador — ZX0-compatible LZ77 with inverted Elias-gamma offsets, for Amiga 4K/64K productions";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   // Salvador's "FLG_IS_INVERTED" (default forward mode) inverts the offset-MSB Elias-gamma bits.
   private const bool InvertMode = true;

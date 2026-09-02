@@ -13,34 +13,34 @@ public sealed class DeltaRleBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_DeltaRle";
+  public string Id => "BB_DeltaRle";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Delta + RLE";
+  public string DisplayName => "Delta + RLE";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Delta filter followed by run-length encoding of the delta stream; unlike the pure Delta filter (BB_Delta), this compresses repetitive data.";
+  public string Description => "Delta filter followed by run-length encoding of the delta stream; unlike the pure Delta filter (BB_Delta), this compresses repetitive data.";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Transform;
+  public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data)
+  public byte[] Compress(ReadOnlySpan<byte> data)
     => DeltaRleEncoding.Encode(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data)
+  public byte[] Decompress(ReadOnlySpan<byte> data)
     => DeltaRleEncoding.Decode(data);
 }

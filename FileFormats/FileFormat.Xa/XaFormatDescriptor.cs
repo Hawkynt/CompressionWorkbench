@@ -33,37 +33,37 @@ public sealed class XaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Xa";
+  public string Id => "Xa";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "CD-XA audio (.xa)";
+  public string DisplayName => "CD-XA audio (.xa)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".xa";
+  public string DefaultExtension => ".xa";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".xa"];
+  public IReadOnlyList<string> Extensions => [".xa"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // RIFF/CDXA: "CDXA" form type at offset 8.
     new("CDXA"u8.ToArray(), Offset: 8, Confidence: 0.95),
     // Raw 2352-byte sectors: the 12-byte CD sync pattern 00 FF×10 00.
@@ -72,19 +72,19 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("xa-adpcm", "XA-ADPCM")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("xa-adpcm", "XA-ADPCM")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "CD-XA / PSX streaming ADPCM (.xa); full file + decoded per-channel WAV.";
+  public string Description => "CD-XA / PSX streaming ADPCM (.xa); full file + decoded per-channel WAV.";
 
   // ── Sector geometry ──────────────────────────────────────────────────────────
   private const int RawSectorSize = 2352;
@@ -103,19 +103,19 @@ public string Description => "CD-XA / PSX streaming ADPCM (.xa); full file + dec
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password)
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveCreatable: assemble a RIFF/CDXA file from per-channel WAVs ─────────
@@ -123,7 +123,7 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
     // Passthrough a provided FULL.xa verbatim (archive-view semantics).
@@ -251,17 +251,17 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "XA archive accepts: FULL.xa, MONO.wav, or LEFT/RIGHT.wav (per-channel, 16-bit)";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.xa" or "metadata.ini" || name.EndsWith(".wav")) {
       reason = null;

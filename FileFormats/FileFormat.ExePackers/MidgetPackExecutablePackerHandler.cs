@@ -36,16 +36,16 @@ public sealed class MidgetPackExecutablePackerHandler : IExecutablePackerHandler
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "midgetpack";
+  public string Id => "midgetpack";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "MidgetPack ELF crypter (AES-CBC, runtime key)";
+  public string DisplayName => "MidgetPack ELF crypter (AES-CBC, runtime key)";
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.SupportsElf |
@@ -56,7 +56,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (TryParseDescriptor(image.ToArray(), out _))
       return new(true, this.Id, 1.0, []);
     return new(false, this.Id, 0,
@@ -67,7 +67,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var bytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(this.Id, bytes, detection, info, this.Capabilities, new Dictionary<string, string> {
@@ -81,7 +81,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     if (image.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [],

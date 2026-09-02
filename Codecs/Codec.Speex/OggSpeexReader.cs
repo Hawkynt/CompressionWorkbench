@@ -22,7 +22,7 @@ public sealed class OggSpeexReader {
   /// <summary>
   /// Initializes a new instance of <see cref="OggSpeexReader"/>.
   /// </summary>
-public OggSpeexReader(Stream stream) => this._stream = stream;
+  public OggSpeexReader(Stream stream) => this._stream = stream;
 
   /// <summary>Reads and parses the first packet as the Speex header.</summary>
   public SpeexHeader ReadHeader() {
@@ -40,7 +40,7 @@ public OggSpeexReader(Stream stream) => this._stream = stream;
   /// <summary>
   /// Attempts to read the packet from the supplied input.
   /// </summary>
-public bool TryReadPacket(out byte[] packet) {
+  public bool TryReadPacket(out byte[] packet) {
     while (this._pending.Count == 0 && !this._eof)
       this.FillFromNextPage();
     if (this._pending.Count > 0) {

@@ -32,12 +32,12 @@ public sealed class XfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<XfsEntry> Entries => _entries;
+  public IReadOnlyList<XfsEntry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="XfsReader"/>.
   /// </summary>
-public XfsReader(Stream stream, bool leaveOpen = true) {
+  public XfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: an XFS volume's metadata is a small prefix
@@ -312,7 +312,7 @@ public XfsReader(Stream stream, bool leaveOpen = true) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(XfsEntry entry) {
+  public byte[] Extract(XfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var size = entry.Size;
     if (size > Array.MaxLength)
@@ -385,5 +385,5 @@ public byte[] Extract(XfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._img.Dispose();
+  public void Dispose() => this._img.Dispose();
 }

@@ -43,7 +43,7 @@ public sealed class OrcReader {
   /// <summary>
   /// Initializes a new instance of <see cref="OrcReader"/>.
   /// </summary>
-public OrcReader(Stream stream) {
+  public OrcReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

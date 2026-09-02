@@ -68,19 +68,19 @@ public sealed class AcronisReader {
   /// <summary>
   /// Gets the header.
   /// </summary>
-public AcronisVolumeHeader Header { get; }
+  public AcronisVolumeHeader Header { get; }
   /// <summary>
   /// Gets the trailer.
   /// </summary>
-public AcronisSliceTrailer? Trailer { get; }
+  public AcronisSliceTrailer? Trailer { get; }
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<AcronisFileEntry> Entries { get; }
+  public IReadOnlyList<AcronisFileEntry> Entries { get; }
   /// <summary>
   /// Gets the config attributes.
   /// </summary>
-public IReadOnlyList<AcronisConfigAttribute> ConfigAttributes { get; }
+  public IReadOnlyList<AcronisConfigAttribute> ConfigAttributes { get; }
 
   /// <summary>All records walked from the metadata stream (in archive order).</summary>
   public IReadOnlyList<AcronisRecord> Records { get; }
@@ -169,7 +169,7 @@ public IReadOnlyList<AcronisConfigAttribute> ConfigAttributes { get; }
   /// <summary>
   /// Initializes a new instance of <see cref="AcronisReader"/>.
   /// </summary>
-public AcronisReader(Stream stream) {
+  public AcronisReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
     this.Header = AcronisVolumeHeader.Read(stream);

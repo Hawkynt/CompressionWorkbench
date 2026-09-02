@@ -29,36 +29,36 @@ public class LookupCollection
     /// <summary>
     /// Gets the envelope lookup.
     /// </summary>
-public EnvelopeLookup EnvelopeLookup { get; }
+    public EnvelopeLookup EnvelopeLookup { get; }
     /// <summary>
     /// Gets the transform lookup.
     /// </summary>
-public MdctLookup[] TransformLookup { get; }
+    public MdctLookup[] TransformLookup { get; }
     /// <summary>
     /// Gets the psy global lookup.
     /// </summary>
-public PsyGlobalLookup PsyGlobalLookup { get; }
+    public PsyGlobalLookup PsyGlobalLookup { get; }
     /// <summary>
     /// Gets the psy lookup.
     /// </summary>
-public PsyLookup[] PsyLookup { get; }
+    public PsyLookup[] PsyLookup { get; }
     /// <summary>
     /// Gets the fft lookup.
     /// </summary>
-public DrftLookup[] FftLookup { get; }
+    public DrftLookup[] FftLookup { get; }
     /// <summary>
     /// Gets the floor lookup.
     /// </summary>
-public FloorLookup[] FloorLookup { get; }
+    public FloorLookup[] FloorLookup { get; }
     /// <summary>
     /// Gets the residue lookup.
     /// </summary>
-public ResidueLookup[] ResidueLookup { get; }
+    public ResidueLookup[] ResidueLookup { get; }
 
     /// <summary>
     /// Performs the create operation.
     /// </summary>
-public static LookupCollection Create(VorbisInfo info)
+    public static LookupCollection Create(VorbisInfo info)
     {
         var codecSetup = info.CodecSetup;
 

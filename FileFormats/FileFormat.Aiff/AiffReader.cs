@@ -20,7 +20,7 @@ public sealed class AiffReader {
   /// <summary>
   /// Represents a parsed aiff.
   /// </summary>
-public sealed record ParsedAiff(
+  public sealed record ParsedAiff(
     int NumChannels,
     int SampleRate,
     int BitsPerSample,
@@ -38,7 +38,7 @@ public sealed record ParsedAiff(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedAiff Read(ReadOnlySpan<byte> data) {
+  public ParsedAiff Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("AIFF too short for FORM header.");
     if (data[0] != 'F' || data[1] != 'O' || data[2] != 'R' || data[3] != 'M')

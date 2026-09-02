@@ -22,32 +22,32 @@ public sealed class CmixBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Cmix";
+  public string Id => "BB_Cmix";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "CMIX (reduced model set)";
+  public string DisplayName => "CMIX (reduced model set)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Reduced cmix-style subset: orders 0-6 + word + match model, one mixer, two-stage SSE (not the full cmix ensemble)";
+  public string Description => "Reduced cmix-style subset: orders 0-6 + word + match model, one mixer, two-stage SSE (not the full cmix ensemble)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) => CmixCompressor.Compress(data);
+  public byte[] Compress(ReadOnlySpan<byte> data) => CmixCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) => CmixCompressor.Decompress(data);
+  public byte[] Decompress(ReadOnlySpan<byte> data) => CmixCompressor.Decompress(data);
 }

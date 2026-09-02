@@ -39,19 +39,19 @@ public sealed class SfsVolume {
   /// <summary>
   /// Gets a value indicating whether valid.
   /// </summary>
-public bool Valid { get; private set; }
+  public bool Valid { get; private set; }
   /// <summary>
   /// Gets or sets the status.
   /// </summary>
-public string Status { get; private set; } = "unparsed";
+  public string Status { get; private set; } = "unparsed";
   /// <summary>
   /// Gets or sets the block size.
   /// </summary>
-public int BlockSize { get; private set; } = 512;
+  public int BlockSize { get; private set; } = 512;
   /// <summary>
   /// Gets or sets the total blocks.
   /// </summary>
-public long TotalBlocks { get; private set; }
+  public long TotalBlocks { get; private set; }
 
   /// <summary>Blocks the volume's own structures occupy.</summary>
   public IReadOnlyList<long> ReservedBlocks => this._reserved;
@@ -63,18 +63,18 @@ public long TotalBlocks { get; private set; }
   /// <summary>
   /// Gets the files.
   /// </summary>
-public IReadOnlyList<VolumeFile> Files => this._files;
+  public IReadOnlyList<VolumeFile> Files => this._files;
   private readonly List<VolumeFile> _files = [];
 
   /// <summary>
   /// Gets the image length.
   /// </summary>
-public long ImageLength => this._image.LongLength;
+  public long ImageLength => this._image.LongLength;
 
   /// <summary>
   /// Initializes a new instance of <see cref="SfsVolume"/>.
   /// </summary>
-public SfsVolume(Stream image) {
+  public SfsVolume(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
     using var ms = new MemoryStream();

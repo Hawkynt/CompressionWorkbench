@@ -67,7 +67,7 @@ public sealed class XenixWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="XenixWriter"/>.
   /// </summary>
-public XenixWriter(Stream output, bool leaveOpen = false) {
+  public XenixWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
     this._leaveOpen = leaveOpen;
@@ -491,7 +491,7 @@ public XenixWriter(Stream output, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }
 }

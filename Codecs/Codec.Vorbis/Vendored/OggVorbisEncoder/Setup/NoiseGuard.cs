@@ -8,7 +8,7 @@ public class NoiseGuard
     /// <summary>
     /// Initializes a new instance of <see cref="NoiseGuard"/>.
     /// </summary>
-public NoiseGuard(int low, int high, int fix)
+    public NoiseGuard(int low, int high, int fix)
     {
         Low = low;
         High = high;
@@ -18,13 +18,13 @@ public NoiseGuard(int low, int high, int fix)
     /// <summary>
     /// Gets the low.
     /// </summary>
-public int Low { get; }
+    public int Low { get; }
     /// <summary>
     /// Gets the high.
     /// </summary>
-public int High { get; }
+    public int High { get; }
     /// <summary>
     /// Gets the fixed.
     /// </summary>
-public int Fixed { get; }
+    public int Fixed { get; }
 }

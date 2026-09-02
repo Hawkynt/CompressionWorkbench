@@ -65,20 +65,20 @@ public sealed class Ods1Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Ods1Entry> Entries => this._entries;
+  public IReadOnlyList<Ods1Entry> Entries => this._entries;
 
   /// <summary>
   /// Gets or sets the volume format.
   /// </summary>
-public string VolumeFormat { get; private set; } = "";
+  public string VolumeFormat { get; private set; } = "";
   /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
-public string VolumeName { get; private set; } = "";
+  public string VolumeName { get; private set; } = "";
   /// <summary>
   /// Gets or sets the structure level.
   /// </summary>
-public int StructureLevel { get; private set; }
+  public int StructureLevel { get; private set; }
 
   internal const int LbnSize = 512;
   internal const int HomeBlockLbn = 1;
@@ -86,7 +86,7 @@ public int StructureLevel { get; private set; }
   /// <summary>
   /// Initializes a new instance of <see cref="Ods1Reader"/>.
   /// </summary>
-public Ods1Reader(Stream stream) {
+  public Ods1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the header window is a few hundred LBNs
@@ -197,7 +197,7 @@ public Ods1Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Ods1Entry entry) {
+  public byte[] Extract(Ods1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size > Array.MaxLength)
       throw new IOException(
@@ -234,5 +234,5 @@ public byte[] Extract(Ods1Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._img.Dispose();
+  public void Dispose() => this._img.Dispose();
 }

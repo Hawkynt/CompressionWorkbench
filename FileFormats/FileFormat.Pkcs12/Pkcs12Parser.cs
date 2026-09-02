@@ -15,86 +15,86 @@ public static class Pkcs12Parser {
   /// <summary>
   /// Defines the oid data constant value.
   /// </summary>
-public const string OidData              = "1.2.840.113549.1.7.1";
+  public const string OidData              = "1.2.840.113549.1.7.1";
   /// <summary>
   /// Defines the oid signed data constant value.
   /// </summary>
-public const string OidSignedData        = "1.2.840.113549.1.7.2";
+  public const string OidSignedData        = "1.2.840.113549.1.7.2";
   /// <summary>
   /// Defines the oid encrypted data constant value.
   /// </summary>
-public const string OidEncryptedData     = "1.2.840.113549.1.7.6";
+  public const string OidEncryptedData     = "1.2.840.113549.1.7.6";
   /// <summary>
   /// Defines the oid key bag constant value.
   /// </summary>
-public const string OidKeyBag            = "1.2.840.113549.1.12.10.1.1";
+  public const string OidKeyBag            = "1.2.840.113549.1.12.10.1.1";
   /// <summary>
   /// Defines the oid shrouded key bag constant value.
   /// </summary>
-public const string OidShroudedKeyBag    = "1.2.840.113549.1.12.10.1.2";
+  public const string OidShroudedKeyBag    = "1.2.840.113549.1.12.10.1.2";
   /// <summary>
   /// Defines the oid cert bag constant value.
   /// </summary>
-public const string OidCertBag           = "1.2.840.113549.1.12.10.1.3";
+  public const string OidCertBag           = "1.2.840.113549.1.12.10.1.3";
   /// <summary>
   /// Defines the oid crl bag constant value.
   /// </summary>
-public const string OidCrlBag            = "1.2.840.113549.1.12.10.1.4";
+  public const string OidCrlBag            = "1.2.840.113549.1.12.10.1.4";
   /// <summary>
   /// Defines the oid secret bag constant value.
   /// </summary>
-public const string OidSecretBag         = "1.2.840.113549.1.12.10.1.5";
+  public const string OidSecretBag         = "1.2.840.113549.1.12.10.1.5";
   /// <summary>
   /// Defines the oid safe contents bag constant value.
   /// </summary>
-public const string OidSafeContentsBag   = "1.2.840.113549.1.12.10.1.6";
+  public const string OidSafeContentsBag   = "1.2.840.113549.1.12.10.1.6";
   /// <summary>
   /// Defines the oid x 509 cert constant value.
   /// </summary>
-public const string OidX509Cert          = "1.2.840.113549.1.9.22.1";
+  public const string OidX509Cert          = "1.2.840.113549.1.9.22.1";
 
   /// <summary>
   /// Specifies bag kind values.
   /// </summary>
-public enum BagKind {
+  public enum BagKind {
     /// <summary>
     /// Specifies the cert option.
     /// </summary>
-Cert,
+    Cert,
     /// <summary>
     /// Specifies the key option.
     /// </summary>
-Key,
+    Key,
     /// <summary>
     /// Specifies the shrouded key option.
     /// </summary>
-ShroudedKey,
+    ShroudedKey,
     /// <summary>
     /// Specifies the crl option.
     /// </summary>
-Crl,
+    Crl,
     /// <summary>
     /// Specifies the secret option.
     /// </summary>
-Secret,
+    Secret,
     /// <summary>
     /// Specifies the nested option.
     /// </summary>
-Nested,
+    Nested,
     /// <summary>
     /// Specifies the encrypted content option.
     /// </summary>
-EncryptedContent,
+    EncryptedContent,
     /// <summary>
     /// Specifies an unknown or unrecognized value.
     /// </summary>
-Unknown,
+    Unknown,
   }
 
   /// <summary>
   /// Represents a bag.
   /// </summary>
-public sealed record Bag(int Index, BagKind Kind, string BagOid, byte[] ValueDer);
+  public sealed record Bag(int Index, BagKind Kind, string BagOid, byte[] ValueDer);
 
   /// <summary>
   /// Walk a PFX blob, producing one <see cref="Bag"/> per SafeBag discovered

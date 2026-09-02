@@ -50,43 +50,43 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Ghost";
+  public string Id => "Ghost";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Symantec / Norton Ghost";
+  public string DisplayName => "Symantec / Norton Ghost";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".gho";
+  public string DefaultExtension => ".gho";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".gho", ".ghs"];
+  public IReadOnlyList<string> Extensions => [".gho", ".ghs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0xFE, 0xEF], Offset: 0, Confidence: 0.65)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("fastlz", "Fast LZ (Z1)"),
     new("zlib-3", "High zlib (Z3)"),
@@ -95,16 +95,16 @@ public IReadOnlyList<FormatMethodInfo> Methods => [
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Symantec / Norton Ghost — R/W (Create + Add/Remove/Replace) for the FE EF " +
     "record container shared across the entire Binary Research → Symantec → " +
     "Norton lineage (Ghost 3.0 / 1998 through Ghost 11.x / 12.x). " +
@@ -147,7 +147,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new GhostReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
@@ -156,7 +156,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new GhostReader(stream, password: password);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

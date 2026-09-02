@@ -47,7 +47,7 @@ public sealed class ZstdStream : CompressionStream {
   /// <summary>
   /// Performs the decompress block operation.
   /// </summary>
-protected override int DecompressBlock(byte[] buffer, int offset, int count) {
+  protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (!this._initialized) {
       this._decompressor = new ZstdDecompressor(InnerStream, this._dictionary);
       this._initialized = true;
@@ -72,7 +72,7 @@ protected override int DecompressBlock(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the compress block operation.
   /// </summary>
-protected override void CompressBlock(byte[] buffer, int offset, int count) {
+  protected override void CompressBlock(byte[] buffer, int offset, int count) {
     if (!this._initialized) {
       this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);
       this._initialized = true;
@@ -95,7 +95,7 @@ protected override void CompressBlock(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the finish compression operation.
   /// </summary>
-protected override void FinishCompression() {
+  protected override void FinishCompression() {
     if (!this._initialized) {
       this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);
       this._initialized = true;

@@ -17,32 +17,32 @@ public sealed class McmBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Mcm";
+  public string Id => "BB_Mcm";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "MCM (reduced)";
+  public string DisplayName => "MCM (reduced)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Two-level context-mixing network: three grouped mixers combined by a top-level mixer, MCM-style";
+  public string Description => "Two-level context-mixing network: three grouped mixers combined by a top-level mixer, MCM-style";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) => McmCompressor.Compress(data);
+  public byte[] Compress(ReadOnlySpan<byte> data) => McmCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) => McmCompressor.Decompress(data);
+  public byte[] Decompress(ReadOnlySpan<byte> data) => McmCompressor.Decompress(data);
 }

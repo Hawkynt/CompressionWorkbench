@@ -17,22 +17,22 @@ public sealed class PpmdBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Ppmd";
+  public string Id => "BB_Ppmd";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "PPMd";
+  public string DisplayName => "PPMd";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "PPMd variant H context-tree modeling with range coding (the model family 7-Zip calls PPMd)";
+  public string Description => "PPMd variant H context-tree modeling with range coding (the model family 7-Zip calls PPMd)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   private const int Order = PpmdConstants.DefaultOrder;
 
@@ -40,7 +40,7 @@ public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Header: 1-byte order, 4-byte LE original size.
@@ -65,7 +65,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var order = data[0];
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data[1..]);
 

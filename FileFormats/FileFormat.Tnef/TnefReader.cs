@@ -13,7 +13,7 @@ public sealed class TnefReader : IDisposable {
   /// <summary>
   /// Defines the tnef signature constant value.
   /// </summary>
-public const uint TnefSignature = 0x223E9F78;
+  public const uint TnefSignature = 0x223E9F78;
 
   // Attribute levels
   private const byte LvlMessage    = 0x01;
@@ -30,16 +30,16 @@ public const uint TnefSignature = 0x223E9F78;
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<TnefEntry> Entries => _entries;
+  public IReadOnlyList<TnefEntry> Entries => _entries;
   /// <summary>
   /// Gets the key.
   /// </summary>
-public ushort Key { get; }
+  public ushort Key { get; }
 
   /// <summary>
   /// Initializes a new instance of <see cref="TnefReader"/>.
   /// </summary>
-public TnefReader(Stream stream, bool leaveOpen = false) {
+  public TnefReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -115,7 +115,7 @@ public TnefReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(TnefEntry entry) {
+  public byte[] Extract(TnefEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data ?? [];
   }
@@ -123,5 +123,5 @@ public byte[] Extract(TnefEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

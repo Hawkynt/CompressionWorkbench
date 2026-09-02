@@ -13,7 +13,7 @@ public static class Encoding
     /// <summary>
     /// Performs the log operation.
     /// </summary>
-public static int Log(int value)
+    public static int Log(int value)
     {
         int ret;
 
@@ -26,7 +26,7 @@ public static int Log(int value)
     /// <summary>
     /// Performs the unpack float operation.
     /// </summary>
-public static float UnpackFloat(int value)
+    public static float UnpackFloat(int value)
     {
         double mant = value & 0x1fffff;
         var sign = value & 0x80000000;
@@ -44,7 +44,7 @@ public static float UnpackFloat(int value)
     /// <summary>
     /// Performs the make words operation.
     /// </summary>
-public static uint[] MakeWords(byte[] l, int sparsecount)
+    public static uint[] MakeWords(byte[] l, int sparsecount)
     {
         var count = 0;
         var n = l.Length;

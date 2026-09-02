@@ -23,7 +23,7 @@ public sealed class DffReader {
   /// <summary>
   /// Represents a parsed dff.
   /// </summary>
-public sealed record ParsedDff(
+  public sealed record ParsedDff(
     int SampleRate,
     int NumChannels,
     IReadOnlyList<string> ChannelIds,
@@ -34,7 +34,7 @@ public sealed record ParsedDff(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedDff Read(ReadOnlySpan<byte> data) {
+  public ParsedDff Read(ReadOnlySpan<byte> data) {
     if (data.Length < 16 || !data[..4].SequenceEqual("FRM8"u8))
       throw new InvalidDataException("Missing 'FRM8' magic.");
 

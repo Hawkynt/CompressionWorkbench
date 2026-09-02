@@ -11,7 +11,7 @@ public static class StaticCodeBookExtensions
     /// <summary>
     /// Gets the quant vals.
     /// </summary>
-public static int GetQuantVals(this IStaticCodeBook book)
+    public static int GetQuantVals(this IStaticCodeBook book)
     {
         var vals = (int)Math.Floor(Math.Pow(book.LengthList.Length, 1f / book.Dimensions));
 

@@ -49,12 +49,12 @@ public sealed class Qnx4Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Qnx4Entry> Entries => this._entries;
+  public IReadOnlyList<Qnx4Entry> Entries => this._entries;
 
   /// <summary>
   /// Defines the block size constant value.
   /// </summary>
-public const int BlockSize = 512;
+  public const int BlockSize = 512;
   internal const int InodeSize = 64;
   // Status byte values from qnx4 spec (linux/fs/qnx4/qnx4.h).
   // Linux qnx4 driver treats an entry as live when di_status & (USED|LINK) != 0;
@@ -71,7 +71,7 @@ public const int BlockSize = 512;
   /// <summary>
   /// Initializes a new instance of <see cref="Qnx4Reader"/>.
   /// </summary>
-public Qnx4Reader(Stream stream) {
+  public Qnx4Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     this._data = new ImageAccessor(stream, leaveOpen: true);
@@ -182,7 +182,7 @@ public Qnx4Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Qnx4Entry entry) {
+  public byte[] Extract(Qnx4Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var offset = Qnx4Layout.ByteOffsetOf(entry.FirstExtentBlock);
@@ -194,5 +194,5 @@ public byte[] Extract(Qnx4Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

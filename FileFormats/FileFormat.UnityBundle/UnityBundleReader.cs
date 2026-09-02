@@ -19,11 +19,11 @@ public sealed class UnityBundleReader {
   /// <summary>
   /// Represents a storage block.
   /// </summary>
-public sealed record StorageBlock(uint UncompressedSize, uint CompressedSize, ushort Flags);
+  public sealed record StorageBlock(uint UncompressedSize, uint CompressedSize, ushort Flags);
   /// <summary>
   /// Represents a node.
   /// </summary>
-public sealed record Node(long Offset, long Size, uint Flags, string Path);
+  public sealed record Node(long Offset, long Size, uint Flags, string Path);
 
   private readonly byte[] _source;
   private readonly long _headerEnd;
@@ -33,52 +33,52 @@ public sealed record Node(long Offset, long Size, uint Flags, string Path);
   /// <summary>
   /// Gets the signature.
   /// </summary>
-public string Signature { get; }
+  public string Signature { get; }
   /// <summary>
   /// Gets the format version.
   /// </summary>
-public uint FormatVersion { get; }
+  public uint FormatVersion { get; }
   /// <summary>
   /// Gets the unity version.
   /// </summary>
-public string UnityVersion { get; }
+  public string UnityVersion { get; }
   /// <summary>
   /// Gets the unity revision.
   /// </summary>
-public string UnityRevision { get; }
+  public string UnityRevision { get; }
   /// <summary>
   /// Gets the total size.
   /// </summary>
-public long TotalSize { get; }
+  public long TotalSize { get; }
   /// <summary>
   /// Gets the compressed blocks info size.
   /// </summary>
-public uint CompressedBlocksInfoSize { get; }
+  public uint CompressedBlocksInfoSize { get; }
   /// <summary>
   /// Gets the uncompressed blocks info size.
   /// </summary>
-public uint UncompressedBlocksInfoSize { get; }
+  public uint UncompressedBlocksInfoSize { get; }
   /// <summary>
   /// Gets the flags.
   /// </summary>
-public uint Flags { get; }
+  public uint Flags { get; }
   /// <summary>
   /// Gets the blocks.
   /// </summary>
-public IReadOnlyList<StorageBlock> Blocks { get; }
+  public IReadOnlyList<StorageBlock> Blocks { get; }
   /// <summary>
   /// Gets the nodes.
   /// </summary>
-public IReadOnlyList<Node> Nodes { get; }
+  public IReadOnlyList<Node> Nodes { get; }
   /// <summary>
   /// Gets a value indicating whether can extract.
   /// </summary>
-public bool CanExtract { get; }
+  public bool CanExtract { get; }
 
   /// <summary>
   /// Initializes a new instance of <see cref="UnityBundleReader"/>.
   /// </summary>
-public UnityBundleReader(byte[] data) {
+  public UnityBundleReader(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     this._source = data;
 
@@ -172,7 +172,7 @@ public UnityBundleReader(byte[] data) {
   /// <summary>
   /// Performs the extract node operation.
   /// </summary>
-public byte[] ExtractNode(Node node) {
+  public byte[] ExtractNode(Node node) {
     ArgumentNullException.ThrowIfNull(node);
     if (this.Nodes.Count == 0)
       throw new InvalidOperationException("Bundle has no node directory (legacy format?).");
@@ -192,7 +192,7 @@ public byte[] ExtractNode(Node node) {
   /// <summary>
   /// Gets the data stream.
   /// </summary>
-public byte[] GetDataStream() {
+  public byte[] GetDataStream() {
     if (this._dataStream != null)
       return this._dataStream;
 

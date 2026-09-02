@@ -342,5 +342,5 @@ public sealed class HammerReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._image.Dispose();
+  public void Dispose() => this._image.Dispose();
 }

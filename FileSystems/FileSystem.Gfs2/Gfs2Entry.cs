@@ -10,19 +10,19 @@ public sealed class Gfs2Entry {
   /// <summary>
   /// Gets or sets the name.
   /// </summary>
-public string Name { get; init; } = "";
+  public string Name { get; init; } = "";
   /// <summary>
   /// Gets or sets the size.
   /// </summary>
-public long Size { get; init; }
+  public long Size { get; init; }
   /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
-public bool IsDirectory { get; init; }
+  public bool IsDirectory { get; init; }
   /// <summary>
   /// Gets or sets the last modified.
   /// </summary>
-public DateTime? LastModified { get; init; }
+  public DateTime? LastModified { get; init; }
 
   /// <summary>Block address of the dinode (gfs2_dinode) that backs this entry.</summary>
   internal ulong InodeBlock { get; init; }

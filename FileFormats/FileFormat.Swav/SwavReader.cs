@@ -19,7 +19,7 @@ public sealed class SwavReader {
   /// <summary>
   /// Represents a parsed swav.
   /// </summary>
-public sealed record ParsedSwav(
+  public sealed record ParsedSwav(
     int WaveType,
     bool Loop,
     int SampleRate,

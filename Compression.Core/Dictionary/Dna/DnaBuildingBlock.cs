@@ -20,22 +20,22 @@ public sealed class DnaBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Dna";
+  public string Id => "BB_Dna";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "DNA Sequence Compression";
+  public string DisplayName => "DNA Sequence Compression";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "2-bit packing for ACGT nucleotides with exception escapes for other bytes";
+  public string Description => "2-bit packing for ACGT nucleotides with exception escapes for other bytes";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private static readonly int[] CodeByByte = BuildCodeTable();
   private static readonly byte[] ByteByCode = [(byte)'A', (byte)'C', (byte)'G', (byte)'T'];
@@ -54,7 +54,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     Span<byte> header = stackalloc byte[4];
@@ -108,7 +108,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalLength = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalLength == 0)
       return [];

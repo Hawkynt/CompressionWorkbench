@@ -13,7 +13,7 @@ namespace GroovyCodecs.Mp3
     /// <summary>
     /// Decodes mp 3 data.
     /// </summary>
-public class Mp3Decoder : IMp3Decoder
+    public class Mp3Decoder : IMp3Decoder
     {
 
         private readonly BitStream bs;
@@ -58,7 +58,7 @@ public class Mp3Decoder : IMp3Decoder
         /// <summary>
         /// Initializes a new instance of <see cref="Mp3Decoder"/>.
         /// </summary>
-public Mp3Decoder(string mp3File)
+        public Mp3Decoder(string mp3File)
         {
             // encoder modules
             lame = new Lame();
@@ -161,7 +161,7 @@ public Mp3Decoder(string mp3File)
         /// <summary>
         /// Performs the decode operation.
         /// </summary>
-public virtual void decode(MemoryStream sampleBuffer, bool playOriginal)
+        public virtual void decode(MemoryStream sampleBuffer, bool playOriginal)
         {
             var iread = gaud.get_audio16(gfp, buffer);
             if (iread >= 0)
@@ -191,7 +191,7 @@ public virtual void decode(MemoryStream sampleBuffer, bool playOriginal)
         /// <summary>
         /// Performs the close operation.
         /// </summary>
-public virtual void close()
+        public virtual void close()
         {
             lame.lame_close(gfp);
         }

@@ -7,11 +7,11 @@ public enum AacEncoderWindowShape {
   /// <summary>
   /// Specifies the sine option.
   /// </summary>
-Sine = 0,
+  Sine = 0,
   /// <summary>
   /// Specifies the kbd option.
   /// </summary>
-Kbd = 1,
+  Kbd = 1,
 }
 
 /// <summary>Stereo spectral coding mode for AAC channel-pair elements.</summary>
@@ -19,15 +19,15 @@ public enum AacStereoCodingMode {
   /// <summary>
   /// Specifies the independent option.
   /// </summary>
-Independent,
+  Independent,
   /// <summary>
   /// Specifies the mid side option.
   /// </summary>
-MidSide,
+  MidSide,
   /// <summary>
   /// Selects the value automatically.
   /// </summary>
-Auto,
+  Auto,
 }
 
 /// <summary>
@@ -54,11 +54,11 @@ public static class AacEncoder {
   /// <summary>
   /// Defines the frame samples constant value.
   /// </summary>
-public const int FrameSamples = 1024;
+  public const int FrameSamples = 1024;
   /// <summary>
   /// Defines the encoder delay samples constant value.
   /// </summary>
-public const int EncoderDelaySamples = 1024;
+  public const int EncoderDelaySamples = 1024;
 
   private static readonly float[] MdctCosine = BuildMdctCosine();
   private static readonly float[] SineWindow = BuildSineWindow();

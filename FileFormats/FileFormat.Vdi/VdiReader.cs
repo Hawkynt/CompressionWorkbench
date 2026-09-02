@@ -42,7 +42,7 @@ public sealed class VdiReader : IDisposable {
   /// <summary>
   /// Defines the vdi signature constant value.
   /// </summary>
-public const uint VdiSignature = 0xBEDA107F;
+  public const uint VdiSignature = 0xBEDA107F;
   private static readonly byte[] PreHeaderText =
     Encoding.ASCII.GetBytes("<<< Oracle VM VirtualBox Disk Image >>>\n");
 
@@ -74,7 +74,7 @@ public const uint VdiSignature = 0xBEDA107F;
   /// <summary>
   /// Initializes a new instance of <see cref="VdiReader"/>.
   /// </summary>
-public VdiReader(Stream stream, bool leaveOpen = false) {
+  public VdiReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _streamLength = stream.Length;
     _cache = new SectorCache(stream);
@@ -184,5 +184,5 @@ public VdiReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => _cache.Dispose();
+  public void Dispose() => _cache.Dispose();
 }

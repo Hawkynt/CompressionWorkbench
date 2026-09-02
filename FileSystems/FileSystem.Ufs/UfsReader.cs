@@ -40,7 +40,7 @@ public sealed class UfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<UfsEntry> Entries => _entries;
+  public IReadOnlyList<UfsEntry> Entries => _entries;
 
   /// <summary>The superblock <c>fs_volname</c> volume label (struct fs offset 680,
   /// NUL-terminated ASCII), or empty when unset.</summary>
@@ -57,7 +57,7 @@ public IReadOnlyList<UfsEntry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="UfsReader"/>.
   /// </summary>
-public UfsReader(Stream stream, bool leaveOpen = true) {
+  public UfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the metadata is a small fraction of a volume
@@ -259,7 +259,7 @@ public UfsReader(Stream stream, bool leaveOpen = true) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(UfsEntry entry) {
+  public byte[] Extract(UfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size > Array.MaxLength)
       throw new IOException(
@@ -289,5 +289,5 @@ public byte[] Extract(UfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._img.Dispose();
+  public void Dispose() => this._img.Dispose();
 }

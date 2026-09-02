@@ -8,12 +8,12 @@ public class Line256X7Class1 : IStaticCodeBook
     /// <summary>
     /// Gets the dimensions.
     /// </summary>
-public int Dimensions { get; } = 1;
+    public int Dimensions { get; } = 1;
 
     /// <summary>
     /// Gets the length list.
     /// </summary>
-public byte[] LengthList { get; } = {
+    public byte[] LengthList { get; } = {
         5, 6, 8, 15, 6, 9, 10, 15, 10, 11, 12, 15, 15, 15, 15, 15,
         4, 6, 7, 15, 6, 7, 8, 15, 9, 8, 9, 15, 15, 15, 15, 15,
         6, 8, 9, 15, 7, 7, 8, 15, 10, 9, 10, 15, 15, 15, 15, 15,
@@ -35,25 +35,25 @@ public byte[] LengthList { get; } = {
     /// <summary>
     /// Gets the map type.
     /// </summary>
-public CodeBookMapType MapType { get; } = CodeBookMapType.None;
+    public CodeBookMapType MapType { get; } = CodeBookMapType.None;
     /// <summary>
     /// Gets the quant min.
     /// </summary>
-public int QuantMin { get; } = 0;
+    public int QuantMin { get; } = 0;
     /// <summary>
     /// Gets the quant delta.
     /// </summary>
-public int QuantDelta { get; } = 0;
+    public int QuantDelta { get; } = 0;
     /// <summary>
     /// Gets the quant.
     /// </summary>
-public int Quant { get; } = 0;
+    public int Quant { get; } = 0;
     /// <summary>
     /// Gets the quant sequence p.
     /// </summary>
-public int QuantSequenceP { get; } = 0;
+    public int QuantSequenceP { get; } = 0;
     /// <summary>
     /// Gets the quant list.
     /// </summary>
-public int[] QuantList { get; } = null;
+    public int[] QuantList { get; } = null;
 }

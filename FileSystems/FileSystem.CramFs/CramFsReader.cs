@@ -278,7 +278,7 @@ public sealed class CramFsReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     // Nothing to release — the image byte array is managed by GC.
     GC.SuppressFinalize(this);
   }

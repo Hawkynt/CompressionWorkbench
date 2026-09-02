@@ -55,36 +55,36 @@ public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "EaseUsPbd";
+  public string Id => "EaseUsPbd";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "EaseUS Todo Backup (.pbd)";
+  public string DisplayName => "EaseUS Todo Backup (.pbd)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".pbd";
+  public string DefaultExtension => ".pbd";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".pbd"];
+  public IReadOnlyList<string> Extensions => [".pbd"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "IMGF" (49 4D 47 46) — universal Todo Backup container marker at offset 0
     // (~85% of real-world .pbd files per R-Studio + tenforums RE).
     new("IMGF"u8.ToArray(), Offset: 0, Confidence: 0.90),
@@ -95,19 +95,19 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "EaseUS Todo Backup (.pbd) — R/O metadata via IMGF-header parse + R/O chunk-stream via per-zlib " +
     "trial inflate + binary-reverse-engineered container shape (0x4E8-byte header block + 0xC0-byte " +
     "trailer block pinned by binary RE of TBImageExplorer.exe — CImgFile::CheckHeader at file_off " +
@@ -135,7 +135,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new EaseUsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
@@ -144,7 +144,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new EaseUsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

@@ -23,51 +23,51 @@ public sealed class HeifReader {
   /// <summary>
   /// Represents an item info.
   /// </summary>
-public sealed record ItemInfo(uint Id, string Type, string? Name, string? ContentType);
+  public sealed record ItemInfo(uint Id, string Type, string? Name, string? ContentType);
   /// <summary>
   /// Represents an item extent.
   /// </summary>
-public sealed record ItemExtent(long Offset, long Length);
+  public sealed record ItemExtent(long Offset, long Length);
   /// <summary>
   /// Represents an item location.
   /// </summary>
-public sealed record ItemLocation(uint Id, long BaseOffset, IReadOnlyList<ItemExtent> Extents, uint ConstructionMethod);
+  public sealed record ItemLocation(uint Id, long BaseOffset, IReadOnlyList<ItemExtent> Extents, uint ConstructionMethod);
 
   /// <summary>
   /// Gets the major brand.
   /// </summary>
-public string? MajorBrand { get; }
+  public string? MajorBrand { get; }
   /// <summary>
   /// Gets the compatible brands.
   /// </summary>
-public IReadOnlyList<string> CompatibleBrands { get; }
+  public IReadOnlyList<string> CompatibleBrands { get; }
   /// <summary>
   /// Gets the primary item id.
   /// </summary>
-public uint PrimaryItemId { get; }
+  public uint PrimaryItemId { get; }
   /// <summary>
   /// Gets the items.
   /// </summary>
-public IReadOnlyList<ItemInfo> Items { get; }
+  public IReadOnlyList<ItemInfo> Items { get; }
   /// <summary>
   /// Gets the locations.
   /// </summary>
-public IReadOnlyList<ItemLocation> Locations { get; }
+  public IReadOnlyList<ItemLocation> Locations { get; }
   /// <summary>
   /// Gets the item properties.
   /// </summary>
-public IReadOnlyDictionary<uint, byte[]> ItemProperties { get; }
+  public IReadOnlyDictionary<uint, byte[]> ItemProperties { get; }
   /// <summary>
   /// Gets the item property associations.
   /// </summary>
-public IReadOnlyList<(uint ItemId, IReadOnlyList<uint> PropertyIndexes)> ItemPropertyAssociations { get; }
+  public IReadOnlyList<(uint ItemId, IReadOnlyList<uint> PropertyIndexes)> ItemPropertyAssociations { get; }
 
   private readonly byte[] _data;
 
   /// <summary>
   /// Initializes a new instance of <see cref="HeifReader"/>.
   /// </summary>
-public HeifReader(byte[] data) {
+  public HeifReader(byte[] data) {
     this._data = data;
     var parser = new BoxParser();
     var boxes = parser.Parse(data);

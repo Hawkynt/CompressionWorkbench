@@ -10,59 +10,59 @@ public sealed class LzfseFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Lzfse";
+  public string Id => "Lzfse";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZFSE";
+  public string DisplayName => "LZFSE";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Stream;
+  public FormatCategory Category => FormatCategory.Stream;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".lzfse";
+  public string DefaultExtension => ".lzfse";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".lzfse"];
+  public IReadOnlyList<string> Extensions => [".lzfse"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x62, 0x76, 0x78, 0x31], Confidence: 0.85)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x62, 0x76, 0x78, 0x31], Confidence: 0.85)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("lzfse", "LZFSE")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzfse", "LZFSE")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Apple's entropy-coded LZ77 for iOS/macOS";
+  public string Description => "Apple's entropy-coded LZ77 for iOS/macOS";
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) => LzfseStream.Decompress(input, output);
+  public void Decompress(Stream input, Stream output) => LzfseStream.Decompress(input, output);
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) => LzfseStream.Compress(input, output);
+  public void Compress(Stream input, Stream output) => LzfseStream.Compress(input, output);
 }

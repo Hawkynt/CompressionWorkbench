@@ -13,12 +13,12 @@ public sealed class MsiReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<MsiEntry> Entries => _entries;
+  public IReadOnlyList<MsiEntry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="MsiReader"/>.
   /// </summary>
-public MsiReader(Stream stream, bool leaveOpen = false) {
+  public MsiReader(Stream stream, bool leaveOpen = false) {
     _cfb = new CfbReader(stream);
     BuildEntries();
   }
@@ -100,7 +100,7 @@ public MsiReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(MsiEntry entry) {
+  public byte[] Extract(MsiEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -116,7 +116,7 @@ public byte[] Extract(MsiEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     _disposed = true;
   }
 }

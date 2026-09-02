@@ -28,7 +28,7 @@ public sealed class WavReader {
   /// <summary>
   /// Represents a parsed wav.
   /// </summary>
-public sealed record ParsedWav(
+  public sealed record ParsedWav(
     int NumChannels,
     int SampleRate,
     int BitsPerSample,
@@ -40,7 +40,7 @@ public sealed record ParsedWav(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedWav Read(ReadOnlySpan<byte> data) {
+  public ParsedWav Read(ReadOnlySpan<byte> data) {
     if (data.Length < 44)
       throw new InvalidDataException("WAV too short for RIFF header + fmt/data chunks.");
     if (data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F')

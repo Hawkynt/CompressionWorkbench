@@ -147,7 +147,7 @@ public static class SharedFloors
     /// <summary>
     /// Provides the floor books value.
     /// </summary>
-public static readonly IStaticCodeBook[][] FloorBooks =
+    public static readonly IStaticCodeBook[][] FloorBooks =
     {
         Floor128X4Books,
         Floor256X4Books,
@@ -164,7 +164,7 @@ public static readonly IStaticCodeBook[][] FloorBooks =
     /// <summary>
     /// Provides the floor value.
     /// </summary>
-public static readonly Floor[] Floor =
+    public static readonly Floor[] Floor =
     {
         /* 0: 128 x 4 */
         new Floor(new[] {0}, new[] {4}, new[] {2}, new[] {0},

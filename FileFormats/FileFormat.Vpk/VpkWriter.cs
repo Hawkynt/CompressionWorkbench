@@ -11,7 +11,7 @@ public sealed class VpkWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="VpkWriter"/>.
   /// </summary>
-public VpkWriter(Stream stream, bool leaveOpen = false) {
+  public VpkWriter(Stream stream, bool leaveOpen = false) {
     _stream = stream;
     _leaveOpen = leaveOpen;
   }
@@ -91,7 +91,7 @@ public VpkWriter(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!_leaveOpen) _stream.Dispose();
   }
 

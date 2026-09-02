@@ -31,7 +31,7 @@ public static class UfsExtentMap {
   /// <summary>
   /// Enumerates the value.
   /// </summary>
-public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < SuperblockOffset + SuperblockSize) yield break;
 

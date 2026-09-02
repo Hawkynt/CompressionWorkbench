@@ -13,7 +13,7 @@ public class DrftLookup
     /// <summary>
     /// Initializes a new instance of <see cref="DrftLookup"/>.
     /// </summary>
-public DrftLookup(int n)
+    public DrftLookup(int n)
     {
         N = n;
 
@@ -26,7 +26,7 @@ public DrftLookup(int n)
     /// <summary>
     /// Gets the n.
     /// </summary>
-public int N { get; }
+    public int N { get; }
 
     private void Fdrffti(int n)
     {
@@ -118,7 +118,7 @@ public int N { get; }
     /// <summary>
     /// Performs the forward operation.
     /// </summary>
-public void Forward(float[] data)
+    public void Forward(float[] data)
     {
         if (N == 1)
             return;

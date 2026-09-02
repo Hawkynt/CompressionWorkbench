@@ -46,7 +46,7 @@ public readonly struct BrFileHead {
   /// <summary>
   /// Initializes a new instance of <see cref="BrFileHead"/>.
   /// </summary>
-public BrFileHead(uint flag, uint size, uint crc32, byte[] bodyRaw) {
+  public BrFileHead(uint flag, uint size, uint crc32, byte[] bodyRaw) {
     this.Flag = flag;
     this.Size = size;
     this.Crc32 = crc32;

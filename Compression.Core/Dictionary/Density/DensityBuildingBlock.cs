@@ -13,34 +13,34 @@ public sealed class DensityBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Density";
+  public string Id => "BB_Density";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Density (Chameleon)";
+  public string DisplayName => "Density (Chameleon)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Predictive 4-byte-chunk dictionary coder: a hash of the previous chunk predicts the next one at zero bit cost when correct";
+  public string Description => "Predictive 4-byte-chunk dictionary coder: a hash of the previous chunk predicts the next one at zero bit cost when correct";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) =>
+  public byte[] Compress(ReadOnlySpan<byte> data) =>
     DensityChameleonCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) =>
+  public byte[] Decompress(ReadOnlySpan<byte> data) =>
     DensityChameleonDecompressor.Decompress(data);
 }

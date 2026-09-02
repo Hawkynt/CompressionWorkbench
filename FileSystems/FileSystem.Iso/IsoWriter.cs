@@ -142,7 +142,7 @@ public sealed class IsoWriter {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build() {
+  public byte[] Build() {
     var root = BuildTree();
 
     // Enumerate directories in breadth-first order: a node's parent always

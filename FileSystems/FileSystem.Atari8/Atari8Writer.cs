@@ -31,7 +31,7 @@ public sealed class Atari8Writer {
   /// <summary>
   /// Defines the image size constant value.
   /// </summary>
-public const int ImageSize = AtrHeaderSize + DataSize;               // 92 176
+  public const int ImageSize = AtrHeaderSize + DataSize;               // 92 176
   private const int VtocSector = 360;
   private const int DirectoryStartSector = Atari8Reader.DirectoryStartSector;  // 361
   private const int DirectorySectorCount = Atari8Reader.DirectorySectorCount;  // 8
@@ -45,7 +45,7 @@ public const int ImageSize = AtrHeaderSize + DataSize;               // 92 176
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => this._files.Add((name, data));
+  public void AddFile(string name, byte[] data) => this._files.Add((name, data));
 
   /// <summary>
   /// When true, the ATR header's flags byte at offset 15 is set to 0x01,

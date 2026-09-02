@@ -28,7 +28,7 @@ public static class LhFModifier {
   /// <summary>
   /// Defines the track size constant value.
   /// </summary>
-public const int TrackSize = LhFWriter.TrackSize;
+  public const int TrackSize = LhFWriter.TrackSize;
 
   /// <summary>
   /// Appends a new track to an existing LhF archive. The track number is parsed

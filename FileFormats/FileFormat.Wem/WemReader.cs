@@ -16,31 +16,31 @@ public sealed class WemReader {
   /// <summary>
   /// Gets or sets the format tag.
   /// </summary>
-public int FormatTag { get; private set; }
+  public int FormatTag { get; private set; }
   /// <summary>
   /// Gets or sets the channels.
   /// </summary>
-public int Channels { get; private set; }
+  public int Channels { get; private set; }
   /// <summary>
   /// Gets or sets the sample rate.
   /// </summary>
-public int SampleRate { get; private set; }
+  public int SampleRate { get; private set; }
   /// <summary>
   /// Gets or sets the bits per sample.
   /// </summary>
-public int BitsPerSample { get; private set; }
+  public int BitsPerSample { get; private set; }
   /// <summary>
   /// Gets or sets the block align.
   /// </summary>
-public int BlockAlign { get; private set; }
+  public int BlockAlign { get; private set; }
   /// <summary>
   /// Gets or sets the channel mask.
   /// </summary>
-public ulong ChannelMask { get; private set; }
+  public ulong ChannelMask { get; private set; }
   /// <summary>
   /// Gets or sets the data.
   /// </summary>
-public byte[] Data { get; private set; } = [];
+  public byte[] Data { get; private set; } = [];
 
   /// <summary>Every non-fmt/non-data chunk, in file order: (4CC id, raw body bytes).</summary>
   public IReadOnlyList<(string Id, byte[] Data)> ExtraChunks => this._extra;
@@ -49,7 +49,7 @@ public byte[] Data { get; private set; } = [];
   /// <summary>
   /// Initializes a new instance of <see cref="WemReader"/>.
   /// </summary>
-public WemReader(ReadOnlySpan<byte> data) {
+  public WemReader(ReadOnlySpan<byte> data) {
     if (data.Length < 12 || data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F')
       throw new InvalidDataException("Missing RIFF magic.");
     if (data[8] != 'W' || data[9] != 'A' || data[10] != 'V' || data[11] != 'E')

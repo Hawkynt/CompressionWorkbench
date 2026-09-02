@@ -10,7 +10,7 @@ public static class AvroVarLong {
   /// <summary>
   /// Reads the long from the supplied input.
   /// </summary>
-public static long ReadLong(Stream stream) {
+  public static long ReadLong(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     ulong result = 0;
     var shift = 0;
@@ -28,7 +28,7 @@ public static long ReadLong(Stream stream) {
   /// <summary>
   /// Writes the long to the supplied output.
   /// </summary>
-public static void WriteLong(Stream stream, long value) {
+  public static void WriteLong(Stream stream, long value) {
     ArgumentNullException.ThrowIfNull(stream);
     var encoded = (ulong)((value << 1) ^ (value >> 63));
     while ((encoded & ~0x7FUL) != 0) {

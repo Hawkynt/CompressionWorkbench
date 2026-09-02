@@ -18,15 +18,15 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "upx";
+  public string Id => "upx";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "UPX-packed executable";
+  public string DisplayName => "UPX-packed executable";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -43,7 +43,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var info = UpxReader.Read(image);
     var diagnostics = new List<ExecutableDiagnostic>();
     if (info.Confidence == UpxReader.DetectionConfidence.None)
@@ -62,7 +62,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var containerInfo = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -81,7 +81,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
         new(ExecutableDiagnosticCode.PayloadNotFound, "Input exceeds configured executable unpacking size limit.", true),

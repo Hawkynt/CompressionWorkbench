@@ -48,7 +48,7 @@ public sealed class ReiserFsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<ReiserFsEntry> Entries => _entries;
+  public IReadOnlyList<ReiserFsEntry> Entries => _entries;
 
   /// <summary>Volume label from the superblock <c>s_label</c> field (16 bytes, NUL-trimmed ASCII).</summary>
   public string Label { get; private set; } = "";
@@ -56,7 +56,7 @@ public IReadOnlyList<ReiserFsEntry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="ReiserFsReader"/>.
   /// </summary>
-public ReiserFsReader(Stream stream, bool leaveOpen = true) {
+  public ReiserFsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the S+tree is a small prefix however many
@@ -245,7 +245,7 @@ public ReiserFsReader(Stream stream, bool leaveOpen = true) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(ReiserFsEntry entry) {
+  public byte[] Extract(ReiserFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     // Pass 1: scan every leaf, collect this file's SD (for sd_size) + every
@@ -460,5 +460,5 @@ public byte[] Extract(ReiserFsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._img.Dispose();
+  public void Dispose() => this._img.Dispose();
 }

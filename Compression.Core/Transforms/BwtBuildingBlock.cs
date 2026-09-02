@@ -12,28 +12,28 @@ public sealed class BwtBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Bwt";
+  public string Id => "BB_Bwt";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "BWT";
+  public string DisplayName => "BWT";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Burrows-Wheeler Transform, reorders bytes for better compression";
+  public string Description => "Burrows-Wheeler Transform, reorders bytes for better compression";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Transform;
+  public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var (transformed, originalIndex) = BurrowsWheelerTransform.Forward(data);
     var result = new byte[4 + transformed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, originalIndex);
@@ -45,7 +45,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalIndex = BinaryPrimitives.ReadInt32LittleEndian(data);
     return BurrowsWheelerTransform.Inverse(data[4..], originalIndex);
   }

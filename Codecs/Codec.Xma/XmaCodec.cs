@@ -37,7 +37,7 @@ public sealed class XmaCodec {
   /// <summary>
   /// Initializes a new instance of <see cref="XmaCodec"/>.
   /// </summary>
-public XmaCodec(ReadOnlySpan<byte> extradata, bool isXma2, int sampleRate, int declaredChannels) {
+  public XmaCodec(ReadOnlySpan<byte> extradata, bool isXma2, int sampleRate, int declaredChannels) {
     this._config = XmaPacket.ParseStreamConfig(extradata, isXma2, declaredChannels);
     this._sampleRate = sampleRate;
     if (this._config.NumStreams is < 1 or > 8)

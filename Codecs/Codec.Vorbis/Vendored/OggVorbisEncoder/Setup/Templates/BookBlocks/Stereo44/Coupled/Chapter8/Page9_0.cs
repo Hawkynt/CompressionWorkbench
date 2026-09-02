@@ -8,12 +8,12 @@ public class Page9_0 : IStaticCodeBook
     /// <summary>
     /// Gets the dimensions.
     /// </summary>
-public int Dimensions { get; } = 2;
+    public int Dimensions { get; } = 2;
 
     /// <summary>
     /// Gets the length list.
     /// </summary>
-public byte[] LengthList { get; } = {
+    public byte[] LengthList { get; } = {
          1, 4, 3,11,11,11,11,11,11,11,11,11,11,11,11,11,
         11, 4, 7, 7,11,11,11,11,11,11,11,11,11,11,11,11,
         11,11, 4, 8,11,11,11,11,11,11,11,11,11,11,11,11,
@@ -38,28 +38,28 @@ public byte[] LengthList { get; } = {
     /// <summary>
     /// Gets the map type.
     /// </summary>
-public CodeBookMapType MapType { get; } = (CodeBookMapType)1;
+    public CodeBookMapType MapType { get; } = (CodeBookMapType)1;
     /// <summary>
     /// Gets the quant min.
     /// </summary>
-public int QuantMin { get; } = -509798400;
+    public int QuantMin { get; } = -509798400;
     /// <summary>
     /// Gets the quant delta.
     /// </summary>
-public int QuantDelta { get; } = 1631393792;
+    public int QuantDelta { get; } = 1631393792;
     /// <summary>
     /// Gets the quant.
     /// </summary>
-public int Quant { get; } = 5;
+    public int Quant { get; } = 5;
     /// <summary>
     /// Gets the quant sequence p.
     /// </summary>
-public int QuantSequenceP { get; } = 0;
+    public int QuantSequenceP { get; } = 0;
 
     /// <summary>
     /// Gets the quant list.
     /// </summary>
-public int[] QuantList { get; } = {
+    public int[] QuantList { get; } = {
         8,
         7,
         9,

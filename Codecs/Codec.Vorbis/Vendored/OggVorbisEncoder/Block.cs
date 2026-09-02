@@ -2080,7 +2080,7 @@ public static class Block
     /// <summary>
     /// Provides the windows value.
     /// </summary>
-public static readonly float[][] Windows = new[]
+    public static readonly float[][] Windows = new[]
     {
         Win64,
         Win128,

@@ -19,51 +19,51 @@ public enum YodaByteOpKind {
   /// <summary>
   /// Specifies the add immediate option.
   /// </summary>
-AddImmediate,
+  AddImmediate,
   /// <summary>
   /// Specifies the subtract immediate option.
   /// </summary>
-SubtractImmediate,
+  SubtractImmediate,
   /// <summary>
   /// Specifies the xor immediate option.
   /// </summary>
-XorImmediate,
+  XorImmediate,
   /// <summary>
   /// Specifies the add counter option.
   /// </summary>
-AddCounter,
+  AddCounter,
   /// <summary>
   /// Specifies the subtract counter option.
   /// </summary>
-SubtractCounter,
+  SubtractCounter,
   /// <summary>
   /// Specifies the xor counter option.
   /// </summary>
-XorCounter,
+  XorCounter,
   /// <summary>
   /// Specifies the rotate left option.
   /// </summary>
-RotateLeft,
+  RotateLeft,
   /// <summary>
   /// Specifies the rotate right option.
   /// </summary>
-RotateRight,
+  RotateRight,
   /// <summary>
   /// Specifies the increment option.
   /// </summary>
-Increment,
+  Increment,
   /// <summary>
   /// Specifies the decrement option.
   /// </summary>
-Decrement,
+  Decrement,
   /// <summary>
   /// Specifies the not option.
   /// </summary>
-Not,
+  Not,
   /// <summary>
   /// Specifies the negate option.
   /// </summary>
-Negate,
+  Negate,
 }
 
 /// <summary>
@@ -115,7 +115,7 @@ public static class YodaCrypterStub {
   /// <summary>
   /// Performs the try unpack operation.
   /// </summary>
-public static bool TryUnpack(ReadOnlySpan<byte> image, out YodaCrypterStubInfo? info) {
+  public static bool TryUnpack(ReadOnlySpan<byte> image, out YodaCrypterStubInfo? info) {
     info = null;
     try {
       info = Unpack(image);

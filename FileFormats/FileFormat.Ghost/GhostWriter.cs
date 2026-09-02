@@ -27,7 +27,7 @@ public sealed class GhostWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="GhostWriter"/>.
   /// </summary>
-public GhostWriter(Stream output, byte compression, uint id = 0x12345678, string? password = null, bool leaveOpen = true) {
+  public GhostWriter(Stream output, byte compression, uint id = 0x12345678, string? password = null, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanWrite)
       throw new ArgumentException("Ghost writer requires a writable stream.", nameof(output));
@@ -138,7 +138,7 @@ public GhostWriter(Stream output, byte compression, uint id = 0x12345678, string
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (this._disposed) return;
     this._disposed = true;
     if (!this._leaveOpen) this._output.Dispose();
@@ -154,7 +154,7 @@ public static class GhostZlib {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public static int Decompress(ReadOnlySpan<byte> data, int compLen, Span<byte> dst) {
+  public static int Decompress(ReadOnlySpan<byte> data, int compLen, Span<byte> dst) {
     if (compLen <= 0 || data.Length < compLen)
       throw new InvalidDataException("Ghost zlib: truncated block.");
     if (data[0] == 1) {
@@ -179,7 +179,7 @@ public static int Decompress(ReadOnlySpan<byte> data, int compLen, Span<byte> ds
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public static byte[] Compress(ReadOnlySpan<byte> src, byte level) {
+  public static byte[] Compress(ReadOnlySpan<byte> src, byte level) {
     if (src.Length == 0) return [];
     using var ms = new MemoryStream();
     ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0);

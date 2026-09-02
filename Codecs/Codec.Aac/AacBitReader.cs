@@ -17,12 +17,12 @@ public sealed class AacBitReader {
   /// <summary>
   /// Initializes a new instance of <see cref="AacBitReader"/>.
   /// </summary>
-public AacBitReader(byte[] data) : this(data, 0, data?.Length ?? 0) { }
+  public AacBitReader(byte[] data) : this(data, 0, data?.Length ?? 0) { }
 
   /// <summary>
   /// Initializes a new instance of <see cref="AacBitReader"/>.
   /// </summary>
-public AacBitReader(byte[] data, int offset, int length) {
+  public AacBitReader(byte[] data, int offset, int length) {
     ArgumentNullException.ThrowIfNull(data);
     if (offset < 0 || length < 0 || offset + length > data.Length)
       throw new ArgumentOutOfRangeException(nameof(offset));

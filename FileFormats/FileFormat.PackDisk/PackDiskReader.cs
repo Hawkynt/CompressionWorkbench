@@ -18,11 +18,11 @@ public sealed class PackDiskReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<PackDiskEntry> Entries => _entries;
+  public IReadOnlyList<PackDiskEntry> Entries => _entries;
   /// <summary>
   /// Gets the format.
   /// </summary>
-public string Format => _format;
+  public string Format => _format;
 
   // Known magics
   private static readonly Dictionary<string, string> KnownMagics = new() {
@@ -39,7 +39,7 @@ public string Format => _format;
   /// <summary>
   /// Initializes a new instance of <see cref="PackDiskReader"/>.
   /// </summary>
-public PackDiskReader(Stream stream, bool leaveOpen = false) {
+  public PackDiskReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -98,7 +98,7 @@ public PackDiskReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(PackDiskEntry entry) {
+  public byte[] Extract(PackDiskEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.CompressedSize > _data.Length)
       throw new InvalidDataException("PackDisk: data extends beyond file.");
@@ -111,5 +111,5 @@ public byte[] Extract(PackDiskEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

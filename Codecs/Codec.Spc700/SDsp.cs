@@ -21,7 +21,7 @@ public sealed class SDsp {
   /// <summary>
   /// Provides the address value.
   /// </summary>
-public byte Address;
+  public byte Address;
 
   private readonly Voice[] _voices = new Voice[8];
 
@@ -45,7 +45,7 @@ public byte Address;
   /// <summary>
   /// Initializes a new instance of <see cref="SDsp"/>.
   /// </summary>
-public SDsp(byte[] ram) {
+  public SDsp(byte[] ram) {
     this._ram = ram;
     for (var i = 0; i < 8; ++i)
       this._voices[i] = new Voice();
@@ -56,12 +56,12 @@ public SDsp(byte[] ram) {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public byte Read() => this._reg[this.Address & 0x7F];
+  public byte Read() => this._reg[this.Address & 0x7F];
 
   /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
-public void Write(byte value) {
+  public void Write(byte value) {
     var index = this.Address & 0x7F;
     this._reg[index] = value;
 

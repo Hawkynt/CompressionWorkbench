@@ -10,15 +10,15 @@ public sealed class GzexeExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "gzexe";
+  public string Id => "gzexe";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "gzexe executable wrapper";
+  public string DisplayName => "gzexe executable wrapper";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -27,7 +27,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = GzexeFormatDescriptor.LocateEmbeddedGzip(bytes) >= 0;
     return new(match, this.Id, match ? 1.0 : 0.0,
@@ -37,13 +37,13 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) =>
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) =>
     ShellWrapperHandlerSupport.Parse(this.Id, image, detection, this.Capabilities);
 
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = GzexeFormatDescriptor.BuildArtifacts(packed.OriginalImage)
         .Select(a => new UnpackArtifact(a.Name, a.Data, a.Method))
@@ -64,15 +64,15 @@ public sealed class BzexeExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "bzexe";
+  public string Id => "bzexe";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "bzexe executable wrapper";
+  public string DisplayName => "bzexe executable wrapper";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -81,7 +81,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = BzexeFormatDescriptor.LocateEmbeddedBzip2(bytes) >= 0;
     return new(match, this.Id, match ? 1.0 : 0.0,
@@ -91,13 +91,13 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) =>
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) =>
     ShellWrapperHandlerSupport.Parse(this.Id, image, detection, this.Capabilities);
 
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = BzexeFormatDescriptor.BuildArtifacts(packed.OriginalImage)
         .Select(a => new UnpackArtifact(a.Name, a.Data, a.Method))
@@ -118,15 +118,15 @@ public sealed class PapawExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "papaw";
+  public string Id => "papaw";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Papaw executable wrapper";
+  public string DisplayName => "Papaw executable wrapper";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -140,7 +140,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = PapawFormatDescriptor.LocatePayload(bytes) != null;
     return new(match, this.Id, match ? 1.0 : 0.0,
@@ -150,7 +150,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -169,7 +169,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = PapawFormatDescriptor.BuildArtifacts(packed.OriginalImage)
         .Select(a => new UnpackArtifact(a.Name, a.Data, a.Method))
@@ -190,15 +190,15 @@ public sealed class GoPackerExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "gopacker";
+  public string Id => "gopacker";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "GoPacker executable wrapper";
+  public string DisplayName => "GoPacker executable wrapper";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -213,7 +213,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = GoPackerFormatDescriptor.LocatePayload(bytes) != null;
     return new(match, this.Id, match ? 1.0 : 0.0,
@@ -223,7 +223,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -242,7 +242,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = GoPackerFormatDescriptor.BuildArtifacts(packed.OriginalImage)
         .Select(a => new UnpackArtifact(a.Name, a.Data, a.Method))
@@ -263,15 +263,15 @@ public sealed class OrigamiExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "origami";
+  public string Id => "origami";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Origami .NET executable wrapper";
+  public string DisplayName => "Origami .NET executable wrapper";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -281,7 +281,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = OrigamiFormatDescriptor.LocatePayload(bytes) != null;
     return new(match, this.Id, match ? 1.0 : 0.0,
@@ -291,7 +291,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -310,7 +310,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = OrigamiFormatDescriptor.BuildArtifacts(packed.OriginalImage)
         .Select(a => new UnpackArtifact(a.Name, a.Data, a.Method))
@@ -331,15 +331,15 @@ public sealed class SilentPackerExecutablePackerHandler : IExecutablePackerHandl
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "silent_packer";
+  public string Id => "silent_packer";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Silent_Packer ELF XOR wrapper";
+  public string DisplayName => "Silent_Packer ELF XOR wrapper";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -350,7 +350,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = SilentPackerFormatDescriptor.LocatePayload(bytes) != null;
     return new(match, this.Id, match ? 1.0 : 0.0,
@@ -360,7 +360,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -379,7 +379,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = SilentPackerFormatDescriptor.BuildArtifacts(packed.OriginalImage)
         .Select(a => new UnpackArtifact(a.Name, a.Data, a.Method))
@@ -400,15 +400,15 @@ public sealed class HuanExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "huan";
+  public string Id => "huan";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Huan PE64 encrypted loader";
+  public string DisplayName => "Huan PE64 encrypted loader";
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -419,7 +419,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var bytes = image.ToArray();
     var match = HuanFormatDescriptor.LocatePayload(bytes) != null;
     return new(match, this.Id, match ? 1.0 : 0.0,
@@ -429,7 +429,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var imageInfo = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -448,7 +448,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     try {
       var artifacts = HuanFormatDescriptor.BuildArtifacts(packed.OriginalImage)
         .Select(a => new UnpackArtifact(a.Name, a.Data, a.Method))

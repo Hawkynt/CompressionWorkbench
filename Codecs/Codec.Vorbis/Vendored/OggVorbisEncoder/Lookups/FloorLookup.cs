@@ -25,7 +25,7 @@ public class FloorLookup
     /// <summary>
     /// Initializes a new instance of <see cref="FloorLookup"/>.
     /// </summary>
-public FloorLookup(Floor floor)
+    public FloorLookup(Floor floor)
     {
         _floor = floor;
         _n = floor.PostList[1];
@@ -110,7 +110,7 @@ public FloorLookup(Floor floor)
     /// <summary>
     /// Performs the fit operation.
     /// </summary>
-public int[] Fit(in Span<float> logmdct, float[] logmask)
+    public int[] Fit(in Span<float> logmdct, float[] logmask)
     {
         var n = _n;
 
@@ -496,7 +496,7 @@ public int[] Fit(in Span<float> logmdct, float[] logmask)
     /// <summary>
     /// Encodes the supplied input.
     /// </summary>
-public bool Encode(
+    public bool Encode(
         EncodeBuffer buffer,
         IList<IStaticCodeBook> staticBooks,
         CodeBook[] books,

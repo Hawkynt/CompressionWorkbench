@@ -84,7 +84,7 @@ public sealed class Pc98Writer {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build() {
+  public byte[] Build() {
     if (this._files.Count > this._rootEntries)
       throw new InvalidOperationException(
         $"PC-98: more files ({this._files.Count}) than root entries ({this._rootEntries}).");

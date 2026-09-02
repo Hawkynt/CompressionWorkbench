@@ -46,18 +46,18 @@ public sealed class SimpleDpackExecutablePackerHandler : IExecutablePackerHandle
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "simpledpack";
+  public string Id => "simpledpack";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "SimpleDpack";
+  public string DisplayName => "SimpleDpack";
 
   private const string DpackSectionName = ".dpack";
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.SupportsPe |
@@ -66,7 +66,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "SimpleDpack: not a valid PE.", true)]);
 
@@ -79,7 +79,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -98,7 +98,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     var diagnostics = new List<ExecutableDiagnostic>();
     var artifacts = new List<UnpackArtifact> {

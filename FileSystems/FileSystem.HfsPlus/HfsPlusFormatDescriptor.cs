@@ -97,7 +97,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new HfsPlusBlockMover();
     image.Position = 0;
     mover.Init(image); // reads only the 512-byte volume header
@@ -108,7 +108,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new HfsPlusBlockMover();
     image.Position = 0;
     mover.Init(image); // reads only the 512-byte volume header
@@ -118,19 +118,19 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "HfsPlus";
+  public string Id => "HfsPlus";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "HFS+";
+  public string DisplayName => "HFS+";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
@@ -174,32 +174,32 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".dmg";
+  public string DefaultExtension => ".dmg";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".dmg", ".hfsx", ".hfs"];
+  public IReadOnlyList<string> Extensions => [".dmg", ".hfsx", ".hfs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x48, 0x2B], Offset: 1024, Confidence: 0.85)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("hfsplus", "HFS+")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("hfsplus", "HFS+")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Apple HFS+ filesystem image. Writer emits full 248-byte TN1150
   /// HFSPlusCatalogFile records with HFSPlusForkData at offsets 88/168.
@@ -209,7 +209,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new HfsPlusReader(stream, leaveOpen: true);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
       e.Size, "Stored", e.IsDirectory, false, e.LastModified,
@@ -252,7 +252,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var caseSensitive = options.GetOptionBool("CaseSensitive", false);
     var journal = options.GetOptionBool("Journal", true);
     var journalSize = options.GetOptionInt("JournalSize", 8 * 1024 * 1024);
@@ -315,7 +315,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new HfsPlusReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -375,7 +375,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

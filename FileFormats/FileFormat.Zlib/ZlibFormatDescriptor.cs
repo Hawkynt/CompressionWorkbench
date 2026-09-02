@@ -11,53 +11,53 @@ public sealed class ZlibFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Zlib";
+  public string Id => "Zlib";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Zlib";
+  public string DisplayName => "Zlib";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Stream;
+  public FormatCategory Category => FormatCategory.Stream;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".zlib";
+  public string DefaultExtension => ".zlib";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".zlib"];
+  public IReadOnlyList<string> Extensions => [".zlib"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate", SupportsOptimize: true)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Deflate with Adler32 checksum, foundational compression library";
+  public string Description => "Deflate with Adler32 checksum, foundational compression library";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
   // Level is the only honored axis. A Deflate *strategy* (filtered / huffman-only
@@ -86,19 +86,19 @@ public string Description => "Deflate with Adler32 checksum, foundational compre
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) => ZlibStream.Decompress(input, output);
+  public void Decompress(Stream input, Stream output) => ZlibStream.Decompress(input, output);
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) => ZlibStream.Compress(input, output);
+  public void Compress(Stream input, Stream output) => ZlibStream.Compress(input, output);
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
     ZlibStream.Compress(input, output, ParseLevel(options));
   /// <summary>
   /// Performs the compress optimal operation.
   /// </summary>
-public void CompressOptimal(Stream input, Stream output) =>
+  public void CompressOptimal(Stream input, Stream output) =>
     ZlibStream.Compress(input, output, DeflateCompressionLevel.Maximum);
 }

@@ -14,71 +14,71 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "WAV is a single-blob audio file (RIFF chunks + PCM data) — defragmentation isn't meaningful; use WavOptimizer instead.");
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Wav";
+  public string Id => "Wav";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "WAV (RIFF audio)";
+  public string DisplayName => "WAV (RIFF audio)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".wav";
+  public string DefaultExtension => ".wav";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".wav", ".wave"];
+  public IReadOnlyList<string> Extensions => [".wav", ".wave"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("RIFF"u8.ToArray(), Confidence: 0.55),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "WAV audio; full file + per-channel PCM + RIFF metadata chunks.";
+  public string Description => "WAV audio; full file + per-channel PCM + RIFF metadata chunks.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = BuildEntries(stream, out var parsed);
     var fullMethod = WavCodecName(parsed.FormatCode);
     return entries.Select((e, i) => new ArchiveEntryInfo(
@@ -122,7 +122,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream, out _)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
         continue;
@@ -133,7 +133,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input, out _)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);
@@ -148,7 +148,7 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // If FULL.wav is provided, passthrough it verbatim (archive-view semantics).
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
     var full = fileList.FirstOrDefault(f => System.IO.Path.GetFileName(f.Name).Equals("FULL.wav", StringComparison.OrdinalIgnoreCase));
@@ -198,17 +198,17 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "WAV archive accepts: FULL.wav, LEFT/RIGHT/CENTER/… .wav (per-channel), metadata/*.bin";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = System.IO.Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = System.IO.Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 
@@ -224,19 +224,19 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   /// <summary>
   /// Enumerates the chunks.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => WavLayoutMap.Enumerate(file);
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => WavLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file) => _optimizer.Optimize(file);
+  public void Optimize(Stream file) => _optimizer.Optimize(file);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream, out WavReader.ParsedWav parsed) {
     using var ms = new MemoryStream();

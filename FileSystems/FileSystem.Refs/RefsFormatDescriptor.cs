@@ -24,43 +24,43 @@ public sealed class RefsFormatDescriptor :
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Refs";
+  public string Id => "Refs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "ReFS";
+  public string DisplayName => "ReFS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".refs";
+  public string DefaultExtension => ".refs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".refs"];
+  public IReadOnlyList<string> Extensions => [".refs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x52, 0x65, 0x46, 0x53, 0x00, 0x00, 0x00, 0x00], Offset: 3, Confidence: 0.85),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("resident", "Resident / inline"),
     new("extent", "Extent-backed"),
     new("stored", "Raw image"),
@@ -68,32 +68,32 @@ public IReadOnlyList<FormatMethodInfo> Methods => [
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Microsoft ReFS 3.x volume image with namespace, allocation, in-place data relocation and filesystem-metadata placement support.";
+  public string Description => "Microsoft ReFS 3.x volume image with namespace, allocation, in-place data relocation and filesystem-metadata placement support.";
 
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => RefsExtentMap.Enumerate(image);
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions());
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
     new RefsPlacementManager(archive).Execute(options);
@@ -102,7 +102,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Performs the analyze layout operation.
   /// </summary>
-public LayoutAnalysis AnalyzeLayout(Stream image) {
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     try {
       var metadata = RefsMetadataReader.Open(image);
@@ -148,7 +148,7 @@ public LayoutAnalysis AnalyzeLayout(Stream image) {
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     try {
       var metadata = RefsMetadataReader.Open(stream);
@@ -176,7 +176,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     try {
       var metadata = RefsMetadataReader.Open(stream);
       var records = new RefsNamespaceReader(metadata).ReadAll();

@@ -26,7 +26,7 @@ public sealed class NetAssemblyReader {
   /// <summary>
   /// Reads the all from the supplied input.
   /// </summary>
-public List<Entry> ReadAll(Stream stream) {
+  public List<Entry> ReadAll(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

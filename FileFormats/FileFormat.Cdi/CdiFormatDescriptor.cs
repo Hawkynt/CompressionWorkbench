@@ -18,30 +18,30 @@ public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "CDI is a DiscJuggler disc image (sector-based ISO 9660 + footer) — defragmentation isn't meaningful.");
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Cdi";
+  public string Id => "Cdi";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "CDI";
+  public string DisplayName => "CDI";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
@@ -49,42 +49,42 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".cdi";
+  public string DefaultExtension => ".cdi";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".cdi"];
+  public IReadOnlyList<string> Extensions => [".cdi"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // CDI version identifiers (0x80000004/5/6) appear at a variable offset from EOF,
   // making fixed-offset header magic impractical; detection relies on extension.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "DiscJuggler CDI disc image (R/W via in-place sector rewrite at fixed offsets; inner ISO 9660 directory mutation delegated to FileSystem.Iso; multi-track DAOI layouts deferred)";
+  public string Description => "DiscJuggler CDI disc image (R/W via in-place sector rewrite at fixed offsets; inner ISO 9660 directory mutation delegated to FileSystem.Iso; multi-track DAOI layouts deferred)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CdiReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
       e.Size, "iso9660", e.IsDirectory, false, null)).ToList();
@@ -93,7 +93,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new CdiReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -105,7 +105,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // WORM: ISO 9660 image followed by a CDI v2 footer. The reader only uses
     // the footer for version detection; the session-descriptor offset isn't
     // dereferenced for ISO extraction.

@@ -10,7 +10,7 @@ public class CodeBook
     /// <summary>
     /// Initializes a new instance of <see cref="CodeBook"/>.
     /// </summary>
-public CodeBook(
+    public CodeBook(
         int dimensions,
         int entries,
         int usedEntries,
@@ -60,7 +60,7 @@ public CodeBook(
     /// <summary>
     /// Gets the static book.
     /// </summary>
-public IStaticCodeBook StaticBook { get; }
+    public IStaticCodeBook StaticBook { get; }
 
     /* for encode, the below are entry-ordered, fully populated */
     /* for decode, the below are ordered by bitreversed codeword and only
@@ -84,42 +84,42 @@ public IStaticCodeBook StaticBook { get; }
     /// <summary>
     /// Gets the dec code lengths.
     /// </summary>
-public byte[] DecCodeLengths { get; }
+    public byte[] DecCodeLengths { get; }
 
 
     /// <summary>
     /// Gets the dec first table.
     /// </summary>
-public uint[] DecFirstTable { get; }
+    public uint[] DecFirstTable { get; }
 
     /// <summary>
     /// Gets the dec first table n.
     /// </summary>
-public int DecFirstTableN { get; }
+    public int DecFirstTableN { get; }
 
     /// <summary>
     /// Gets the dec max length.
     /// </summary>
-public int DecMaxLength { get; }
+    public int DecMaxLength { get; }
 
     /* The current encoder uses only centered, integer-only lattice books. */
     /// <summary>
     /// Gets the quant values.
     /// </summary>
-public int QuantValues { get; }
+    public int QuantValues { get; }
     /// <summary>
     /// Gets the min val.
     /// </summary>
-public int MinVal { get; }
+    public int MinVal { get; }
     /// <summary>
     /// Gets the delta.
     /// </summary>
-public int Delta { get; }
+    public int Delta { get; }
 
     /// <summary>
     /// Performs the init encode operation.
     /// </summary>
-public static CodeBook InitEncode(IStaticCodeBook source)
+    public static CodeBook InitEncode(IStaticCodeBook source)
     {
         return new CodeBook(
             source.Dimensions,

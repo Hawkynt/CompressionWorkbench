@@ -36,7 +36,7 @@ public sealed class Qcow2Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Qcow2Entry> Entries => _entries;
+  public IReadOnlyList<Qcow2Entry> Entries => _entries;
 
   /// <summary>Virtual disk size in bytes.</summary>
   public long VirtualSize => _virtualSize;
@@ -44,7 +44,7 @@ public IReadOnlyList<Qcow2Entry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="Qcow2Reader"/>.
   /// </summary>
-public Qcow2Reader(Stream stream, bool leaveOpen = false) {
+  public Qcow2Reader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _streamLength = stream.Length;
     _cache = new SectorCache(stream);
@@ -218,5 +218,5 @@ public Qcow2Reader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => _cache.Dispose();
+  public void Dispose() => _cache.Dispose();
 }

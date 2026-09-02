@@ -48,16 +48,16 @@ public sealed class HxorExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "hxor";
+  public string Id => "hxor";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "hXOR-Packer";
+  public string DisplayName => "hXOR-Packer";
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -74,7 +74,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!TryGetInsertOffset(image, out var offset))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "hXOR: not a valid MZ image, or e_res2 holds no plausible insert offset.", true)]);
 
@@ -90,7 +90,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     var metadata = new Dictionary<string, string> {
@@ -106,7 +106,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     var diagnostics = new List<ExecutableDiagnostic>();
     var artifacts = new List<UnpackArtifact> { new("original_packed.bin", image, "stored") };

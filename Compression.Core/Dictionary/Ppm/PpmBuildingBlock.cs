@@ -13,32 +13,32 @@ public sealed class PpmBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_PPM";
+  public string Id => "BB_PPM";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "PPM";
+  public string DisplayName => "PPM";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Prediction by Partial Matching (Cleary & Witten): order-3 context model with escape method C and full exclusion, arithmetic coded";
+  public string Description => "Prediction by Partial Matching (Cleary & Witten): order-3 context model with escape method C and full exclusion, arithmetic coded";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) => PpmCompressor.Compress(data);
+  public byte[] Compress(ReadOnlySpan<byte> data) => PpmCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) => PpmCompressor.Decompress(data);
+  public byte[] Decompress(ReadOnlySpan<byte> data) => PpmCompressor.Decompress(data);
 }

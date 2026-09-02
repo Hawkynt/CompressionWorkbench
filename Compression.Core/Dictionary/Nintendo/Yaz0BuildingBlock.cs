@@ -15,37 +15,37 @@ public sealed class Yaz0BuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Yaz0";
+  public string Id => "BB_Yaz0";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Yaz0";
+  public string DisplayName => "Yaz0";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Nintendo Yaz0 grouped-flag LZ compression";
+  public string Description => "Nintendo Yaz0 grouped-flag LZ compression";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data)
+  public byte[] Compress(ReadOnlySpan<byte> data)
     => NintendoLzCodecs.CompressYaz0(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data)
+  public byte[] Decompress(ReadOnlySpan<byte> data)
     => NintendoLzCodecs.DecompressYaz0(data);
 }

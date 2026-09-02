@@ -49,22 +49,22 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Mfs1";
+  public string Id => "Mfs1";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "MFS-1 (Acorn Master File System v1)";
+  public string DisplayName => "MFS-1 (Acorn Master File System v1)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
   // so the verb works via rebuild but nothing is modified in place. CanModify
   // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // ".mfs" is shared with the classic Mac MFS filesystem (FileSystem.Mfs, strong
@@ -74,19 +74,19 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".mfsd";
+  public string DefaultExtension => ".mfsd";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".mfsd", ".mfs"];
+  public IReadOnlyList<string> Extensions => [".mfsd", ".mfs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0x00 0x80 at offsets 0-1 is the MFS-1 boot pattern. Extremely weak
     // (matches many empty/sparse buffers) so confidence 0.20 lets stronger
     // magic-bearing formats win — detection here is really driven by the
@@ -96,24 +96,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Acorn MFS-1 (BBC Master) — DFS-tier catalog walker with in-place R/W (Mfs1Writer + Mfs1InPlaceModifier).";
+  public string Description => "Acorn MFS-1 (BBC Master) — DFS-tier catalog walker with in-place R/W (Mfs1Writer + Mfs1InPlaceModifier).";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -148,7 +148,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAll(stream);
@@ -298,7 +298,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -371,7 +371,7 @@ public void Defragment(Stream archive)
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Mfs1ExtentMap.Enumerate(image);
 
   /// <summary>

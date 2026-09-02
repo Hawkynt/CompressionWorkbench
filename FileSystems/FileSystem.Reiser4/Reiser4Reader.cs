@@ -49,7 +49,7 @@ public sealed class Reiser4Reader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="Reiser4Reader"/>.
   /// </summary>
-public Reiser4Reader(Stream stream, bool leaveOpen = true) {
+  public Reiser4Reader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the metadata is a handful of blocks however
@@ -187,5 +187,5 @@ public Reiser4Reader(Stream stream, bool leaveOpen = true) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._image.Dispose();
+  public void Dispose() => this._image.Dispose();
 }

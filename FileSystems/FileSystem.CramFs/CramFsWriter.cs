@@ -46,7 +46,7 @@ public sealed class CramFsWriter : IDisposable {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string path, byte[] data) {
+  public void AddFile(string path, byte[] data) {
     ArgumentNullException.ThrowIfNull(path);
     ArgumentNullException.ThrowIfNull(data);
     if (data.LongLength > MaxFileBytes)

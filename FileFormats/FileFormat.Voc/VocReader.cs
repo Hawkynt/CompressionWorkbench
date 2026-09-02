@@ -38,7 +38,7 @@ public sealed class VocReader {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedVoc Read(ReadOnlySpan<byte> data) {
+  public ParsedVoc Read(ReadOnlySpan<byte> data) {
     if (data.Length < 26)
       throw new InvalidDataException("VOC too short for 26-byte header.");
     if (!data[..Magic.Length].SequenceEqual(Magic) || data[Magic.Length] != 0x1A)

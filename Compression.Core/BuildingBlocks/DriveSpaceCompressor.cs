@@ -25,38 +25,38 @@ public sealed class DriveSpaceCompressor : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_DriveSpace";
+  public string Id => "BB_DriveSpace";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "DriveSpace LZ";
+  public string DisplayName => "DriveSpace LZ";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Microsoft DriveSpace (DVRS) LZ77 — DoubleSpace grammar with 8 KiB window";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data)
+  public byte[] Compress(ReadOnlySpan<byte> data)
     => DoubleSpaceCompressor.CompressCore(data, DefaultMaxDistance);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data)
+  public byte[] Decompress(ReadOnlySpan<byte> data)
     => DoubleSpaceCompressor.DecompressCore(data);
 }

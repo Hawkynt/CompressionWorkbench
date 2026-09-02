@@ -14,7 +14,7 @@ public sealed class D64Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<D64Entry> Entries => _entries;
+  public IReadOnlyList<D64Entry> Entries => _entries;
 
   // Standard D64 sizes
   private const int StandardSize = 174848;
@@ -38,7 +38,7 @@ public IReadOnlyList<D64Entry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="D64Reader"/>.
   /// </summary>
-public D64Reader(Stream stream, bool leaveOpen = false) {
+  public D64Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -144,7 +144,7 @@ public D64Reader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(D64Entry entry) {
+  public byte[] Extract(D64Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
 
@@ -178,5 +178,5 @@ public byte[] Extract(D64Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

@@ -14,11 +14,11 @@ public sealed class LittleFsFileEntry {
   /// <summary>
   /// Gets or sets the path.
   /// </summary>
-public required string Path { get; init; }
+  public required string Path { get; init; }
   /// <summary>
   /// Gets or sets the size.
   /// </summary>
-public long Size { get; init; }
+  public long Size { get; init; }
   internal byte[]? Inline { get; init; }
   internal uint CtzHead { get; init; }
   internal bool IsCtz { get; init; }
@@ -46,11 +46,11 @@ public sealed class LittleFsReader : IDisposable {
   /// <summary>
   /// Gets the files.
   /// </summary>
-public IReadOnlyList<LittleFsFileEntry> Files => this._files;
+  public IReadOnlyList<LittleFsFileEntry> Files => this._files;
   /// <summary>
   /// Gets the block size.
   /// </summary>
-public uint BlockSize => this._blockSize;
+  public uint BlockSize => this._blockSize;
 
   private readonly HashSet<uint> _metadataBlocks = [];
 
@@ -77,12 +77,12 @@ public uint BlockSize => this._blockSize;
   /// <summary>
   /// Initializes a new instance of <see cref="LittleFsReader"/>.
   /// </summary>
-public LittleFsReader(byte[] image) : this(ImageAccessor.FromBytes(image ?? throw new ArgumentNullException(nameof(image)))) { }
+  public LittleFsReader(byte[] image) : this(ImageAccessor.FromBytes(image ?? throw new ArgumentNullException(nameof(image)))) { }
 
   /// <summary>
   /// Initializes a new instance of <see cref="LittleFsReader"/>.
   /// </summary>
-public LittleFsReader(Stream stream, bool leaveOpen = true)
+  public LittleFsReader(Stream stream, bool leaveOpen = true)
     : this(Wrap(stream, leaveOpen)) { }
 
   private static ImageAccessor Wrap(Stream stream, bool leaveOpen) {
@@ -136,7 +136,7 @@ public LittleFsReader(Stream stream, bool leaveOpen = true)
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._image.Dispose();
+  public void Dispose() => this._image.Dispose();
 
   private void WalkDirectory(uint blockA, uint blockB, string parentPath, HashSet<ulong> visited) {
     var key = ((ulong)blockA << 32) | blockB;

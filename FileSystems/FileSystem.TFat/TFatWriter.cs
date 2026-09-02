@@ -39,7 +39,7 @@ public sealed class TFatWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => _inner.AddFile(name, data);
+  public void AddFile(string name, byte[] data) => _inner.AddFile(name, data);
 
   /// <summary>
   /// Adds a file whose bytes are produced on demand; the layout is settled from

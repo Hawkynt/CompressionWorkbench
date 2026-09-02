@@ -19,60 +19,60 @@ public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "WwiseBnk";
+  public string Id => "WwiseBnk";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Wwise SoundBank";
+  public string DisplayName => "Wwise SoundBank";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".bnk";
+  public string DefaultExtension => ".bnk";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".bnk"];
+  public IReadOnlyList<string> Extensions => [".bnk"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("BKHD"u8.ToArray(), Confidence: 0.9)
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("bnk", "Wwise SoundBank")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("bnk", "Wwise SoundBank")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Audiokinetic Wwise SoundBank container (BKHD/DIDX/DATA/HIRC)";
+  public string Description => "Audiokinetic Wwise SoundBank container (BKHD/DIDX/DATA/HIRC)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new WwiseBnkReader(stream);
     var list = new List<ArchiveEntryInfo>();
     int idx = 0;
@@ -156,7 +156,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     using var s = this.OpenEntry(input, entryName, password);
     s.CopyTo(output);
   }
@@ -166,7 +166,7 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new WwiseBnkReader(stream);
 
     if (files == null || MatchesFilter("FULL.bnk", files)) {

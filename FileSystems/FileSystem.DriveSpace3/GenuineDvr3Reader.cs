@@ -38,7 +38,7 @@ public sealed class GenuineDvr3Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
+  public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
 
   /// <summary>The inner volume label (0x08 root entry), or "" when none was written.</summary>
   public string VolumeLabel { get; private set; } = "";
@@ -46,7 +46,7 @@ public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
   /// <summary>
   /// Initializes a new instance of <see cref="GenuineDvr3Reader"/>.
   /// </summary>
-public GenuineDvr3Reader(Stream stream) {
+  public GenuineDvr3Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -120,7 +120,7 @@ public GenuineDvr3Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(DriveSpace3Entry entry) {
+  public byte[] Extract(DriveSpace3Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.Size == 0) return [];
 
@@ -166,5 +166,5 @@ public byte[] Extract(DriveSpace3Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

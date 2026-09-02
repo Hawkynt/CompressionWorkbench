@@ -21,7 +21,7 @@ public static class HtfsOptimizer {
   /// <summary>
   /// Performs the find operation.
   /// </summary>
-public static HtfsOptimalParameters Find(IReadOnlyList<long> fileSizes) {
+  public static HtfsOptimalParameters Find(IReadOnlyList<long> fileSizes) {
     ArgumentNullException.ThrowIfNull(fileSizes);
     if (fileSizes.Count == 0)
       return new HtfsOptimalParameters(512, InodeCount: 16, EstimatedImageBytes: 4 * 512);

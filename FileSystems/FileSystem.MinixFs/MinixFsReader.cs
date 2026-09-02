@@ -16,7 +16,7 @@ public sealed class MinixFsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<MinixFsEntry> Entries => _entries;
+  public IReadOnlyList<MinixFsEntry> Entries => _entries;
 
   // Superblock fields
   private uint _ninodes;
@@ -49,7 +49,7 @@ public IReadOnlyList<MinixFsEntry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="MinixFsReader"/>.
   /// </summary>
-public MinixFsReader(Stream stream, bool leaveOpen = false) {
+  public MinixFsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -376,7 +376,7 @@ public MinixFsReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(MinixFsEntry entry) {
+  public byte[] Extract(MinixFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
 
@@ -399,5 +399,5 @@ public byte[] Extract(MinixFsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

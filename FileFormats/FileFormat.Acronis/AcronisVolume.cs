@@ -28,11 +28,11 @@ public enum AcronisVolumeVersion {
   /// <summary>
   /// Specifies the windows option.
   /// </summary>
-Windows = 0,
+  Windows = 0,
   /// <summary>
   /// Specifies the mac option.
   /// </summary>
-Mac = 1,
+  Mac = 1,
 }
 
 /// <summary>
@@ -52,7 +52,7 @@ public sealed record AcronisVolumeHeader(
   /// <summary>
   /// Defines the magic constant value.
   /// </summary>
-public const uint Magic = 0xA2B924CE;
+  public const uint Magic = 0xA2B924CE;
 
   /// <summary>Reads the volume header from the start of <paramref name="stream"/>.</summary>
   public static AcronisVolumeHeader Read(Stream stream) {

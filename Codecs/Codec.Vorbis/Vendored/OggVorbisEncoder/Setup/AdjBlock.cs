@@ -8,7 +8,7 @@ public class AdjBlock
     /// <summary>
     /// Initializes a new instance of <see cref="AdjBlock"/>.
     /// </summary>
-public AdjBlock(int[] block)
+    public AdjBlock(int[] block)
     {
         Block = block;
     }
@@ -16,5 +16,5 @@ public AdjBlock(int[] block)
     /// <summary>
     /// Gets the block.
     /// </summary>
-public int[] Block { get; }
+    public int[] Block { get; }
 }

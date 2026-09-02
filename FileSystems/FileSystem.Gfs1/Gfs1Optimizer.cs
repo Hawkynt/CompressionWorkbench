@@ -22,7 +22,7 @@ public static class Gfs1Optimizer {
   /// <summary>
   /// Performs the find operation.
   /// </summary>
-public static Gfs1OptimalParameters Find(IReadOnlyList<long> fileSizes) {
+  public static Gfs1OptimalParameters Find(IReadOnlyList<long> fileSizes) {
     ArgumentNullException.ThrowIfNull(fileSizes);
     if (fileSizes.Count == 0)
       return new Gfs1OptimalParameters(BlockSize, JournalCount: 1, EstimatedImageBytes: 17 * BlockSize);

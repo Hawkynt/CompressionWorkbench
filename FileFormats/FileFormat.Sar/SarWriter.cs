@@ -18,7 +18,7 @@ public sealed class SarWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     if (string.IsNullOrEmpty(name))
       throw new ArgumentException("Name must be non-empty.", nameof(name));
     if (name.Contains('\0'))
@@ -29,7 +29,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     if (_files.Count > ushort.MaxValue)
       throw new InvalidOperationException($"SAR supports at most {ushort.MaxValue} entries.");
 

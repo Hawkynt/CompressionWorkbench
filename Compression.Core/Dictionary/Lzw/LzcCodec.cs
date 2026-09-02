@@ -318,28 +318,28 @@ public sealed class LzcBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Lzc";
+  public string Id => "BB_Lzc";
   /// <inheritdoc />
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZC (UNIX compress)";
+  public string DisplayName => "LZC (UNIX compress)";
   /// <inheritdoc />
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "UNIX compress LZW with 9-16 bit codes and eight-code width-transition packing";
+  public string Description => "UNIX compress LZW with 9-16 bit codes and eight-code width-transition packing";
   /// <inheritdoc />
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc />
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var native = LzcCodec.Compress(data);
     var result = new byte[checked(4 + native.Length)];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
@@ -351,7 +351,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4)
       throw new InvalidDataException("LZC building-block envelope is truncated.");
     var length = BinaryPrimitives.ReadInt32LittleEndian(data);

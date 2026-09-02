@@ -113,7 +113,7 @@ public sealed class UbifsFileReader {
   /// <summary>
   /// Initializes a new instance of <see cref="UbifsFileReader"/>.
   /// </summary>
-public UbifsFileReader(Stream stream) {
+  public UbifsFileReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -124,7 +124,7 @@ public UbifsFileReader(Stream stream) {
   /// <summary>
   /// Initializes a new instance of <see cref="UbifsFileReader"/>.
   /// </summary>
-public UbifsFileReader(byte[] image) {
+  public UbifsFileReader(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
     this._image = image;
     this.Parse();

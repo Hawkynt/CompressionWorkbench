@@ -31,61 +31,61 @@ public sealed class AndroidSparseFormatDescriptor : IFormatDescriptor, IArchiveF
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "AndroidSparse";
+  public string Id => "AndroidSparse";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Android Sparse Image";
+  public string DisplayName => "Android Sparse Image";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".simg";
+  public string DefaultExtension => ".simg";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".simg", ".sparse"];
+  public IReadOnlyList<string> Extensions => [".simg", ".sparse"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x3A, 0xFF, 0x26, 0xED], Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("sparse", "Android Sparse")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("sparse", "Android Sparse")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Android sparse image (img2simg/simg2img): 28-byte header + RAW/FILL/DONT_CARE/CRC32 chunks. " +
     "Expands to image.raw + metadata.ini; Create packs a raw image back into sparse form.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
     var entries = new List<ArchiveEntryInfo> {
       new(0, "metadata.ini", 0, 0, "sparse", false, false, null, Kind: "Tag"),
@@ -103,7 +103,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     var valid = TryExpand(data, out var raw, out var meta);
 
@@ -117,7 +117,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // The (single) file input is the raw image to sparsify. When several inputs
     // are supplied the first file wins — sparse images hold exactly one image.
     var raw = FilesOnly(inputs).Select(f => f.Data).FirstOrDefault() ?? [];

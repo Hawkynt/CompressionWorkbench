@@ -16,21 +16,21 @@ public static class GbsDecomposer {
   /// <summary>
   /// Represents an entry kinds.
   /// </summary>
-public static class EntryKinds {
+  public static class EntryKinds {
     /// <summary>
     /// Defines the track constant value.
     /// </summary>
-public const string Track = "Track";
+    public const string Track = "Track";
     /// <summary>
     /// Defines the tag constant value.
     /// </summary>
-public const string Tag = "Tag";
+    public const string Tag = "Tag";
   }
 
   /// <summary>
   /// Represents an entry.
   /// </summary>
-public readonly record struct Entry(string Name, byte[] Data, string Kind);
+  public readonly record struct Entry(string Name, byte[] Data, string Kind);
 
   // The fixed GBS header is 0x70 bytes; code+data follows immediately.
   private const int HeaderSize = 0x70;
@@ -38,7 +38,7 @@ public readonly record struct Entry(string Name, byte[] Data, string Kind);
   /// <summary>
   /// Performs the decompose operation.
   /// </summary>
-public static List<Entry> Decompose(byte[] file) {
+  public static List<Entry> Decompose(byte[] file) {
     var entries = new List<Entry> { new("FULL.gbs", file, EntryKinds.Track) };
     var meta = new IniBuilder("gbs");
     var ok = false;

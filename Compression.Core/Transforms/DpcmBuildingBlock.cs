@@ -14,28 +14,28 @@ public sealed class DpcmBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Dpcm";
+  public string Id => "BB_Dpcm";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "DPCM";
+  public string DisplayName => "DPCM";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Differential Pulse-Code Modulation, stores sample-to-sample differences";
+  public string Description => "Differential Pulse-Code Modulation, stores sample-to-sample differences";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Transform;
+  public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     if (data.Length == 0)
       return [];
 
@@ -55,7 +55,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length == 0)
       return [];
 

@@ -60,25 +60,25 @@ public sealed class Zx0BuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Zx0";
+  public string Id => "BB_Zx0";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "ZX0";
+  public string DisplayName => "ZX0";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Einar Saukas's ZX0 — LZ77 with Elias-gamma coded offsets, used in modern ZX Spectrum + demoscene productions";
+  public string Description => "Einar Saukas's ZX0 — LZ77 with Elias-gamma coded offsets, used in modern ZX Spectrum + demoscene productions";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   // ZX0 v2 forward, non-inverted. Salvador uses invert=true; see SalvadorBuildingBlock.
   private const bool InvertMode = false;

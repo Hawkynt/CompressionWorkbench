@@ -15,20 +15,20 @@ public sealed class DtsVlc {
   /// <summary>
   /// Gets the codes.
   /// </summary>
-public ushort[] Codes { get; }
+  public ushort[] Codes { get; }
   /// <summary>
   /// Gets the lengths.
   /// </summary>
-public byte[] Lengths { get; }
+  public byte[] Lengths { get; }
   /// <summary>
   /// Gets the max bits.
   /// </summary>
-public int MaxBits { get; }
+  public int MaxBits { get; }
 
   /// <summary>
   /// Initializes a new instance of <see cref="DtsVlc"/>.
   /// </summary>
-public DtsVlc(ushort[] codes, byte[] lengths) {
+  public DtsVlc(ushort[] codes, byte[] lengths) {
     ArgumentNullException.ThrowIfNull(codes);
     ArgumentNullException.ThrowIfNull(lengths);
     if (codes.Length != lengths.Length)
@@ -72,16 +72,16 @@ public sealed class DtsBitAllocBook {
   /// <summary>
   /// Gets the offset.
   /// </summary>
-public int Offset { get; }
+  public int Offset { get; }
   /// <summary>
   /// Gets the vlc.
   /// </summary>
-public DtsVlc?[] Vlc { get; }
+  public DtsVlc?[] Vlc { get; }
 
   /// <summary>
   /// Initializes a new instance of <see cref="DtsBitAllocBook"/>.
   /// </summary>
-public DtsBitAllocBook(int offset, DtsVlc?[] vlc) {
+  public DtsBitAllocBook(int offset, DtsVlc?[] vlc) {
     this.Offset = offset;
     this.Vlc = vlc;
   }

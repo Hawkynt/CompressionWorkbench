@@ -11,35 +11,35 @@ public enum ExecutableContainerKind {
   /// <summary>
   /// Specifies the pe option.
   /// </summary>
-Pe,
+  Pe,
   /// <summary>
   /// Specifies the elf option.
   /// </summary>
-Elf,
+  Elf,
   /// <summary>
   /// Specifies the mach o option.
   /// </summary>
-MachO,
+  MachO,
   /// <summary>
   /// Specifies the fat mach o option.
   /// </summary>
-FatMachO,
+  FatMachO,
   /// <summary>
   /// Specifies the dos mz option.
   /// </summary>
-DosMz,
+  DosMz,
   /// <summary>
   /// Specifies the dos com option.
   /// </summary>
-DosCom,
+  DosCom,
   /// <summary>
   /// Specifies the linear executable option.
   /// </summary>
-LinearExecutable,
+  LinearExecutable,
   /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
-Unknown,
+  Unknown,
 }
 
 /// <summary>
@@ -49,47 +49,47 @@ public enum CpuArchitecture {
   /// <summary>
   /// Specifies the x 86 option.
   /// </summary>
-X86,
+  X86,
   /// <summary>
   /// Specifies the x 64 option.
   /// </summary>
-X64,
+  X64,
   /// <summary>
   /// Specifies the arm 32 option.
   /// </summary>
-Arm32,
+  Arm32,
   /// <summary>
   /// Specifies the arm 64 option.
   /// </summary>
-Arm64,
+  Arm64,
   /// <summary>
   /// Specifies the power pc 32 option.
   /// </summary>
-PowerPc32,
+  PowerPc32,
   /// <summary>
   /// Specifies the power pc 64 option.
   /// </summary>
-PowerPc64,
+  PowerPc64,
   /// <summary>
   /// Specifies the mips 32 le option.
   /// </summary>
-Mips32Le,
+  Mips32Le,
   /// <summary>
   /// Specifies the mips 32 be option.
   /// </summary>
-Mips32Be,
+  Mips32Be,
   /// <summary>
   /// Specifies the mips 64 le option.
   /// </summary>
-Mips64Le,
+  Mips64Le,
   /// <summary>
   /// Specifies the mips 64 be option.
   /// </summary>
-Mips64Be,
+  Mips64Be,
   /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
-Unknown,
+  Unknown,
 }
 
 /// <summary>
@@ -100,23 +100,23 @@ public enum ExecutableRegionFlags {
   /// <summary>
   /// Specifies that no option is selected.
   /// </summary>
-None = 0,
+  None = 0,
   /// <summary>
   /// Specifies the read option.
   /// </summary>
-Read = 1 << 0,
+  Read = 1 << 0,
   /// <summary>
   /// Specifies the write option.
   /// </summary>
-Write = 1 << 1,
+  Write = 1 << 1,
   /// <summary>
   /// Specifies the execute option.
   /// </summary>
-Execute = 1 << 2,
+  Execute = 1 << 2,
   /// <summary>
   /// Specifies the bss option.
   /// </summary>
-Bss = 1 << 3,
+  Bss = 1 << 3,
 }
 
 /// <summary>
@@ -127,59 +127,59 @@ public enum ExecutableUnpackCapabilities {
   /// <summary>
   /// Specifies that no option is selected.
   /// </summary>
-None = 0,
+  None = 0,
   /// <summary>
   /// Specifies the can detect option.
   /// </summary>
-CanDetect = 1 << 0,
+  CanDetect = 1 << 0,
   /// <summary>
   /// Specifies the can locate payload option.
   /// </summary>
-CanLocatePayload = 1 << 1,
+  CanLocatePayload = 1 << 1,
   /// <summary>
   /// Specifies the can decompress payload option.
   /// </summary>
-CanDecompressPayload = 1 << 2,
+  CanDecompressPayload = 1 << 2,
   /// <summary>
   /// Specifies the can build memory image option.
   /// </summary>
-CanBuildMemoryImage = 1 << 3,
+  CanBuildMemoryImage = 1 << 3,
   /// <summary>
   /// Specifies the can rebuild executable option.
   /// </summary>
-CanRebuildExecutable = 1 << 4,
+  CanRebuildExecutable = 1 << 4,
   /// <summary>
   /// Specifies the can produce runnable executable option.
   /// </summary>
-CanProduceRunnableExecutable = 1 << 5,
+  CanProduceRunnableExecutable = 1 << 5,
   /// <summary>
   /// Specifies the supports pe option.
   /// </summary>
-SupportsPe = 1 << 8,
+  SupportsPe = 1 << 8,
   /// <summary>
   /// Specifies the supports elf option.
   /// </summary>
-SupportsElf = 1 << 9,
+  SupportsElf = 1 << 9,
   /// <summary>
   /// Specifies the supports mach o option.
   /// </summary>
-SupportsMachO = 1 << 10,
+  SupportsMachO = 1 << 10,
   /// <summary>
   /// Specifies the supports x 86 option.
   /// </summary>
-SupportsX86 = 1 << 16,
+  SupportsX86 = 1 << 16,
   /// <summary>
   /// Specifies the supports x 64 option.
   /// </summary>
-SupportsX64 = 1 << 17,
+  SupportsX64 = 1 << 17,
   /// <summary>
   /// Specifies the supports arm 32 option.
   /// </summary>
-SupportsArm32 = 1 << 18,
+  SupportsArm32 = 1 << 18,
   /// <summary>
   /// Specifies the supports arm 64 option.
   /// </summary>
-SupportsArm64 = 1 << 19,
+  SupportsArm64 = 1 << 19,
 }
 
 /// <summary>
@@ -189,27 +189,27 @@ public enum ExecutableUnpackLevel {
   /// <summary>
   /// Specifies the detection only option.
   /// </summary>
-DetectionOnly = 0,
+  DetectionOnly = 0,
   /// <summary>
   /// Specifies the payload located option.
   /// </summary>
-PayloadLocated = 1,
+  PayloadLocated = 1,
   /// <summary>
   /// Specifies the payload decompressed option.
   /// </summary>
-PayloadDecompressed = 2,
+  PayloadDecompressed = 2,
   /// <summary>
   /// Specifies the runtime memory image option.
   /// </summary>
-RuntimeMemoryImage = 3,
+  RuntimeMemoryImage = 3,
   /// <summary>
   /// Specifies the rebuilt executable option.
   /// </summary>
-RebuiltExecutable = 4,
+  RebuiltExecutable = 4,
   /// <summary>
   /// Specifies the runnable rebuilt executable option.
   /// </summary>
-RunnableRebuiltExecutable = 5,
+  RunnableRebuiltExecutable = 5,
 }
 
 /// <summary>
@@ -219,47 +219,47 @@ public enum ExecutableDiagnosticCode {
   /// <summary>
   /// Specifies the not packed executable option.
   /// </summary>
-NotPackedExecutable,
+  NotPackedExecutable,
   /// <summary>
   /// Specifies the unsupported container option.
   /// </summary>
-UnsupportedContainer,
+  UnsupportedContainer,
   /// <summary>
   /// Specifies the unsupported architecture option.
   /// </summary>
-UnsupportedArchitecture,
+  UnsupportedArchitecture,
   /// <summary>
   /// Specifies the unsupported packer version option.
   /// </summary>
-UnsupportedPackerVersion,
+  UnsupportedPackerVersion,
   /// <summary>
   /// Specifies the payload not found option.
   /// </summary>
-PayloadNotFound,
+  PayloadNotFound,
   /// <summary>
   /// Specifies the unsupported compression method option.
   /// </summary>
-UnsupportedCompressionMethod,
+  UnsupportedCompressionMethod,
   /// <summary>
   /// Specifies the decompression failed option.
   /// </summary>
-DecompressionFailed,
+  DecompressionFailed,
   /// <summary>
   /// Specifies the transform not reversible option.
   /// </summary>
-TransformNotReversible,
+  TransformNotReversible,
   /// <summary>
   /// Specifies the memory image build failed option.
   /// </summary>
-MemoryImageBuildFailed,
+  MemoryImageBuildFailed,
   /// <summary>
   /// Specifies the executable rebuild failed option.
   /// </summary>
-ExecutableRebuildFailed,
+  ExecutableRebuildFailed,
   /// <summary>
   /// Specifies the runnable rebuild not guaranteed option.
   /// </summary>
-RunnableRebuildNotGuaranteed,
+  RunnableRebuildNotGuaranteed,
 }
 
 /// <summary>
@@ -392,24 +392,24 @@ public static class ExecutableContainerParsers {
   /// <summary>
   /// Provides the pe value.
   /// </summary>
-public static readonly IExecutableContainerParser Pe = new PeParser();
+  public static readonly IExecutableContainerParser Pe = new PeParser();
   /// <summary>
   /// Provides the elf value.
   /// </summary>
-public static readonly IExecutableContainerParser Elf = new ElfParser();
+  public static readonly IExecutableContainerParser Elf = new ElfParser();
   /// <summary>
   /// Provides the mach o value.
   /// </summary>
-public static readonly IExecutableContainerParser MachO = new MachOParser();
+  public static readonly IExecutableContainerParser MachO = new MachOParser();
   /// <summary>
   /// Provides the fat mach o value.
   /// </summary>
-public static readonly IExecutableContainerParser FatMachO = new FatMachOParser();
+  public static readonly IExecutableContainerParser FatMachO = new FatMachOParser();
 
   /// <summary>
   /// Parses the best effort from the supplied data.
   /// </summary>
-public static ExecutableImageInfo ParseBestEffort(ReadOnlySpan<byte> image) {
+  public static ExecutableImageInfo ParseBestEffort(ReadOnlySpan<byte> image) {
     foreach (var parser in new[] { Pe, Elf, FatMachO, MachO })
       if (parser.CanParse(image))
         return parser.Parse(image);
@@ -433,18 +433,18 @@ public sealed class PeParser : IExecutableContainerParser {
   /// <summary>
   /// Gets the kind.
   /// </summary>
-public ExecutableContainerKind Kind => ExecutableContainerKind.Pe;
+  public ExecutableContainerKind Kind => ExecutableContainerKind.Pe;
 
   /// <summary>
   /// Performs the can parse operation.
   /// </summary>
-public bool CanParse(ReadOnlySpan<byte> image) =>
+  public bool CanParse(ReadOnlySpan<byte> image) =>
     image.Length >= 0x40 && image[0] == 'M' && image[1] == 'Z' && TryGetPeOffsets(image, out _, out _, out _, out _);
 
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
+  public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
     var diagnostics = new List<ExecutableDiagnostic>();
     if (!TryGetPeOffsets(image, out var peOffset, out var coffOffset, out var optionalOffset, out var sectionTableOffset))
       return Invalid(ExecutableContainerKind.Pe, "PE header is truncated or missing.");
@@ -547,18 +547,18 @@ public sealed class ElfParser : IExecutableContainerParser {
   /// <summary>
   /// Gets the kind.
   /// </summary>
-public ExecutableContainerKind Kind => ExecutableContainerKind.Elf;
+  public ExecutableContainerKind Kind => ExecutableContainerKind.Elf;
 
   /// <summary>
   /// Performs the can parse operation.
   /// </summary>
-public bool CanParse(ReadOnlySpan<byte> image) =>
+  public bool CanParse(ReadOnlySpan<byte> image) =>
     image.Length >= 0x34 && image[0] == 0x7F && image[1] == 'E' && image[2] == 'L' && image[3] == 'F';
 
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
+  public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
     if (!CanParse(image))
       return new(ExecutableContainerKind.Elf, CpuArchitecture.Unknown, 0, 0, [], [], [], [new(ExecutableDiagnosticCode.UnsupportedContainer, "Not an ELF image.", true)]);
 
@@ -648,12 +648,12 @@ public sealed class MachOParser : IExecutableContainerParser {
   /// <summary>
   /// Gets the kind.
   /// </summary>
-public ExecutableContainerKind Kind => ExecutableContainerKind.MachO;
+  public ExecutableContainerKind Kind => ExecutableContainerKind.MachO;
 
   /// <summary>
   /// Performs the can parse operation.
   /// </summary>
-public bool CanParse(ReadOnlySpan<byte> image) {
+  public bool CanParse(ReadOnlySpan<byte> image) {
     if (image.Length < 4) return false;
     var le = BinaryPrimitives.ReadUInt32LittleEndian(image);
     var be = BinaryPrimitives.ReadUInt32BigEndian(image);
@@ -663,7 +663,7 @@ public bool CanParse(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
+  public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
     if (!CanParse(image))
       return new(ExecutableContainerKind.MachO, CpuArchitecture.Unknown, 0, 0, [], [], [], [new(ExecutableDiagnosticCode.UnsupportedContainer, "Not a Mach-O image.", true)]);
 
@@ -745,12 +745,12 @@ public sealed class FatMachOParser : IExecutableContainerParser {
   /// <summary>
   /// Gets the kind.
   /// </summary>
-public ExecutableContainerKind Kind => ExecutableContainerKind.FatMachO;
+  public ExecutableContainerKind Kind => ExecutableContainerKind.FatMachO;
 
   /// <summary>
   /// Performs the can parse operation.
   /// </summary>
-public bool CanParse(ReadOnlySpan<byte> image) {
+  public bool CanParse(ReadOnlySpan<byte> image) {
     if (image.Length < 8) return false;
     var magic = BinaryPrimitives.ReadUInt32BigEndian(image);
     return magic is 0xCAFEBABEu or 0xBEBAFECAu or 0xCAFEBABFu or 0xBFBAFECAu;
@@ -759,7 +759,7 @@ public bool CanParse(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
+  public ExecutableImageInfo Parse(ReadOnlySpan<byte> image) {
     if (!CanParse(image))
       return new(ExecutableContainerKind.FatMachO, CpuArchitecture.Unknown, 0, 0, [], [], [], [new(ExecutableDiagnosticCode.UnsupportedContainer, "Not a fat Mach-O image.", true)]);
 
@@ -833,7 +833,7 @@ public static class ExecutableMemoryImageBuilder {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public static (byte[]? Image, IReadOnlyList<ExecutableRegion> Regions, IReadOnlyList<ExecutableDiagnostic> Diagnostics) Build(
+  public static (byte[]? Image, IReadOnlyList<ExecutableRegion> Regions, IReadOnlyList<ExecutableDiagnostic> Diagnostics) Build(
     ExecutableImageInfo info,
     byte[]? replacementPayload = null,
     string? replacementTargetRegionName = null,
@@ -888,7 +888,7 @@ public static class PeRebuilder {
   /// <summary>
   /// Performs the rebuild synthetic operation.
   /// </summary>
-public static byte[] RebuildSynthetic(ExecutableImageInfo original, byte[] payload) {
+  public static byte[] RebuildSynthetic(ExecutableImageInfo original, byte[] payload) {
     const uint sectionAlignment = 0x1000;
     const uint fileAlignment = 0x200;
     const int peOffset = 0x80;
@@ -958,7 +958,7 @@ public static class ExecutableDiagnosticsJson {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public static byte[] Build(string packer, ExecutableImageInfo? imageInfo, UnpackResult result) {
+  public static byte[] Build(string packer, ExecutableImageInfo? imageInfo, UnpackResult result) {
     var sb = new StringBuilder();
     sb.Append("{\n");
     AppendJson(sb, "packer", packer, comma: true, indent: 2);

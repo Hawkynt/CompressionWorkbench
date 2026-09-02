@@ -23,31 +23,31 @@ public sealed class Fpaq0BuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Fpaq0";
+  public string Id => "BB_Fpaq0";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "FPAQ0";
+  public string DisplayName => "FPAQ0";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Adaptive order-0 binary arithmetic compression";
+  public string Description => "Adaptive order-0 binary arithmetic compression";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     Span<byte> lengthBytes = stackalloc byte[sizeof(int)];
     BinaryPrimitives.WriteInt32LittleEndian(lengthBytes, data.Length);
@@ -78,7 +78,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < sizeof(int))
       throw new InvalidDataException("FPAQ0 stream is missing its original-length header.");
 

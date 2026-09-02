@@ -46,22 +46,22 @@ public sealed class CrushBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Crush";
+  public string Id => "BB_Crush";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Crush";
+  public string DisplayName => "Crush";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Muravyov's LZ77 compressor: bit-tagged tokens with gamma-coded lengths, parsed with a bracket-optimal dynamic program";
+  public string Description => "Muravyov's LZ77 compressor: bit-tagged tokens with gamma-coded lengths, parsed with a bracket-optimal dynamic program";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinMatch = 3;
   private const int MaxWindow = 65536;
@@ -74,7 +74,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -113,7 +113,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

@@ -14,41 +14,41 @@ public static class EmlParser {
   /// <summary>
   /// Represents a part.
   /// </summary>
-public sealed class Part {
+  public sealed class Part {
     /// <summary>
     /// Gets or sets the headers.
     /// </summary>
-public required IReadOnlyDictionary<string, string> Headers { get; init; }
+    public required IReadOnlyDictionary<string, string> Headers { get; init; }
     /// <summary>
     /// Gets or sets the raw body.
     /// </summary>
-public required byte[] RawBody { get; init; }
+    public required byte[] RawBody { get; init; }
     /// <summary>
     /// Gets or sets the decoded body.
     /// </summary>
-public required byte[] DecodedBody { get; init; }
+    public required byte[] DecodedBody { get; init; }
     /// <summary>
     /// Gets or sets the sub parts.
     /// </summary>
-public IReadOnlyList<Part>? SubParts { get; init; }
+    public IReadOnlyList<Part>? SubParts { get; init; }
 
     /// <summary>
     /// Gets the content type.
     /// </summary>
-public string? ContentType => GetHeader("Content-Type");
+    public string? ContentType => GetHeader("Content-Type");
     /// <summary>
     /// Gets the content disposition.
     /// </summary>
-public string? ContentDisposition => GetHeader("Content-Disposition");
+    public string? ContentDisposition => GetHeader("Content-Disposition");
     /// <summary>
     /// Gets the content transfer encoding.
     /// </summary>
-public string? ContentTransferEncoding => GetHeader("Content-Transfer-Encoding");
+    public string? ContentTransferEncoding => GetHeader("Content-Transfer-Encoding");
 
     /// <summary>
     /// Gets the header.
     /// </summary>
-public string? GetHeader(string name) =>
+    public string? GetHeader(string name) =>
       Headers.TryGetValue(name.ToUpperInvariant(), out var v) ? v : null;
 
     /// <summary>Parse the Content-Type mime type, lowercased (e.g. "text/plain").</summary>

@@ -14,11 +14,11 @@ public sealed class BsaReader {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<BsaEntry> Entries => _entries;
+  public IReadOnlyList<BsaEntry> Entries => _entries;
   /// <summary>
   /// Gets the format.
   /// </summary>
-public BsaFormat Format => _format;
+  public BsaFormat Format => _format;
 
   /// <summary>
   /// The generation of the Bethesda archive, which decides the header and folder record layout.
@@ -28,7 +28,7 @@ public BsaFormat Format => _format;
   /// <summary>
   /// Initializes a new instance of <see cref="BsaReader"/>.
   /// </summary>
-public BsaReader(Stream stream) {
+  public BsaReader(Stream stream) {
     _stream = stream;
     using var br = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
     var magic = br.ReadUInt32();

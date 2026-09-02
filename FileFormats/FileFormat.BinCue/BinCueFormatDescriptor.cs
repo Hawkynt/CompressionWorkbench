@@ -19,30 +19,30 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "BIN/CUE is a raw CD-ROM sector image — defragmentation isn't meaningful for a single ISO 9660 track.");
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BinCue";
+  public string Id => "BinCue";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "BIN/CUE";
+  public string DisplayName => "BIN/CUE";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
@@ -50,42 +50,42 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".bin";
+  public string DefaultExtension => ".bin";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".bin", ".cue"];
+  public IReadOnlyList<string> Extensions => [".bin", ".cue"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // No reliable file-header magic: the BIN file is raw sector data and the
   // CUE file is plain text; detection relies on extension.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "BIN/CUE CD-ROM disc image";
+  public string Description => "BIN/CUE CD-ROM disc image";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new BinCueReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
       e.Size, "iso9660", e.IsDirectory, false, null)).ToList();
@@ -94,7 +94,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new BinCueReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -106,7 +106,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // WORM: emit the BIN as plain 2048-byte ISO 9660 cooked sectors. The reader
     // auto-detects this geometry. CUE sheet generation is not produced here -- the
     // Create API only gives us a single output stream; users wanting a CUE can
@@ -154,5 +154,5 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => BinCueLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => BinCueLayoutMap.Enumerate(archive);
 }

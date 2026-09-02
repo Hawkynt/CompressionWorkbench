@@ -37,16 +37,16 @@ public sealed class StackerReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<StackerEntry> Entries => this._entries;
+  public IReadOnlyList<StackerEntry> Entries => this._entries;
 
   /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
-public bool ValidHeader { get; private set; }
+  public bool ValidHeader { get; private set; }
   /// <summary>
   /// Gets or sets the version.
   /// </summary>
-public int Version { get; private set; }
+  public int Version { get; private set; }
 
   /// <summary>Volume path from the SCB banner (e.g. <c>C:\STACVOL.DSK</c>).</summary>
   public string VolumeName { get; private set; } = "";
@@ -54,27 +54,27 @@ public int Version { get; private set; }
   /// <summary>
   /// Gets or sets the reserved sectors.
   /// </summary>
-public int ReservedSectors { get; private set; }
+  public int ReservedSectors { get; private set; }
   /// <summary>
   /// Gets or sets the sectors per cluster.
   /// </summary>
-public int SectorsPerCluster { get; private set; }
+  public int SectorsPerCluster { get; private set; }
   /// <summary>
   /// Gets or sets the number of fats.
   /// </summary>
-public int NumberOfFats { get; private set; }
+  public int NumberOfFats { get; private set; }
   /// <summary>
   /// Gets or sets the sectors per fat.
   /// </summary>
-public int SectorsPerFat { get; private set; }
+  public int SectorsPerFat { get; private set; }
   /// <summary>
   /// Gets or sets the root entries.
   /// </summary>
-public int RootEntries { get; private set; }
+  public int RootEntries { get; private set; }
   /// <summary>
   /// Gets or sets the volume sectors.
   /// </summary>
-public long VolumeSectors { get; private set; }
+  public long VolumeSectors { get; private set; }
 
   /// <summary>Physical sector at which the inner FAT12 image begins (the SCB sector).</summary>
   public long InnerBootSectorOffset { get; private set; }
@@ -82,7 +82,7 @@ public long VolumeSectors { get; private set; }
   /// <summary>
   /// Initializes a new instance of <see cref="StackerReader"/>.
   /// </summary>
-public StackerReader(Stream stream) {
+  public StackerReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     this._data = ms.ToArray();
@@ -253,7 +253,7 @@ public StackerReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(StackerEntry entry) {
+  public byte[] Extract(StackerEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
       return [];
@@ -307,7 +307,7 @@ public byte[] Extract(StackerEntry entry) {
   /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
-public byte[] BuildSurfaceMetadata() {
+  public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidHeader ? "ok" : "invalid").Append('\n');
     b.Append("format=Stacker STACVOL\n");
@@ -327,5 +327,5 @@ public byte[] BuildSurfaceMetadata() {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

@@ -88,7 +88,7 @@ public sealed class XzStream : CompressionStream {
   /// <summary>
   /// Performs the decompress block operation.
   /// </summary>
-protected override int DecompressBlock(byte[] buffer, int offset, int count) {
+  protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (this._finished)
       return 0;
 
@@ -125,7 +125,7 @@ protected override int DecompressBlock(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the compress block operation.
   /// </summary>
-protected override void CompressBlock(byte[] buffer, int offset, int count) {
+  protected override void CompressBlock(byte[] buffer, int offset, int count) {
     this._compressBuffer!.Write(buffer, offset, count);
 
     // .xz files may hold concatenated streams, so closing the current one and
@@ -140,7 +140,7 @@ protected override void CompressBlock(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the finish compression operation.
   /// </summary>
-protected override void FinishCompression() {
+  protected override void FinishCompression() {
     var data = this._compressBuffer!.ToArray();
 
     // Write stream header

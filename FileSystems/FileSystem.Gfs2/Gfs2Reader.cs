@@ -68,53 +68,53 @@ public sealed class Gfs2Reader : IDisposable {
   /// <summary>
   /// Gets a value indicating whether superblock valid.
   /// </summary>
-public bool SuperblockValid { get; private set; }
+  public bool SuperblockValid { get; private set; }
   /// <summary>
   /// Gets or sets the block size.
   /// </summary>
-public uint BlockSize { get; private set; }
+  public uint BlockSize { get; private set; }
   /// <summary>
   /// Gets or sets the block size shift.
   /// </summary>
-public uint BlockSizeShift { get; private set; }
+  public uint BlockSizeShift { get; private set; }
   /// <summary>
   /// Gets or sets the root inode block.
   /// </summary>
-public ulong RootInodeBlock { get; private set; }
+  public ulong RootInodeBlock { get; private set; }
   /// <summary>
   /// Gets or sets the root formal ino.
   /// </summary>
-public ulong RootFormalIno { get; private set; }
+  public ulong RootFormalIno { get; private set; }
   /// <summary>
   /// Gets or sets the master inode block.
   /// </summary>
-public ulong MasterInodeBlock { get; private set; }
+  public ulong MasterInodeBlock { get; private set; }
   /// <summary>
   /// Gets or sets the master formal ino.
   /// </summary>
-public ulong MasterFormalIno { get; private set; }
+  public ulong MasterFormalIno { get; private set; }
   /// <summary>
   /// Gets or sets the lock proto.
   /// </summary>
-public string LockProto { get; private set; } = "";
+  public string LockProto { get; private set; } = "";
   /// <summary>
   /// Gets or sets the lock table.
   /// </summary>
-public string LockTable { get; private set; } = "";
+  public string LockTable { get; private set; } = "";
   /// <summary>
   /// Gets or sets the uuid hex.
   /// </summary>
-public string UuidHex { get; private set; } = "";
+  public string UuidHex { get; private set; } = "";
 
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Gfs2Entry> Entries => this._entries;
+  public IReadOnlyList<Gfs2Entry> Entries => this._entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="Gfs2Reader"/>.
   /// </summary>
-public Gfs2Reader(Stream stream) {
+  public Gfs2Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: a volume's metadata is a small fraction of a
@@ -129,7 +129,7 @@ public Gfs2Reader(Stream stream) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._image.Dispose();
+  public void Dispose() => this._image.Dispose();
 
   /// <summary>Reads one whole block, or an empty span when it falls outside the image.</summary>
   private byte[] Block(long blockNumber) {

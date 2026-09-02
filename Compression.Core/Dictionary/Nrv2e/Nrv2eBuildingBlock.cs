@@ -43,22 +43,22 @@ public sealed class Nrv2eBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Nrv2e";
+  public string Id => "BB_Nrv2e";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "NRV2E";
+  public string DisplayName => "NRV2E";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "UCL NRV2E LE32 — LZ77 + interleaved variable-length integer bit stream (UPX core, method 8)";
+  public string Description => "UCL NRV2E LE32 — LZ77 + interleaved variable-length integer bit stream (UPX core, method 8)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinEmittedLen = 3;
   private const int MaxOffset = 0xFFFFFF;
@@ -68,7 +68,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -155,7 +155,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4) throw new InvalidDataException("NRV2E: input smaller than 4-byte header.");
     var targetSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (targetSize < 0) throw new InvalidDataException("NRV2E: negative decompressed size.");

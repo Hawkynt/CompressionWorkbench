@@ -81,7 +81,7 @@ public sealed class Sn76489Codec {
   /// <summary>
   /// Initializes a new instance of <see cref="Sn76489Codec"/>.
   /// </summary>
-public Sn76489Codec(double clock = 3579545.0) {
+  public Sn76489Codec(double clock = 3579545.0) {
     this._clock = clock;
     // The chip prescales the clock by 16 before the tone/noise dividers; advancing the
     // internal generators at clock/16 keeps the period maths exact.

@@ -34,12 +34,12 @@ public sealed class VhdReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<VhdEntry> Entries => _entries;
+  public IReadOnlyList<VhdEntry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="VhdReader"/>.
   /// </summary>
-public VhdReader(Stream stream, bool leaveOpen = false) {
+  public VhdReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _streamLength = stream.Length;
     _cache = new SectorCache(stream);
@@ -137,7 +137,7 @@ public VhdReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(VhdEntry entry) {
+  public byte[] Extract(VhdEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
 
     if (!_isDynamic) {
@@ -175,5 +175,5 @@ public byte[] Extract(VhdEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => _cache.Dispose();
+  public void Dispose() => _cache.Dispose();
 }

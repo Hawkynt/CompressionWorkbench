@@ -34,26 +34,26 @@ public sealed class GolombFixedMBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_GolombFixedM";
+  public string Id => "BB_GolombFixedM";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Golomb/Rice (fixed M=2)";
+  public string DisplayName => "Golomb/Rice (fixed M=2)";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Golomb/Rice with a constant parameter M=2 and a varint element count — Rice k=1 for zero-heavy residuals";
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <summary>The pinned Golomb parameter.</summary>
   private const int Parameter = 2;
@@ -62,13 +62,13 @@ public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data)
+  public byte[] Compress(ReadOnlySpan<byte> data)
     => GolombBuildingBlock.Compress(data, GolombProfile.FixedParameter, Parameter);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data)
+  public byte[] Decompress(ReadOnlySpan<byte> data)
     => GolombBuildingBlock.Decompress(data, GolombProfile.FixedParameter);
 }

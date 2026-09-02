@@ -33,47 +33,47 @@ public sealed class OrangeFsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<OrangeFsEntry> Entries => _entries;
+  public IReadOnlyList<OrangeFsEntry> Entries => _entries;
 
   /// <summary>
   /// Gets or sets the tag.
   /// </summary>
-public string Tag { get; private set; } = "";
+  public string Tag { get; private set; } = "";
   /// <summary>
   /// Gets or sets the version.
   /// </summary>
-public uint Version { get; private set; }
+  public uint Version { get; private set; }
   /// <summary>
   /// Gets or sets the datastream type.
   /// </summary>
-public uint DatastreamType { get; private set; }
+  public uint DatastreamType { get; private set; }
   /// <summary>
   /// Gets or sets the object size.
   /// </summary>
-public uint ObjectSize { get; private set; }
+  public uint ObjectSize { get; private set; }
   /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
-public bool ValidHeader { get; private set; }
+  public bool ValidHeader { get; private set; }
   /// <summary>
   /// Gets a value indicating whether is orange fs.
   /// </summary>
-public bool IsOrangeFs { get; private set; }
+  public bool IsOrangeFs { get; private set; }
 
   /// <summary>
   /// Provides the pvfs tag value.
   /// </summary>
-public static readonly byte[] PvfsTag = "PVFS"u8.ToArray();
+  public static readonly byte[] PvfsTag = "PVFS"u8.ToArray();
   /// <summary>
   /// Provides the orange fs tag value.
   /// </summary>
-public static readonly byte[] OrangeFsTag = "OGFP"u8.ToArray();
+  public static readonly byte[] OrangeFsTag = "OGFP"u8.ToArray();
   private const int HeaderSize = 16;
 
   /// <summary>
   /// Initializes a new instance of <see cref="OrangeFsReader"/>.
   /// </summary>
-public OrangeFsReader(Stream stream) {
+  public OrangeFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -127,7 +127,7 @@ public OrangeFsReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(OrangeFsEntry entry) {
+  public byte[] Extract(OrangeFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
@@ -135,5 +135,5 @@ public byte[] Extract(OrangeFsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

@@ -27,45 +27,45 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Cso";
+  public string Id => "Cso";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "PSP CSO/ZSO";
+  public string DisplayName => "PSP CSO/ZSO";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".cso";
+  public string DefaultExtension => ".cso";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".cso", ".ziso", ".zso"];
+  public IReadOnlyList<string> Extensions => [".cso", ".ziso", ".zso"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("CISO"u8.ToArray(), Confidence: 0.90),
     new("ZISO"u8.ToArray(), Confidence: 0.90),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("deflate", "Deflate"),
     new("lz4", "LZ4"),
@@ -73,15 +73,15 @@ public IReadOnlyList<FormatMethodInfo> Methods => [
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "PSP CSO (zlib) / ZSO (LZ4) compressed ISO image.";
+  public string Description => "PSP CSO (zlib) / ZSO (LZ4) compressed ISO image.";
 
   private const uint IndexUncompressedMask = 0x8000_0000u;
   private const uint IndexOffsetMask = 0x7FFF_FFFFu;
@@ -102,7 +102,7 @@ public string Description => "PSP CSO (zlib) / ZSO (LZ4) compressed ISO image.";
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var layout = ReadLayout(stream);
     var entries = new List<ArchiveEntryInfo>(4 + layout.BlockCount);
     var ext = layout.IsZso ? "ziso" : "cso";
@@ -134,7 +134,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var layout = ReadLayout(stream);
     var ext = layout.IsZso ? "ziso" : "cso";
     var fullName = $"FULL.{ext}";

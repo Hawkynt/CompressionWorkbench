@@ -15,63 +15,63 @@ public sealed class DngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Dng";
+  public string Id => "Dng";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Adobe DNG / Camera RAW";
+  public string DisplayName => "Adobe DNG / Camera RAW";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Image;
+  public FormatCategory Category => FormatCategory.Image;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".dng";
+  public string DefaultExtension => ".dng";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".dng", ".nef", ".cr2", ".raf", ".arw", ".rw2", ".orf", ".pef", ".srw"];
+  public IReadOnlyList<string> Extensions => [".dng", ".nef", ".cr2", ".raf", ".arw", ".rw2", ".orf", ".pef", ".srw"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // Same byte-order marks as TIFF — use lower confidence than TiffFormatDescriptor (0.85)
   // so plain .tif still dispatches to TIFF. DNG identity is confirmed by extension / DNGVersion tag.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x49, 0x49, 0x2A, 0x00], Confidence: 0.40), // little-endian TIFF
     new([0x4D, 0x4D, 0x00, 0x2A], Confidence: 0.40), // big-endian TIFF
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Embedded JPEG + raw strips")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Embedded JPEG + raw strips")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Adobe DNG (TIFF container) for camera RAW; surfaces thumbnail + previews + raw IFDs.";
+  public string Description => "Adobe DNG (TIFF container) for camera RAW; surfaces thumbnail + previews + raw IFDs.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
@@ -81,7 +81,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
         continue;
@@ -92,7 +92,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);

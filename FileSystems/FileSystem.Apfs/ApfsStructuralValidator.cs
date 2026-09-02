@@ -39,39 +39,39 @@ public static class ApfsStructuralValidator {
     /// <summary>
     /// Gets the errors.
     /// </summary>
-public List<string> Errors { get; } = [];
+    public List<string> Errors { get; } = [];
     /// <summary>
     /// Gets the warnings.
     /// </summary>
-public List<string> Warnings { get; } = [];
+    public List<string> Warnings { get; } = [];
     /// <summary>
     /// Gets or sets the blocks checksum checked.
     /// </summary>
-public int BlocksChecksumChecked { get; set; }
+    public int BlocksChecksumChecked { get; set; }
     /// <summary>
     /// Gets or sets the btree nodes visited.
     /// </summary>
-public int BtreeNodesVisited { get; set; }
+    public int BtreeNodesVisited { get; set; }
     /// <summary>
     /// Gets or sets the fs records scanned.
     /// </summary>
-public int FsRecordsScanned { get; set; }
+    public int FsRecordsScanned { get; set; }
     /// <summary>
     /// Gets or sets the max xid seen.
     /// </summary>
-public ulong MaxXidSeen { get; set; }
+    public ulong MaxXidSeen { get; set; }
     /// <summary>
     /// Gets or sets the container next xid.
     /// </summary>
-public ulong ContainerNextXid { get; set; }
+    public ulong ContainerNextXid { get; set; }
     /// <summary>
     /// Gets a value indicating whether is valid.
     /// </summary>
-public bool IsValid => this.Errors.Count == 0;
+    public bool IsValid => this.Errors.Count == 0;
     /// <summary>
     /// Performs the to string operation.
     /// </summary>
-public override string ToString() {
+    public override string ToString() {
       var sb = new StringBuilder();
       sb.Append($"APFS validator: blocks={this.BlocksChecksumChecked} nodes={this.BtreeNodesVisited} ");
       sb.Append($"records={this.FsRecordsScanned} maxXid={this.MaxXidSeen} nextXid={this.ContainerNextXid}");

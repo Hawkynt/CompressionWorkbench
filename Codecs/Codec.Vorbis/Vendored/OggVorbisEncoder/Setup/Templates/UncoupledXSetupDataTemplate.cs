@@ -11,156 +11,156 @@ public class UncoupledXSetupDataTemplate : ISetupTemplate
     /// <summary>
     /// Gets the mappings.
     /// </summary>
-public int Mappings => SampleRateMapping.Length - 1;
+    public int Mappings => SampleRateMapping.Length - 1;
     /// <summary>
     /// Gets the sample rate mapping.
     /// </summary>
-public double[] SampleRateMapping => PsyX.RateMap;
+    public double[] SampleRateMapping => PsyX.RateMap;
     /// <summary>
     /// Gets the quality mapping.
     /// </summary>
-public double[] QualityMapping => Psy44.QualityMapping;
+    public double[] QualityMapping => Psy44.QualityMapping;
     /// <summary>
     /// Gets the coupling restriction.
     /// </summary>
-public int CouplingRestriction => -1;
+    public int CouplingRestriction => -1;
     /// <summary>
     /// Gets the sample rate min restriction.
     /// </summary>
-public int SampleRateMinRestriction => 50000;
+    public int SampleRateMinRestriction => 50000;
     /// <summary>
     /// Gets the sample rate max restriction.
     /// </summary>
-public int SampleRateMaxRestriction => 200000;
+    public int SampleRateMaxRestriction => 200000;
 
     /// <summary>
     /// Gets the block size short.
     /// </summary>
-public int[] BlockSizeShort => Psy44.BlockSizeShort;
+    public int[] BlockSizeShort => Psy44.BlockSizeShort;
     /// <summary>
     /// Gets the block size long.
     /// </summary>
-public int[] BlockSizeLong => Psy44.BlockSizeLong;
+    public int[] BlockSizeLong => Psy44.BlockSizeLong;
 
     /// <summary>
     /// Gets the psy tone master att.
     /// </summary>
-public Att3[] PsyToneMasterAtt => Psy44.ToneMasterAtt;
+    public Att3[] PsyToneMasterAtt => Psy44.ToneMasterAtt;
     /// <summary>
     /// Gets the psy tone 0 decibel.
     /// </summary>
-public int[] PsyTone0Decibel => Psy.ToneZeroDecibel;
+    public int[] PsyTone0Decibel => Psy.ToneZeroDecibel;
     /// <summary>
     /// Gets the psy tone decibel suppress.
     /// </summary>
-public int[] PsyToneDecibelSuppress => Psy.ToneSuppress;
+    public int[] PsyToneDecibelSuppress => Psy.ToneSuppress;
 
     /// <summary>
     /// Gets the psy tone adj impulse.
     /// </summary>
-public AdjBlock[] PsyToneAdjImpulse => Psy44.VpToneMaskAdjOtherBlock;
+    public AdjBlock[] PsyToneAdjImpulse => Psy44.VpToneMaskAdjOtherBlock;
     /// <summary>
     /// Gets the psy tone adj long.
     /// </summary>
-public AdjBlock[] PsyToneAdjLong => Psy44.VpToneMaskAdjLongBlock;
+    public AdjBlock[] PsyToneAdjLong => Psy44.VpToneMaskAdjLongBlock;
     /// <summary>
     /// Gets the psy tone adj other.
     /// </summary>
-public AdjBlock[] PsyToneAdjOther => Psy44.VpToneMaskAdjOtherBlock;
+    public AdjBlock[] PsyToneAdjOther => Psy44.VpToneMaskAdjOtherBlock;
 
     /// <summary>
     /// Gets the psy noise guards.
     /// </summary>
-public NoiseGuard[] PsyNoiseGuards => Psy44.NoiseGuards;
+    public NoiseGuard[] PsyNoiseGuards => Psy44.NoiseGuards;
     /// <summary>
     /// Gets the psy noise bias impulse.
     /// </summary>
-public Noise3[] PsyNoiseBiasImpulse => Psy.NoiseBiasImpulse;
+    public Noise3[] PsyNoiseBiasImpulse => Psy.NoiseBiasImpulse;
     /// <summary>
     /// Gets the psy noise bias padding.
     /// </summary>
-public Noise3[] PsyNoiseBiasPadding => Psy.NoiseBiasPadding;
+    public Noise3[] PsyNoiseBiasPadding => Psy.NoiseBiasPadding;
     /// <summary>
     /// Gets the psy noise bias trans.
     /// </summary>
-public Noise3[] PsyNoiseBiasTrans => Psy.NoiseBiasTransition;
+    public Noise3[] PsyNoiseBiasTrans => Psy.NoiseBiasTransition;
     /// <summary>
     /// Gets the psy noise bias long.
     /// </summary>
-public Noise3[] PsyNoiseBiasLong => Psy.NoiseBiasLongBlock;
+    public Noise3[] PsyNoiseBiasLong => Psy.NoiseBiasLongBlock;
     /// <summary>
     /// Gets the psy noise decibel suppress.
     /// </summary>
-public int[] PsyNoiseDecibelSuppress => Psy.NoiseSuppress;
+    public int[] PsyNoiseDecibelSuppress => Psy.NoiseSuppress;
 
     /// <summary>
     /// Gets the psy noise compand.
     /// </summary>
-public CompandBlock[] PsyNoiseCompand => Psy44.Compand;
+    public CompandBlock[] PsyNoiseCompand => Psy44.Compand;
     /// <summary>
     /// Gets the psy noise compand short mapping.
     /// </summary>
-public double[] PsyNoiseCompandShortMapping => Psy.CompandShortMapping;
+    public double[] PsyNoiseCompandShortMapping => Psy.CompandShortMapping;
     /// <summary>
     /// Gets the psy noise compand long mapping.
     /// </summary>
-public double[] PsyNoiseCompandLongMapping => Psy.CompandLongMapping;
+    public double[] PsyNoiseCompandLongMapping => Psy.CompandLongMapping;
 
     /// <summary>
     /// Gets the psy noise normal start.
     /// </summary>
-public int[][] PsyNoiseNormalStart => new int[][] { Psy44.NoiseStartShort, Psy44.NoiseStartLong };
+    public int[][] PsyNoiseNormalStart => new int[][] { Psy44.NoiseStartShort, Psy44.NoiseStartLong };
     /// <summary>
     /// Gets the psy noise normal partition.
     /// </summary>
-public int[][] PsyNoiseNormalPartition => new int[][] { Psy44.NoisePartLong, Psy44.NoisePartLong };
+    public int[][] PsyNoiseNormalPartition => new int[][] { Psy44.NoisePartLong, Psy44.NoisePartLong };
     /// <summary>
     /// Gets the psy noise normal threshold.
     /// </summary>
-public double[] PsyNoiseNormalThreshold => Psy44.NoiseThresh;
+    public double[] PsyNoiseNormalThreshold => Psy44.NoiseThresh;
 
     /// <summary>
     /// Gets the psy ath float.
     /// </summary>
-public int[] PsyAthFloat => Psy.AthFloater;
+    public int[] PsyAthFloat => Psy.AthFloater;
     /// <summary>
     /// Gets the psy ath abs.
     /// </summary>
-public int[] PsyAthAbs => Psy.AthAbs;
+    public int[] PsyAthAbs => Psy.AthAbs;
 
     /// <summary>
     /// Gets the psy low pass.
     /// </summary>
-public double[] PsyLowPass => Psy44.Lowpass;
+    public double[] PsyLowPass => Psy44.Lowpass;
 
     /// <summary>
     /// Gets the global params.
     /// </summary>
-public PsyGlobal[] GlobalParams => Psy44.Global;
+    public PsyGlobal[] GlobalParams => Psy44.Global;
     /// <summary>
     /// Gets the global mapping.
     /// </summary>
-public double[] GlobalMapping => Psy44.GlobalMapping;
+    public double[] GlobalMapping => Psy44.GlobalMapping;
     /// <summary>
     /// Gets the stereo modes.
     /// </summary>
-public AdjStereo[] StereoModes => Psy44.StereoModes;
+    public AdjStereo[] StereoModes => Psy44.StereoModes;
 
     /// <summary>
     /// Gets the floor books.
     /// </summary>
-public IStaticCodeBook[][] FloorBooks => SharedFloors.FloorBooks;
+    public IStaticCodeBook[][] FloorBooks => SharedFloors.FloorBooks;
     /// <summary>
     /// Gets the floor params.
     /// </summary>
-public Floor[] FloorParams => SharedFloors.Floor;
+    public Floor[] FloorParams => SharedFloors.Floor;
     /// <summary>
     /// Gets the floor mappings.
     /// </summary>
-public int[][] FloorMappings => Psy44.FloorMapping;
+    public int[][] FloorMappings => Psy44.FloorMapping;
 
     /// <summary>
     /// Gets the maps.
     /// </summary>
-public IMappingTemplate[] Maps => Residue44.MapRes_Uncoupled;
+    public IMappingTemplate[] Maps => Residue44.MapRes_Uncoupled;
 }

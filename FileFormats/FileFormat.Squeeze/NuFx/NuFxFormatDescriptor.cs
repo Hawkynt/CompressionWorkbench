@@ -19,44 +19,44 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "NuFx";
+  public string Id => "NuFx";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "NuFX / ShrinkIt";
+  public string DisplayName => "NuFX / ShrinkIt";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".shk";
+  public string DefaultExtension => ".shk";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".shk", ".sdk", ".bxy"];
+  public IReadOnlyList<string> Extensions => [".shk", ".sdk", ".bxy"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(NuFxArchive.MasterSignature, Offset: 0, Confidence: 0.98f),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("nulzw2", "ShrinkIt LZW/2"),
     new("nulzw1", "ShrinkIt LZW/1"),
     new("lzc16", "UNIX compress LZC-16"),
@@ -78,7 +78,7 @@ public IReadOnlyList<FormatMethodInfo> Methods => [
   /// <summary>
   /// Gets the options schema.
   /// </summary>
-public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("Mode", "Archive mode", FormatOptionKind.Enum, "Files", ["Files", "DiskImage"],
       "Files creates a normal .shk archive. DiskImage creates the single disk-image record used by .sdk."),
     new("FileType", "ProDOS file type", FormatOptionKind.Integer, "0", null,
@@ -92,21 +92,21 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => uint.MaxValue;
+  public long? MaxTotalArchiveSize => uint.MaxValue;
   /// <summary>
   /// Gets the min total archive size.
   /// </summary>
-public long? MinTotalArchiveSize => NuFxArchive.MasterHeaderLength;
+  public long? MinTotalArchiveSize => NuFxArchive.MasterHeaderLength;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "Regular files with slash-separated paths; SDK disk-image mode accepts exactly one file whose size is a multiple of 512 bytes.";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     ArgumentNullException.ThrowIfNull(input);
     if (input.IsDirectory) {
       reason = "NuFX has a directory-control thread, but ShrinkIt did not use it; empty directories cannot be represented portably.";
@@ -132,7 +132,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     RejectPassword(password);
     var archive = NuFxArchive.Parse(stream);
     return archive.Records.Select((record, index) => new ArchiveEntryInfo(
@@ -151,7 +151,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     RejectPassword(password);
     var archive = NuFxArchive.Parse(stream);
     foreach (var record in archive.Records) {
@@ -164,7 +164,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the open entry operation.
   /// </summary>
-public Stream OpenEntry(Stream archive, string entryName, string? password) {
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
     RejectPassword(password);
     var parsed = NuFxArchive.Parse(archive);
     var record = FindRecord(parsed, entryName);
@@ -177,7 +177,7 @@ public Stream OpenEntry(Stream archive, string entryName, string? password) {
   /// <summary>
   /// Performs the extract entry to memory operation.
   /// </summary>
-public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var input = this.OpenEntry(archive, entryName, password);
     using var output = new MemoryStream();
     input.CopyTo(output);
@@ -187,7 +187,7 @@ public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? pas
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
@@ -224,7 +224,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     NuFxArchive.RequireWritablePlainArchive(archive);
@@ -252,7 +252,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames) {
+  public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     entryNames ??= [];
     NuFxArchive.RequireWritablePlainArchive(archive);
@@ -272,13 +272,13 @@ public void Remove(Stream archive, string[] entryNames) {
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     NuFxArchive.RequireWritablePlainArchive(archive);
     if (options.Mode != DefragMode.ConsolidateAtStart)
@@ -294,7 +294,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var parsed = NuFxArchive.Parse(archive);
     yield return new DefragBlockInfo(parsed.StartOffset, NuFxArchive.MasterHeaderLength, DefragBlockKind.Used, FileName: "<NuFX master>");
     foreach (var record in parsed.Records)
@@ -304,7 +304,7 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
   /// <summary>
   /// Performs the shrink operation.
   /// </summary>
-public void Shrink(Stream input, Stream output) {
+  public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     var parsed = NuFxArchive.Parse(input);
@@ -334,7 +334,7 @@ public void Shrink(Stream input, Stream output) {
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
+  public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < NuFxArchive.MasterHeaderLength) {
       issues.Add(new ValidationIssue(ValidationLevel.Header, IssueSeverity.Error, "NUFX_SHORT_HEADER",
@@ -371,7 +371,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateStructure(Stream stream) {
+  public ValidationResult ValidateStructure(Stream stream) {
     try {
       var parsed = NuFxArchive.Parse(stream);
       return Validation(true, 1.0, FormatHealth.Perfect, ValidationLevel.Structure, [],
@@ -386,7 +386,7 @@ public ValidationResult ValidateStructure(Stream stream) {
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateIntegrity(Stream stream) {
+  public ValidationResult ValidateIntegrity(Stream stream) {
     try {
       var parsed = NuFxArchive.Parse(stream);
       var issues = new List<ValidationIssue>();

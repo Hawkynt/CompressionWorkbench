@@ -37,5 +37,5 @@ public sealed class PpmdModelH : PpmdModelBase {
   /// <summary>
   /// Gets the rescale threshold.
   /// </summary>
-protected override int GetRescaleThreshold() => PpmdModelH.RescaleThreshold;
+  protected override int GetRescaleThreshold() => PpmdModelH.RescaleThreshold;
 }

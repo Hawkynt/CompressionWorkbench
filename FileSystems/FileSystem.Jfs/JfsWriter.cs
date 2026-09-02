@@ -30,7 +30,7 @@ public sealed class JfsWriter {
   /// <summary>
   /// Defines the block size constant value.
   /// </summary>
-public const int BlockSize = 4096;
+  public const int BlockSize = 4096;
 
   // Aggregate flags. The log superblock records the same set, so they are
   // named once rather than twice.
@@ -253,7 +253,7 @@ public const int BlockSize = 4096;
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     this._root.Ino = RootIno;
@@ -354,7 +354,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek) {
       var full = this.Build();

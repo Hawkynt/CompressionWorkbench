@@ -10,53 +10,53 @@ public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Bzip2";
+  public string Id => "Bzip2";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "BZip2";
+  public string DisplayName => "BZip2";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Stream;
+  public FormatCategory Category => FormatCategory.Stream;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".bz2";
+  public string DefaultExtension => ".bz2";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".bz2", ".bzip2"];
+  public IReadOnlyList<string> Extensions => [".bz2", ".bzip2"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x42, 0x5A, 0x68], Confidence: 0.85)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x42, 0x5A, 0x68], Confidence: 0.85)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("bzip2", "BZip2", SupportsOptimize: true)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("bzip2", "BZip2", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  public AlgorithmFamily Family => AlgorithmFamily.Classic;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "BWT + MTF + Huffman, good ratio for text data";
+  public string Description => "BWT + MTF + Huffman, good ratio for text data";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
   /// <summary>Block size 1..9 in units of 100 KB (1 = 100 KB blocks, 9 = 900 KB
@@ -85,21 +85,21 @@ public string Description => "BWT + MTF + Huffman, good ratio for text data";
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) {
+  public void Decompress(Stream input, Stream output) {
     using var ds = new Bzip2Stream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
     ds.CopyTo(output);
   }
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) {
+  public void Compress(Stream input, Stream output) {
     using var cs = new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
     input.CopyTo(cs);
   }
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output, FormatCreateOptions options) {
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) {
     using var cs = new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
       blockSize100k: ParseBlockSize(options), leaveOpen: true);
     input.CopyTo(cs);
@@ -107,7 +107,7 @@ public void Compress(Stream input, Stream output, FormatCreateOptions options) {
   /// <summary>
   /// Performs the compress optimal operation.
   /// </summary>
-public void CompressOptimal(Stream input, Stream output) {
+  public void CompressOptimal(Stream input, Stream output) {
     using var cs = new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
       blockSize100k: 9, leaveOpen: true);
     input.CopyTo(cs);
@@ -115,12 +115,12 @@ public void CompressOptimal(Stream input, Stream output) {
   /// <summary>
   /// Performs the wrap decompress operation.
   /// </summary>
-public Stream? WrapDecompress(Stream input) =>
+  public Stream? WrapDecompress(Stream input) =>
     new Bzip2Stream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
   /// <summary>
   /// Performs the wrap compress operation.
   /// </summary>
-public Stream? WrapCompress(Stream output) =>
+  public Stream? WrapCompress(Stream output) =>
     new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
 
   // ── IFormatValidator ─────────────────────────────────────────────
@@ -128,7 +128,7 @@ public Stream? WrapCompress(Stream output) =>
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
+  public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < 4) {
       issues.Add(new(ValidationLevel.Header, IssueSeverity.Error, "BZ2_TOO_SHORT",
@@ -176,7 +176,7 @@ public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateStructure(Stream stream) {
+  public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     // BZip2 is a stream format — structure check verifies stream ends with end-of-stream marker
     if (stream.Length < 14) {
@@ -192,7 +192,7 @@ public ValidationResult ValidateStructure(Stream stream) {
   /// <summary>
   /// Validates the supplied data.
   /// </summary>
-public ValidationResult ValidateIntegrity(Stream stream) {
+  public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
       stream.Seek(0, SeekOrigin.Begin);

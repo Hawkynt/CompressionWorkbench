@@ -9,7 +9,7 @@ public static class MathExtensions
     /// <summary>
     /// Performs the safe abs operation.
     /// </summary>
-public static int SafeAbs(int value)
+    public static int SafeAbs(int value)
     {
         // The absolute value of MinValue of int cannot be represented as int
         // So we return a value that's one less than that. This is technically 

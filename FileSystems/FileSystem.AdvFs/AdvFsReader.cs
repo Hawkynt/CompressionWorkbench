@@ -58,15 +58,15 @@ public sealed class AdvFsReader {
   /// <summary>
   /// Gets a value indicating whether valid.
   /// </summary>
-public bool Valid { get; private set; }
+  public bool Valid { get; private set; }
   /// <summary>
   /// Gets or sets the parse status.
   /// </summary>
-public string ParseStatus { get; private set; } = "unparsed";
+  public string ParseStatus { get; private set; } = "unparsed";
   /// <summary>
   /// Gets or sets the header raw.
   /// </summary>
-public byte[] HeaderRaw { get; private set; } = [];
+  public byte[] HeaderRaw { get; private set; } = [];
 
   /// <summary>
   /// Raw image bytes — kept so the descriptor can resolve <see cref="AdvFsEntry.Offset"/>
@@ -96,7 +96,7 @@ public byte[] HeaderRaw { get; private set; } = [];
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public List<AdvFsEntry> Entries { get; } = new();
+  public List<AdvFsEntry> Entries { get; } = new();
 
   /// <summary>
   /// Random-access view over the source, kept when it is seekable. The buffered
@@ -107,7 +107,7 @@ public List<AdvFsEntry> Entries { get; } = new();
   /// <summary>
   /// Initializes a new instance of <see cref="AdvFsReader"/>.
   /// </summary>
-public AdvFsReader(Stream stream) {
+  public AdvFsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) {
       stream.Position = 0;

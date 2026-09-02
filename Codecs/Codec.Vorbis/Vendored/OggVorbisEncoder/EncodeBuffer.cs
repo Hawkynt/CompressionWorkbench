@@ -28,7 +28,7 @@ public class EncodeBuffer
     /// <summary>
     /// Initializes a new instance of <see cref="EncodeBuffer"/>.
     /// </summary>
-public EncodeBuffer()
+    public EncodeBuffer()
         : this(BufferIncrement)
     {
     }
@@ -36,7 +36,7 @@ public EncodeBuffer()
     /// <summary>
     /// Initializes a new instance of <see cref="EncodeBuffer"/>.
     /// </summary>
-public EncodeBuffer(int initialBufferSize)
+    public EncodeBuffer(int initialBufferSize)
     {
         _buffer = new byte[initialBufferSize];
     }
@@ -46,7 +46,7 @@ public EncodeBuffer(int initialBufferSize)
     /// <summary>
     /// Writes the book to the supplied output.
     /// </summary>
-public void WriteBook(CodeBook book, int a)
+    public void WriteBook(CodeBook book, int a)
     {
         if ((a < 0) || (a >= book.Entries))
             return;
@@ -57,7 +57,7 @@ public void WriteBook(CodeBook book, int a)
     /// <summary>
     /// Writes the string to the supplied output.
     /// </summary>
-public void WriteString(string str)
+    public void WriteString(string str)
     {
         foreach (var c in str)
             Write(c, 8);
@@ -66,7 +66,7 @@ public void WriteString(string str)
     /// <summary>
     /// Writes the value to the supplied output.
     /// </summary>
-public void Write(uint value, int bits)
+    public void Write(uint value, int bits)
     {
         if ((bits < 0) || (bits > 32))
             throw new ArgumentException($"{nameof(bits)} must be between 0 and 32");
@@ -109,7 +109,7 @@ public void Write(uint value, int bits)
     /// <summary>
     /// Gets the bytes.
     /// </summary>
-public byte[] GetBytes()
+    public byte[] GetBytes()
     {
         Array.Resize(ref _buffer, Bytes);
         return _buffer;

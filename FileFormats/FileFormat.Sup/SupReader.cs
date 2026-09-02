@@ -17,23 +17,23 @@ public sealed class SupReader {
   /// <summary>
   /// Defines the seg palette definition constant value.
   /// </summary>
-public const byte SegPaletteDefinition = 0x14;
+  public const byte SegPaletteDefinition = 0x14;
   /// <summary>
   /// Defines the seg object definition constant value.
   /// </summary>
-public const byte SegObjectDefinition = 0x15;
+  public const byte SegObjectDefinition = 0x15;
   /// <summary>
   /// Defines the seg presentation composition constant value.
   /// </summary>
-public const byte SegPresentationComposition = 0x16;
+  public const byte SegPresentationComposition = 0x16;
   /// <summary>
   /// Defines the seg window definition constant value.
   /// </summary>
-public const byte SegWindowDefinition = 0x17;
+  public const byte SegWindowDefinition = 0x17;
   /// <summary>
   /// Defines the seg end constant value.
   /// </summary>
-public const byte SegEnd = 0x80;
+  public const byte SegEnd = 0x80;
 
   /// <summary>A single PGS segment: header fields plus the raw body bytes.</summary>
   public sealed record Segment(

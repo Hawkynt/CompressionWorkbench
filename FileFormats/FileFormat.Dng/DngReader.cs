@@ -15,77 +15,77 @@ public sealed class DngReader {
   /// <summary>
   /// Defines the tag sub if ds constant value.
   /// </summary>
-public const ushort TagSubIFDs = 0x014A;
+  public const ushort TagSubIFDs = 0x014A;
   /// <summary>
   /// Defines the tag strip offsets constant value.
   /// </summary>
-public const ushort TagStripOffsets = 0x0111;
+  public const ushort TagStripOffsets = 0x0111;
   /// <summary>
   /// Defines the tag strip byte counts constant value.
   /// </summary>
-public const ushort TagStripByteCounts = 0x0117;
+  public const ushort TagStripByteCounts = 0x0117;
   /// <summary>
   /// Defines the tag jpeg interchange format constant value.
   /// </summary>
-public const ushort TagJpegInterchangeFormat = 0x0201;
+  public const ushort TagJpegInterchangeFormat = 0x0201;
   /// <summary>
   /// Defines the tag jpeg interchange format length constant value.
   /// </summary>
-public const ushort TagJpegInterchangeFormatLength = 0x0202;
+  public const ushort TagJpegInterchangeFormatLength = 0x0202;
   /// <summary>
   /// Defines the tag compression constant value.
   /// </summary>
-public const ushort TagCompression = 0x0103;
+  public const ushort TagCompression = 0x0103;
   /// <summary>
   /// Defines the tag photometric interpretation constant value.
   /// </summary>
-public const ushort TagPhotometricInterpretation = 0x0106;
+  public const ushort TagPhotometricInterpretation = 0x0106;
   /// <summary>
   /// Defines the tag new sub file type constant value.
   /// </summary>
-public const ushort TagNewSubFileType = 0x00FE;
+  public const ushort TagNewSubFileType = 0x00FE;
   /// <summary>
   /// Defines the tag exif ifd constant value.
   /// </summary>
-public const ushort TagExifIfd = 0x8769;
+  public const ushort TagExifIfd = 0x8769;
   /// <summary>
   /// Defines the tag maker note constant value.
   /// </summary>
-public const ushort TagMakerNote = 0x927C;
+  public const ushort TagMakerNote = 0x927C;
   /// <summary>
   /// Defines the tag dng version constant value.
   /// </summary>
-public const ushort TagDngVersion = 0xC612;
+  public const ushort TagDngVersion = 0xC612;
 
   /// <summary>
   /// Represents an ifd.
   /// </summary>
-public sealed record Ifd(long Offset, IReadOnlyList<Entry> Entries);
+  public sealed record Ifd(long Offset, IReadOnlyList<Entry> Entries);
   /// <summary>
   /// Represents an entry.
   /// </summary>
-public sealed record Entry(ushort Tag, ushort Type, uint Count, uint ValueOrOffset);
+  public sealed record Entry(ushort Tag, ushort Type, uint Count, uint ValueOrOffset);
 
   /// <summary>
   /// Gets a value indicating whether is big endian.
   /// </summary>
-public bool IsBigEndian { get; }
+  public bool IsBigEndian { get; }
   /// <summary>
   /// Gets the top level ifds.
   /// </summary>
-public IReadOnlyList<Ifd> TopLevelIfds { get; }
+  public IReadOnlyList<Ifd> TopLevelIfds { get; }
   /// <summary>
   /// Gets the sub ifds.
   /// </summary>
-public IReadOnlyList<Ifd> SubIfds { get; }
+  public IReadOnlyList<Ifd> SubIfds { get; }
   /// <summary>
   /// Gets the exif ifd.
   /// </summary>
-public Ifd? ExifIfd { get; }
+  public Ifd? ExifIfd { get; }
   /// <summary>
   /// Gets the raw.
   /// </summary>
-public byte[] Raw { get; }
+  public byte[] Raw { get; }
   /// <summary>Size of the <c>DNGVersion</c> tag value or 0 when absent. Used to filter plain TIFF.</summary>
   public int DngVersionLength { get; }
 
@@ -94,7 +94,7 @@ public byte[] Raw { get; }
   /// <summary>
   /// Initializes a new instance of <see cref="DngReader"/>.
   /// </summary>
-public DngReader(byte[] data) {
+  public DngReader(byte[] data) {
     this._data = data;
     this.Raw = data;
     if (data.Length < 8) throw new InvalidDataException("TIFF: too small.");
@@ -156,7 +156,7 @@ public DngReader(byte[] data) {
   /// <summary>
   /// Reads the values as u int 32 from the supplied input.
   /// </summary>
-public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) {
+  public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) {
     // TIFF types: 1=BYTE, 3=SHORT (2), 4=LONG (4), 5=RATIONAL (8).
     var tsize = e.Type switch { 1 => 1, 3 => 2, 4 => 4, _ => 0 };
     if (tsize == 0) return Array.Empty<uint>();
@@ -214,7 +214,7 @@ public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) {
   /// <summary>
   /// Reads the bytes at from the supplied input.
   /// </summary>
-public byte[] ReadBytesAt(long offset, long length) {
+  public byte[] ReadBytesAt(long offset, long length) {
     if (offset < 0 || length <= 0 || offset + length > this._data.Length) return Array.Empty<byte>();
     var result = new byte[length];
     Buffer.BlockCopy(this._data, (int)offset, result, 0, (int)length);

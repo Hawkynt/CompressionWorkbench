@@ -62,7 +62,7 @@ public sealed class Jffs2FileReader {
   /// <summary>
   /// Initializes a new instance of <see cref="Jffs2FileReader"/>.
   /// </summary>
-public Jffs2FileReader(Stream stream) {
+  public Jffs2FileReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     this._accessor = new ImageAccessor(stream);
     this.Parse();
@@ -71,7 +71,7 @@ public Jffs2FileReader(Stream stream) {
   /// <summary>
   /// Initializes a new instance of <see cref="Jffs2FileReader"/>.
   /// </summary>
-public Jffs2FileReader(byte[] image) {
+  public Jffs2FileReader(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
     this._accessor = ImageAccessor.FromBytes(image);
     this.Parse();

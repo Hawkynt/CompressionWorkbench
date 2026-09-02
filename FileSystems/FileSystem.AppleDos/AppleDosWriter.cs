@@ -48,7 +48,7 @@ public sealed class AppleDosWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte fileType, byte[] data) => this._files.Add((name, fileType, data));
+  public void AddFile(string name, byte fileType, byte[] data) => this._files.Add((name, fileType, data));
 
   private static int SectorOffset(int track, int sector) =>
     track * SectorsPerTrack * SectorSize + sector * SectorSize;

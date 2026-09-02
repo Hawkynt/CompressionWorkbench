@@ -19,28 +19,28 @@ public sealed class RpaReader {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<RpaEntry> Entries => _entries;
+  public IReadOnlyList<RpaEntry> Entries => _entries;
   /// <summary>
   /// Gets the version.
   /// </summary>
-public string Version { get; }
+  public string Version { get; }
   /// <summary>
   /// Gets the index offset.
   /// </summary>
-public long IndexOffset { get; }
+  public long IndexOffset { get; }
   /// <summary>
   /// Gets the xor key.
   /// </summary>
-public uint XorKey { get; }
+  public uint XorKey { get; }
   /// <summary>
   /// Gets a value indicating whether pickle parsed.
   /// </summary>
-public bool PickleParsed { get; private set; }
+  public bool PickleParsed { get; private set; }
 
   /// <summary>
   /// Initializes a new instance of <see cref="RpaReader"/>.
   /// </summary>
-public RpaReader(Stream stream) {
+  public RpaReader(Stream stream) {
     this._stream = stream;
     stream.Position = 0;
 

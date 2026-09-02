@@ -14,7 +14,7 @@ public sealed class VdfsWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => _files.Add((name, FilePayload.FromBytes(data)));
+  public void AddFile(string name, byte[] data) => _files.Add((name, FilePayload.FromBytes(data)));
 
   /// <summary>
   /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must

@@ -47,24 +47,24 @@ public sealed class Gfs1Writer {
   /// <summary>
   /// Sets the volume label.
   /// </summary>
-public void SetVolumeLabel(string? s) { if (!string.IsNullOrWhiteSpace(s)) _volumeLabel = s; }
+  public void SetVolumeLabel(string? s) { if (!string.IsNullOrWhiteSpace(s)) _volumeLabel = s; }
   /// <summary>
   /// Sets the journal count.
   /// </summary>
-public void SetJournalCount(int n) => _journalCount = Math.Clamp(n, 1, 32);
+  public void SetJournalCount(int n) => _journalCount = Math.Clamp(n, 1, 32);
   /// <summary>
   /// Sets the lock proto.
   /// </summary>
-public void SetLockProto(string? s) { if (!string.IsNullOrWhiteSpace(s)) _lockProto = s; }
+  public void SetLockProto(string? s) { if (!string.IsNullOrWhiteSpace(s)) _lockProto = s; }
   /// <summary>
   /// Sets the lock table.
   /// </summary>
-public void SetLockTable(string? s) { if (!string.IsNullOrWhiteSpace(s)) _lockTable = s; }
+  public void SetLockTable(string? s) { if (!string.IsNullOrWhiteSpace(s)) _lockTable = s; }
 
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     var n = name.Replace('\\', '/').Trim('/');

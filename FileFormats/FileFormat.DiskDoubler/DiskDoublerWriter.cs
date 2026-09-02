@@ -20,7 +20,7 @@ public sealed class DiskDoublerWriter {
   /// <summary>
   /// Sets the file.
   /// </summary>
-public void SetFile(string name, byte[] data) {
+  public void SetFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     _name = name;
@@ -30,7 +30,7 @@ public void SetFile(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     var hdr = new byte[HeaderSize];

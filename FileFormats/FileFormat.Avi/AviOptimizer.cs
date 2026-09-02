@@ -16,13 +16,13 @@ public sealed class AviOptimizer : IFileInternalChunkMover {
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file) => Optimize(file, null);
+  public void Optimize(Stream file) => Optimize(file, null);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
+  public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
     ArgumentNullException.ThrowIfNull(file);
     if (!file.CanRead || !file.CanWrite || !file.CanSeek)
       throw new ArgumentException("Stream must be readable, writable, and seekable.", nameof(file));

@@ -17,7 +17,7 @@ public sealed class IrcamReader {
   /// <summary>
   /// Represents a parsed ircam.
   /// </summary>
-public sealed record ParsedIrcam(
+  public sealed record ParsedIrcam(
     int SampleRate,
     int Channels,
     uint SampleFormat,
@@ -29,7 +29,7 @@ public sealed record ParsedIrcam(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedIrcam Read(ReadOnlySpan<byte> data) {
+  public ParsedIrcam Read(ReadOnlySpan<byte> data) {
     if (data.Length < DataOffset)
       throw new InvalidDataException("IRCAM file too short for 1024-byte header.");
 

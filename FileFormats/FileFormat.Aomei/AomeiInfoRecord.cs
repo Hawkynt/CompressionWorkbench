@@ -32,7 +32,7 @@ public sealed class AomeiInfoRecord {
   /// <summary>
   /// Initializes a new instance of <see cref="AomeiInfoRecord"/>.
   /// </summary>
-public AomeiInfoRecord(BrStandardHeader header, bool crcValid, byte[] body, long fileOffset) {
+  public AomeiInfoRecord(BrStandardHeader header, bool crcValid, byte[] body, long fileOffset) {
     this.Header = header;
     this.CrcValid = crcValid;
     this.Body = body ?? throw new ArgumentNullException(nameof(body));

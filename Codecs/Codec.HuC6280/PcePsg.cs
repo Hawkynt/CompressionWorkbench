@@ -89,7 +89,7 @@ public sealed class PcePsg {
   /// <summary>
   /// Initializes a new instance of <see cref="PcePsg"/>.
   /// </summary>
-public PcePsg(int outputRate = OutputSampleRate) {
+  public PcePsg(int outputRate = OutputSampleRate) {
     for (var i = 0; i < this._channels.Length; ++i)
       this._channels[i] = new Channel { FrequencyPeriod = 1 };
     this._outputRate = outputRate;

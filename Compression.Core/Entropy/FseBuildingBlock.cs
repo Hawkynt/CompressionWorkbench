@@ -14,22 +14,22 @@ public sealed class FseBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_FSE";
+  public string Id => "BB_FSE";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "FSE/tANS";
+  public string DisplayName => "FSE/tANS";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Table-based Asymmetric Numeral Systems, used in Zstd";
+  public string Description => "Table-based Asymmetric Numeral Systems, used in Zstd";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   private const int DefaultTableLog = 10;
   private const int DefaultTableSize = 1 << DefaultTableLog; // 1024
@@ -38,7 +38,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write uncompressed size (4 bytes, LE).
@@ -145,7 +145,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     var uncompressedSize = BinaryPrimitives.ReadInt32LittleEndian(data);

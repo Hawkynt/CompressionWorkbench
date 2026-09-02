@@ -23,7 +23,7 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the options schema.
   /// </summary>
-public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.ImageSize(["64 MB", "128 MB", "256 MB", "512 MB", "1 GB", "2 GB"]),
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
@@ -31,19 +31,19 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "F2fs";
+  public string Id => "F2fs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "F2FS";
+  public string DisplayName => "F2FS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -51,32 +51,32 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".f2fs";
+  public string DefaultExtension => ".f2fs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".f2fs"];
+  public IReadOnlyList<string> Extensions => [".f2fs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x10, 0x20, 0xF5, 0xF2], Offset: 1024, Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// F2FS flash-friendly filesystem image — R/W via log-structured append.
   /// Add/Remove mutate in place: writes land in the open WARM_DATA/WARM_NODE
@@ -103,20 +103,20 @@ public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the min total archive size.
   /// </summary>
-public long? MinTotalArchiveSize => 64L * 1024 * 1024;
+  public long? MinTotalArchiveSize => 64L * 1024 * 1024;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "F2FS filesystem image (nested directories, inline or hash-bucket dentries).";
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = null; return true; }
     try {
       var length = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
@@ -135,7 +135,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new F2fsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified
@@ -145,7 +145,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new F2fsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -196,7 +196,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var specific = options.FormatSpecific;
@@ -276,7 +276,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -345,7 +345,7 @@ public void Defragment(Stream archive)
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
@@ -420,7 +420,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in. Above that the edit unpacks and relays it out.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
@@ -446,7 +446,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames) {
+  public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
       ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
@@ -542,7 +542,7 @@ public void Remove(Stream archive, string[] entryNames) {
   /// <summary>
   /// Performs the wipe unused space operation.
   /// </summary>
-public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
     if (extents.Count == 0) return 0;

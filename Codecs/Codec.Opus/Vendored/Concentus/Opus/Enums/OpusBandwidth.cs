@@ -38,32 +38,32 @@ namespace Concentus.Enums
     /// <summary>
     /// Specifies opus bandwidth values.
     /// </summary>
-public enum OpusBandwidth
+    public enum OpusBandwidth
     {
         /// <summary>
         /// Specifies the opus bandwidth auto option.
         /// </summary>
-OPUS_BANDWIDTH_AUTO = -1000, 
+        OPUS_BANDWIDTH_AUTO = -1000, 
         /// <summary>
         /// Specifies the opus bandwidth narrowband option.
         /// </summary>
-OPUS_BANDWIDTH_NARROWBAND = 1101,
+        OPUS_BANDWIDTH_NARROWBAND = 1101,
         /// <summary>
         /// Specifies the opus bandwidth mediumband option.
         /// </summary>
-OPUS_BANDWIDTH_MEDIUMBAND = 1102,
+        OPUS_BANDWIDTH_MEDIUMBAND = 1102,
         /// <summary>
         /// Specifies the opus bandwidth wideband option.
         /// </summary>
-OPUS_BANDWIDTH_WIDEBAND = 1103,
+        OPUS_BANDWIDTH_WIDEBAND = 1103,
         /// <summary>
         /// Specifies the opus bandwidth superwideband option.
         /// </summary>
-OPUS_BANDWIDTH_SUPERWIDEBAND = 1104,
+        OPUS_BANDWIDTH_SUPERWIDEBAND = 1104,
         /// <summary>
         /// Specifies the opus bandwidth fullband option.
         /// </summary>
-OPUS_BANDWIDTH_FULLBAND = 1105
+        OPUS_BANDWIDTH_FULLBAND = 1105
     }
 
     // FIXME: We should remove all cases where bandwidth is cast to int, it's.....improper

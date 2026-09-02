@@ -17,11 +17,11 @@ public static class ItsSampleDecoder {
   /// <summary>
   /// Defines the header size constant value.
   /// </summary>
-public const int HeaderSize = 80;
+  public const int HeaderSize = 80;
   /// <summary>
   /// Defines the fallback sample rate constant value.
   /// </summary>
-public const int FallbackSampleRate = 8363;
+  public const int FallbackSampleRate = 8363;
 
   /// <summary>Parsed header fields plus the resolved on-disk PCM data range.</summary>
   /// <remarks>
@@ -143,7 +143,7 @@ public const int FallbackSampleRate = 8363;
   /// <summary>
   /// Reads the ascii trim from the supplied input.
   /// </summary>
-public static string ReadAsciiTrim(byte[] blob, int offset, int length) {
+  public static string ReadAsciiTrim(byte[] blob, int offset, int length) {
     var end = Math.Min(offset + length, blob.Length);
     var sb = new StringBuilder();
     for (var i = offset; i < end; ++i) {
@@ -157,7 +157,7 @@ public static string ReadAsciiTrim(byte[] blob, int offset, int length) {
   /// <summary>
   /// Performs the sanitize file name operation.
   /// </summary>
-public static string SanitizeFileName(string name) {
+  public static string SanitizeFileName(string name) {
     var sb = new StringBuilder(name.Length);
     foreach (var c in name)
       sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_');

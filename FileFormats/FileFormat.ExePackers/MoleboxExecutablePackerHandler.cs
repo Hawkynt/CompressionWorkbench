@@ -91,16 +91,16 @@ public sealed class MoleboxExecutablePackerHandler : MinorExecutablePackerHandle
   /// <summary>
   /// Gets the id.
   /// </summary>
-public override string Id => "molebox";
+  public override string Id => "molebox";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public override string DisplayName => "Molebox";
+  public override string DisplayName => "Molebox";
 
   /// <summary>
   /// Performs the is packer section operation.
   /// </summary>
-protected override bool IsPackerSection(string name) =>
+  protected override bool IsPackerSection(string name) =>
     name.Contains("mole", StringComparison.OrdinalIgnoreCase) ||
     name.Contains("mbx", StringComparison.OrdinalIgnoreCase) ||
     int.TryParse(name, out _);
@@ -108,12 +108,12 @@ protected override bool IsPackerSection(string name) =>
   /// <summary>
   /// Gets the literal signature.
   /// </summary>
-protected override ReadOnlySpan<byte> LiteralSignature => "Molebox"u8;
+  protected override ReadOnlySpan<byte> LiteralSignature => "Molebox"u8;
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public override ExecutableUnpackCapabilities Capabilities =>
+  public override ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -149,7 +149,7 @@ public override ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) =>
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) =>
     this.TryExtract(packed, options, out var result)
       ? result
       : base.Unpack(packed, options);

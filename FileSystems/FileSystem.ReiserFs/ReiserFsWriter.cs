@@ -126,7 +126,7 @@ public sealed class ReiserFsWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     // Preserve the FULL relative path. Path components may carry '/' or '\'

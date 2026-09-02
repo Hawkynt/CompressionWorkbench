@@ -18,62 +18,62 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Qcow2";
+  public string Id => "Qcow2";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "QCOW2";
+  public string DisplayName => "QCOW2";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".qcow2";
+  public string DefaultExtension => ".qcow2";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".qcow2", ".qcow"];
+  public IReadOnlyList<string> Extensions => [".qcow2", ".qcow"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x51, 0x46, 0x49, 0xFB], Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("qcow2", "QCOW2")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("qcow2", "QCOW2")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "QEMU Copy-On-Write disk image";
+  public string Description => "QEMU Copy-On-Write disk image";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (Qcow2Stream.TryOpen(stream) is { } qStream) {
       using (qStream) {
         qStream.Position = 0;
@@ -100,7 +100,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (Qcow2Stream.TryOpen(stream) is { } qStream) {
       using (qStream) {
         qStream.Position = 0;
@@ -128,7 +128,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new Qcow2Writer();
     w.SetDiskImage(fatImage);
@@ -141,7 +141,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Qcow2LayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Qcow2LayoutMap.Enumerate(archive);
 
   // ── IFilesystemExtentMap ────────────────────────────────────────────
 
@@ -149,7 +149,7 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Qcow2Layo
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     if (Qcow2Stream.TryOpen(image) is { } qStream) {
       using (qStream) {
         var inner = InnerFsDetector.Detect(qStream);
@@ -169,7 +169,7 @@ public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (Qcow2Stream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -203,7 +203,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames) {
+  public void Remove(Stream archive, string[] entryNames) {
     if (Qcow2Stream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -239,14 +239,14 @@ public void Remove(Stream archive, string[] entryNames) {
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) {
+  public void Defragment(Stream archive, DefragOptions options) {
     if (Qcow2Stream.TryOpen(archive) is { } qStream) {
       using (qStream) {
         var inner = InnerFsDetector.Detect(qStream);
@@ -316,7 +316,7 @@ public void Defragment(Stream archive, DefragOptions options) {
   /// <summary>
   /// Performs the open guest disk stream operation.
   /// </summary>
-public Stream OpenGuestDiskStream(Stream image) {
+  public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)
       throw new NotSupportedException("Partition editing requires a writable QCOW2 stream.");

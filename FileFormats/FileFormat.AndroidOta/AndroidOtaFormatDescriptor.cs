@@ -26,19 +26,19 @@ public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveForm
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "AndroidOta";
+  public string Id => "AndroidOta";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Android OTA payload";
+  public string DisplayName => "Android OTA payload";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // Android OTA payload files are literally named "payload.bin"; the generic ".bin"
@@ -46,36 +46,36 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".bin";
+  public string DefaultExtension => ".bin";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [];
+  public IReadOnlyList<string> Extensions => [];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("CrAU"u8.ToArray(), Confidence: 0.90)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Android A/B OTA payload (Chromium Autoupdate 'CrAU' container). " +
     "Read-only by spec: the 24-byte header's metadata_signature region holds an RSA " +
     "signature computed over (manifest || data); any in-place mutation of bytes after " +
@@ -102,7 +102,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var layout = ReadLayout(stream);
     return [
       new ArchiveEntryInfo(0, "FULL.bin", layout.FullSize, layout.FullSize, "Stored", false, false, null),
@@ -116,7 +116,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var layout = ReadLayout(stream);
 
     if (Wants(files, "FULL.bin"))

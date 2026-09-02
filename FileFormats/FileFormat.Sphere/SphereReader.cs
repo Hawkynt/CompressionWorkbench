@@ -19,7 +19,7 @@ public sealed class SphereReader {
   /// <summary>
   /// Represents a parsed sphere.
   /// </summary>
-public sealed record ParsedSphere(
+  public sealed record ParsedSphere(
     int ChannelCount,
     int SampleRate,
     int SampleNBytes,
@@ -31,7 +31,7 @@ public sealed record ParsedSphere(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedSphere Read(ReadOnlySpan<byte> data) {
+  public ParsedSphere Read(ReadOnlySpan<byte> data) {
     if (data.Length < 16 || !data[..7].SequenceEqual("NIST_1A"u8))
       throw new InvalidDataException("Missing NIST_1A SPHERE magic.");
 

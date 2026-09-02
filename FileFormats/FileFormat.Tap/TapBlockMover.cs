@@ -18,7 +18,7 @@ public sealed class TapBlockMover : IFilesystemBlockMover {
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
     var buffer = ArrayPool<byte>.Shared.Rent((int)Math.Min(length, 64 * 1024));
     try {
@@ -56,7 +56,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     // TAP has no directory with offset pointers — blocks are parsed
     // sequentially via length words. Allocation metadata is implicit in
     // the block chain structure, so there's nothing to patch. The rebuild

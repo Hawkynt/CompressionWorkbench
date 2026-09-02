@@ -29,7 +29,7 @@ public sealed class HpsReader {
   /// <summary>
   /// Represents a header.
   /// </summary>
-public sealed record Header(
+  public sealed record Header(
     int SampleRate,
     int NumChannels,
     int SampleCount);
@@ -37,7 +37,7 @@ public sealed record Header(
   /// <summary>
   /// Represents a parsed hps.
   /// </summary>
-public sealed record ParsedHps(
+  public sealed record ParsedHps(
     Header Info,
     short[][] Coefs,
     short[][] Pcm);
@@ -49,7 +49,7 @@ public sealed record ParsedHps(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedHps Read(ReadOnlySpan<byte> data) {
+  public ParsedHps Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x10)
       throw new InvalidDataException("HPS too short for header.");
     for (var i = 0; i < 8; ++i)

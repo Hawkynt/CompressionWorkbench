@@ -60,7 +60,7 @@ public sealed class OplCodec {
   /// <summary>
   /// Initializes a new instance of <see cref="OplCodec"/>.
   /// </summary>
-public OplCodec(Chip chip = Chip.Opl2, double clock = 3579545.0) {
+  public OplCodec(Chip chip = Chip.Opl2, double clock = 3579545.0) {
     this._chip = chip;
     this._nativeRate = clock / Prescale;
     // OPL3 implicitly has the extended waveforms available once OPL3 mode is enabled; OPL2 gates

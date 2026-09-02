@@ -84,7 +84,7 @@ public static class ExtModifier {
   /// <summary>
   /// Performs the mutate operation.
   /// </summary>
-public static void Mutate(
+  public static void Mutate(
       Stream archive,
       IReadOnlyList<(string Name, byte[] Data)> replacements,
       IReadOnlyCollection<string> deletions) {

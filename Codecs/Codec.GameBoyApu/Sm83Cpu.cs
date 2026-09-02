@@ -28,19 +28,19 @@ public sealed class Sm83Cpu {
     /// <summary>
     /// Specifies the carry option.
     /// </summary>
-Carry = 0x10,
+    Carry = 0x10,
     /// <summary>
     /// Specifies the half carry option.
     /// </summary>
-HalfCarry = 0x20,
+    HalfCarry = 0x20,
     /// <summary>
     /// Specifies the subtract option.
     /// </summary>
-Subtract = 0x40,
+    Subtract = 0x40,
     /// <summary>
     /// Specifies the zero option.
     /// </summary>
-Zero = 0x80,
+    Zero = 0x80,
   }
 
   private readonly ISm83Bus _bus;
@@ -48,43 +48,43 @@ Zero = 0x80,
   /// <summary>
   /// Provides the a value.
   /// </summary>
-public byte A;
+  public byte A;
   /// <summary>
   /// Provides the f value.
   /// </summary>
-public byte F;
+  public byte F;
   /// <summary>
   /// Provides the b value.
   /// </summary>
-public byte B;
+  public byte B;
   /// <summary>
   /// Provides the c value.
   /// </summary>
-public byte C;
+  public byte C;
   /// <summary>
   /// Provides the d value.
   /// </summary>
-public byte D;
+  public byte D;
   /// <summary>
   /// Provides the e value.
   /// </summary>
-public byte E;
+  public byte E;
   /// <summary>
   /// Provides the h value.
   /// </summary>
-public byte H;
+  public byte H;
   /// <summary>
   /// Provides the l value.
   /// </summary>
-public byte L;
+  public byte L;
   /// <summary>
   /// Provides the sp value.
   /// </summary>
-public ushort SP;
+  public ushort SP;
   /// <summary>
   /// Provides the pc value.
   /// </summary>
-public ushort PC;
+  public ushort PC;
 
   /// <summary>Interrupt-master-enable latch. Tracked for fidelity; no interrupts are delivered.</summary>
   public bool Ime;
@@ -92,14 +92,14 @@ public ushort PC;
   /// <summary>
   /// Initializes a new instance of <see cref="Sm83Cpu"/>.
   /// </summary>
-public Sm83Cpu(ISm83Bus bus) => this._bus = bus;
+  public Sm83Cpu(ISm83Bus bus) => this._bus = bus;
 
   // ── 16-bit register pairs ─────────────────────────────────────────────────────
 
   /// <summary>
   /// Gets or sets the bc.
   /// </summary>
-public ushort BC {
+  public ushort BC {
     get => (ushort)((this.B << 8) | this.C);
     set { this.B = (byte)(value >> 8); this.C = (byte)value; }
   }
@@ -107,7 +107,7 @@ public ushort BC {
   /// <summary>
   /// Gets or sets the de.
   /// </summary>
-public ushort DE {
+  public ushort DE {
     get => (ushort)((this.D << 8) | this.E);
     set { this.D = (byte)(value >> 8); this.E = (byte)value; }
   }
@@ -115,7 +115,7 @@ public ushort DE {
   /// <summary>
   /// Gets or sets the hl.
   /// </summary>
-public ushort HL {
+  public ushort HL {
     get => (ushort)((this.H << 8) | this.L);
     set { this.H = (byte)(value >> 8); this.L = (byte)value; }
   }
@@ -123,7 +123,7 @@ public ushort HL {
   /// <summary>
   /// Gets or sets the af.
   /// </summary>
-public ushort AF {
+  public ushort AF {
     get => (ushort)((this.A << 8) | (this.F & 0xF0));
     set { this.A = (byte)(value >> 8); this.F = (byte)(value & 0xF0); }
   }

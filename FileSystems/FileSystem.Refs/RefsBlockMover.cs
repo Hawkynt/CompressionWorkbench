@@ -15,7 +15,7 @@ public sealed class RefsBlockMover : IFilesystemBlockMover {
   /// <summary>
   /// Initializes a new instance of <see cref="RefsBlockMover"/>.
   /// </summary>
-public RefsBlockMover(Stream image) {
+  public RefsBlockMover(Stream image) {
     var metadata = RefsMetadataReader.Open(image);
     this._clusterSize = metadata.ClusterSize;
   }
@@ -23,20 +23,20 @@ public RefsBlockMover(Stream image) {
   /// <summary>
   /// Gets the allocation block size.
   /// </summary>
-public int AllocationBlockSize => this._clusterSize;
+  public int AllocationBlockSize => this._clusterSize;
   /// <summary>
   /// Gets a value indicating whether supports scattered relink.
   /// </summary>
-public bool SupportsScatteredRelink => true;
+  public bool SupportsScatteredRelink => true;
   /// <summary>
   /// Gets a value indicating whether supports held runs.
   /// </summary>
-public bool SupportsHeldRuns => true;
+  public bool SupportsHeldRuns => true;
 
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
     Compression.Core.DiskImage.ExtentCopy.Move(image, srcOffset, dstOffset, length);
     if (zeroSource) Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, length);
@@ -45,7 +45,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var blocks = checked((int)((length + this._clusterSize - 1) / this._clusterSize));
     var oldBlocks = new long[blocks];
     var newBlocks = new long[blocks];
@@ -59,7 +59,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Performs the update allocation scattered operation.
   /// </summary>
-public void UpdateAllocationScattered(
+  public void UpdateAllocationScattered(
       Stream image,
       string fileName,
       IReadOnlyList<long> oldBlockOffsets,

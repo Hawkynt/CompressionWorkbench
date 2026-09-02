@@ -51,37 +51,37 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "VxFs";
+  public string Id => "VxFs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "VxFS (Veritas)";
+  public string DisplayName => "VxFS (Veritas)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
     | FormatCapabilities.CanCreate;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".vxfs";
+  public string DefaultExtension => ".vxfs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".vxfs"];
+  public IReadOnlyList<string> Extensions => [".vxfs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // Little-endian (x86 / Linux native) — vs_magic = 0xA501FCF5 → F5 FC 01 A5.
     new(VxFsReader.MagicLE, Offset: VxFsReader.SuperblockOffset, Confidence: 0.90f),
     // Big-endian (HP-UX PA-RISC / Solaris SPARC native) — A5 01 FC F5.
@@ -90,25 +90,25 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "VxFS (Veritas File System) volume — files, and a layout pass over them.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -149,7 +149,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAllBounded(stream);
@@ -201,12 +201,12 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => VxFsExtentMap.Enumerate(image);
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => VxFsExtentMap.Enumerate(image);
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>Moves the blocks that are out of place and repoints the inodes.</summary>

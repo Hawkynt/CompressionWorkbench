@@ -10,7 +10,7 @@ public class EnvelopeBand
     /// <summary>
     /// Initializes a new instance of <see cref="EnvelopeBand"/>.
     /// </summary>
-public EnvelopeBand(
+    public EnvelopeBand(
         int begin,
         int windowLength)
     {
@@ -29,13 +29,13 @@ public EnvelopeBand(
     /// <summary>
     /// Gets the begin.
     /// </summary>
-public int Begin { get; }
+    public int Begin { get; }
     /// <summary>
     /// Gets the window.
     /// </summary>
-public float[] Window { get; }
+    public float[] Window { get; }
     /// <summary>
     /// Gets the total.
     /// </summary>
-public float Total { get; }
+    public float Total { get; }
 }

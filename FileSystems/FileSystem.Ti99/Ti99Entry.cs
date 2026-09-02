@@ -8,29 +8,29 @@ public sealed class Ti99Entry {
   /// <summary>
   /// Gets or sets the name.
   /// </summary>
-public string Name { get; init; } = "";
+  public string Name { get; init; } = "";
   /// <summary>
   /// Gets or sets the size.
   /// </summary>
-public long Size { get; init; }
+  public long Size { get; init; }
   /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
-public bool IsDirectory { get; init; }
+  public bool IsDirectory { get; init; }
   /// <summary>
   /// Gets or sets the first sector.
   /// </summary>
-public int FirstSector { get; init; }
+  public int FirstSector { get; init; }
   /// <summary>
   /// Gets or sets the sector count.
   /// </summary>
-public int SectorCount { get; init; }
+  public int SectorCount { get; init; }
   /// <summary>
   /// Gets or sets the file flags.
   /// </summary>
-public byte FileFlags { get; init; }
+  public byte FileFlags { get; init; }
   /// <summary>
   /// Gets or sets the records per sector.
   /// </summary>
-public byte RecordsPerSector { get; init; }
+  public byte RecordsPerSector { get; init; }
 }

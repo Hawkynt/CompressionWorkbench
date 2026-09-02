@@ -38,12 +38,12 @@ namespace Concentus.Enums
     /// <summary>
     /// Specifies opus application values.
     /// </summary>
-public enum OpusApplication
+    public enum OpusApplication
     {
         /// <summary>
         /// Specifies the opus application unimplemented option.
         /// </summary>
-OPUS_APPLICATION_UNIMPLEMENTED = 0,
+        OPUS_APPLICATION_UNIMPLEMENTED = 0,
 
         /// <summary>
         /// Best for most VoIP/videoconference applications where listening quality and intelligibility matter most

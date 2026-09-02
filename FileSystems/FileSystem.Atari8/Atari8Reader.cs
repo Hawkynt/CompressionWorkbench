@@ -34,27 +34,27 @@ public sealed class Atari8Reader : IDisposable {
   /// <summary>
   /// Defines the atr header size constant value.
   /// </summary>
-public const int AtrHeaderSize = 16;
+  public const int AtrHeaderSize = 16;
   /// <summary>
   /// Defines the default sector size constant value.
   /// </summary>
-public const int DefaultSectorSize = 128;
+  public const int DefaultSectorSize = 128;
   /// <summary>
   /// Defines the directory start sector constant value.
   /// </summary>
-public const int DirectoryStartSector = 361;
+  public const int DirectoryStartSector = 361;
   /// <summary>
   /// Defines the directory sector count constant value.
   /// </summary>
-public const int DirectorySectorCount = 8;
+  public const int DirectorySectorCount = 8;
   /// <summary>
   /// Defines the entries per directory sector constant value.
   /// </summary>
-public const int EntriesPerDirectorySector = 8;
+  public const int EntriesPerDirectorySector = 8;
   /// <summary>
   /// Defines the directory entry size constant value.
   /// </summary>
-public const int DirectoryEntrySize = 16;
+  public const int DirectoryEntrySize = 16;
 
   private readonly byte[] _data;
   private readonly List<Atari8Entry> _entries = [];
@@ -65,12 +65,12 @@ public const int DirectoryEntrySize = 16;
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Atari8Entry> Entries => _entries;
+  public IReadOnlyList<Atari8Entry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="Atari8Reader"/>.
   /// </summary>
-public Atari8Reader(Stream stream) {
+  public Atari8Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -93,7 +93,7 @@ public Atari8Reader(Stream stream) {
   /// <summary>
   /// Initializes a new instance of <see cref="Atari8Reader"/>.
   /// </summary>
-public Atari8Reader(byte[] data) : this(new MemoryStream(data)) { }
+  public Atari8Reader(byte[] data) : this(new MemoryStream(data)) { }
 
   /// <summary>Returns the byte offset inside the image for a 1-based sector number.</summary>
   private int SectorOffset(int sector1Based) {
@@ -183,7 +183,7 @@ public Atari8Reader(byte[] data) : this(new MemoryStream(data)) { }
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Atari8Entry entry) {
+  public byte[] Extract(Atari8Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var buf = new List<byte>((int)entry.Size);
     var visited = new HashSet<int>();
@@ -208,5 +208,5 @@ public byte[] Extract(Atari8Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

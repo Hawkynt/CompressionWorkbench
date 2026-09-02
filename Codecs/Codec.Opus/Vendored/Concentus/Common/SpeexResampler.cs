@@ -701,7 +701,7 @@ namespace Concentus.Common
         /// <summary>
         /// Performs the process operation.
         /// </summary>
-public void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)
+        public void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)
         {
             Process(channel_index, input, 0, ref in_len, output, 0, ref out_len);
         }
@@ -762,7 +762,7 @@ public void Process(int channel_index, Span<float> input, ref int in_len, Span<f
         /// <summary>
         /// Performs the process operation.
         /// </summary>
-public void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)
+        public void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)
         {
             Process(channel_index, input, 0, ref in_len, output, 0, ref out_len);
         }
@@ -838,7 +838,7 @@ public void Process(int channel_index, Span<short> input, ref int in_len, Span<s
         /// <summary>
         /// Performs the process interleaved operation.
         /// </summary>
-public void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)
+        public void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)
         {
             int i;
             int istride_save, ostride_save;
@@ -864,7 +864,7 @@ public void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> ou
         /// <summary>
         /// Performs the process interleaved operation.
         /// </summary>
-public void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)
+        public void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)
         {
             int i;
             int istride_save, ostride_save;
@@ -921,7 +921,7 @@ public void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> ou
         /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
-public void Dispose()
+        public void Dispose()
         {
         }
 

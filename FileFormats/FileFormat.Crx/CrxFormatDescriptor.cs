@@ -19,7 +19,7 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag: strips the CRX envelope, defrags the inner ZIP, then re-emits.</summary>
   public void Defragment(Stream archive)
@@ -53,56 +53,56 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileForma
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Crx";
+  public string Id => "Crx";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "CRX";
+  public string DisplayName => "CRX";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".crx";
+  public string DefaultExtension => ".crx";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".crx"];
+  public IReadOnlyList<string> Extensions => [".crx"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'C', (byte)'r', (byte)'2', (byte)'4'], Confidence: 0.95)
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Chrome extension package (CRX3 header + ZIP). The CRX3 header carries a " +
     "SignedData protobuf whose signed_header_data + ZIP body bytes are covered by " +
     "RSA/ECDSA signatures in a repeated KeyProof field; any in-place mutation of " +
@@ -124,7 +124,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     StripCrxHeader(stream);
     var r = new FileFormat.Zip.ZipReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.UncompressedSize, e.CompressedSize,
@@ -134,7 +134,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     StripCrxHeader(stream);
     var r = new FileFormat.Zip.ZipReader(stream, password: password);
     foreach (var e in r.Entries) {
@@ -178,7 +178,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // Write a minimal CRX3 envelope: "Cr24" magic, version 3, empty signed header.
     // Roundtrips through our reader. NOTE: not browser-loadable because the
     // CrxFileHeader protobuf is empty (no signing keys/signatures). Real signing

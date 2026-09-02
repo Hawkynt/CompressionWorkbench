@@ -81,22 +81,22 @@ public sealed class ShocoBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Shoco";
+  public string Id => "BB_Shoco";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Shoco";
+  public string DisplayName => "Shoco";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Shoco's real multi-tier bit-packed successor-chain scheme (1-/2-/4-byte packs, unary tier header), keyed to a locally trained alphabet/successor model";
+  public string Description => "Shoco's real multi-tier bit-packed successor-chain scheme (1-/2-/4-byte packs, unary tier header), keyed to a locally trained alphabet/successor model";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   // A small self-authored sample used only to train the alphabet/successor model
   // below (a pangram plus ordinary prose, to get reasonable digraph statistics
@@ -181,7 +181,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     Span<byte> header = stackalloc byte[4];
@@ -252,7 +252,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalLength = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalLength == 0)
       return [];

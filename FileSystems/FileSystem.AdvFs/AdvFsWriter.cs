@@ -62,7 +62,7 @@ public sealed class AdvFsWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="AdvFsWriter"/>.
   /// </summary>
-public AdvFsWriter(Stream output, bool leaveOpen = false) {
+  public AdvFsWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
     this._leaveOpen = leaveOpen;
@@ -254,7 +254,7 @@ public AdvFsWriter(Stream output, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }
 }

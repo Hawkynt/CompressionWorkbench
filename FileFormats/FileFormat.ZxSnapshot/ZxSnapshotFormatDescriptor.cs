@@ -23,74 +23,74 @@ public sealed class ZxSnapshotFormatDescriptor : IFormatDescriptor, IArchiveForm
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "ZxSnapshot";
+  public string Id => "ZxSnapshot";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "ZX Spectrum Snapshot / Tape";
+  public string DisplayName => "ZX Spectrum Snapshot / Tape";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".z80";
+  public string DefaultExtension => ".z80";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".sna", ".z80", ".tap", ".tzx"];
+  public IReadOnlyList<string> Extensions => [".sna", ".z80", ".tap", ".tzx"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   // Only TZX has a reliable magic. TZX: "ZXTape!\x1A"
   /// <summary>
   /// Provides the tzx magic value.
   /// </summary>
-public static readonly byte[] TzxMagic = [0x5A, 0x58, 0x54, 0x61, 0x70, 0x65, 0x21, 0x1A];
+  public static readonly byte[] TzxMagic = [0x5A, 0x58, 0x54, 0x61, 0x70, 0x65, 0x21, 0x1A];
 
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures =>
+  public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new(TzxMagic, Offset: 0, Confidence: 0.98)];
 
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "ZX Spectrum snapshot (.sna/.z80) and tape (.tap/.tzx) formats";
+  public string Description => "ZX Spectrum snapshot (.sna/.z80) and tape (.tap/.tzx) formats";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Data.Length, e.Data.Length, "Stored", false, false, null)).ToList();
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);

@@ -5,23 +5,23 @@ public sealed class MpqEntry {
   /// <summary>
   /// Gets or sets the file name.
   /// </summary>
-public string FileName { get; init; } = "";
+  public string FileName { get; init; } = "";
   /// <summary>
   /// Gets or sets the original size.
   /// </summary>
-public long OriginalSize { get; init; }
+  public long OriginalSize { get; init; }
   /// <summary>
   /// Gets or sets the compressed size.
   /// </summary>
-public long CompressedSize { get; init; }
+  public long CompressedSize { get; init; }
   /// <summary>
   /// Gets or sets the flags.
   /// </summary>
-public uint Flags { get; init; }
+  public uint Flags { get; init; }
   /// <summary>
   /// Gets or sets the file offset.
   /// </summary>
-public long FileOffset { get; init; }
+  public long FileOffset { get; init; }
 
   /// <summary>File exists in archive.</summary>
   public bool Exists => (Flags & 0x80000000) != 0;

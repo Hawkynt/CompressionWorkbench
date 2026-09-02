@@ -137,7 +137,7 @@ public sealed class XfsWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((NormalizeName(name), data, null, null));
@@ -261,7 +261,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     var prefix = this.BuildImage();
     var basePosition = output.CanSeek ? output.Position : 0;

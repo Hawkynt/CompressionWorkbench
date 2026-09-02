@@ -11,39 +11,39 @@ public sealed class FitsHdu {
   /// <summary>
   /// Gets the cards.
   /// </summary>
-public List<string> Cards { get; } = new();
+  public List<string> Cards { get; } = new();
   /// <summary>
   /// Gets or sets the xtension.
   /// </summary>
-public string? Xtension { get; set; }
+  public string? Xtension { get; set; }
   /// <summary>
   /// Gets or sets the bitpix.
   /// </summary>
-public int Bitpix { get; set; }
+  public int Bitpix { get; set; }
   /// <summary>
   /// Gets or sets the naxis.
   /// </summary>
-public int Naxis { get; set; }
+  public int Naxis { get; set; }
   /// <summary>
   /// Gets the axis sizes.
   /// </summary>
-public List<long> AxisSizes { get; } = new();
+  public List<long> AxisSizes { get; } = new();
   /// <summary>
   /// Gets or sets the data offset.
   /// </summary>
-public long DataOffset { get; set; }
+  public long DataOffset { get; set; }
   /// <summary>
   /// Gets or sets the data length.
   /// </summary>
-public long DataLength { get; set; }
+  public long DataLength { get; set; }
   /// <summary>
   /// Gets or sets the object.
   /// </summary>
-public string? Object { get; set; }
+  public string? Object { get; set; }
   /// <summary>
   /// Gets or sets the telescope.
   /// </summary>
-public string? Telescope { get; set; }
+  public string? Telescope { get; set; }
 }
 
 /// <summary>

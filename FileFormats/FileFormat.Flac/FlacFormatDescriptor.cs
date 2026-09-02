@@ -18,75 +18,75 @@ public sealed class FlacFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FlacLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FlacLayoutMap.Enumerate(archive);
 
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Flac";
+  public string Id => "Flac";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "FLAC";
+  public string DisplayName => "FLAC";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Stream;
+  public FormatCategory Category => FormatCategory.Stream;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.CanList | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".flac";
+  public string DefaultExtension => ".flac";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".flac", ".fla"];
+  public IReadOnlyList<string> Extensions => [".flac", ".fla"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x66, 0x4C, 0x61, 0x43], Confidence: 0.95)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x66, 0x4C, 0x61, 0x43], Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("flac", "FLAC")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("flac", "FLAC")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Free Lossless Audio Codec; full file + decoded per-channel PCM.";
+  public string Description => "Free Lossless Audio Codec; full file + decoded per-channel PCM.";
 
   // ── IStreamFormatOperations ──────────────────────────────────────────
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) => FlacReader.Decompress(input, output);
+  public void Decompress(Stream input, Stream output) => FlacReader.Decompress(input, output);
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) => FlacWriter.Compress(input, output);
+  public void Compress(Stream input, Stream output) => FlacWriter.Compress(input, output);
 
   // ── IArchiveFormatOperations ─────────────────────────────────────────
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
@@ -97,7 +97,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
         continue;
@@ -110,7 +110,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);

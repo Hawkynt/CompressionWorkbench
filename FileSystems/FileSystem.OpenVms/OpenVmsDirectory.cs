@@ -64,7 +64,7 @@ public static class OpenVmsDirectory {
     /// <summary>
     /// Gets a value indicating whether is free.
     /// </summary>
-public bool IsFree => this.FileId == 0;
+    public bool IsFree => this.FileId == 0;
   }
 
   /// <summary>Bytes the record for <paramref name="name" /> takes, one version of it.</summary>

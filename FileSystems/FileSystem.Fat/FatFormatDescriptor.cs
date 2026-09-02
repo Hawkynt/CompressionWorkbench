@@ -121,11 +121,11 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the canonical sizes.
   /// </summary>
-public IReadOnlyList<long> CanonicalSizes => [737280, 1474560, 2949120];
+  public IReadOnlyList<long> CanonicalSizes => [737280, 1474560, 2949120];
   /// <summary>
   /// Performs the shrink operation.
   /// </summary>
-public void Shrink(Stream input, Stream output) =>
+  public void Shrink(Stream input, Stream output) =>
     Compression.Registry.ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
@@ -134,7 +134,7 @@ public void Shrink(Stream input, Stream output) =>
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new FatBlockMover();
     mover.Init(image); // reads only the 512-byte BPB
     mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
@@ -144,7 +144,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new FatBlockMover();
     mover.Init(image); // reads only the 512-byte BPB
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
@@ -618,62 +618,62 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Fat";
+  public string Id => "Fat";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "FAT Filesystem Image";
+  public string DisplayName => "FAT Filesystem Image";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // R/W: add/remove edit the FAT, clusters and directory in place (FatModifier /
   // FatRemover); existing files and the boot sector stay byte-identical. A verified
   // rebuild is only a structural-edge-case fallback. See FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".img";
+  public string DefaultExtension => ".img";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp", ".fat"];
+  public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp", ".fat"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "FAT12/FAT16/FAT32 filesystem image";
+  public string Description => "FAT12/FAT16/FAT32 filesystem image";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new FatReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified
@@ -683,7 +683,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new FatReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -730,7 +730,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     // A seekable target takes the streaming route: the writer then places file
@@ -954,7 +954,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var items0 = inputs.Where(i => !i.IsDirectory)
       .Select(i => (Name: i.ArchiveName, Data: i.ReadContent(),
                     Mtime: i.InMemoryContent != null ? (DateTime?)null : File.GetLastWriteTime(i.FullPath)))

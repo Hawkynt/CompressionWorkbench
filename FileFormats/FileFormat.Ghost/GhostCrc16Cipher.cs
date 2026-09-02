@@ -36,7 +36,7 @@ public sealed class GhostCrc16Cipher {
   /// <summary>
   /// Initializes a new instance of <see cref="GhostCrc16Cipher"/>.
   /// </summary>
-public GhostCrc16Cipher(string password) {
+  public GhostCrc16Cipher(string password) {
     if (string.IsNullOrEmpty(password))
       throw new ArgumentException("Ghost: encrypted images require a non-empty password.", nameof(password));
     this._state = 0xFFFF;

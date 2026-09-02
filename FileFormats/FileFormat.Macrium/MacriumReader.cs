@@ -132,7 +132,7 @@ public sealed class MacriumReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="MacriumReader"/>.
   /// </summary>
-public MacriumReader(Stream stream) : this(stream, password: null) { }
+  public MacriumReader(Stream stream) : this(stream, password: null) { }
 
   /// <summary>
   /// Constructs a reader; the optional <paramref name="password"/> unlocks
@@ -617,7 +617,7 @@ public MacriumReader(Stream stream) : this(stream, password: null) { }
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(MacriumEntry entry) {
+  public byte[] Extract(MacriumEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
@@ -625,5 +625,5 @@ public byte[] Extract(MacriumEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

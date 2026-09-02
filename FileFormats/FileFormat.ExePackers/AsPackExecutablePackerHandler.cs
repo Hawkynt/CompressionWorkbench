@@ -29,20 +29,20 @@ public sealed class AsPackExecutablePackerHandler : AplibSectionPackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public override string Id => "aspack";
+  public override string Id => "aspack";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public override string DisplayName => "ASPack (Win32 PE)";
+  public override string DisplayName => "ASPack (Win32 PE)";
   /// <summary>
   /// Gets the packer label.
   /// </summary>
-protected override string PackerLabel => "ASPack";
+  protected override string PackerLabel => "ASPack";
 
   /// <summary>
   /// Performs the detect pe operation.
   /// </summary>
-protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
     var sections = PackerScanner.GetPeSections(image);
     var hasSection = sections.Any(s =>
       s.Name.Equals(".aspack", StringComparison.OrdinalIgnoreCase) ||
@@ -56,7 +56,7 @@ protected override (bool Match, double Confidence, string Reason) DetectPe(ReadO
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return base.Unpack(packed, options);
     if (!AsPackImage.TryRead(packed.OriginalImage, packed.ImageInfo, out var layout)

@@ -49,24 +49,24 @@ public sealed class JdpackExecutablePackerHandler : MinorExecutablePackerHandler
   /// <summary>
   /// Gets the id.
   /// </summary>
-public override string Id => "jdpack";
+  public override string Id => "jdpack";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public override string DisplayName => "JDPack";
+  public override string DisplayName => "JDPack";
   /// <summary>
   /// Performs the is packer section operation.
   /// </summary>
-protected override bool IsPackerSection(string name) => name.Contains("jd", StringComparison.OrdinalIgnoreCase);
+  protected override bool IsPackerSection(string name) => name.Contains("jd", StringComparison.OrdinalIgnoreCase);
   /// <summary>
   /// Gets the literal signature.
   /// </summary>
-protected override ReadOnlySpan<byte> LiteralSignature => "JDPack"u8;
+  protected override ReadOnlySpan<byte> LiteralSignature => "JDPack"u8;
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public override ExecutableUnpackCapabilities Capabilities =>
+  public override ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -77,7 +77,7 @@ public override ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     var artifacts = new List<UnpackArtifact> {
       new("metadata.json", this.BuildMetadataJson(packed), "stored"),

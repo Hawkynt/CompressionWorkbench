@@ -26,15 +26,15 @@ public enum GhostGenerationHint {
   /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
-Unknown = 0,
+  Unknown = 0,
   /// <summary>
   /// Specifies the possibly legacy 4 to 7 option.
   /// </summary>
-PossiblyLegacy4To7 = 1,
+  PossiblyLegacy4To7 = 1,
   /// <summary>
   /// Specifies the possibly modern 8 plus option.
   /// </summary>
-PossiblyModern8Plus = 2,
+  PossiblyModern8Plus = 2,
   /// <summary>
   /// Ghost 11.x / 12.x record container — the format <see cref="GhostReader"/>
   /// is reverse-engineered against (via nyarime/gho). Parses fully when this

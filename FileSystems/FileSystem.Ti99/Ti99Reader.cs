@@ -47,11 +47,11 @@ public sealed class Ti99Reader : IDisposable {
   /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
-public const int SectorSize = 256;
+  public const int SectorSize = 256;
   /// <summary>
   /// Defines the tifiles header size constant value.
   /// </summary>
-public const int TifilesHeaderSize = 128;
+  public const int TifilesHeaderSize = 128;
 
   private readonly byte[] _data;
   private readonly List<Ti99Entry> _entries = [];
@@ -59,44 +59,44 @@ public const int TifilesHeaderSize = 128;
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Ti99Entry> Entries => _entries;
+  public IReadOnlyList<Ti99Entry> Entries => _entries;
   /// <summary>
   /// Gets a value indicating whether valid volume.
   /// </summary>
-public bool ValidVolume { get; private set; }
+  public bool ValidVolume { get; private set; }
   /// <summary>
   /// Gets a value indicating whether is tifiles wrapper.
   /// </summary>
-public bool IsTifilesWrapper { get; private set; }
+  public bool IsTifilesWrapper { get; private set; }
   /// <summary>
   /// Gets or sets the volume name.
   /// </summary>
-public string VolumeName { get; private set; } = "";
+  public string VolumeName { get; private set; } = "";
   /// <summary>
   /// Gets or sets the total sectors.
   /// </summary>
-public int TotalSectors { get; private set; }
+  public int TotalSectors { get; private set; }
   /// <summary>
   /// Gets or sets the sectors per track.
   /// </summary>
-public int SectorsPerTrack { get; private set; }
+  public int SectorsPerTrack { get; private set; }
   /// <summary>
   /// Gets or sets the tracks.
   /// </summary>
-public int Tracks { get; private set; }
+  public int Tracks { get; private set; }
   /// <summary>
   /// Gets or sets the sides.
   /// </summary>
-public int Sides { get; private set; }
+  public int Sides { get; private set; }
   /// <summary>
   /// Gets or sets the density.
   /// </summary>
-public int Density { get; private set; }
+  public int Density { get; private set; }
 
   /// <summary>
   /// Initializes a new instance of <see cref="Ti99Reader"/>.
   /// </summary>
-public Ti99Reader(Stream stream) {
+  public Ti99Reader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -207,7 +207,7 @@ public Ti99Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Ti99Entry entry) {
+  public byte[] Extract(Ti99Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (this.IsTifilesWrapper) {
@@ -225,7 +225,7 @@ public byte[] Extract(Ti99Entry entry) {
   /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
-public byte[] BuildSurfaceMetadata() {
+  public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidVolume ? "ok" : "invalid").Append('\n');
     b.Append("format=").Append(this.IsTifilesWrapper ? "TIFiles" : "TI-99/4A DSR sector image").Append('\n');
@@ -242,5 +242,5 @@ public byte[] BuildSurfaceMetadata() {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

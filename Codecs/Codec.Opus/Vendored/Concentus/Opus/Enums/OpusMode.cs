@@ -38,23 +38,23 @@ namespace Concentus.Enums
     /// <summary>
     /// Specifies opus mode values.
     /// </summary>
-public enum OpusMode
+    public enum OpusMode
     {
         /// <summary>
         /// Specifies the mode auto option.
         /// </summary>
-MODE_AUTO = -1000,
+        MODE_AUTO = -1000,
         /// <summary>
         /// Specifies the mode silk only option.
         /// </summary>
-MODE_SILK_ONLY = 1000,
+        MODE_SILK_ONLY = 1000,
         /// <summary>
         /// Specifies the mode hybrid option.
         /// </summary>
-MODE_HYBRID = 1001,
+        MODE_HYBRID = 1001,
         /// <summary>
         /// Specifies the mode celt only option.
         /// </summary>
-MODE_CELT_ONLY = 1002
+        MODE_CELT_ONLY = 1002
     }
 }

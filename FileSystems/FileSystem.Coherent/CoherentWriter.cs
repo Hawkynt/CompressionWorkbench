@@ -67,7 +67,7 @@ public sealed class CoherentWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="CoherentWriter"/>.
   /// </summary>
-public CoherentWriter(Stream output, bool leaveOpen = false) {
+  public CoherentWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
     this._leaveOpen = leaveOpen;
@@ -371,7 +371,7 @@ public CoherentWriter(Stream output, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }
 }

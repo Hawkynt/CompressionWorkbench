@@ -166,7 +166,7 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipLayoutMap.Enumerate(archive);
 
   /// <summary>
   /// Zeros every dead byte in the archive: gaps between packed solid blocks and any
@@ -185,22 +185,22 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipL
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Cb7";
+  public string Id => "Cb7";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "CB7";
+  public string DisplayName => "CB7";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable comic-book archive (7z variant). Add/Replace/Remove take the
   // genuine in-place 7z block editors where byte-additive, else the verified
   // extract -> edit -> re-create rebuild. See FormatCapabilities.cs (WORM vs R/W).
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
@@ -208,43 +208,43 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".cb7";
+  public string DefaultExtension => ".cb7";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".cb7"];
+  public IReadOnlyList<string> Extensions => [".cb7"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // No magic: a .cb7 is byte-for-byte a 7z archive, so a content scan must resolve to
   // SevenZip (the real format). Cb7 is identified by extension only, exactly as the
   // sibling comic wrappers Cbr (RAR) and Cbz (ZIP) declare no signature.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma2", "LZMA2")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma2", "LZMA2")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Comic book 7-Zip archive";
+  public string Description => "Comic book 7-Zip archive";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SevenZipReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
       string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
@@ -253,7 +253,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new SevenZipReader(stream, password: password);
     for (var i = 0; i < r.Entries.Count; ++i) {
       var e = r.Entries[i];
@@ -266,7 +266,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var password = !string.IsNullOrEmpty(options.Password) ? options.Password : null;
     var w = new SevenZipWriter(output, SevenZipCodec.Lzma2, password: password);
     foreach (var i in inputs)

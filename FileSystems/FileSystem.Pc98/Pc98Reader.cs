@@ -35,15 +35,15 @@ public sealed class Pc98Reader : IDisposable {
   /// <summary>
   /// Defines the sector size constant value.
   /// </summary>
-public const int SectorSize = 512;
+  public const int SectorSize = 512;
   /// <summary>
   /// Defines the ipl offset constant value.
   /// </summary>
-public const int IplOffset = 0;
+  public const int IplOffset = 0;
   /// <summary>
   /// Defines the bpb offset constant value.
   /// </summary>
-public const int BpbOffset = 0x80;
+  public const int BpbOffset = 0x80;
 
   private readonly byte[] _data;
   private readonly List<Pc98Entry> _entries = [];
@@ -51,41 +51,41 @@ public const int BpbOffset = 0x80;
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Pc98Entry> Entries => _entries;
+  public IReadOnlyList<Pc98Entry> Entries => _entries;
   /// <summary>
   /// Gets a value indicating whether valid volume.
   /// </summary>
-public bool ValidVolume { get; private set; }
+  public bool ValidVolume { get; private set; }
   /// <summary>
   /// Gets or sets the sectors per cluster.
   /// </summary>
-public int SectorsPerCluster { get; private set; }
+  public int SectorsPerCluster { get; private set; }
   /// <summary>
   /// Gets or sets the reserved sectors.
   /// </summary>
-public int ReservedSectors { get; private set; }
+  public int ReservedSectors { get; private set; }
   /// <summary>
   /// Gets or sets the fat count.
   /// </summary>
-public int FatCount { get; private set; }
+  public int FatCount { get; private set; }
   /// <summary>
   /// Gets or sets the root entries.
   /// </summary>
-public int RootEntries { get; private set; }
+  public int RootEntries { get; private set; }
   /// <summary>
   /// Gets or sets the sectors per fat.
   /// </summary>
-public int SectorsPerFat { get; private set; }
+  public int SectorsPerFat { get; private set; }
 
   /// <summary>
   /// Provides the signature value.
   /// </summary>
-public static readonly byte[] Signature = "NECIPL"u8.ToArray();
+  public static readonly byte[] Signature = "NECIPL"u8.ToArray();
 
   /// <summary>
   /// Initializes a new instance of <see cref="Pc98Reader"/>.
   /// </summary>
-public Pc98Reader(Stream stream) {
+  public Pc98Reader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -170,7 +170,7 @@ public Pc98Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Pc98Entry entry) {
+  public byte[] Extract(Pc98Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (this.SectorsPerCluster <= 0) return [];
@@ -187,7 +187,7 @@ public byte[] Extract(Pc98Entry entry) {
   /// <summary>
   /// Performs the build surface metadata operation.
   /// </summary>
-public byte[] BuildSurfaceMetadata() {
+  public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidVolume ? "ok" : "invalid").Append('\n');
     b.Append("format=NEC PC-98 DOS FAT\n");
@@ -203,5 +203,5 @@ public byte[] BuildSurfaceMetadata() {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

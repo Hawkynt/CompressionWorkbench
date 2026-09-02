@@ -28,15 +28,15 @@ public sealed class OpusResampler {
   /// <summary>
   /// Gets the input rate.
   /// </summary>
-public int InputRate { get; }
+  public int InputRate { get; }
   /// <summary>
   /// Gets the output rate.
   /// </summary>
-public int OutputRate { get; }
+  public int OutputRate { get; }
   /// <summary>
   /// Gets the channels.
   /// </summary>
-public int Channels { get; }
+  public int Channels { get; }
 
   /// <summary>Resamples <paramref name="input"/> (interleaved float) into <paramref name="output"/>.</summary>
   public int Resample(ReadOnlySpan<float> input, Span<float> output) {

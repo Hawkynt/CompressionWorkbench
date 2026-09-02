@@ -52,11 +52,11 @@ public static class XaAdpcmCodec {
     /// <summary>
     /// Provides the h 1 value.
     /// </summary>
-public int H1;
+    public int H1;
     /// <summary>
     /// Provides the h 2 value.
     /// </summary>
-public int H2;
+    public int H2;
   }
 
   /// <summary>

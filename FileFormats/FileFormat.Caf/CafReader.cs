@@ -33,7 +33,7 @@ public sealed class CafReader {
   /// <summary>
   /// Represents a parsed caf.
   /// </summary>
-public sealed record ParsedCaf(
+  public sealed record ParsedCaf(
     int NumChannels,
     int SampleRate,
     int BitsPerSample,
@@ -50,7 +50,7 @@ public sealed record ParsedCaf(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedCaf Read(ReadOnlySpan<byte> data) {
+  public ParsedCaf Read(ReadOnlySpan<byte> data) {
     if (data.Length < 8)
       throw new InvalidDataException("CAF too short for file header.");
     if (data[0] != 'c' || data[1] != 'a' || data[2] != 'f' || data[3] != 'f')

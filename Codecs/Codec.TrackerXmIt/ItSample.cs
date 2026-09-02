@@ -13,72 +13,72 @@ public sealed class ItSample {
   /// <summary>
   /// Provides the name value.
   /// </summary>
-public string Name = "";
+  public string Name = "";
   /// <summary>
   /// Provides the global volume value.
   /// </summary>
-public int GlobalVolume = 64;
+  public int GlobalVolume = 64;
   /// <summary>
   /// Provides the default volume value.
   /// </summary>
-public int DefaultVolume = 64;
+  public int DefaultVolume = 64;
   /// <summary>
   /// Provides the default pan value.
   /// </summary>
-public int DefaultPan = 32;   // 0..64, bit7 = use
+  public int DefaultPan = 32;   // 0..64, bit7 = use
   /// <summary>
   /// Provides the use pan value.
   /// </summary>
-public bool UsePan;
+  public bool UsePan;
   /// <summary>
   /// Provides the c 5 speed value.
   /// </summary>
-public int C5Speed = 8363;
+  public int C5Speed = 8363;
   /// <summary>
   /// Provides the loop value.
   /// </summary>
-public bool Loop;
+  public bool Loop;
   /// <summary>
   /// Provides the ping pong value.
   /// </summary>
-public bool PingPong;
+  public bool PingPong;
   /// <summary>
   /// Provides the sustain loop value.
   /// </summary>
-public bool SustainLoop;
+  public bool SustainLoop;
   /// <summary>
   /// Provides the sustain ping pong value.
   /// </summary>
-public bool SustainPingPong;
+  public bool SustainPingPong;
   /// <summary>
   /// Provides the loop start value.
   /// </summary>
-public int LoopStart;
+  public int LoopStart;
   /// <summary>
   /// Provides the loop end value.
   /// </summary>
-public int LoopEnd;
+  public int LoopEnd;
   /// <summary>
   /// Provides the sustain start value.
   /// </summary>
-public int SustainStart;
+  public int SustainStart;
   /// <summary>
   /// Provides the sustain end value.
   /// </summary>
-public int SustainEnd;
+  public int SustainEnd;
   /// <summary>
   /// Provides the pcm value.
   /// </summary>
-public short[] Pcm = [];
+  public short[] Pcm = [];
   /// <summary>
   /// Provides the vibrato speed and vibrato depth and vibrato rate and vibrato type value.
   /// </summary>
-public int VibratoSpeed, VibratoDepth, VibratoRate, VibratoType;
+  public int VibratoSpeed, VibratoDepth, VibratoRate, VibratoType;
 
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public static ItSample Parse(byte[] blob, int off) {
+  public static ItSample Parse(byte[] blob, int off) {
     var s = new ItSample();
     if (off <= 0 || off + 80 > blob.Length) return s;
     if (!(blob[off] == 'I' && blob[off + 1] == 'M' && blob[off + 2] == 'P' && blob[off + 3] == 'S'))

@@ -32,7 +32,7 @@ public sealed class Qcow2Writer {
   /// <summary>
   /// Sets the disk image.
   /// </summary>
-public void SetDiskImage(byte[] data) {
+  public void SetDiskImage(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     _diskData = data;
   }
@@ -40,7 +40,7 @@ public void SetDiskImage(byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     var data = _diskData ?? throw new InvalidOperationException("No disk image set.");
 

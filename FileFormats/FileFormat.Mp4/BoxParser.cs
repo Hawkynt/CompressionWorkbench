@@ -14,7 +14,7 @@ public sealed class BoxParser {
   /// <summary>
   /// Represents a box.
   /// </summary>
-public sealed record Box(string Type, long Offset, long Size, long BodyOffset, long BodyLength, List<Box>? Children);
+  public sealed record Box(string Type, long Offset, long Size, long BodyOffset, long BodyLength, List<Box>? Children);
 
   // Compound-box types whose body is another box list. Leaves aren't in this set.
   private static readonly HashSet<string> Compound = new(StringComparer.Ordinal) {
@@ -25,7 +25,7 @@ public sealed record Box(string Type, long Offset, long Size, long BodyOffset, l
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public List<Box> Parse(ReadOnlySpan<byte> data) => ParseRange(data, 0, data.Length);
+  public List<Box> Parse(ReadOnlySpan<byte> data) => ParseRange(data, 0, data.Length);
 
   private List<Box> ParseRange(ReadOnlySpan<byte> data, long start, long end) {
     var list = new List<Box>();
@@ -58,7 +58,7 @@ public List<Box> Parse(ReadOnlySpan<byte> data) => ParseRange(data, 0, data.Leng
   /// <summary>
   /// Performs the find operation.
   /// </summary>
-public static Box? Find(IEnumerable<Box> boxes, string type) {
+  public static Box? Find(IEnumerable<Box> boxes, string type) {
     foreach (var b in boxes) {
       if (b.Type == type) return b;
       if (b.Children != null) {
@@ -72,7 +72,7 @@ public static Box? Find(IEnumerable<Box> boxes, string type) {
   /// <summary>
   /// Performs the find all operation.
   /// </summary>
-public static IEnumerable<Box> FindAll(IEnumerable<Box> boxes, string type) {
+  public static IEnumerable<Box> FindAll(IEnumerable<Box> boxes, string type) {
     foreach (var b in boxes) {
       if (b.Type == type) yield return b;
       if (b.Children != null)

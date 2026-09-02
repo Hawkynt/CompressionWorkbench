@@ -11,7 +11,7 @@ public static class GemdosExtentMap {
   /// <summary>
   /// Enumerates the value.
   /// </summary>
-public static System.Collections.Generic.IEnumerable<Compression.Registry.DefragBlockInfo> Enumerate(
+  public static System.Collections.Generic.IEnumerable<Compression.Registry.DefragBlockInfo> Enumerate(
       System.IO.Stream image) {
     System.ArgumentNullException.ThrowIfNull(image);
     // Sniff jump byte and present a patched stream view if needed.

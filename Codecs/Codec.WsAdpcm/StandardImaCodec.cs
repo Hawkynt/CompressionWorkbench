@@ -33,16 +33,16 @@ public static class StandardImaCodec {
     /// <summary>
     /// Provides the predictor value.
     /// </summary>
-public int Predictor;
+    public int Predictor;
     /// <summary>
     /// Provides the step index value.
     /// </summary>
-public int StepIndex;
+    public int StepIndex;
 
     /// <summary>
     /// Initializes a new instance of <see cref="State"/>.
     /// </summary>
-public State(int predictor, int stepIndex) {
+    public State(int predictor, int stepIndex) {
       this.Predictor = predictor;
       this.StepIndex = Math.Clamp(stepIndex, 0, 88);
     }

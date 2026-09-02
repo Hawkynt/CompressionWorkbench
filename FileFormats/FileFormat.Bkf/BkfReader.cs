@@ -41,35 +41,35 @@ public sealed class BkfReader : IDisposable {
   /// <summary>
   /// Provides the sset type value.
   /// </summary>
-public static readonly uint SsetType = AsUInt32("SSET");
+  public static readonly uint SsetType = AsUInt32("SSET");
   /// <summary>
   /// Provides the volb type value.
   /// </summary>
-public static readonly uint VolbType = AsUInt32("VOLB");
+  public static readonly uint VolbType = AsUInt32("VOLB");
   /// <summary>
   /// Provides the dirb type value.
   /// </summary>
-public static readonly uint DirbType = AsUInt32("DIRB");
+  public static readonly uint DirbType = AsUInt32("DIRB");
   /// <summary>
   /// Provides the file type value.
   /// </summary>
-public static readonly uint FileType = AsUInt32("FILE");
+  public static readonly uint FileType = AsUInt32("FILE");
   /// <summary>
   /// Provides the eset type value.
   /// </summary>
-public static readonly uint EsetType = AsUInt32("ESET");
+  public static readonly uint EsetType = AsUInt32("ESET");
   /// <summary>
   /// Provides the eotm type value.
   /// </summary>
-public static readonly uint EotmType = AsUInt32("EOTM");
+  public static readonly uint EotmType = AsUInt32("EOTM");
   /// <summary>
   /// Provides the espb type value.
   /// </summary>
-public static readonly uint EspbType = AsUInt32("ESPB");
+  public static readonly uint EspbType = AsUInt32("ESPB");
   /// <summary>
   /// Provides the sfmb type value.
   /// </summary>
-public static readonly uint SfmbType = AsUInt32("SFMB");
+  public static readonly uint SfmbType = AsUInt32("SFMB");
 
   /// <summary>Stream IDs.</summary>
   private static readonly uint StanStreamId = AsUInt32("STAN"); // Standard file data
@@ -118,7 +118,7 @@ public static readonly uint SfmbType = AsUInt32("SFMB");
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { /* no unmanaged resources */ }
+  public void Dispose() { /* no unmanaged resources */ }
 
   // ── parsing ─────────────────────────────────────────────────────────────
 

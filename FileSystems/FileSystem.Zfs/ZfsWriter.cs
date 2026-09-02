@@ -27,7 +27,7 @@ public sealed class ZfsWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((name, FilePayload.FromBytes(data)));
@@ -46,11 +46,11 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Sets the pool name.
   /// </summary>
-public void SetPoolName(string name) { this._poolName = name; }
+  public void SetPoolName(string name) { this._poolName = name; }
   /// <summary>
   /// Sets the dataset name.
   /// </summary>
-public void SetDatasetName(string name) { this._datasetName = name; }
+  public void SetDatasetName(string name) { this._datasetName = name; }
 
   /// <summary>
   /// Smallest pool that holds the added files: the four vdev labels, every file's
@@ -82,7 +82,7 @@ public void SetDatasetName(string name) { this._datasetName = name; }
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output, long imageSize = 64L * 1024 * 1024) {
+  public void WriteTo(Stream output, long imageSize = 64L * 1024 * 1024) {
     const int labelSize = ZfsConstants.LabelSize;
     if (imageSize < 4L * labelSize + 1024 * 1024)
       throw new ArgumentException("Image size too small; must be >= ~5 MB.", nameof(imageSize));

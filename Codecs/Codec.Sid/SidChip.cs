@@ -36,7 +36,7 @@ public sealed class SidChip {
   /// <summary>
   /// Initializes a new instance of <see cref="SidChip"/>.
   /// </summary>
-public SidChip(SidModel model, double clockHz, int outputRate = OutputSampleRate) {
+  public SidChip(SidModel model, double clockHz, int outputRate = OutputSampleRate) {
     // Collapse aliases (e.g. the 6582 is electrically an 8580) onto the behaviour the filter implements.
     this._model = model.Resolve();
     this._clockHz = clockHz;

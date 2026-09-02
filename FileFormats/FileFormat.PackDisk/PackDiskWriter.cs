@@ -14,7 +14,7 @@ public sealed class PackDiskWriter {
   /// <summary>
   /// Defines the track size constant value.
   /// </summary>
-public const int TrackSize = 11 * 512;
+  public const int TrackSize = 11 * 512;
 
   /// <summary>Format magic. Use one of the 4-byte ASCII codes the reader recognises.</summary>
   /// <param name="magic">"PDSK", "XMSH", "XDSK", "GDC\0", "DCS\0", or "MDC\0".</param>
@@ -33,7 +33,7 @@ public const int TrackSize = 11 * 512;
   /// <summary>
   /// Performs the add track operation.
   /// </summary>
-public void AddTrack(ReadOnlySpan<byte> data) {
+  public void AddTrack(ReadOnlySpan<byte> data) {
     var buf = new byte[TrackSize];
     var copyLen = Math.Min(data.Length, TrackSize);
     data[..copyLen].CopyTo(buf);
@@ -43,7 +43,7 @@ public void AddTrack(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     output.Write(_magic);
     Span<byte> flags = stackalloc byte[4];
     flags.Clear();

@@ -13,7 +13,7 @@ public static class TiffMetadataEditor {
   /// <summary>
   /// Defines the xmp packet tag constant value.
   /// </summary>
-public const ushort XmpPacketTag = 0x02BC;
+  public const ushort XmpPacketTag = 0x02BC;
 
   /// <summary>
   /// Replaces or inserts the XMP packet in a TIFF's IFD0 (tag 0x02BC).
@@ -83,7 +83,7 @@ public const ushort XmpPacketTag = 0x02BC;
   /// <summary>
   /// Attempts to read the xmp packet from the supplied input.
   /// </summary>
-public static byte[]? TryReadXmpPacket(ReadOnlySpan<byte> tiffBytes) {
+  public static byte[]? TryReadXmpPacket(ReadOnlySpan<byte> tiffBytes) {
     try {
       var image = TiffReader.Parse(tiffBytes);
       var entry = image.Ifd0.FindEntry(XmpPacketTag);

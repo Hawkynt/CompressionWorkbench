@@ -8,7 +8,7 @@ public class ResidueTemplate : IResidueTemplate
     /// <summary>
     /// Initializes a new instance of <see cref="ResidueTemplate"/>.
     /// </summary>
-public ResidueTemplate(
+    public ResidueTemplate(
         ResidueType residueType,
         ResidueLimitType limitType,
         int grouping,
@@ -31,33 +31,33 @@ public ResidueTemplate(
     /// <summary>
     /// Gets the residue type.
     /// </summary>
-public ResidueType ResidueType { get; }
+    public ResidueType ResidueType { get; }
     /// <summary>
     /// Gets the limit type.
     /// </summary>
-public ResidueLimitType LimitType { get; }
+    public ResidueLimitType LimitType { get; }
     /// <summary>
     /// Gets the grouping.
     /// </summary>
-public int Grouping { get; }
+    public int Grouping { get; }
     /// <summary>
     /// Gets the residue.
     /// </summary>
-public ResidueEntry Residue { get; }
+    public ResidueEntry Residue { get; }
     /// <summary>
     /// Gets the book aux.
     /// </summary>
-public IStaticCodeBook BookAux { get; }
+    public IStaticCodeBook BookAux { get; }
     /// <summary>
     /// Gets the book aux managed.
     /// </summary>
-public IStaticCodeBook BookAuxManaged { get; }
+    public IStaticCodeBook BookAuxManaged { get; }
     /// <summary>
     /// Gets the books base.
     /// </summary>
-public IStaticBookBlock BooksBase { get; }
+    public IStaticBookBlock BooksBase { get; }
     /// <summary>
     /// Gets the books base managed.
     /// </summary>
-public IStaticBookBlock BooksBaseManaged { get; }
+    public IStaticBookBlock BooksBaseManaged { get; }
 }

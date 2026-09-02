@@ -8,15 +8,15 @@ public sealed class HpfsEntry {
   /// <summary>
   /// Gets or sets the name.
   /// </summary>
-public string Name { get; init; } = "";
+  public string Name { get; init; } = "";
   /// <summary>
   /// Gets or sets the size.
   /// </summary>
-public long Size { get; init; }
+  public long Size { get; init; }
   /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
-public bool IsDirectory { get; init; }
+  public bool IsDirectory { get; init; }
   /// <summary>LBA of the file's fnode (0 if synthetic/root).</summary>
   internal uint FnodeLba { get; init; }
   /// <summary>First file-data LBA when resolvable from fnode's direct allocation list.</summary>

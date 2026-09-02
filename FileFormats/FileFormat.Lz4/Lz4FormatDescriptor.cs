@@ -12,53 +12,53 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Lz4";
+  public string Id => "Lz4";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZ4";
+  public string DisplayName => "LZ4";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Stream;
+  public FormatCategory Category => FormatCategory.Stream;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".lz4";
+  public string DefaultExtension => ".lz4";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".lz4"];
+  public IReadOnlyList<string> Extensions => [".lz4"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x04, 0x22, 0x4D, 0x18], Confidence: 0.95)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x04, 0x22, 0x4D, 0x18], Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("lz4", "LZ4", SupportsOptimize: true)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lz4", "LZ4", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Extremely fast LZ77 with byte-aligned tokens, optimized for speed";
+  public string Description => "Extremely fast LZ77 with byte-aligned tokens, optimized for speed";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
   // The LZ4 frame descriptor (FLG/BD bytes) is self-describing, so each axis
@@ -143,7 +143,7 @@ public string Description => "Extremely fast LZ77 with byte-aligned tokens, opti
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) {
+  public void Decompress(Stream input, Stream output) {
     // Loop the frames: a .lz4 file may hold several back to back, and the payload
     // as a whole may be far larger than a single byte[].
     var r = new Lz4FrameReader(input);
@@ -153,20 +153,20 @@ public void Decompress(Stream input, Stream output) {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) =>
+  public void Compress(Stream input, Stream output) =>
     CompressFrame(input, output, Lz4CompressionLevel.Fast, Lz4Constants.MaxBlockSize, contentChecksum: true, blockChecksum: false);
 
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
     CompressFrame(input, output, ParseLevel(options), ParseBlockSize(options),
       ParseContentChecksum(options), ParseBlockChecksum(options));
 
   /// <summary>
   /// Performs the compress optimal operation.
   /// </summary>
-public void CompressOptimal(Stream input, Stream output) =>
+  public void CompressOptimal(Stream input, Stream output) =>
     CompressFrame(input, output, Lz4CompressionLevel.Hc, Lz4Constants.MaxBlockSize, contentChecksum: true, blockChecksum: false);
 
   /// <summary>

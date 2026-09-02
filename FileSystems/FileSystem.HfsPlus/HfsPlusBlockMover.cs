@@ -37,7 +37,7 @@ public sealed class HfsPlusBlockMover : IFilesystemBlockMover, IFilesystemMetada
   /// <summary>
   /// Gets the first data byte.
   /// </summary>
-public long FirstDataByte => 0;
+  public long FirstDataByte => 0;
 
   /// <summary>Block size in bytes (allocation unit).</summary>
   public int BlockSize => _blockSize;
@@ -74,7 +74,7 @@ public long FirstDataByte => 0;
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -111,7 +111,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     if (_blockSize == 0)
       Init(image);
 
@@ -226,7 +226,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Performs the update metadata after move operation.
   /// </summary>
-public void UpdateMetadataAfterMove(Stream image, string metadataName,
+  public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
     ArgumentNullException.ThrowIfNull(image);

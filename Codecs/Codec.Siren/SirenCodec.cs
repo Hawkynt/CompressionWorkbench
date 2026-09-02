@@ -68,7 +68,7 @@ public static class SirenCodec {
     /// <summary>
     /// Initializes a new instance of <see cref="Decoder"/>.
     /// </summary>
-public Decoder() {
+    public Decoder() {
       // siren_init: standard_deviation[i] = sqrt(10^((i-24)*0.3010299957)).
       for (var i = 0; i < 64; ++i) {
         var regionPower = Math.Pow(10, (i - 24) * 0.3010299957);

@@ -19,7 +19,7 @@ public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new SfarReader(archive);
     foreach (var e in r.Entries) {
@@ -62,64 +62,64 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Sfar";
+  public string Id => "Sfar";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "BioWare SFAR";
+  public string DisplayName => "BioWare SFAR";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
 
   // WORM: writes the stored-only variant. LZX-packed creation remains out of scope —
   // every block is written verbatim with the 32-byte header tagged "\0\0\0\0".
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".sfar";
+  public string DefaultExtension => ".sfar";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".sfar"];
+  public IReadOnlyList<string> Extensions => [".sfar"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x53, 0x46, 0x41, 0x52], Confidence: 0.95),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("sfar", "SFAR")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("sfar", "SFAR")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "BioWare Sirius File Archive (Mass Effect 3 DLC, read-only)";
+  public string Description => "BioWare Sirius File Archive (Mass Effect 3 DLC, read-only)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new SfarReader(stream, leaveOpen: true);
     var method = r.IsLzxCompressed ? "LZX" : "Stored";
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -129,7 +129,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new SfarReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;

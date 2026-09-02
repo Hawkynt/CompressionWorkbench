@@ -39,15 +39,15 @@ public sealed class HpfsReader : IDisposable {
   /// <summary>
   /// Defines the lba size constant value.
   /// </summary>
-public const int LbaSize = 512;
+  public const int LbaSize = 512;
   /// <summary>
   /// Defines the superblock lba constant value.
   /// </summary>
-public const int SuperblockLba = 16;
+  public const int SuperblockLba = 16;
   /// <summary>
   /// Defines the dir block size constant value.
   /// </summary>
-public const int DirBlockSize = 2048;
+  public const int DirBlockSize = 2048;
 
   /// <summary>
   /// Superblock magic — the uint32 pair 0xF995E849 / 0xFA53E9C5 stored little-endian,
@@ -72,12 +72,12 @@ public const int DirBlockSize = 2048;
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<HpfsEntry> Entries => _entries;
+  public IReadOnlyList<HpfsEntry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="HpfsReader"/>.
   /// </summary>
-public HpfsReader(Stream stream) {
+  public HpfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     _data = new ImageAccessor(stream, leaveOpen: true);
 
@@ -97,7 +97,7 @@ public HpfsReader(Stream stream) {
   /// <summary>
   /// Initializes a new instance of <see cref="HpfsReader"/>.
   /// </summary>
-public HpfsReader(byte[] data) : this(new MemoryStream(data)) { }
+  public HpfsReader(byte[] data) : this(new MemoryStream(data)) { }
 
   // 64-bit: an HPFS volume past 2 GB overflows the int product.
   private long LbaOffset(uint lba) => (long)lba * LbaSize;
@@ -287,7 +287,7 @@ public HpfsReader(byte[] data) : this(new MemoryStream(data)) { }
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(HpfsEntry entry) {
+  public byte[] Extract(HpfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.IsBtreeFile) return [];  // scope cut: B-tree allocation not yet supported
@@ -304,5 +304,5 @@ public byte[] Extract(HpfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

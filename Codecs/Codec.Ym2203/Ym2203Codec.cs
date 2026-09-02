@@ -36,7 +36,7 @@ public sealed class Ym2203Codec {
   /// <summary>
   /// Initializes a new instance of <see cref="Ym2203Codec"/>.
   /// </summary>
-public Ym2203Codec(double clock = 3993600.0) {
+  public Ym2203Codec(double clock = 3993600.0) {
     // The OPN FM core is the OPN2 FM core; build a YM2612 clocked so its clock/144 native rate
     // equals the YM2203 clock/72 FM rate (i.e. feed it twice the clock).
     this._fm = new Ym2612Codec(clock * Ym2612Codec.Prescale / FmPrescale);

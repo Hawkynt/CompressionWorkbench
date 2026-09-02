@@ -31,7 +31,7 @@ public sealed class AsarReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="AsarReader"/>.
   /// </summary>
-public AsarReader(Stream stream, bool leaveOpen = false) {
+  public AsarReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
     this._leaveOpen = leaveOpen;
@@ -118,7 +118,7 @@ public AsarReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._leaveOpen) this._stream.Dispose();
   }
 }

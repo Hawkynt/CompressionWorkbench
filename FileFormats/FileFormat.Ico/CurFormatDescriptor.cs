@@ -21,88 +21,88 @@ public sealed class CurFormatDescriptor :
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "CUR is a Windows cursor bundle (image bitmaps + hotspot fields) — defragmentation isn't meaningful.");
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
 
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Cur";
+  public string Id => "Cur";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Windows CUR cursor";
+  public string DisplayName => "Windows CUR cursor";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".cur";
+  public string DefaultExtension => ".cur";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".cur"];
+  public IReadOnlyList<string> Extensions => [".cur"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x00, 0x00, 0x02, 0x00], Confidence: 0.85),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Windows CUR cursor bundle — pseudo-archive of one or more PNG/DIB images " +
     "with hotspot fields. Hotspots default to (0,0) when creating from raw images.";
 
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the min total archive size.
   /// </summary>
-public long? MinTotalArchiveSize => null;
+  public long? MinTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription => "Accepts PNG and BMP image files; max 65535 cursors.";
+  public string AcceptedInputsDescription => "Accepts PNG and BMP image files; max 65535 cursors.";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = "Directories not supported in CUR bundles."; return false; }
     var ext = Path.GetExtension(input.ArchiveName).ToLowerInvariant();
     if (ext is not (".png" or ".bmp" or ".dib")) {
@@ -116,7 +116,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var bundle = ReadBundle(stream);
     return bundle.Entries.Select(e => new ArchiveEntryInfo(
       Index: e.Index, Name: e.Name,
@@ -128,7 +128,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var bundle = ReadBundle(stream);
     foreach (var e in bundle.Entries) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
@@ -139,7 +139,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var images = inputs
       .Where(i => !i.IsDirectory)
       .Select(i => new IcoWriter.Image(i.ReadContent()))

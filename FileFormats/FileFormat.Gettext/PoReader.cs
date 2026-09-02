@@ -12,7 +12,7 @@ public sealed class PoReader {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public List<CatalogEntry> Read(ReadOnlySpan<byte> data) {
+  public List<CatalogEntry> Read(ReadOnlySpan<byte> data) {
     var text = Encoding.UTF8.GetString(data);
     // Normalise line endings; keep empty lines as entry separators.
     var lines = text.Replace("\r\n", "\n").Split('\n');

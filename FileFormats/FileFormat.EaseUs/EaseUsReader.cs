@@ -188,7 +188,7 @@ public sealed class EaseUsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<EaseUsEntry> Entries => _entries;
+  public IReadOnlyList<EaseUsEntry> Entries => _entries;
 
   /// <summary>True once the header magic has been recognised.</summary>
   public bool ValidHeader { get; private set; }
@@ -282,7 +282,7 @@ public IReadOnlyList<EaseUsEntry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="EaseUsReader"/>.
   /// </summary>
-public EaseUsReader(Stream stream) {
+  public EaseUsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -607,7 +607,7 @@ public EaseUsReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(EaseUsEntry entry) {
+  public byte[] Extract(EaseUsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
@@ -615,5 +615,5 @@ public byte[] Extract(EaseUsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

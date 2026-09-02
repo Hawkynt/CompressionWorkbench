@@ -19,16 +19,16 @@ public sealed class ZfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<ZfsEntry> Entries => this._entries;
+  public IReadOnlyList<ZfsEntry> Entries => this._entries;
   /// <summary>
   /// Gets the pool name.
   /// </summary>
-public string? PoolName => this._poolName;
+  public string? PoolName => this._poolName;
 
   /// <summary>
   /// Initializes a new instance of <see cref="ZfsReader"/>.
   /// </summary>
-public ZfsReader(Stream stream, bool leaveOpen = true) {
+  public ZfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: a pool's metadata is a small fraction of the
@@ -289,7 +289,7 @@ public ZfsReader(Stream stream, bool leaveOpen = true) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(ZfsEntry entry) {
+  public byte[] Extract(ZfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size > Array.MaxLength)
       throw new IOException(
@@ -326,5 +326,5 @@ public byte[] Extract(ZfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._data.Dispose();
+  public void Dispose() => this._data.Dispose();
 }

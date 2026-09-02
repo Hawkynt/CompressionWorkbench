@@ -30,7 +30,7 @@ public sealed class Ext1Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Ext1Entry> Entries => this._entries;
+  public IReadOnlyList<Ext1Entry> Entries => this._entries;
 
   // Superblock fields
   private uint _inodesCount;
@@ -53,7 +53,7 @@ public IReadOnlyList<Ext1Entry> Entries => this._entries;
   /// <summary>
   /// Initializes a new instance of <see cref="Ext1Reader"/>.
   /// </summary>
-public Ext1Reader(Stream stream) {
+  public Ext1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
@@ -287,7 +287,7 @@ public Ext1Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Ext1Entry entry) {
+  public byte[] Extract(Ext1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Inode == 0) return [];
@@ -304,7 +304,7 @@ public byte[] Extract(Ext1Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }
 
 /// <summary>
@@ -314,21 +314,21 @@ public sealed class Ext1Entry {
   /// <summary>
   /// Gets or sets the name.
   /// </summary>
-public required string Name { get; init; }
+  public required string Name { get; init; }
   /// <summary>
   /// Gets or sets the size.
   /// </summary>
-public long Size { get; init; }
+  public long Size { get; init; }
   /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
-public bool IsDirectory { get; init; }
+  public bool IsDirectory { get; init; }
   /// <summary>
   /// Gets or sets the last modified.
   /// </summary>
-public DateTime? LastModified { get; init; }
+  public DateTime? LastModified { get; init; }
   /// <summary>
   /// Gets or sets the inode.
   /// </summary>
-public uint Inode { get; init; }
+  public uint Inode { get; init; }
 }

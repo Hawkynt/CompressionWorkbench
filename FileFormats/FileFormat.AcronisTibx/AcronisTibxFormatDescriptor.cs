@@ -66,32 +66,32 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "AcronisTibx";
+  public string Id => "AcronisTibx";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Acronis True Image .tibx";
+  public string DisplayName => "Acronis True Image .tibx";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".tibx";
+  public string DefaultExtension => ".tibx";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".tibx"];
+  public IReadOnlyList<string> Extensions => [".tibx"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <summary>
   ///   Single signature: ASCII <c>"ARCH"</c> at offset 0. High confidence — the vendor's
@@ -106,20 +106,20 @@ public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored (LSM page store, content opaque)")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored (LSM page store, content opaque)")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Acronis True Image .tibx (2020+ modern container) — Stage 2 R/O metadata + page-frame walk. "
     + "Detected by ASCII 'ARCH' (41 52 43 48) at offset 0 — the page-zero archive header magic "
     + "emitted by Acronis's libarchive3 / archive3.dll log-structured-merge page store. "
@@ -161,7 +161,7 @@ public string Description =>
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
     var r = new AcronisTibxReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -179,7 +179,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);
     Directory.CreateDirectory(outputDir);

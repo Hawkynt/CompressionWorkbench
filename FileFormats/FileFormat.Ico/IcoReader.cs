@@ -14,7 +14,7 @@ public sealed class IcoReader {
   /// <summary>
   /// Represents an icon entry.
   /// </summary>
-public sealed record IconEntry(
+  public sealed record IconEntry(
     int Index,
     int Width,
     int Height,
@@ -29,7 +29,7 @@ public sealed record IconEntry(
   /// <summary>
   /// Represents a bundle.
   /// </summary>
-public sealed record Bundle(
+  public sealed record Bundle(
     bool IsCursor,
     IReadOnlyList<IconEntry> Entries
   );
@@ -37,7 +37,7 @@ public sealed record Bundle(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public static Bundle Read(ReadOnlySpan<byte> data) {
+  public static Bundle Read(ReadOnlySpan<byte> data) {
     if (data.Length < 6) throw new InvalidDataException("ICO: truncated header");
 
     var reserved = BinaryPrimitives.ReadUInt16LittleEndian(data);

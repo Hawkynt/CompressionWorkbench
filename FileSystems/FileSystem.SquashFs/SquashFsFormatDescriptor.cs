@@ -38,15 +38,15 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "SquashFs";
+  public string Id => "SquashFs";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "SquashFS";
+  public string DisplayName => "SquashFS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // WORM (Write-Once-Read-Many), NOT R/W: SquashFS is a compressed, read-only image.
   // Add/Remove go through the verified extract -> re-create rebuild (ModifyRebuilder),
   // a full rewrite — the verb works but nothing is modified in place. Advertising
@@ -54,49 +54,49 @@ public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".sqfs";
+  public string DefaultExtension => ".sqfs";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".sqfs", ".squashfs", ".snap", ".appimage"];
+  public IReadOnlyList<string> Extensions => [".sqfs", ".squashfs", ".snap", ".appimage"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'h', (byte)'s', (byte)'q', (byte)'s'], Confidence: 0.95),
     new([(byte)'s', (byte)'q', (byte)'s', (byte)'h'], Confidence: 0.95)
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("squashfs", "SquashFS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("squashfs", "SquashFS")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Linux compressed read-only filesystem";
+  public string Description => "Linux compressed read-only filesystem";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SquashFsReader(stream);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size, -1,
       "squashfs", e.IsDirectory, false, e.ModifiedTime,
@@ -107,7 +107,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new SquashFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -151,7 +151,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var blockSize = ResolveBlockSize(options);
     using var w = new SquashFsWriter(output, leaveOpen: true, blockSize: blockSize);
     foreach (var input in inputs) {
@@ -177,7 +177,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
     => ModifyRebuilder.Add(archive, inputs,
       readEntries: stream => {
         var r = new SquashFsReader(stream, leaveOpen: true);
@@ -193,7 +193,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames)
+  public void Remove(Stream archive, string[] entryNames)
     => ModifyRebuilder.Remove(archive, entryNames,
       readEntries: stream => {
         var r = new SquashFsReader(stream, leaveOpen: true);
@@ -209,7 +209,7 @@ public void Remove(Stream archive, string[] entryNames)
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

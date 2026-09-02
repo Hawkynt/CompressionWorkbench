@@ -68,83 +68,83 @@ public sealed class HammerVolumeOndisk {
   /// <summary>
   /// Gets or sets the vol signature.
   /// </summary>
-public ulong VolSignature { get; private init; }
+  public ulong VolSignature { get; private init; }
   /// <summary>
   /// Gets or sets the vol bot beg.
   /// </summary>
-public long VolBotBeg { get; private init; }
+  public long VolBotBeg { get; private init; }
   /// <summary>
   /// Gets or sets the vol mem beg.
   /// </summary>
-public long VolMemBeg { get; private init; }
+  public long VolMemBeg { get; private init; }
   /// <summary>
   /// Gets or sets the vol buf beg.
   /// </summary>
-public long VolBufBeg { get; private init; }
+  public long VolBufBeg { get; private init; }
   /// <summary>
   /// Gets or sets the vol buf end.
   /// </summary>
-public long VolBufEnd { get; private init; }
+  public long VolBufEnd { get; private init; }
   /// <summary>
   /// Gets or sets the vol fsid hex.
   /// </summary>
-public string VolFsidHex { get; private init; } = "";
+  public string VolFsidHex { get; private init; } = "";
   /// <summary>
   /// Gets or sets the vol fs type hex.
   /// </summary>
-public string VolFsTypeHex { get; private init; } = "";
+  public string VolFsTypeHex { get; private init; } = "";
   /// <summary>
   /// Gets or sets the vol label.
   /// </summary>
-public string VolLabel { get; private init; } = "";
+  public string VolLabel { get; private init; } = "";
   /// <summary>
   /// Gets or sets the vol no.
   /// </summary>
-public int VolNo { get; private init; }
+  public int VolNo { get; private init; }
   /// <summary>
   /// Gets or sets the vol count.
   /// </summary>
-public int VolCount { get; private init; }
+  public int VolCount { get; private init; }
   /// <summary>
   /// Gets or sets the vol version.
   /// </summary>
-public uint VolVersion { get; private init; }
+  public uint VolVersion { get; private init; }
   /// <summary>
   /// Gets or sets the vol crc.
   /// </summary>
-public uint VolCrc { get; private init; }
+  public uint VolCrc { get; private init; }
   /// <summary>
   /// Gets or sets the vol flags.
   /// </summary>
-public uint VolFlags { get; private init; }
+  public uint VolFlags { get; private init; }
   /// <summary>
   /// Gets or sets the vol root vol.
   /// </summary>
-public uint VolRootVol { get; private init; }
+  public uint VolRootVol { get; private init; }
   /// <summary>
   /// Gets or sets the vol 0 stat bigblocks.
   /// </summary>
-public long Vol0StatBigblocks { get; private init; }
+  public long Vol0StatBigblocks { get; private init; }
   /// <summary>
   /// Gets or sets the vol 0 stat free bigblocks.
   /// </summary>
-public long Vol0StatFreeBigblocks { get; private init; }
+  public long Vol0StatFreeBigblocks { get; private init; }
   /// <summary>
   /// Gets or sets the vol 0 stat inodes.
   /// </summary>
-public long Vol0StatInodes { get; private init; }
+  public long Vol0StatInodes { get; private init; }
   /// <summary>
   /// Gets or sets the vol 0 btree root.
   /// </summary>
-public long Vol0BtreeRoot { get; private init; }
+  public long Vol0BtreeRoot { get; private init; }
   /// <summary>
   /// Gets or sets the vol 0 next tid.
   /// </summary>
-public long Vol0NextTid { get; private init; }
+  public long Vol0NextTid { get; private init; }
   /// <summary>
   /// Gets or sets the header raw.
   /// </summary>
-public byte[] HeaderRaw { get; private init; } = [];
+  public byte[] HeaderRaw { get; private init; } = [];
 
   /// <summary>Best-effort parse. Never throws.</summary>
   public static HammerVolumeOndisk TryParse(ReadOnlySpan<byte> image) {

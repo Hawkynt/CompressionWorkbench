@@ -905,7 +905,7 @@ namespace Concentus.Structs
         /// <summary>
         /// Gets the final range.
         /// </summary>
-public uint FinalRange
+        public uint FinalRange
         {
             get
             {
@@ -998,7 +998,7 @@ public uint FinalRange
         /// <summary>
         /// Gets the version string.
         /// </summary>
-public string GetVersionString()
+        public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();
         }
@@ -1007,6 +1007,6 @@ public string GetVersionString()
         /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
-public void Dispose() { }
+        public void Dispose() { }
     }
 }

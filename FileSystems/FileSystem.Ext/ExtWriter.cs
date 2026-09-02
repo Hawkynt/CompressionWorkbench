@@ -81,7 +81,7 @@ public sealed class ExtWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
+  public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
 
   /// <summary>
   /// Reads a file once and says which of its blocks hold nothing but zeros.

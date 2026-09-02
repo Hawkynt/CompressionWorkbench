@@ -17,19 +17,19 @@ public sealed class MkvDemuxer {
   /// <summary>
   /// Represents a track.
   /// </summary>
-public sealed record Track(int Number, string TrackType, string CodecId, string? Language,
+  public sealed record Track(int Number, string TrackType, string CodecId, string? Language,
                              byte[]? CodecPrivate, byte[] FrameBytes,
                              IReadOnlyList<FrameEntry> Frames,
                              int AudioChannels = 0, int AudioSampleRate = 0, int AudioBitDepth = 0);
   /// <summary>
   /// Represents an attachment.
   /// </summary>
-public sealed record Attachment(string FileName, string MimeType, byte[] Data);
+  public sealed record Attachment(string FileName, string MimeType, byte[] Data);
 
   /// <summary>
   /// Represents a demux result.
   /// </summary>
-public sealed record DemuxResult(
+  public sealed record DemuxResult(
     IReadOnlyList<Track> Tracks,
     IReadOnlyList<Attachment> Attachments,
     byte[]? ChaptersXml);
@@ -61,7 +61,7 @@ public sealed record DemuxResult(
   /// <summary>
   /// Performs the demux operation.
   /// </summary>
-public DemuxResult Demux(byte[] file) {
+  public DemuxResult Demux(byte[] file) {
     var ebml = new EbmlReader(file);
     long pos = 0;
 

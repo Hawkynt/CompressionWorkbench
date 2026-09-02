@@ -42,23 +42,23 @@ public sealed class SparseimageStream : Stream {
   /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
-public override bool CanRead => true;
+  public override bool CanRead => true;
   /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
-public override bool CanSeek => true;
+  public override bool CanSeek => true;
   /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
-public override bool CanWrite => false;
+  public override bool CanWrite => false;
   /// <summary>
   /// Gets the length.
   /// </summary>
-public override long Length => this._reader.VirtualSize;
+  public override long Length => this._reader.VirtualSize;
   /// <summary>
   /// Gets or sets the position.
   /// </summary>
-public override long Position {
+  public override long Position {
     get => this._position;
     set {
       if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
@@ -69,7 +69,7 @@ public override long Position {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public override int Read(byte[] buffer, int offset, int count) {
+  public override int Read(byte[] buffer, int offset, int count) {
     ArgumentNullException.ThrowIfNull(buffer);
     if (this._position >= this._reader.VirtualSize) return 0;
     var n = this._reader.Read(this._position, buffer.AsSpan(offset, count));
@@ -80,7 +80,7 @@ public override int Read(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the seek operation.
   /// </summary>
-public override long Seek(long offset, SeekOrigin origin) {
+  public override long Seek(long offset, SeekOrigin origin) {
     var newPos = origin switch {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => this._position + offset,
@@ -95,20 +95,20 @@ public override long Seek(long offset, SeekOrigin origin) {
   /// <summary>
   /// Performs the flush operation.
   /// </summary>
-public override void Flush() { /* read-only */ }
+  public override void Flush() { /* read-only */ }
   /// <summary>
   /// Sets the length.
   /// </summary>
-public override void SetLength(long value) => throw new NotSupportedException();
+  public override void SetLength(long value) => throw new NotSupportedException();
   /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
-public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-protected override void Dispose(bool disposing) {
+  protected override void Dispose(bool disposing) {
     if (disposing && !this._leaveOpen)
       this._reader.Dispose();
     base.Dispose(disposing);

@@ -45,7 +45,7 @@ public sealed class CpcDskBlockMover : IFilesystemBlockMover {
   /// <summary>
   /// Gets the allocation block size.
   /// </summary>
-public int AllocationBlockSize => BlockSize_;
+  public int AllocationBlockSize => BlockSize_;
 
   /// <summary>The first byte past the directory, which is where the files begin.</summary>
   public long FirstDataByte => DiskInfoSize + TrackInfoSize + (long)FirstDataBlock * BlockSize_;
@@ -54,25 +54,25 @@ public int AllocationBlockSize => BlockSize_;
   /// <summary>
   /// Gets a value indicating whether repoints runs independently.
   /// </summary>
-public bool RepointsRunsIndependently => false;
+  public bool RepointsRunsIndependently => false;
 
   /// <inheritdoc />
   /// <summary>
   /// Gets a value indicating whether supports held runs.
   /// </summary>
-public bool SupportsHeldRuns => false;
+  public bool SupportsHeldRuns => false;
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length,
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length,
       bool zeroSource = false) => throw new NotSupportedException(Reason);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName,
+  public void UpdateAllocationAfterMove(Stream image, string fileName,
       long oldOffset, long newOffset, long length) => throw new NotSupportedException(Reason);
 }

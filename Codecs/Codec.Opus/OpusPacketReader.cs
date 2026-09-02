@@ -10,15 +10,15 @@ public enum OpusMode {
   /// <summary>
   /// Specifies the silk only option.
   /// </summary>
-SilkOnly,
+  SilkOnly,
   /// <summary>
   /// Specifies the hybrid option.
   /// </summary>
-Hybrid,
+  Hybrid,
   /// <summary>
   /// Specifies the celt only option.
   /// </summary>
-CeltOnly,
+  CeltOnly,
 }
 
 /// <summary>

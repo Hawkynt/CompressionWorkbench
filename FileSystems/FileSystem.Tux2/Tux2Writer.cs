@@ -32,7 +32,7 @@ public sealed class Tux2Writer {
   /// <summary>
   /// Gets or sets the version.
   /// </summary>
-public uint Version { get; init; } = 1;
+  public uint Version { get; init; } = 1;
 
   /// <summary>One file to emit: either its bytes, or a copier that streams them.</summary>
   private readonly record struct Item(string Name, long Size, byte[]? Data, Action<Stream>? Copy);
@@ -40,7 +40,7 @@ public uint Version { get; init; } = 1;
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add(new Item(CheckName(name), data.LongLength, data, null));
     if (data.LongLength > uint.MaxValue)
@@ -71,7 +71,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     Span<byte> hdr = stackalloc byte[16];
@@ -109,7 +109,7 @@ public void WriteTo(Stream output) {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build() {
+  public byte[] Build() {
     using var ms = new MemoryStream();
     this.WriteTo(ms);
     return ms.ToArray();

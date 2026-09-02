@@ -17,34 +17,34 @@ public sealed class LzturboBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Lzturbo";
+  public string Id => "BB_Lzturbo";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZTURBO";
+  public string DisplayName => "LZTURBO";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Fast hash-matched LZ77 front end in a magic/method/length block, modelling LZTURBO's documented outer shape (entropy back end not reproduced: undocumented)";
+  public string Description => "Fast hash-matched LZ77 front end in a magic/method/length block, modelling LZTURBO's documented outer shape (entropy back end not reproduced: undocumented)";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) =>
+  public byte[] Compress(ReadOnlySpan<byte> data) =>
     LzturboCompressor.Compress(data);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) =>
+  public byte[] Decompress(ReadOnlySpan<byte> data) =>
     LzturboDecompressor.Decompress(data);
 }

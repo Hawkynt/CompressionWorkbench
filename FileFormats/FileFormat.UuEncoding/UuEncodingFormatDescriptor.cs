@@ -9,57 +9,57 @@ public sealed class UuEncodingFormatDescriptor : IFormatDescriptor, IStreamForma
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "UuEncoding";
+  public string Id => "UuEncoding";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "UUEncoding";
+  public string DisplayName => "UUEncoding";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Wrapper;
+  public FormatCategory Category => FormatCategory.Wrapper;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".uue";
+  public string DefaultExtension => ".uue";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".uue", ".uu"];
+  public IReadOnlyList<string> Extensions => [".uue", ".uu"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("uuencode", "UUEncode")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("uuencode", "UUEncode")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Encoding;
+  public AlgorithmFamily Family => AlgorithmFamily.Encoding;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Unix-to-Unix encoding, binary-to-text for email";
+  public string Description => "Unix-to-Unix encoding, binary-to-text for email";
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Decompress(Stream input, Stream output) {
+  public void Decompress(Stream input, Stream output) {
     var (_, _, data) = UuEncoder.Decode(input);
     output.Write(data);
   }
@@ -67,7 +67,7 @@ public void Decompress(Stream input, Stream output) {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public void Compress(Stream input, Stream output) {
+  public void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     ms.Position = 0;

@@ -28,12 +28,12 @@ public sealed class HfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<HfsEntry> Entries => this._entries;
+  public IReadOnlyList<HfsEntry> Entries => this._entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="HfsReader"/>.
   /// </summary>
-public HfsReader(Stream stream, bool leaveOpen = false) {
+  public HfsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     this._data = ms.ToArray();
@@ -202,7 +202,7 @@ public HfsReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(HfsEntry entry) {
+  public byte[] Extract(HfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.BlockCount == 0) return [];
     var offset = this.BlockToOffset(entry.StartBlock);
@@ -215,5 +215,5 @@ public byte[] Extract(HfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

@@ -45,7 +45,7 @@ public sealed class GameBoyApu {
   /// <summary>
   /// Initializes a new instance of <see cref="GameBoyApu"/>.
   /// </summary>
-public GameBoyApu(int outputRate = OutputSampleRate) {
+  public GameBoyApu(int outputRate = OutputSampleRate) {
     this._outputRate = outputRate;
     this._clocksPerSample = ClockHz / outputRate;
   }

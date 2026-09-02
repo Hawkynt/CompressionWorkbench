@@ -8,13 +8,13 @@ public enum CodeBookMapType : int
     /// <summary>
     /// Specifies that no option is selected.
     /// </summary>
-None = 0,
+    None = 0,
     /// <summary>
     /// Specifies the implicit option.
     /// </summary>
-Implicit = 1, // implicitly populated values from map column
+    Implicit = 1, // implicitly populated values from map column
     /// <summary>
     /// Specifies the listed option.
     /// </summary>
-Listed = 2 // listed arbitrary values
+    Listed = 2 // listed arbitrary values
 }

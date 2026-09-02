@@ -14,7 +14,7 @@ public sealed class MoReader {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public List<CatalogEntry> Read(ReadOnlySpan<byte> data) {
+  public List<CatalogEntry> Read(ReadOnlySpan<byte> data) {
     if (data.Length < 28)
       throw new InvalidDataException("MO file too short for header.");
 

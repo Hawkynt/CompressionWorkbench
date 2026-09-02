@@ -8,12 +8,12 @@ public class Chapter2Long : IStaticCodeBook
     /// <summary>
     /// Gets the dimensions.
     /// </summary>
-public int Dimensions { get; } = 2;
+    public int Dimensions { get; } = 2;
 
     /// <summary>
     /// Gets the length list.
     /// </summary>
-public byte[] LengthList { get; } = {
+    public byte[] LengthList { get; } = {
          6, 6,12,10,10,10, 9,10,12,12, 6, 1,10, 5, 6, 6,
          7, 9,11,14,12, 9, 8,11, 7, 8, 9,11,13,15,10, 5,
         12, 7, 8, 7, 9,12,14,15,10, 6, 7, 8, 5, 6, 7, 9,
@@ -26,26 +26,26 @@ public byte[] LengthList { get; } = {
     /// <summary>
     /// Gets the map type.
     /// </summary>
-public CodeBookMapType MapType { get; } = (CodeBookMapType)0;
+    public CodeBookMapType MapType { get; } = (CodeBookMapType)0;
     /// <summary>
     /// Gets the quant min.
     /// </summary>
-public int QuantMin { get; } = 0;
+    public int QuantMin { get; } = 0;
     /// <summary>
     /// Gets the quant delta.
     /// </summary>
-public int QuantDelta { get; } = 0;
+    public int QuantDelta { get; } = 0;
     /// <summary>
     /// Gets the quant.
     /// </summary>
-public int Quant { get; } = 0;
+    public int Quant { get; } = 0;
     /// <summary>
     /// Gets the quant sequence p.
     /// </summary>
-public int QuantSequenceP { get; } = 0;
+    public int QuantSequenceP { get; } = 0;
 
     /// <summary>
     /// Gets the quant list.
     /// </summary>
-public int[] QuantList { get; } = null;
+    public int[] QuantList { get; } = null;
 }

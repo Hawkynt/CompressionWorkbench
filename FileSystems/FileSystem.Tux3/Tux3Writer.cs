@@ -61,11 +61,11 @@ public sealed class Tux3Writer {
   /// <summary>
   /// Gets or sets the flags.
   /// </summary>
-public ulong Flags { get; init; }
+  public ulong Flags { get; init; }
   /// <summary>
   /// Gets or sets the block bits.
   /// </summary>
-public ulong BlockBits { get; init; } = 12; // 4 KiB blocks (matches Tux3 prototype default)
+  public ulong BlockBits { get; init; } = 12; // 4 KiB blocks (matches Tux3 prototype default)
 
   /// <summary>One file to emit: either its bytes, or a copier that streams them.</summary>
   private readonly record struct Item(string Name, long Size, byte[]? Data, Action<Stream>? Copy);
@@ -73,7 +73,7 @@ public ulong BlockBits { get; init; } = 12; // 4 KiB blocks (matches Tux3 protot
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add(new Item(CheckName(name), data.LongLength, data, null));
     if (data.LongLength > uint.MaxValue)
@@ -104,7 +104,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     var blockSize = 1 << (int)this.BlockBits;
@@ -192,7 +192,7 @@ public void WriteTo(Stream output) {
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build() {
+  public byte[] Build() {
     using var ms = new MemoryStream();
     this.WriteTo(ms);
     return ms.ToArray();

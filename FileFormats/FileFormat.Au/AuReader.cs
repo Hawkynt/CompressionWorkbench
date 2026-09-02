@@ -23,7 +23,7 @@ public sealed class AuReader {
   /// <summary>
   /// Represents a parsed au.
   /// </summary>
-public sealed record ParsedAu(
+  public sealed record ParsedAu(
     uint Encoding,
     int SampleRate,
     int NumChannels,
@@ -33,7 +33,7 @@ public sealed record ParsedAu(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedAu Read(ReadOnlySpan<byte> data) {
+  public ParsedAu Read(ReadOnlySpan<byte> data) {
     if (data.Length < 24)
       throw new InvalidDataException(".au too short for 24-byte header.");
     if (data[0] != '.' || data[1] != 's' || data[2] != 'n' || data[3] != 'd')

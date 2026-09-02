@@ -21,7 +21,7 @@ public sealed class ExtReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<ExtEntry> Entries => _entries;
+  public IReadOnlyList<ExtEntry> Entries => _entries;
 
   // Superblock fields
   private uint _inodesCount;
@@ -54,7 +54,7 @@ public IReadOnlyList<ExtEntry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="ExtReader"/>.
   /// </summary>
-public ExtReader(Stream stream, bool leaveOpen = false) {
+  public ExtReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
@@ -449,7 +449,7 @@ public ExtReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(ExtEntry entry) {
+  public byte[] Extract(ExtEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     // A symlink's on-disk content is its target path; surface exactly those bytes
@@ -470,5 +470,5 @@ public byte[] Extract(ExtEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

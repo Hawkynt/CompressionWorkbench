@@ -19,12 +19,12 @@ public sealed class MfsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<MfsEntry> Entries => _entries;
+  public IReadOnlyList<MfsEntry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="MfsReader"/>.
   /// </summary>
-public MfsReader(Stream stream, bool leaveOpen = false) {
+  public MfsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -95,7 +95,7 @@ public MfsReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(MfsEntry entry) {
+  public byte[] Extract(MfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
     var offset = _firstBlockOffset + (int)(entry.FirstBlock * _blockSize);
@@ -107,5 +107,5 @@ public byte[] Extract(MfsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

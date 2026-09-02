@@ -55,28 +55,28 @@ public sealed class RaidAssembledStream : Stream {
   /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
-public override bool CanRead => true;
+  public override bool CanRead => true;
   /// <inheritdoc/>
   /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
-public override bool CanSeek => true;
+  public override bool CanSeek => true;
   /// <inheritdoc/>
   /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
-public override bool CanWrite => false;
+  public override bool CanWrite => false;
   /// <inheritdoc/>
   /// <summary>
   /// Gets the length.
   /// </summary>
-public override long Length => this._length;
+  public override long Length => this._length;
 
   /// <inheritdoc/>
   /// <summary>
   /// Gets or sets the position.
   /// </summary>
-public override long Position {
+  public override long Position {
     get => this._position;
     set {
       if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
@@ -88,7 +88,7 @@ public override long Position {
   /// <summary>
   /// Performs the seek operation.
   /// </summary>
-public override long Seek(long offset, SeekOrigin origin) {
+  public override long Seek(long offset, SeekOrigin origin) {
     this._position = origin switch {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => this._position + offset,
@@ -102,7 +102,7 @@ public override long Seek(long offset, SeekOrigin origin) {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public override int Read(byte[] buffer, int offset, int count) {
+  public override int Read(byte[] buffer, int offset, int count) {
     ArgumentNullException.ThrowIfNull(buffer);
     return this.Read(buffer.AsSpan(offset, count));
   }
@@ -111,7 +111,7 @@ public override int Read(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public override int Read(Span<byte> buffer) {
+  public override int Read(Span<byte> buffer) {
     if (this._position >= this._length) return 0;
     var want = (int)Math.Min(buffer.Length, this._length - this._position);
     var done = 0;
@@ -320,23 +320,23 @@ public override int Read(Span<byte> buffer) {
   /// <summary>
   /// Performs the flush operation.
   /// </summary>
-public override void Flush() { }
+  public override void Flush() { }
   /// <inheritdoc/>
   /// <summary>
   /// Sets the length.
   /// </summary>
-public override void SetLength(long value) => throw new NotSupportedException();
+  public override void SetLength(long value) => throw new NotSupportedException();
   /// <inheritdoc/>
   /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
-public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException("RAID assembly is read-only.");
+  public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException("RAID assembly is read-only.");
 
   /// <inheritdoc/>
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-protected override void Dispose(bool disposing) {
+  protected override void Dispose(bool disposing) {
     if (disposing && !this._leaveOpen)
       foreach (var m in this._array.Members)
         m.Data?.Dispose();

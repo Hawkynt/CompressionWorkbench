@@ -16,7 +16,7 @@ public sealed class UmxWriter {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output, byte[]? embeddedData = null) {
+  public void WriteTo(Stream output, byte[]? embeddedData = null) {
     // Minimal header: magic + fileVersion 60 + zero tables.
     var hdr = new byte[36];
     BinaryPrimitives.WriteUInt32LittleEndian(hdr.AsSpan(0), UmxMagic);

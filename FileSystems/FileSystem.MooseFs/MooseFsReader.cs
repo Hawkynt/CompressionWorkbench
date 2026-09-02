@@ -109,7 +109,7 @@ public sealed class MooseFsReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="MooseFsReader"/>.
   /// </summary>
-public MooseFsReader(Stream stream) {
+  public MooseFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -301,7 +301,7 @@ public MooseFsReader(Stream stream) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 
   /// <summary>One walked section from the master metadata stream.</summary>
   /// <param name="Tag">The 8-byte ASCII tag (e.g. <c>"NODE 1.0"</c>), trimmed.</param>

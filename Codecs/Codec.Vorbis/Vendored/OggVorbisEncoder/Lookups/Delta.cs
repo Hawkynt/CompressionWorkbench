@@ -8,7 +8,7 @@ public struct Delta
     /// <summary>
     /// Initializes a new instance of <see cref="Delta"/>.
     /// </summary>
-public Delta(
+    public Delta(
         float min,
         float max)
     {
@@ -19,9 +19,9 @@ public Delta(
     /// <summary>
     /// Provides the min value.
     /// </summary>
-public float Min;
+    public float Min;
     /// <summary>
     /// Provides the max value.
     /// </summary>
-public float Max;
+    public float Max;
 }

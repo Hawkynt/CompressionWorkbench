@@ -19,7 +19,7 @@ public sealed partial class SplitFileReader {
   /// <summary>
   /// Gets the entry.
   /// </summary>
-public SplitFileEntry Entry { get; }
+  public SplitFileEntry Entry { get; }
 
   /// <summary>
   /// Opens a split file set from any one of the parts (typically .001).

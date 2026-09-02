@@ -40,30 +40,30 @@ public sealed class Tux2Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<Tux2Entry> Entries => _entries;
+  public IReadOnlyList<Tux2Entry> Entries => _entries;
 
   /// <summary>
   /// Gets or sets the version.
   /// </summary>
-public uint Version { get; private set; }
+  public uint Version { get; private set; }
   /// <summary>
   /// Gets or sets the file count.
   /// </summary>
-public uint FileCount { get; private set; }
+  public uint FileCount { get; private set; }
   /// <summary>
   /// Gets a value indicating whether valid header.
   /// </summary>
-public bool ValidHeader { get; private set; }
+  public bool ValidHeader { get; private set; }
 
   /// <summary>
   /// Provides the magic value.
   /// </summary>
-public static readonly byte[] Magic = "TUX2FS\0\0"u8.ToArray();
+  public static readonly byte[] Magic = "TUX2FS\0\0"u8.ToArray();
 
   /// <summary>
   /// Initializes a new instance of <see cref="Tux2Reader"/>.
   /// </summary>
-public Tux2Reader(Stream stream) {
+  public Tux2Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Records are located on demand: copying the image in, and then every file's
@@ -130,7 +130,7 @@ public Tux2Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(Tux2Entry entry) {
+  public byte[] Extract(Tux2Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset < 0) return entry.Data;
     if (entry.Size > Array.MaxLength)
@@ -156,5 +156,5 @@ public byte[] Extract(Tux2Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._img.Dispose();
+  public void Dispose() => this._img.Dispose();
 }

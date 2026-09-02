@@ -115,7 +115,7 @@ public sealed class GhostReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="GhostReader"/>.
   /// </summary>
-public GhostReader(Stream stream, bool isSpannedSegment = false, string? password = null) {
+  public GhostReader(Stream stream, bool isSpannedSegment = false, string? password = null) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -528,7 +528,7 @@ public GhostReader(Stream stream, bool isSpannedSegment = false, string? passwor
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(GhostEntry entry) {
+  public byte[] Extract(GhostEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
@@ -536,5 +536,5 @@ public byte[] Extract(GhostEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

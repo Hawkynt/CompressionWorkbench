@@ -61,7 +61,7 @@ public sealed class UdfWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     _files.Add((name, data));
@@ -123,7 +123,7 @@ public void AddFile(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     var root = BuildTree();
 
     // LBN 0 is the FSD; the root File Entry lives at LBN 1. Everything else

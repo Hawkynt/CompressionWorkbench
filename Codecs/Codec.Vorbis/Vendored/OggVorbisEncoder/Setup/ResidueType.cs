@@ -8,13 +8,13 @@ public enum ResidueType
     /// <summary>
     /// Specifies the zero option.
     /// </summary>
-Zero = 0,
+    Zero = 0,
     /// <summary>
     /// Specifies the one option.
     /// </summary>
-One = 1,
+    One = 1,
     /// <summary>
     /// Specifies the two option.
     /// </summary>
-Two = 2
+    Two = 2
 }

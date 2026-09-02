@@ -204,7 +204,7 @@ public sealed class RpmReader : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!this._disposed) {
       this._disposed = true;
       this._stream.Dispose();

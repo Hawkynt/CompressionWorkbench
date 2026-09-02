@@ -28,40 +28,40 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Stacker";
+  public string Id => "Stacker";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Stacker CVF";
+  public string DisplayName => "Stacker CVF";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
   // so the verb works via rebuild but nothing is modified in place. CanModify
   // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract
     | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".sta";
+  public string DefaultExtension => ".sta";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".sta", ".stk"];
+  public IReadOnlyList<string> Extensions => [".sta", ".stk"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ASCII "STACKER" at offset 0 — the start of the STACVOL banner sector
     // ("STACKER  version  N    volume:  <path>"), verified against a STACVOL
     // produced by the genuine Stacker 3.10 CREATE tool.
@@ -70,19 +70,19 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stacker-lzs", "Stacker LZS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stacker-lzs", "Stacker LZS")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "Stacker STACVOL (Stac Electronics, MS-DOS) — banner + Stacker Control Block parsed, "
     + "inner FAT12 directory walked, STORED and Stac-LZS clusters read/written. "
     + "Choose the 'Genuine' layout for byte-exact compatibility with the real Stacker "
@@ -92,7 +92,7 @@ public string Description =>
   /// <summary>
   /// Gets the options schema.
   /// </summary>
-public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "Compatibility",
       DisplayName: "On-disk layout",
@@ -161,7 +161,7 @@ public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
     if (TryGenuine(data, out var g))
       return g!.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -174,7 +174,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     if (TryGenuine(data, out var g)) {
       foreach (var e in g!.Entries) {
@@ -195,7 +195,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
@@ -255,7 +255,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
     WriteBack(archive, Rebuild(ReadAll(archive), inputs, null));
   }
@@ -263,7 +263,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames) {
+  public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(entryNames);
     WriteBack(archive, Rebuild(ReadAll(archive), null, entryNames));
   }
@@ -271,13 +271,13 @@ public void Remove(Stream archive, string[] entryNames) {
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => WriteBack(archive, Rebuild(ReadAll(archive), null, null));
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive, DefragOptions options)
+  public void Defragment(Stream archive, DefragOptions options)
     => this.Defragment(archive);
 
   /// <summary>

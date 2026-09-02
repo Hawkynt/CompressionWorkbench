@@ -18,7 +18,7 @@ public sealed class SpcPlayer {
   /// <summary>
   /// Defines the sample rate constant value.
   /// </summary>
-public const int SampleRate = 32000;
+  public const int SampleRate = 32000;
   private const int CpuCyclesPerSample = 32; // 1_024_000 / 32_000
   private const int DefaultSeconds = 30;
   private const int MaxSeconds = 300;

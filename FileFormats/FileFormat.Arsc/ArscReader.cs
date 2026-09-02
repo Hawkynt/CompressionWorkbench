@@ -34,7 +34,7 @@ public sealed class ArscReader {
   /// <summary>
   /// Initializes a new instance of <see cref="ArscReader"/>.
   /// </summary>
-public ArscReader(Stream stream) {
+  public ArscReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

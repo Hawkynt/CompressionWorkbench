@@ -37,7 +37,7 @@ public sealed class DoubleSpaceReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<DoubleSpaceEntry> Entries => this._entries;
+  public IReadOnlyList<DoubleSpaceEntry> Entries => this._entries;
 
   // MDBPB fields
   private int _bytesPerSector;
@@ -68,7 +68,7 @@ public IReadOnlyList<DoubleSpaceEntry> Entries => this._entries;
   /// <summary>
   /// Initializes a new instance of <see cref="DoubleSpaceReader"/>.
   /// </summary>
-public DoubleSpaceReader(Stream stream, bool leaveOpen = false) {
+  public DoubleSpaceReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -368,5 +368,5 @@ public DoubleSpaceReader(Stream stream, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

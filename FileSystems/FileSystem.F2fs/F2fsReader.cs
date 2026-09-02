@@ -60,12 +60,12 @@ public sealed class F2fsReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<F2fsEntry> Entries => this._entries;
+  public IReadOnlyList<F2fsEntry> Entries => this._entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="F2fsReader"/>.
   /// </summary>
-public F2fsReader(Stream stream, bool leaveOpen = true) {
+  public F2fsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the metadata a walk touches is a small
@@ -335,7 +335,7 @@ public F2fsReader(Stream stream, bool leaveOpen = true) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(F2fsEntry entry) {
+  public byte[] Extract(F2fsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var size = this.SizeOf(entry);
     if (size <= 0) return [];
@@ -391,5 +391,5 @@ public byte[] Extract(F2fsEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => this._data.Dispose();
+  public void Dispose() => this._data.Dispose();
 }

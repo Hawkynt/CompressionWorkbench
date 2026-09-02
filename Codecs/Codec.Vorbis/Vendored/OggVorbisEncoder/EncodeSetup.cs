@@ -39,7 +39,7 @@ public class EncodeSetup
     /// <summary>
     /// Initializes a new instance of <see cref="EncodeSetup"/>.
     /// </summary>
-public EncodeSetup(ISetupTemplate template, double baseSetting)
+    public EncodeSetup(ISetupTemplate template, double baseSetting)
     {
         Template = template;
         BaseSetting = baseSetting;
@@ -72,32 +72,32 @@ public EncodeSetup(ISetupTemplate template, double baseSetting)
     /// <summary>
     /// Gets the template.
     /// </summary>
-public ISetupTemplate Template { get; }
+    public ISetupTemplate Template { get; }
     /// <summary>
     /// Gets the base setting.
     /// </summary>
-public double BaseSetting { get; }
+    public double BaseSetting { get; }
     /// <summary>
     /// Gets the low pass kilohertz.
     /// </summary>
-public double LowPassKilohertz { get; }
+    public double LowPassKilohertz { get; }
     /// <summary>
     /// Gets the ath floating decibel.
     /// </summary>
-public double AthFloatingDecibel { get; }
+    public double AthFloatingDecibel { get; }
     /// <summary>
     /// Gets the ath absolute decibel.
     /// </summary>
-public double AthAbsoluteDecibel { get; }
+    public double AthAbsoluteDecibel { get; }
     /// <summary>
     /// Gets the amplitude track db per sec.
     /// </summary>
-public double AmplitudeTrackDbPerSec { get; }
+    public double AmplitudeTrackDbPerSec { get; }
 
     /// <summary>
     /// Gets the best match.
     /// </summary>
-public static EncodeSetup GetBestMatch(
+    public static EncodeSetup GetBestMatch(
         int channels,
         int sampleRate,
         float quality)

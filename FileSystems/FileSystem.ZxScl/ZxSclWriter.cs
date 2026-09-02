@@ -31,13 +31,13 @@ public sealed class ZxSclWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data, char fileType = 'C', ushort param1 = 0x8000, ushort param2 = 0)
+  public void AddFile(string name, byte[] data, char fileType = 'C', ushort param1 = 0x8000, ushort param2 = 0)
     => this._files.Add((name, fileType, param1, param2 == 0 ? (ushort)data.Length : param2, data));
 
   /// <summary>
   /// Performs the build operation.
   /// </summary>
-public byte[] Build() {
+  public byte[] Build() {
     if (this._files.Count > MaxEntries)
       throw new InvalidOperationException(
         $"SCL: {this._files.Count} files exceeds limit of {MaxEntries}.");

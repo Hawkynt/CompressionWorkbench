@@ -75,22 +75,22 @@ public sealed class AplibBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Aplib";
+  public string Id => "BB_Aplib";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "aPLib";
+  public string DisplayName => "aPLib";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "aPLib (Ibsen) — byte-oriented LZ77 with interleaved tag-bit stream, the core of FSG/PECompact/RLPack";
+  public string Description => "aPLib (Ibsen) — byte-oriented LZ77 with interleaved tag-bit stream, the core of FSG/PECompact/RLPack";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinNormalMatch = 2;
   private const int MaxChain = 64;
@@ -100,7 +100,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -116,7 +116,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4) throw new InvalidDataException("aPLib: input smaller than 4-byte header.");
     var targetSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (targetSize < 0) throw new InvalidDataException("aPLib: negative decompressed size.");

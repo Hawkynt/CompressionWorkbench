@@ -69,7 +69,7 @@ public sealed class Jffs2Writer {
   /// <summary>
   /// Initializes a new instance of <see cref="Jffs2Writer"/>.
   /// </summary>
-public Jffs2Writer(int eraseBlockSize = DefaultEraseBlockSize) {
+  public Jffs2Writer(int eraseBlockSize = DefaultEraseBlockSize) {
     if (eraseBlockSize < 4096 || (eraseBlockSize & (eraseBlockSize - 1)) != 0)
       throw new ArgumentException("Erase block size must be a power of two >= 4096.", nameof(eraseBlockSize));
     this._eraseBlockSize = eraseBlockSize;

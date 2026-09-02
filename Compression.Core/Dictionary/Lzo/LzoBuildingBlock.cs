@@ -12,28 +12,28 @@ public sealed class LzoBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Lzo";
+  public string Id => "BB_Lzo";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "LZO1X";
+  public string DisplayName => "LZO1X";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Extremely fast dictionary compression, optimized for decompression speed";
+  public string Description => "Extremely fast dictionary compression, optimized for decompression speed";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressed = Lzo1xCompressor.Compress(data);
     var result = new byte[4 + compressed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
@@ -45,7 +45,7 @@ public byte[] Compress(ReadOnlySpan<byte> data) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data) {
+  public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     return Lzo1xDecompressor.Decompress(data[4..], originalSize);
   }

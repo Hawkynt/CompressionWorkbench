@@ -24,15 +24,15 @@ public static class SolidBlockOptimizer {
     /// <summary>
     /// Gets or sets the strategy name.
     /// </summary>
-public required string StrategyName { get; init; }
+    public required string StrategyName { get; init; }
     /// <summary>
     /// Gets or sets the output size.
     /// </summary>
-public required long OutputSize { get; init; }
+    public required long OutputSize { get; init; }
     /// <summary>
     /// Gets or sets the elapsed.
     /// </summary>
-public required TimeSpan Elapsed { get; init; }
+    public required TimeSpan Elapsed { get; init; }
   }
 
   /// <summary>

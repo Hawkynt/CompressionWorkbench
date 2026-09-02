@@ -63,7 +63,7 @@ public static class UpxElfImage {
   /// <summary>
   /// Represents an image.
   /// </summary>
-public sealed record Image(
+  public sealed record Image(
     byte Version,
     byte Format,
     ushort LoaderSize,

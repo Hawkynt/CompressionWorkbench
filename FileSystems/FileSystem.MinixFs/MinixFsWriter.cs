@@ -33,7 +33,7 @@ public sealed class MinixFsWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="MinixFsWriter"/>.
   /// </summary>
-public MinixFsWriter(Stream output, bool leaveOpen = false) {
+  public MinixFsWriter(Stream output, bool leaveOpen = false) {
     _output = output;
     _leaveOpen = leaveOpen;
   }
@@ -679,7 +679,7 @@ public MinixFsWriter(Stream output, bool leaveOpen = false) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (!_leaveOpen) _output.Dispose();
   }
 }

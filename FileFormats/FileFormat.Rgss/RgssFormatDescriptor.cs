@@ -82,7 +82,7 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     // 8-byte magic header "RGSSAD\0V"
     yield return new DefragBlockInfo(0, 8, DefragBlockKind.MetadataReserved, FileName: "RGSS Header");
@@ -101,15 +101,15 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Rgss";
+  public string Id => "Rgss";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "RPG Maker RGSSAD";
+  public string DisplayName => "RPG Maker RGSSAD";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (with the synthetic metadata.ini view filtered);
   // relayouting the container on edit is honest R/W. See FormatCapabilities.cs
@@ -117,26 +117,26 @@ public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".rgssad";
+  public string DefaultExtension => ".rgssad";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".rgssad", ".rgss2a", ".rgss3a"];
+  public IReadOnlyList<string> Extensions => [".rgssad", ".rgss2a", ".rgss3a"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'R', (byte)'G', (byte)'S', (byte)'S', (byte)'A', (byte)'D', 0, 1], Confidence: 0.95),
     new([(byte)'R', (byte)'G', (byte)'S', (byte)'S', (byte)'A', (byte)'D', 0, 2], Confidence: 0.95),
     new([(byte)'R', (byte)'G', (byte)'S', (byte)'S', (byte)'A', (byte)'D', 0, 3], Confidence: 0.95)
@@ -144,24 +144,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("rgss", "RGSSAD")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("rgss", "RGSSAD")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "RPG Maker XP/VX/VX Ace encrypted resource archive";
+  public string Description => "RPG Maker XP/VX/VX Ace encrypted resource archive";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RgssReader(stream);
     var list = new List<ArchiveEntryInfo> {
       new(0, "metadata.ini", 0, 0, "Stored", false, false, null)
@@ -217,7 +217,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var entries = FormatHelpers.FilesOnly(inputs).ToList();
     var w = new RgssWriter(output);
     w.Write(entries);
@@ -226,7 +226,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new RgssReader(stream);
 
     if (files == null || MatchesFilter("metadata.ini", files)) {

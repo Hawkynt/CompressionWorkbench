@@ -10,59 +10,59 @@ public enum AacObjectType {
   /// <summary>
   /// Specifies the null option.
   /// </summary>
-Null = 0,
+  Null = 0,
   /// <summary>
   /// Specifies the aac main option.
   /// </summary>
-AacMain = 1,
+  AacMain = 1,
   /// <summary>
   /// Specifies the aac lc option.
   /// </summary>
-AacLc = 2,
+  AacLc = 2,
   /// <summary>
   /// Specifies the aac ssr option.
   /// </summary>
-AacSsr = 3,
+  AacSsr = 3,
   /// <summary>
   /// Specifies the aac ltp option.
   /// </summary>
-AacLtp = 4,
+  AacLtp = 4,
   /// <summary>
   /// Specifies the sbr option.
   /// </summary>
-Sbr = 5,         // HE-AAC extension (Spectral Band Replication)
+  Sbr = 5,         // HE-AAC extension (Spectral Band Replication)
   /// <summary>
   /// Specifies the aac scalable option.
   /// </summary>
-AacScalable = 6,
+  AacScalable = 6,
   /// <summary>
   /// Specifies the twin vq option.
   /// </summary>
-TwinVQ = 7,
+  TwinVQ = 7,
   /// <summary>
   /// Specifies the celp option.
   /// </summary>
-Celp = 8,
+  Celp = 8,
   /// <summary>
   /// Specifies the hvxc option.
   /// </summary>
-Hvxc = 9,
+  Hvxc = 9,
   /// <summary>
   /// Specifies the er aac lc option.
   /// </summary>
-Er_AacLc = 17,
+  Er_AacLc = 17,
   /// <summary>
   /// Specifies the er aac ltp option.
   /// </summary>
-Er_AacLtp = 19,
+  Er_AacLtp = 19,
   /// <summary>
   /// Specifies the er aac scalable option.
   /// </summary>
-Er_AacScalable = 20,
+  Er_AacScalable = 20,
   /// <summary>
   /// Specifies the ps option.
   /// </summary>
-Ps = 29,          // HE-AAC v2 (Parametric Stereo)
+  Ps = 29,          // HE-AAC v2 (Parametric Stereo)
 }
 
 /// <summary>

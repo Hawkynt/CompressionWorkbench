@@ -45,24 +45,24 @@ public sealed class Qcow2Stream : Stream {
   /// <summary>
   /// Gets a value indicating whether can read.
   /// </summary>
-public override bool CanRead => true;
+  public override bool CanRead => true;
   /// <summary>
   /// Gets a value indicating whether can seek.
   /// </summary>
-public override bool CanSeek => true;
+  public override bool CanSeek => true;
   /// <summary>
   /// Gets a value indicating whether can write.
   /// </summary>
-public override bool CanWrite => _backing.CanWrite;
+  public override bool CanWrite => _backing.CanWrite;
   /// <summary>
   /// Gets the length.
   /// </summary>
-public override long Length => _virtualSize;
+  public override long Length => _virtualSize;
 
   /// <summary>
   /// Gets or sets the position.
   /// </summary>
-public override long Position {
+  public override long Position {
     get => _position;
     set {
       if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
@@ -73,7 +73,7 @@ public override long Position {
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public override int Read(byte[] buffer, int offset, int count) {
+  public override int Read(byte[] buffer, int offset, int count) {
     if (_position >= _virtualSize) return 0;
     var remaining = (int)Math.Min(count, _virtualSize - _position);
     var totalRead = 0;
@@ -104,7 +104,7 @@ public override int Read(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
-public override void Write(byte[] buffer, int offset, int count) {
+  public override void Write(byte[] buffer, int offset, int count) {
     if (!CanWrite) throw new NotSupportedException("Backing stream is not writable.");
     if (_position + count > _virtualSize)
       throw new InvalidOperationException(
@@ -149,7 +149,7 @@ public override void Write(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the seek operation.
   /// </summary>
-public override long Seek(long offset, SeekOrigin origin) {
+  public override long Seek(long offset, SeekOrigin origin) {
     var newPos = origin switch {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => _position + offset,
@@ -164,7 +164,7 @@ public override long Seek(long offset, SeekOrigin origin) {
   /// <summary>
   /// Sets the length.
   /// </summary>
-public override void SetLength(long value) {
+  public override void SetLength(long value) {
     if (value != _virtualSize)
       throw new NotSupportedException(
         $"Cannot change the length of a QCOW2 virtual disk stream " +
@@ -174,12 +174,12 @@ public override void SetLength(long value) {
   /// <summary>
   /// Performs the flush operation.
   /// </summary>
-public override void Flush() => _backing.Flush();
+  public override void Flush() => _backing.Flush();
 
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-protected override void Dispose(bool disposing) {
+  protected override void Dispose(bool disposing) {
     if (disposing && !_leaveOpen)
       _backing.Dispose();
     base.Dispose(disposing);

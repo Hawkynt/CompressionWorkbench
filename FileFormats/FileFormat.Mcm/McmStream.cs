@@ -35,7 +35,7 @@ public static class McmStream {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) {
     // Read all input
     using var ms = new MemoryStream();
     input.CopyTo(ms);
@@ -69,7 +69,7 @@ public static void Compress(Stream input, Stream output) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public static void Decompress(Stream input, Stream output) {
+  public static void Decompress(Stream input, Stream output) {
     // Read and verify magic
     byte[] magic = new byte[10];
     input.ReadExactly(magic);

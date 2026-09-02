@@ -43,7 +43,7 @@ public sealed class SectorCache : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="SectorCache"/>.
   /// </summary>
-public SectorCache(Stream stream, int chunkSize = DefaultChunkSize, int maxChunks = DefaultMaxChunks) {
+  public SectorCache(Stream stream, int chunkSize = DefaultChunkSize, int maxChunks = DefaultMaxChunks) {
     ArgumentNullException.ThrowIfNull(stream);
     if (chunkSize <= 0) throw new ArgumentOutOfRangeException(nameof(chunkSize));
     if (maxChunks <= 0) throw new ArgumentOutOfRangeException(nameof(maxChunks));
@@ -147,7 +147,7 @@ public SectorCache(Stream stream, int chunkSize = DefaultChunkSize, int maxChunk
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     _chunks.Clear();
     _lru.Clear();
   }

@@ -8,29 +8,29 @@ public sealed class ApplePascalEntry {
   /// <summary>
   /// Gets or sets the name.
   /// </summary>
-public string Name { get; init; } = "";
+  public string Name { get; init; } = "";
   /// <summary>
   /// Gets or sets the size.
   /// </summary>
-public long Size { get; init; }
+  public long Size { get; init; }
   /// <summary>
   /// Gets a value indicating whether is directory.
   /// </summary>
-public bool IsDirectory { get; init; }
+  public bool IsDirectory { get; init; }
   /// <summary>
   /// Gets or sets the start block.
   /// </summary>
-public int StartBlock { get; init; }
+  public int StartBlock { get; init; }
   /// <summary>
   /// Gets or sets the end block.
   /// </summary>
-public int EndBlock { get; init; }
+  public int EndBlock { get; init; }
   /// <summary>
   /// Gets or sets the file kind.
   /// </summary>
-public int FileKind { get; init; }
+  public int FileKind { get; init; }
   /// <summary>
   /// Gets or sets the bytes in last block.
   /// </summary>
-public int BytesInLastBlock { get; init; }
+  public int BytesInLastBlock { get; init; }
 }

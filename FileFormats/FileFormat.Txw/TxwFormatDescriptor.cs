@@ -20,57 +20,57 @@ public sealed class TxwFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Txw";
+  public string Id => "Txw";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "TXW (Yamaha TX16W)";
+  public string DisplayName => "TXW (Yamaha TX16W)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".txw";
+  public string DefaultExtension => ".txw";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".txw"];
+  public IReadOnlyList<string> Extensions => [".txw"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
 
   // "LM8953" followed by two NUL bytes is the TX16W wave signature.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x4C, 0x4D, 0x38, 0x39, 0x35, 0x33, 0x00, 0x00], Offset: 0, Confidence: 0.9),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Yamaha TX16W wave; full file + decoded 12-bit mono WAV.";
+  public string Description => "Yamaha TX16W wave; full file + decoded 12-bit mono WAV.";
 
   private const int HeaderSize = 32;
   private const int RateCodeOffset = 26;
@@ -78,19 +78,19 @@ public string Description => "Yamaha TX16W wave; full file + decoded 12-bit mono
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password)
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── parsing ────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Performs the rate from code operation.
   /// </summary>
-public static int RateFromCode(byte code) => (code & 0x07) switch {
+  public static int RateFromCode(byte code) => (code & 0x07) switch {
     1 => 33333,
     2 => 50000,
     3 => 16667,
@@ -108,7 +108,7 @@ public static int RateFromCode(byte code) => (code & 0x07) switch {
   /// <summary>
   /// Performs the code from rate operation.
   /// </summary>
-public static byte CodeFromRate(int rate) => rate switch {
+  public static byte CodeFromRate(int rate) => rate switch {
     33333 => 1,
     50000 => 2,
     16667 => 3,
@@ -192,7 +192,7 @@ public static byte CodeFromRate(int rate) => rate switch {
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
     var full = fileList.FirstOrDefault(f =>
@@ -240,17 +240,17 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "TXW archive accepts: FULL.txw or one mono WAV (packed to lossy 12-bit)";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name == "full.txw" || name.EndsWith(".wav")) { reason = null; return true; }
     reason = $"not a TXW-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";

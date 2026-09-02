@@ -13,7 +13,7 @@ public sealed class VmdkWriter {
   /// <summary>
   /// Sets the disk data.
   /// </summary>
-public void SetDiskData(byte[] data) => _diskData = data;
+  public void SetDiskData(byte[] data) => _diskData = data;
 
   // SparseExtentHeader is a byte-packed structure (no natural alignment).
   // Field byte offsets within the 512-byte header sector:

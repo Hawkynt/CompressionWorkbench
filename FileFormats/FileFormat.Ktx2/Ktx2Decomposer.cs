@@ -17,25 +17,25 @@ public static class Ktx2Decomposer {
   /// <summary>
   /// Represents an entry kinds.
   /// </summary>
-public static class EntryKinds {
+  public static class EntryKinds {
     /// <summary>
     /// Defines the track constant value.
     /// </summary>
-public const string Track = "Track";
+    public const string Track = "Track";
     /// <summary>
     /// Defines the tag constant value.
     /// </summary>
-public const string Tag = "Tag";
+    public const string Tag = "Tag";
     /// <summary>
     /// Defines the frame constant value.
     /// </summary>
-public const string Frame = "Frame";
+    public const string Frame = "Frame";
   }
 
   /// <summary>
   /// Represents an entry.
   /// </summary>
-public readonly record struct Entry(string Name, byte[] Data, string Kind);
+  public readonly record struct Entry(string Name, byte[] Data, string Kind);
 
   /// <summary>The 12-byte KTX2 file identifier «KTX 20»\r\n\x1A\n.</summary>
   public static ReadOnlySpan<byte> Identifier =>
@@ -47,7 +47,7 @@ public readonly record struct Entry(string Name, byte[] Data, string Kind);
   /// <summary>
   /// Performs the decompose operation.
   /// </summary>
-public static List<Entry> Decompose(byte[] file) {
+  public static List<Entry> Decompose(byte[] file) {
     var entries = new List<Entry> { new("FULL.ktx2", file, EntryKinds.Track) };
     var meta = new IniBuilder("ktx2");
     var ok = false;

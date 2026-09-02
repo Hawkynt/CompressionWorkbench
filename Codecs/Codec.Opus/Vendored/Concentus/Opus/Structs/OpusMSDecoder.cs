@@ -365,7 +365,7 @@ namespace Concentus.Structs
         /// <summary>
         /// Decodes the supplied input.
         /// </summary>
-public int DecodeMultistream(
+        public int DecodeMultistream(
               ReadOnlySpan<byte> data,
               Span<short> out_pcm,
               int frame_size,
@@ -408,7 +408,7 @@ public int DecodeMultistream(
         /// <summary>
         /// Decodes the supplied input.
         /// </summary>
-public int DecodeMultistream(
+        public int DecodeMultistream(
               ReadOnlySpan<byte> data,
               Span<float> out_pcm,
               int frame_size,
@@ -436,7 +436,7 @@ public int DecodeMultistream(
         /// <summary>
         /// Gets the bandwidth.
         /// </summary>
-public OpusBandwidth Bandwidth
+        public OpusBandwidth Bandwidth
         {
             get
             {
@@ -450,7 +450,7 @@ public OpusBandwidth Bandwidth
         /// <summary>
         /// Gets the sample rate.
         /// </summary>
-public int SampleRate
+        public int SampleRate
         {
             get
             {
@@ -464,7 +464,7 @@ public int SampleRate
         /// <summary>
         /// Gets the num channels.
         /// </summary>
-public int NumChannels
+        public int NumChannels
         {
             get
             {
@@ -476,7 +476,7 @@ public int NumChannels
         /// <summary>
         /// Gets or sets the gain.
         /// </summary>
-public int Gain
+        public int Gain
         {
             get
             {
@@ -497,7 +497,7 @@ public int Gain
         /// <summary>
         /// Gets the last packet duration.
         /// </summary>
-public int LastPacketDuration
+        public int LastPacketDuration
         {
             get
             {
@@ -511,7 +511,7 @@ public int LastPacketDuration
         /// <summary>
         /// Gets the final range.
         /// </summary>
-public uint FinalRange
+        public uint FinalRange
         {
             get
             {
@@ -528,7 +528,7 @@ public uint FinalRange
         /// <summary>
         /// Performs the reset state operation.
         /// </summary>
-public void ResetState()
+        public void ResetState()
         {
             for (int s = 0; s < layout.nb_streams; s++)
             {
@@ -540,7 +540,7 @@ public void ResetState()
         /// <summary>
         /// Gets the version string.
         /// </summary>
-public string GetVersionString()
+        public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();
         }
@@ -559,7 +559,7 @@ public string GetVersionString()
         /// <summary>
         /// Releases resources held by this instance.
         /// </summary>
-public void Dispose() { }
+        public void Dispose() { }
 
         #endregion
     }

@@ -38,38 +38,38 @@ public sealed class Yaffs2FormatDescriptor
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Yaffs2";
+  public string Id => "Yaffs2";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "YAFFS2";
+  public string DisplayName => "YAFFS2";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".yaffs2";
+  public string DefaultExtension => ".yaffs2";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".yaffs2", ".yaffs"];
+  public IReadOnlyList<string> Extensions => [".yaffs2", ".yaffs"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // YAFFS2 has no superblock, but every image starts with chunk 0 holding the
     // root directory's object header: type YAFFS_OBJECT_TYPE_DIRECTORY (3) and
     // parent object id 1, followed by the zeroed checksum and an empty name.
@@ -82,26 +82,26 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Yet Another Flash File System v2 (raw NAND image) — read/write with mkyaffs2image-compatible layout.";
+  public string Description => "Yet Another Flash File System v2 (raw NAND image) — read/write with mkyaffs2image-compatible layout.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     ImageAccessor image;
     try {
@@ -143,7 +143,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ImageAccessor image;
     try {
       if (stream.CanSeek) stream.Position = 0;
@@ -239,7 +239,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Yaffs2Writer();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
@@ -256,7 +256,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Adds the supplied entry to the target container.
   /// </summary>
-public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in. Above that the edit unpacks and relays it out.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
@@ -270,7 +270,7 @@ public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
   /// <summary>
   /// Removes the specified entry from the target container.
   /// </summary>
-public void Remove(Stream archive, string[] entryNames) {
+  public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
       ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this, SyntheticNames);
@@ -300,7 +300,7 @@ public void Remove(Stream archive, string[] entryNames) {
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -471,7 +471,7 @@ public void Defragment(Stream archive)
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     try {
       if (image.CanSeek) image.Position = 0;
       using var data = new ImageAccessor(image);

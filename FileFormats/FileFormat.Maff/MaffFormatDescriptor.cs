@@ -19,7 +19,7 @@ public sealed class MaffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag delegating to ZIP (MAFF is a ZIP variant).</summary>
   public void Defragment(Stream archive)
@@ -45,19 +45,19 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileForma
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Maff";
+  public string Id => "Maff";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "MAFF";
+  public string DisplayName => "MAFF";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
@@ -84,40 +84,40 @@ public FormatCapabilities Capabilities =>
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".maff";
+  public string DefaultExtension => ".maff";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".maff"];
+  public IReadOnlyList<string> Extensions => [".maff"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Mozilla archive format (ZIP-based)";
+  public string Description => "Mozilla archive format (ZIP-based)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new FileFormat.Zip.ZipReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.UncompressedSize, e.CompressedSize,
       e.CompressionMethod.ToString(), e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
@@ -126,7 +126,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new FileFormat.Zip.ZipReader(stream, password: password);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
@@ -169,7 +169,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new FileFormat.Zip.ZipWriter(output, leaveOpen: true);
     foreach (var i in inputs) {
       if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }

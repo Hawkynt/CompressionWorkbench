@@ -102,7 +102,7 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Enumerates the layout.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Rar.RarLayoutMap.Enumerate(archive);
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Rar.RarLayoutMap.Enumerate(archive);
 
   /// <summary>Rebuild-based defrag delegating to RAR (CBR is a RAR variant).</summary>
   public void Defragment(Stream archive)
@@ -148,40 +148,40 @@ public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileForma
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".cbr";
+  public string DefaultExtension => ".cbr";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".cbr"];
+  public IReadOnlyList<string> Extensions => [".cbr"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("rar", "RAR")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("rar", "RAR")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Comic book RAR archive";
+  public string Description => "Comic book RAR archive";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new FileFormat.Rar.RarReader(stream, password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
       $"Method{e.CompressionMethod}", e.IsDirectory, false, e.ModifiedTime?.DateTime)).ToList();
@@ -190,7 +190,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new FileFormat.Rar.RarReader(stream, password);
     for (var i = 0; i < r.Entries.Count; i++) {
       var e = r.Entries[i];
@@ -203,7 +203,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new FileFormat.Rar.RarWriter(output, leaveOpen: true, password: options.Password);
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;

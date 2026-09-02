@@ -17,7 +17,7 @@ public sealed class StuffItXWriter {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output, byte[]? embeddedData = null) {
+  public void WriteTo(Stream output, byte[]? embeddedData = null) {
     var hdr = new byte[MinHeaderSize];
     MagicFull.CopyTo(hdr, 0);
     // Remaining header fields left zero. Reader tolerates this and returns an

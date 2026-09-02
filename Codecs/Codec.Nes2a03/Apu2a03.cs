@@ -89,7 +89,7 @@ public sealed class Apu2a03 {
   /// <summary>
   /// Initializes a new instance of <see cref="Apu2a03"/>.
   /// </summary>
-public Apu2a03(IBus6502 bus, double clockHz = NtscClockHz, int outputRate = OutputSampleRate) {
+  public Apu2a03(IBus6502 bus, double clockHz = NtscClockHz, int outputRate = OutputSampleRate) {
     this._dmc = new ApuDmcChannel(bus);
     this._clockHz = clockHz;
     this._outputRate = outputRate;

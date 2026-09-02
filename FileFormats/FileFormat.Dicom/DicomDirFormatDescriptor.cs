@@ -61,7 +61,7 @@ public sealed class DicomDirFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var basePath = (stream as FileStream)?.Name;
     return this.BuildEntries(stream, basePath).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -74,7 +74,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var basePath = (stream as FileStream)?.Name;
     foreach (var e in this.BuildEntries(stream, basePath)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
@@ -87,7 +87,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     var basePath = (input as FileStream)?.Name;
     foreach (var e in this.BuildEntries(input, basePath)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

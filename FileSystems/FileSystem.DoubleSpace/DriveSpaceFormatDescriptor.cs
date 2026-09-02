@@ -32,38 +32,38 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "DriveSpace";
+  public string Id => "DriveSpace";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "DriveSpace CVF";
+  public string DisplayName => "DriveSpace CVF";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".cvf";
+  public string DefaultExtension => ".cvf";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".cvf"];
+  public IReadOnlyList<string> Extensions => [".cvf"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(Encoding.ASCII.GetBytes("MSDSP6.2"), Offset: 3, Confidence: 0.85),
     // Some CVF files only expose the plaintext "DRVSPACE" name at offset 0
     // instead of the MSDSP signature in the BPB. Catching that case here
@@ -73,7 +73,7 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [
+  public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored",     "Stored (no compression)"),
     new("ds-lz77",    "DS LZ77"),
     new("ds-lz77+",   "DS LZ77 (lazy matching, slower better ratio)"),
@@ -82,11 +82,11 @@ public IReadOnlyList<FormatMethodInfo> Methods => [
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Microsoft DriveSpace compressed volume file (MS-DOS 6.22+/Windows 95).
   /// <para>
@@ -100,7 +100,7 @@ public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new DoubleSpaceReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, -1, "DS-LZ77", e.IsDirectory, false, null
@@ -110,7 +110,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new DoubleSpaceReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -122,7 +122,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // Prefer the schema-published Method knob; fall back to the top-level
     // MethodName field so callers using either path get the codec they asked for.
     var method = options.HasOption("Method") ? options.GetOption("Method", "ds-lz77") : options.MethodName;
@@ -155,7 +155,7 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Enumerates the extents.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => DoubleSpaceExtentMap.Enumerate(image);
 
   /// <summary>
@@ -186,7 +186,7 @@ public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new DoubleSpaceBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -199,7 +199,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new DoubleSpaceBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -211,7 +211,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

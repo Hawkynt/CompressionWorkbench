@@ -19,16 +19,16 @@ public sealed class MinixV1Reader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<MinixV1Entry> Entries => _entries;
+  public IReadOnlyList<MinixV1Entry> Entries => _entries;
 
   /// <summary>
   /// Gets or sets the magic.
   /// </summary>
-public ushort Magic { get; private set; }
+  public ushort Magic { get; private set; }
   /// <summary>
   /// Gets or sets the name length.
   /// </summary>
-public int NameLength { get; private set; }
+  public int NameLength { get; private set; }
 
   /// <summary>Blocks the inode bitmap occupies, from the superblock.</summary>
   public ushort InodeBitmapBlocks => this._imapBlocks;
@@ -67,7 +67,7 @@ public int NameLength { get; private set; }
   /// <summary>
   /// Initializes a new instance of <see cref="MinixV1Reader"/>.
   /// </summary>
-public MinixV1Reader(Stream stream) {
+  public MinixV1Reader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -363,7 +363,7 @@ public MinixV1Reader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(MinixV1Entry entry) {
+  public byte[] Extract(MinixV1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
 
@@ -380,5 +380,5 @@ public byte[] Extract(MinixV1Entry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

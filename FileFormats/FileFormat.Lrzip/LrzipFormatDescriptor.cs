@@ -38,55 +38,55 @@ public sealed class LrzipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Lrzip";
+  public string Id => "Lrzip";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Long Range Zip";
+  public string DisplayName => "Long Range Zip";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".lrz";
+  public string DefaultExtension => ".lrz";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".lrz"];
+  public IReadOnlyList<string> Extensions => [".lrz"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("LRZI"u8.ToArray(), Confidence: 0.95)
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("lrzip-lzma", "LRZIP LZMA")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lrzip-lzma", "LRZIP LZMA")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Long Range Zip (LZMA subtype only)";
+  public string Description => "Long Range Zip (LZMA subtype only)";
 
   // The synthetic single entry name we expose; lrzip is a single-stream compressor,
   // not a true archive, so we surface the payload as one entry called "data".
@@ -95,7 +95,7 @@ public string Description => "Long Range Zip (LZMA subtype only)";
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LrzipReader(stream, leaveOpen: true);
     var method = r.Method switch {
       LrzipConstants.MethodNone  => "Stored",
@@ -115,7 +115,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new LrzipReader(stream, leaveOpen: true);
     if (files != null && !MatchesFilter(EntryName, files))
       return;
@@ -125,7 +125,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // lrzip is a single-stream compressor, so we collapse all non-directory inputs into the
     // first one we see. Concatenation across multiple inputs is intentionally not done —
     // callers wanting that should tar first.

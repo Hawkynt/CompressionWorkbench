@@ -211,7 +211,7 @@ public sealed class AcronisTibxReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<AcronisTibxEntry> Entries => _entries;
+  public IReadOnlyList<AcronisTibxEntry> Entries => _entries;
 
   /// <summary>
   ///   Per-page summaries surfaced by the Stage-2 page-frame walk: one
@@ -287,7 +287,7 @@ public IReadOnlyList<AcronisTibxEntry> Entries => _entries;
   /// <summary>
   /// Initializes a new instance of <see cref="AcronisTibxReader"/>.
   /// </summary>
-public AcronisTibxReader(Stream stream) {
+  public AcronisTibxReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
 
     using var ms = new MemoryStream();
@@ -673,7 +673,7 @@ public AcronisTibxReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(AcronisTibxEntry entry) {
+  public byte[] Extract(AcronisTibxEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
@@ -681,5 +681,5 @@ public byte[] Extract(AcronisTibxEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

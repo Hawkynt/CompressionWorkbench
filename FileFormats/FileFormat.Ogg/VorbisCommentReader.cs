@@ -15,12 +15,12 @@ public sealed class VorbisCommentReader {
   /// <summary>
   /// Represents a parsed.
   /// </summary>
-public readonly record struct Parsed(string Vendor, IReadOnlyList<(string Key, string Value)> Comments);
+  public readonly record struct Parsed(string Vendor, IReadOnlyList<(string Key, string Value)> Comments);
 
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public Parsed Read(ReadOnlySpan<byte> body) {
+  public Parsed Read(ReadOnlySpan<byte> body) {
     if (body.Length < 4) return new Parsed("", []);
     var vendorLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(body);
     if (4 + vendorLen + 4 > body.Length) return new Parsed("", []);

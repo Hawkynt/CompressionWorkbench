@@ -47,7 +47,7 @@ namespace Concentus.Structs
     /// <summary>
     /// Represents an opus repacketizer.
     /// </summary>
-public class OpusRepacketizer
+    public class OpusRepacketizer
     {
         internal byte toc = 0;
         internal int nb_frames = 0;
@@ -75,7 +75,7 @@ public class OpusRepacketizer
         /// <summary>
         /// Performs the reset operation.
         /// </summary>
-public void Reset()
+        public void Reset()
         {
             this.nb_frames = 0;
         }
@@ -176,7 +176,7 @@ public void Reset()
         /// <summary>
         /// Performs the add packet operation.
         /// </summary>
-public int AddPacket(Span<byte> data, int data_offset, int len)
+        public int AddPacket(Span<byte> data, int data_offset, int len)
         {
             return opus_repacketizer_cat_impl(data, data_offset, len, 0);
         }
@@ -194,7 +194,7 @@ public int AddPacket(Span<byte> data, int data_offset, int len)
         /// <summary>
         /// Gets the num frames.
         /// </summary>
-public int GetNumFrames()
+        public int GetNumFrames()
         {
             return this.nb_frames;
         }
@@ -372,7 +372,7 @@ public int GetNumFrames()
         /// <summary>
         /// Performs the create packet operation.
         /// </summary>
-public int CreatePacket(int begin, int end, byte[] data, int data_offset, int maxlen)
+        public int CreatePacket(int begin, int end, byte[] data, int data_offset, int maxlen)
         {
             return opus_repacketizer_out_range_impl(begin, end, data, data_offset, maxlen, 0, 0);
         }
@@ -409,7 +409,7 @@ public int CreatePacket(int begin, int end, byte[] data, int data_offset, int ma
         /// <summary>
         /// Performs the create packet operation.
         /// </summary>
-public int CreatePacket(byte[] data, int data_offset, int maxlen)
+        public int CreatePacket(byte[] data, int data_offset, int maxlen)
         {
             return opus_repacketizer_out_range_impl(0, this.nb_frames, data, data_offset, maxlen, 0, 0);
         }
@@ -429,7 +429,7 @@ public int CreatePacket(byte[] data, int data_offset, int maxlen)
         /// <summary>
         /// Performs the pad packet operation.
         /// </summary>
-public static int PadPacket(Span<byte> data, int data_offset, int len, int new_len)
+        public static int PadPacket(Span<byte> data, int data_offset, int len, int new_len)
         {
             OpusRepacketizer rp = new OpusRepacketizer();
             int ret;
@@ -465,7 +465,7 @@ public static int PadPacket(Span<byte> data, int data_offset, int len, int new_l
         /// <summary>
         /// Performs the unpad packet operation.
         /// </summary>
-public static int UnpadPacket(byte[] data, int data_offset, int len)
+        public static int UnpadPacket(byte[] data, int data_offset, int len)
         {
             int ret;
             if (len < 1)
@@ -499,7 +499,7 @@ public static int UnpadPacket(byte[] data, int data_offset, int len)
         /// <summary>
         /// Performs the pad multistream packet operation.
         /// </summary>
-public static int PadMultistreamPacket(byte[] data, int data_offset, int len, int new_len, int nb_streams)
+        public static int PadMultistreamPacket(byte[] data, int data_offset, int len, int new_len, int nb_streams)
         {
             int s;
             int count;
@@ -548,7 +548,7 @@ public static int PadMultistreamPacket(byte[] data, int data_offset, int len, in
         /// <summary>
         /// Performs the unpad multistream packet operation.
         /// </summary>
-public static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)
+        public static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)
         {
             int s;
             byte dummy_toc;

@@ -19,12 +19,12 @@ public sealed class TapReader {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<TapEntry> Entries => _entries;
+  public IReadOnlyList<TapEntry> Entries => _entries;
 
   /// <summary>
   /// Initializes a new instance of <see cref="TapReader"/>.
   /// </summary>
-public TapReader(Stream stream) {
+  public TapReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();

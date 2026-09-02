@@ -15,34 +15,34 @@ public sealed class ZopfliBuildingBlock : IBuildingBlock {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "BB_Zopfli";
+  public string Id => "BB_Zopfli";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Zopfli";
+  public string DisplayName => "Zopfli";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Exhaustive iterative-optimal DEFLATE encoder producing smaller, fully RFC 1951-compatible output";
+  public string Description => "Exhaustive iterative-optimal DEFLATE encoder producing smaller, fully RFC 1951-compatible output";
   /// <inheritdoc/>
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public byte[] Compress(ReadOnlySpan<byte> data)
+  public byte[] Compress(ReadOnlySpan<byte> data)
     => DeflateCompressor.Compress(data, DeflateCompressionLevel.Maximum);
 
   /// <inheritdoc/>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Decompress(ReadOnlySpan<byte> data)
+  public byte[] Decompress(ReadOnlySpan<byte> data)
     => DeflateDecompressor.Decompress(data);
 }

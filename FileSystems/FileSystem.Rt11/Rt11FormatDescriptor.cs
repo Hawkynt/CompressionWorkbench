@@ -74,79 +74,79 @@ public sealed class Rt11FormatDescriptor :
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Rt11";
+  public string Id => "Rt11";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "DEC RT-11 (RX01)";
+  public string DisplayName => "DEC RT-11 (RX01)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".rt11";
+  public string DefaultExtension => ".rt11";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".rt11", ".rx01"];
+  public IReadOnlyList<string> Extensions => [".rt11", ".rx01"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // Detection by the home-block "DECRT11A    " ASCII marker at file offset
   // 1*512 + 0x1F0 = 0x3F0.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("DECRT11A    "u8.ToArray(), Offset: 0x3F0, Confidence: 0.95),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description =>
+  public string Description =>
     "DEC RT-11 disk image (RX01 8\" SSSD reference geometry, 256 256 bytes). " +
     "Flat directory at block 6, 6.3 RAD-50 filenames, files stored contiguously in 512-byte blocks.";
 
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => Rt11Layout.ImageBytes;
+  public long? MaxTotalArchiveSize => Rt11Layout.ImageBytes;
   /// <summary>
   /// Gets the min total archive size.
   /// </summary>
-public long? MinTotalArchiveSize => 0;
+  public long? MinTotalArchiveSize => 0;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     $"6.3 RAD-50 filenames (A-Z, 0-9, $, .); up to {Rt11Layout.EntriesPerSegment - 1} files per directory segment; ~250 KB total payload.";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = "RT-11 has a single flat directory; no subdirectories."; return false; }
     var fileName = Path.GetFileName(input.ArchiveName);
     var dot = fileName.LastIndexOf('.');
@@ -165,7 +165,7 @@ public bool CanAccept(ArchiveInputInfo input, out string? reason) {
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var v = ReadVolume(stream);
     return v.Files.Select((f, i) => new ArchiveEntryInfo(
       i, f.Name, f.ByteLength, f.ByteLength, "stored",
@@ -175,7 +175,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var v = ReadVolume(stream);
     foreach (var f in v.Files) {
       if (files != null && files.Length > 0 && !MatchesFilter(f.Name, files)) continue;
@@ -186,7 +186,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var files = inputs
       .Where(i => !i.IsDirectory)
       .Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()))
@@ -226,20 +226,20 @@ public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, Format
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new Rt11BlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new Rt11BlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
-public void Defragment(Stream archive)
+  public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

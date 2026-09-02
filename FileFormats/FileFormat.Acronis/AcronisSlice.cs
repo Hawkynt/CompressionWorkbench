@@ -8,7 +8,7 @@ public enum AcronisSliceForm {
   /// <summary>
   /// Specifies an unknown or unrecognized value.
   /// </summary>
-Unknown,
+  Unknown,
   /// <summary>File/directory-based backup (per-file index records). Trailer magic <c>2C 8A E1 94</c>.</summary>
   FileSystem,
   /// <summary>Sector-by-sector backup. Trailer magic <c>2B 8A E1 94</c>. Metadata offset is variable-length encoded.</summary>

@@ -16,37 +16,37 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Avi";
+  public string Id => "Avi";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "AVI (RIFF video)";
+  public string DisplayName => "AVI (RIFF video)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Video;
+  public FormatCategory Category => FormatCategory.Video;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".avi";
+  public string DefaultExtension => ".avi";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".avi"];
+  public IReadOnlyList<string> Extensions => [".avi"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "RIFF" at 0 is shared with WAV, but we include the AVI tag at +8 as an additional
     // confidence hint. FormatDetector short-circuits on the longest match.
     new([(byte)'R', (byte)'I', (byte)'F', (byte)'F', 0, 0, 0, 0,
@@ -58,24 +58,24 @@ public IReadOnlyList<MagicSignature> MagicSignatures => [
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "AVI video container; per-track video/audio demuxing + metadata.";
+  public string Description => "AVI video container; per-track video/audio demuxing + metadata.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
@@ -85,7 +85,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
         continue;
@@ -96,7 +96,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);
@@ -112,19 +112,19 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Enumerates the chunks.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => AviLayoutMap.Enumerate(file);
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => AviLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file) => _optimizer.Optimize(file);
+  public void Optimize(Stream file) => _optimizer.Optimize(file);
 
   /// <inheritdoc />
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
 
   /// <summary>Maximum number of individual frame entries to list per video track to keep List() responsive.</summary>
   private const int MaxFrameEntries = 100_000;

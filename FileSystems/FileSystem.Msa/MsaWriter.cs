@@ -13,7 +13,7 @@ public static class MsaWriter {
   /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
-public static void Write(Stream output, byte[] diskData,
+  public static void Write(Stream output, byte[] diskData,
       ushort sectorsPerTrack = 9, ushort sides = 1) {
     var trackSize = sectorsPerTrack * SectorSize;
     var numSides = sides + 1;

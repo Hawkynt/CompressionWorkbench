@@ -50,7 +50,7 @@ public readonly struct BrStandardHeader {
   /// <summary>
   /// Initializes a new instance of <see cref="BrStandardHeader"/>.
   /// </summary>
-public BrStandardHeader(uint size, ushort type, uint crc32, ushort reserved = 0) {
+  public BrStandardHeader(uint size, ushort type, uint crc32, ushort reserved = 0) {
     this.Size = size;
     this.Type = type;
     this.Reserved = reserved;

@@ -37,7 +37,7 @@ public sealed class Bzip2Stream : CompressionStream {
   /// <summary>
   /// Performs the decompress block operation.
   /// </summary>
-protected override int DecompressBlock(byte[] buffer, int offset, int count) {
+  protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (!this._headerRead) {
       ReadHeader();
       this._headerRead = true;
@@ -53,7 +53,7 @@ protected override int DecompressBlock(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the compress block operation.
   /// </summary>
-protected override void CompressBlock(byte[] buffer, int offset, int count) {
+  protected override void CompressBlock(byte[] buffer, int offset, int count) {
     if (!this._headerWritten) {
       WriteHeader();
       this._headerWritten = true;
@@ -66,7 +66,7 @@ protected override void CompressBlock(byte[] buffer, int offset, int count) {
   /// <summary>
   /// Performs the finish compression operation.
   /// </summary>
-protected override void FinishCompression() {
+  protected override void FinishCompression() {
     if (!this._headerWritten) {
       WriteHeader();
       this._headerWritten = true;

@@ -32,7 +32,7 @@ public sealed class SidFilter {
   /// <summary>
   /// Initializes a new instance of <see cref="SidFilter"/>.
   /// </summary>
-public SidFilter(SidModel model, double clockHz) {
+  public SidFilter(SidModel model, double clockHz) {
     this._model = model;
     this._clockHz = clockHz;
     this.SetCutoff(0);

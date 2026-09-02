@@ -14,7 +14,7 @@ public static class HeaderPacketBuilder
     /// <summary>
     /// Performs the build info packet operation.
     /// </summary>
-public static OggPacket BuildInfoPacket(VorbisInfo info)
+    public static OggPacket BuildInfoPacket(VorbisInfo info)
     {
         var buffer = new EncodeBuffer();
 
@@ -27,7 +27,7 @@ public static OggPacket BuildInfoPacket(VorbisInfo info)
     /// <summary>
     /// Performs the build comments packet operation.
     /// </summary>
-public static OggPacket BuildCommentsPacket(Comments comments)
+    public static OggPacket BuildCommentsPacket(Comments comments)
     {
         var buffer = new EncodeBuffer();
 
@@ -40,7 +40,7 @@ public static OggPacket BuildCommentsPacket(Comments comments)
     /// <summary>
     /// Performs the build books packet operation.
     /// </summary>
-public static OggPacket BuildBooksPacket(VorbisInfo info)
+    public static OggPacket BuildBooksPacket(VorbisInfo info)
     {
         var buffer = new EncodeBuffer(4096);
 

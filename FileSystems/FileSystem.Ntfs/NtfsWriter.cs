@@ -1015,7 +1015,7 @@ public sealed class NtfsWriter {
   /// <summary>
   /// Performs the build to streaming operation.
   /// </summary>
-public void BuildToStreaming(Stream output, long totalSize, int clusterSizeBytes, int mftRecordSize) {
+  public void BuildToStreaming(Stream output, long totalSize, int clusterSizeBytes, int mftRecordSize) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));

@@ -237,7 +237,7 @@ public sealed class BtrfsWriter {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     // ── Phase 1: build and pack the FS tree ─────────────────────────────

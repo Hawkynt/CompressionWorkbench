@@ -8,7 +8,7 @@ public class OggPacket
     /// <summary>
     /// Initializes a new instance of <see cref="OggPacket"/>.
     /// </summary>
-public OggPacket(
+    public OggPacket(
         byte[] packetData,
         bool endOfStream,
         int granulePosition,

@@ -58,42 +58,42 @@ public sealed class PartcloneReader {
   /// <summary>
   /// Provides the magic value.
   /// </summary>
-public static readonly byte[] Magic = Encoding.ASCII.GetBytes("partclone-image");
+  public static readonly byte[] Magic = Encoding.ASCII.GetBytes("partclone-image");
   /// <summary>
   /// Defines the magic size constant value.
   /// </summary>
-public const int MagicSize = 15;
+  public const int MagicSize = 15;
   /// <summary>
   /// Defines the fs magic size constant value.
   /// </summary>
-public const int FsMagicSize = 15;
+  public const int FsMagicSize = 15;
   /// <summary>
   /// Defines the version size v 2 constant value.
   /// </summary>
-public const int VersionSizeV2 = 14;
+  public const int VersionSizeV2 = 14;
   /// <summary>
   /// Defines the endian magic constant value.
   /// </summary>
-public const ushort EndianMagic = 0xC0DE;
+  public const ushort EndianMagic = 0xC0DE;
 
   // Bitmap encoding modes from partclone's image.h.
   /// <summary>
   /// Defines the bm none constant value.
   /// </summary>
-public const int BmNone = 0;
+  public const int BmNone = 0;
   /// <summary>
   /// Defines the bm bit constant value.
   /// </summary>
-public const int BmBit = 1;
+  public const int BmBit = 1;
   /// <summary>
   /// Defines the bm byte constant value.
   /// </summary>
-public const int BmByte = 2;
+  public const int BmByte = 2;
 
   /// <summary>
   /// Represents a partclone image.
   /// </summary>
-public sealed record PartcloneImage(
+  public sealed record PartcloneImage(
     string PtcVersion,
     string FsType,
     ulong DeviceSize,
@@ -114,12 +114,12 @@ public sealed record PartcloneImage(
   /// <summary>
   /// Gets the info.
   /// </summary>
-public PartcloneImage Info => _info;
+  public PartcloneImage Info => _info;
 
   /// <summary>
   /// Initializes a new instance of <see cref="PartcloneReader"/>.
   /// </summary>
-public PartcloneReader(Stream stream) {
+  public PartcloneReader(Stream stream) {
     _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanRead || !stream.CanSeek)
       throw new ArgumentException("Partclone reader requires a readable, seekable stream.", nameof(stream));

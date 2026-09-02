@@ -185,7 +185,7 @@ public sealed class U8Writer : IDisposable {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (this._disposed)
       return;
     this._disposed = true;

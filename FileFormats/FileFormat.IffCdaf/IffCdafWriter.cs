@@ -13,12 +13,12 @@ public sealed class IffCdafWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => _files.Add((name, data));
+  public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     // Build chunks in memory first to calculate FORM size
     using var body = new MemoryStream();
     var buf4 = new byte[4];

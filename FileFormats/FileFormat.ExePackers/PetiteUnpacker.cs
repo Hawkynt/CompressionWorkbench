@@ -49,12 +49,12 @@ public static class PetiteUnpacker {
   /// <summary>
   /// Represents a petite block.
   /// </summary>
-public readonly record struct PetiteBlock(uint SourceRva, uint DestinationRva, byte[] Data, bool BranchFilterReversed);
+  public readonly record struct PetiteBlock(uint SourceRva, uint DestinationRva, byte[] Data, bool BranchFilterReversed);
 
   /// <summary>
   /// Represents a petite image.
   /// </summary>
-public sealed record PetiteImage(
+  public sealed record PetiteImage(
     IReadOnlyList<PetiteBlock> Blocks,
     byte[] MemoryImage,
     uint BlockTableRva,
@@ -65,7 +65,7 @@ public sealed record PetiteImage(
   /// <summary>
   /// Performs the try unpack operation.
   /// </summary>
-public static bool TryUnpack(ReadOnlySpan<byte> image, long maximumDecompressedSize, out PetiteImage? result, out string error) {
+  public static bool TryUnpack(ReadOnlySpan<byte> image, long maximumDecompressedSize, out PetiteImage? result, out string error) {
     result = null;
     if (!TryReadHeaders(image, out var headers, out error))
       return false;
@@ -357,7 +357,7 @@ public static class PetiteInflate {
   /// <summary>
   /// Performs the try inflate operation.
   /// </summary>
-public static bool TryInflate(ReadOnlySpan<byte> input, int start, int expectedSize, out byte[]? output) {
+  public static bool TryInflate(ReadOnlySpan<byte> input, int start, int expectedSize, out byte[]? output) {
     output = null;
     if (start < 0 || start >= input.Length || expectedSize <= 0)
       return false;

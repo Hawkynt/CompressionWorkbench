@@ -50,7 +50,7 @@ public sealed class VxFsVolume {
   /// <summary>
   /// Gets or sets the block size.
   /// </summary>
-public int BlockSize { get; private set; } = VxFsLayout.BlockSize;
+  public int BlockSize { get; private set; } = VxFsLayout.BlockSize;
 
   /// <summary>The files in the root directory, in the order it lists them.</summary>
   public IReadOnlyList<VolumeFile> Files => this._files;
@@ -69,12 +69,12 @@ public int BlockSize { get; private set; } = VxFsLayout.BlockSize;
   /// <summary>
   /// Gets the image length.
   /// </summary>
-public long ImageLength => this._image.LongLength;
+  public long ImageLength => this._image.LongLength;
 
   /// <summary>
   /// Initializes a new instance of <see cref="VxFsVolume"/>.
   /// </summary>
-public VxFsVolume(Stream image) {
+  public VxFsVolume(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
     using var ms = new MemoryStream();

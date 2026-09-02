@@ -186,7 +186,7 @@ public sealed class SpeexDecoder {
   /// <summary>
   /// Initializes a new instance of <see cref="SpeexDecoder"/>.
   /// </summary>
-public SpeexDecoder(SpeexHeader header) {
+  public SpeexDecoder(SpeexHeader header) {
     ArgumentNullException.ThrowIfNull(header);
     this._header = header;
     this._mode = header.Mode;

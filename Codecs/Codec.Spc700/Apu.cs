@@ -20,7 +20,7 @@ public sealed class Apu {
   /// <summary>
   /// Defines the ram size constant value.
   /// </summary>
-public const int RamSize = 0x10000;
+  public const int RamSize = 0x10000;
 
   /// <summary>The 64&#160;KB audio RAM; also the DSP's sample memory.</summary>
   public readonly byte[] Ram = new byte[RamSize];
@@ -28,7 +28,7 @@ public const int RamSize = 0x10000;
   /// <summary>
   /// Provides the dsp value.
   /// </summary>
-public readonly SDsp Dsp;
+  public readonly SDsp Dsp;
 
   // CPU I/O ports $F4-$F7 loopback latches.
   private readonly byte[] _ports = new byte[4];
@@ -50,14 +50,14 @@ public readonly SDsp Dsp;
   /// <summary>
   /// Initializes a new instance of <see cref="Apu"/>.
   /// </summary>
-public Apu() => this.Dsp = new SDsp(this.Ram);
+  public Apu() => this.Dsp = new SDsp(this.Ram);
 
   // ── memory access ─────────────────────────────────────────────────────────────
 
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public byte Read(ushort address) {
+  public byte Read(ushort address) {
     switch (address) {
       case 0xF0: return 0;                 // TEST: write-only on hardware; reads as 0 here.
       case 0xF1: return this._control;     // CONTROL
@@ -85,7 +85,7 @@ public byte Read(ushort address) {
   /// <summary>
   /// Writes the value to the supplied output.
   /// </summary>
-public void Write(ushort address, byte value) {
+  public void Write(ushort address, byte value) {
     switch (address) {
       case 0xF0: return;                    // TEST: ignored.
       case 0xF1: this.WriteControl(value); return;

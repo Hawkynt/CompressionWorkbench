@@ -8,13 +8,13 @@ public sealed class SplitFileEntry {
   /// <summary>
   /// Gets or sets the name.
   /// </summary>
-public string Name { get; init; } = "";
+  public string Name { get; init; } = "";
   /// <summary>
   /// Gets or sets the size.
   /// </summary>
-public long Size { get; init; }
+  public long Size { get; init; }
   /// <summary>
   /// Gets or sets the part count.
   /// </summary>
-public int PartCount { get; init; }
+  public int PartCount { get; init; }
 }

@@ -13,12 +13,12 @@ public class Comments
     /// <summary>
     /// Gets the user comments.
     /// </summary>
-public List<string> UserComments => _userComments;
+    public List<string> UserComments => _userComments;
 
     /// <summary>
     /// Performs the add tag operation.
     /// </summary>
-public void AddTag(string tag, string contents)
+    public void AddTag(string tag, string contents)
     {
         var stringBuilder = new StringBuilder();
         stringBuilder.Append(tag);

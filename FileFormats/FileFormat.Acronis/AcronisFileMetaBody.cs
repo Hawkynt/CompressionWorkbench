@@ -428,7 +428,7 @@ public static class AcronisFileMetaBodyDecoder {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public static AcronisFileMetaBody? Decode(ReadOnlySpan<byte> payload) {
+  public static AcronisFileMetaBody? Decode(ReadOnlySpan<byte> payload) {
     if (payload.Length < 4) return null;
     var count = BinaryPrimitives.ReadUInt32LittleEndian(payload);
     var attrs = new List<AcronisRawAttribute>(count > 1024 ? 0 : (int)count);

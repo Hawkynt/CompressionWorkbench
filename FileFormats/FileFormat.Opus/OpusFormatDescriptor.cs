@@ -20,69 +20,69 @@ public sealed class OpusFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Opus";
+  public string Id => "Opus";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "Opus (Ogg)";
+  public string DisplayName => "Opus (Ogg)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Audio;
+  public FormatCategory Category => FormatCategory.Audio;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".opus";
+  public string DefaultExtension => ".opus";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".opus"];
+  public IReadOnlyList<string> Extensions => [".opus"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   // Empty — Opus is Ogg-framed ("OggS"), so the generic Ogg descriptor owns that
   // magic. This descriptor is reached only via explicit registry lookup
   // (e.g. `cwb list --format Opus`), exactly like FlacArchiveDescriptor.
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("opus", "Opus")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("opus", "Opus")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Opus audio (Ogg-encapsulated); full file + decoded per-channel PCM.";
+  public string Description => "Opus audio (Ogg-encapsulated); full file + decoded per-channel PCM.";
 
   // ── IArchiveFormatOperations ─────────────────────────────────────────
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     AudioPseudoArchive.List(BuildEntries(stream));
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
   // ── IArchiveInMemoryExtract ──────────────────────────────────────────
@@ -90,7 +90,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the extract entry operation.
   /// </summary>
-public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
     AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveWriteConstraints ─────────────────────────────────────────
@@ -100,17 +100,17 @@ public void ExtractEntry(Stream input, string entryName, Stream output, string? 
   /// <summary>
   /// Gets the max total archive size.
   /// </summary>
-public long? MaxTotalArchiveSize => null;
+  public long? MaxTotalArchiveSize => null;
   /// <summary>
   /// Gets the accepted inputs description.
   /// </summary>
-public string AcceptedInputsDescription =>
+  public string AcceptedInputsDescription =>
     "Opus archive accepts: FULL.opus, LEFT/RIGHT/CENTER/… .wav (per-channel)";
 
   /// <summary>
   /// Performs the can accept operation.
   /// </summary>
-public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.opus" || name.EndsWith(".wav")) {
       reason = null;

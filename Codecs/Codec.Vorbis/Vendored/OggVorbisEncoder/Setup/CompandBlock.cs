@@ -8,7 +8,7 @@ public class CompandBlock
     /// <summary>
     /// Initializes a new instance of <see cref="CompandBlock"/>.
     /// </summary>
-public CompandBlock(int[] data)
+    public CompandBlock(int[] data)
     {
         Data = data;
     }
@@ -16,5 +16,5 @@ public CompandBlock(int[] data)
     /// <summary>
     /// Gets the data.
     /// </summary>
-public int[] Data { get; }
+    public int[] Data { get; }
 }

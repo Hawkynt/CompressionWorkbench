@@ -28,74 +28,74 @@ public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Gif";
+  public string Id => "Gif";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "GIF (multi-frame)";
+  public string DisplayName => "GIF (multi-frame)";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".gif";
+  public string DefaultExtension => ".gif";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".gif"];
+  public IReadOnlyList<string> Extensions => [".gif"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("GIF87a"u8.ToArray(), Confidence: 0.95),
     new("GIF89a"u8.ToArray(), Confidence: 0.95),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Animated GIF; each frame is decoded to RGBA32 with disposal/blend applied, then exposed with the full colorspace tree.";
+  public string Description => "Animated GIF; each frame is decoded to RGBA32 with disposal/blend applied, then exposed with the full colorspace tree.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     MultiImageArchiveHelper.List(stream, "frame", ReadAll);
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     MultiImageArchiveHelper.Extract(stream, outputDir, files, "frame", ReadAll);
 
   /// <inheritdoc />
   /// <summary>
   /// Enumerates the chunks.
   /// </summary>
-public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => GifLayoutMap.Enumerate(file);
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => GifLayoutMap.Enumerate(file);
 
   /// <summary>Decodes <paramref name="s"/> to a list of <see cref="RawImage"/> RGBA32 frames.</summary>
   /// <remarks>

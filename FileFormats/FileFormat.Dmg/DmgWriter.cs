@@ -30,7 +30,7 @@ public sealed class DmgWriter {
   /// <summary>
   /// Performs the add partition operation.
   /// </summary>
-public void AddPartition(string name, byte[] data) {
+  public void AddPartition(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     if (string.IsNullOrEmpty(name))
@@ -41,7 +41,7 @@ public void AddPartition(string name, byte[] data) {
   /// <summary>
   /// Writes the to to the supplied output.
   /// </summary>
-public void WriteTo(Stream output) {
+  public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     // Pad each partition to a sector boundary so sectorCount is exact.

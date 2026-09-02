@@ -11,31 +11,31 @@ public enum FlacSubframeMode {
   /// <summary>
   /// Selects the value automatically.
   /// </summary>
-Auto,
+  Auto,
   /// <summary>
   /// Specifies the verbatim option.
   /// </summary>
-Verbatim,
+  Verbatim,
   /// <summary>
   /// Specifies the fixed 0 option.
   /// </summary>
-Fixed0,
+  Fixed0,
   /// <summary>
   /// Specifies the fixed 1 option.
   /// </summary>
-Fixed1,
+  Fixed1,
   /// <summary>
   /// Specifies the fixed 2 option.
   /// </summary>
-Fixed2,
+  Fixed2,
   /// <summary>
   /// Specifies the fixed 3 option.
   /// </summary>
-Fixed3,
+  Fixed3,
   /// <summary>
   /// Specifies the fixed 4 option.
   /// </summary>
-Fixed4,
+  Fixed4,
 }
 
 /// <summary>
@@ -45,23 +45,23 @@ public enum FlacStereoMode {
   /// <summary>
   /// Selects the value automatically.
   /// </summary>
-Auto,
+  Auto,
   /// <summary>
   /// Specifies the independent option.
   /// </summary>
-Independent,
+  Independent,
   /// <summary>
   /// Specifies the left side option.
   /// </summary>
-LeftSide,
+  LeftSide,
   /// <summary>
   /// Specifies the right side option.
   /// </summary>
-RightSide,
+  RightSide,
   /// <summary>
   /// Specifies the mid side option.
   /// </summary>
-MidSide,
+  MidSide,
 }
 
 /// <summary>
@@ -107,7 +107,7 @@ public static partial class FlacCodec {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-public static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels,
+  public static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels,
     int blockSize = 4096, FlacSubframeMode compression = FlacSubframeMode.Auto,
     FlacStereoMode stereoMode = FlacStereoMode.Auto) {
     var pcm = new int[interleaved.Length];

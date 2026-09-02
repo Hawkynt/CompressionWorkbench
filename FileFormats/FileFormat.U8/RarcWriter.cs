@@ -23,7 +23,7 @@ public sealed class RarcWriter : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="RarcWriter"/>.
   /// </summary>
-public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root") {
+  public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root") {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanWrite)
       throw new ArgumentException("Stream must be writable.", nameof(stream));
@@ -37,7 +37,7 @@ public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root
   /// <summary>
   /// Performs the add entry operation.
   /// </summary>
-public void AddEntry(
+  public void AddEntry(
       string path,
       byte[] data,
       RarcEntryAttributes attributes = RarcEntryAttributes.File | RarcEntryAttributes.PreloadToMram) {
@@ -75,7 +75,7 @@ public void AddEntry(
   /// <summary>
   /// Performs the finish operation.
   /// </summary>
-public void Finish() {
+  public void Finish() {
     if (this._finished)
       return;
     this._finished = true;
@@ -224,7 +224,7 @@ public void Finish() {
   /// <summary>
   /// Performs the normalize path operation.
   /// </summary>
-public static string NormalizePath(string path) {
+  public static string NormalizePath(string path) {
     ArgumentNullException.ThrowIfNull(path);
     var normalized = path.Replace('\\', '/').TrimStart('/');
     if (normalized.Length == 0 || normalized.EndsWith('/'))
@@ -322,7 +322,7 @@ public static string NormalizePath(string path) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() {
+  public void Dispose() {
     if (this._disposed)
       return;
     this._disposed = true;

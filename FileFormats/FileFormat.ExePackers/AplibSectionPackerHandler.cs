@@ -27,11 +27,11 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
   /// <summary>
   /// Gets the id.
   /// </summary>
-public abstract string Id { get; }
+  public abstract string Id { get; }
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public abstract string DisplayName { get; }
+  public abstract string DisplayName { get; }
 
   /// <summary>Display name of the packer as written into metadata (e.g. "FSG", "ASPack").</summary>
   protected abstract string PackerLabel { get; }
@@ -39,7 +39,7 @@ public abstract string DisplayName { get; }
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public ExecutableUnpackCapabilities Capabilities =>
+  public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -57,7 +57,7 @@ public ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the detect operation.
   /// </summary>
-public DetectionResult Detect(ReadOnlySpan<byte> image) {
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, $"{this.PackerLabel}: not a valid PE.", true)]);
     var (match, confidence, reason) = this.DetectPe(image);
@@ -69,7 +69,7 @@ public DetectionResult Detect(ReadOnlySpan<byte> image) {
   /// <summary>
   /// Parses the value from the supplied data.
   /// </summary>
-public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -88,7 +88,7 @@ public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detectio
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+  public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
         new(ExecutableDiagnosticCode.PayloadNotFound, "Input exceeds configured executable unpacking size limit.", true),
@@ -144,7 +144,7 @@ public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions option
   /// <summary>
   /// Represents a decoded.
   /// </summary>
-protected readonly record struct Decoded(int Offset, byte[] Compressed, byte[] Data);
+  protected readonly record struct Decoded(int Offset, byte[] Compressed, byte[] Data);
 
   private static List<Candidate> CollectCandidates(byte[] image) {
     var seen = new HashSet<int>();
@@ -277,7 +277,7 @@ protected readonly record struct Decoded(int Offset, byte[] Compressed, byte[] D
   /// <summary>
   /// Performs the build metadata json operation.
   /// </summary>
-protected byte[] BuildMetadataJson(PackedExecutable packed) {
+  protected byte[] BuildMetadataJson(PackedExecutable packed) {
     var sb = new StringBuilder();
     sb.Append("{\n");
     sb.Append(CultureInfo.InvariantCulture, $"  \"packer\": \"{this.Id}\",\n");

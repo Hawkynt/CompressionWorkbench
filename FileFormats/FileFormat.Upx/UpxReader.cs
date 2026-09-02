@@ -52,27 +52,27 @@ public sealed class UpxReader {
   /// <summary>
   /// Specifies packer header layout values.
   /// </summary>
-public enum PackerHeaderLayout {
+  public enum PackerHeaderLayout {
     /// <summary>
     /// Specifies the legacy option.
     /// </summary>
-Legacy,
+    Legacy,
     /// <summary>
     /// Specifies the modern pe option.
     /// </summary>
-ModernPe,
+    ModernPe,
   }
 
   /// <summary>
   /// Represents a pe section.
   /// </summary>
-public sealed record PeSection(
+  public sealed record PeSection(
     string Name, uint VirtualSize, uint VirtualAddress, uint RawSize, uint RawOffset, uint Characteristics);
 
   /// <summary>
   /// Represents a packer header.
   /// </summary>
-public sealed record PackerHeader(
+  public sealed record PackerHeader(
     int Offset,
     bool MagicIntact,
     byte Version,
@@ -106,7 +106,7 @@ public sealed record PackerHeader(
   /// <summary>
   /// Represents an info.
   /// </summary>
-public sealed record Info(
+  public sealed record Info(
     ContainerKind Kind,
     DetectionConfidence Confidence,
     DetectionEvidence Evidence,
@@ -124,7 +124,7 @@ public sealed record Info(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public static Info Read(ReadOnlySpan<byte> data) {
+  public static Info Read(ReadOnlySpan<byte> data) {
     var image = data.ToArray();
     var kind = DetectContainer(data);
 

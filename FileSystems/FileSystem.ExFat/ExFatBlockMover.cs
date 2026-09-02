@@ -54,11 +54,11 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
   /// <summary>
   /// Gets the first data byte.
   /// </summary>
-public long FirstDataByte => _clusterHeapOffset;
+  public long FirstDataByte => _clusterHeapOffset;
   /// <summary>
   /// Gets the cluster size.
   /// </summary>
-public int ClusterSize => _clusterSize;
+  public int ClusterSize => _clusterSize;
 
   /// <summary>
   /// Upper bound of the exFAT volume as declared by the VBR — clusterHeapOffset
@@ -83,7 +83,7 @@ public int ClusterSize => _clusterSize;
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -105,7 +105,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var clusterCount = (int)((length + _clusterSize - 1) / _clusterSize);
     var oldFirstCluster = OffsetToCluster(oldOffset);
     var newFirstCluster = OffsetToCluster(newOffset);
@@ -169,7 +169,7 @@ public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOff
   /// <summary>
   /// Performs the update metadata after move operation.
   /// </summary>
-public void UpdateMetadataAfterMove(Stream image, string metadataName,
+  public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
     ArgumentNullException.ThrowIfNull(image);
@@ -278,13 +278,13 @@ public void UpdateMetadataAfterMove(Stream image, string metadataName,
   /// <summary>
   /// Gets the allocation block size.
   /// </summary>
-public int AllocationBlockSize => _clusterSize;
+  public int AllocationBlockSize => _clusterSize;
 
   /// <inheritdoc />
   /// <summary>
   /// Gets a value indicating whether supports scattered relink.
   /// </summary>
-public bool SupportsScatteredRelink => true;
+  public bool SupportsScatteredRelink => true;
 
   /// <summary>
   /// Rewrites one file's whole allocation in a single pass, after every byte

@@ -28,7 +28,7 @@ public sealed class ExFatWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
+  public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
 
   /// <summary>
   /// Adds a streaming file: its <paramref name="size"/> is known up front

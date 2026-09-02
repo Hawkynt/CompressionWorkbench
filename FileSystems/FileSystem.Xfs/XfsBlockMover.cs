@@ -78,7 +78,7 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
   /// <summary>
   /// Performs the init operation.
   /// </summary>
-public void Init(Stream image) {
+  public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < 512)
       throw new InvalidDataException("XFS image too small to contain a superblock.");
@@ -129,7 +129,7 @@ public void Init(Stream image) {
   /// <summary>
   /// Performs the move extent operation.
   /// </summary>
-public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -150,7 +150,7 @@ public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length
   /// <summary>
   /// Performs the update allocation after move operation.
   /// </summary>
-public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     if (_blockSize == 0)
       Init(image);
 

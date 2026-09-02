@@ -21,7 +21,7 @@ public class EnvelopeFilterState
     /// <summary>
     /// Performs the spread near dc operation.
     /// </summary>
-public float SpreadNearDc(float input)
+    public float SpreadNearDc(float input)
     {
         // the accumulation is regularly refreshed from scratch to avoid floating point creep 
         if (_nearPointer == 0)
@@ -51,7 +51,7 @@ public float SpreadNearDc(float input)
     /// <summary>
     /// Performs the convert amplitude to delta operation.
     /// </summary>
-public Delta ConvertAmplitudeToDelta(float amplitude, int stretch)
+    public Delta ConvertAmplitudeToDelta(float amplitude, int stretch)
     {
         float preMax = -99999f, preMin = 99999f;
 

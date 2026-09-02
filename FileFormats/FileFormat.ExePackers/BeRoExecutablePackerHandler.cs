@@ -90,16 +90,16 @@ public sealed class BeRoExecutablePackerHandler : MinorExecutablePackerHandlerBa
   /// <summary>
   /// Gets the id.
   /// </summary>
-public override string Id => "beroexepacker";
+  public override string Id => "beroexepacker";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public override string DisplayName => "BeRoEXEPacker";
+  public override string DisplayName => "BeRoEXEPacker";
 
   /// <summary>
   /// Performs the is packer section operation.
   /// </summary>
-protected override bool IsPackerSection(string name) =>
+  protected override bool IsPackerSection(string name) =>
     name.Contains("bero", StringComparison.OrdinalIgnoreCase) ||
     name.Equals("gu_idata", StringComparison.Ordinal) ||
     name.Equals("gu_rsrc", StringComparison.Ordinal);
@@ -107,12 +107,12 @@ protected override bool IsPackerSection(string name) =>
   /// <summary>
   /// Gets the literal signature.
   /// </summary>
-protected override ReadOnlySpan<byte> LiteralSignature => "BeRo"u8;
+  protected override ReadOnlySpan<byte> LiteralSignature => "BeRo"u8;
 
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public override ExecutableUnpackCapabilities Capabilities =>
+  public override ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -144,7 +144,7 @@ public override ExecutableUnpackCapabilities Capabilities =>
   /// <summary>
   /// Performs the unpack operation.
   /// </summary>
-public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) =>
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) =>
     TryUnpackStub(packed, options, out var result)
       ? result
       : base.Unpack(packed, options);

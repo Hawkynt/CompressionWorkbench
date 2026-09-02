@@ -25,7 +25,7 @@ public sealed class Ac3Mantissas {
   /// <summary>
   /// Initializes a new instance of <see cref="Ac3Mantissas"/>.
   /// </summary>
-public Ac3Mantissas(Ac3BitReader r) => this._r = r;
+  public Ac3Mantissas(Ac3BitReader r) => this._r = r;
 
   /// <summary>
   /// Returns the next dequantized mantissa for a bin with the given <paramref name="bap"/>.

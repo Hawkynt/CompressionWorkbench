@@ -23,35 +23,35 @@ public sealed class Cpu6502 {
     /// <summary>
     /// Specifies the carry option.
     /// </summary>
-Carry = 0x01,
+    Carry = 0x01,
     /// <summary>
     /// Specifies the zero option.
     /// </summary>
-Zero = 0x02,
+    Zero = 0x02,
     /// <summary>
     /// Specifies the interrupt option.
     /// </summary>
-Interrupt = 0x04,
+    Interrupt = 0x04,
     /// <summary>
     /// Specifies the decimal option.
     /// </summary>
-Decimal = 0x08,
+    Decimal = 0x08,
     /// <summary>
     /// Specifies the break option.
     /// </summary>
-Break = 0x10,
+    Break = 0x10,
     /// <summary>
     /// Specifies the unused option.
     /// </summary>
-Unused = 0x20,
+    Unused = 0x20,
     /// <summary>
     /// Specifies the overflow option.
     /// </summary>
-Overflow = 0x40,
+    Overflow = 0x40,
     /// <summary>
     /// Specifies the negative option.
     /// </summary>
-Negative = 0x80,
+    Negative = 0x80,
   }
 
   private readonly IBus6502 _bus;
@@ -59,32 +59,32 @@ Negative = 0x80,
   /// <summary>
   /// Provides the a value.
   /// </summary>
-public byte A;
+  public byte A;
   /// <summary>
   /// Provides the x value.
   /// </summary>
-public byte X;
+  public byte X;
   /// <summary>
   /// Provides the y value.
   /// </summary>
-public byte Y;
+  public byte Y;
   /// <summary>
   /// Provides the sp value.
   /// </summary>
-public byte SP;
+  public byte SP;
   /// <summary>
   /// Provides the pc value.
   /// </summary>
-public ushort PC;
+  public ushort PC;
   /// <summary>
   /// Provides the p value.
   /// </summary>
-public Status P;
+  public Status P;
 
   /// <summary>
   /// Initializes a new instance of <see cref="Cpu6502"/>.
   /// </summary>
-public Cpu6502(IBus6502 bus) {
+  public Cpu6502(IBus6502 bus) {
     this._bus = bus;
     this.Reset();
   }

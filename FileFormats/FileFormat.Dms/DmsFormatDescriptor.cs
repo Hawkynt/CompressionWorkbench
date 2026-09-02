@@ -39,58 +39,58 @@ public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the id.
   /// </summary>
-public string Id => "Dms";
+  public string Id => "Dms";
   /// <summary>
   /// Gets the display name.
   /// </summary>
-public string DisplayName => "DMS";
+  public string DisplayName => "DMS";
   /// <summary>
   /// Gets the category.
   /// </summary>
-public FormatCategory Category => FormatCategory.Archive;
+  public FormatCategory Category => FormatCategory.Archive;
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
-public FormatCapabilities Capabilities =>
+  public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-public string DefaultExtension => ".dms";
+  public string DefaultExtension => ".dms";
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-public IReadOnlyList<string> Extensions => [".dms"];
+  public IReadOnlyList<string> Extensions => [".dms"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
-public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'D', (byte)'M', (byte)'S', (byte)'!'], Confidence: 0.95)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'D', (byte)'M', (byte)'S', (byte)'!'], Confidence: 0.95)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-public IReadOnlyList<FormatMethodInfo> Methods => [new("dms", "DMS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("dms", "DMS")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
-public string? TarCompressionFormatId => null;
+  public string? TarCompressionFormatId => null;
   /// <summary>
   /// Gets the family.
   /// </summary>
-public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Gets the description.
   /// </summary>
-public string Description => "Amiga Disk Masher System, floppy disk archiver";
+  public string Description => "Amiga Disk Masher System, floppy disk archiver";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new DmsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, $"track_{e.TrackNumber:D3}.bin",
       e.UncompressedSize, e.CompressedSize, $"Mode {e.CompressionMode}", false, false, null)).ToList();
@@ -99,7 +99,7 @@ public List<ArchiveEntryInfo> List(Stream stream, string? password) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new DmsReader(stream);
     var disk = r.ExtractDisk();
     WriteFile(outputDir, "disk.adf", disk);
@@ -108,7 +108,7 @@ public void Extract(Stream stream, string outputDir, string? password, string[]?
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileInputs = inputs.Where(i => !i.IsDirectory).ToArray();
     if (fileInputs.Length != 1)
       throw new ArgumentException("DMS format requires exactly one input file (disk image).");

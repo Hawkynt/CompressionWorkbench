@@ -15,7 +15,7 @@ public sealed class GemdosReader : System.IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="GemdosReader"/>.
   /// </summary>
-public GemdosReader(System.IO.Stream stream) {
+  public GemdosReader(System.IO.Stream stream) {
     System.ArgumentNullException.ThrowIfNull(stream);
     using var ms = new System.IO.MemoryStream();
     stream.CopyTo(ms);
@@ -36,5 +36,5 @@ public GemdosReader(System.IO.Stream stream) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() => _inner.Dispose();
+  public void Dispose() => _inner.Dispose();
 }

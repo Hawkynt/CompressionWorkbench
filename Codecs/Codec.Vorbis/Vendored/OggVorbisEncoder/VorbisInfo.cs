@@ -26,27 +26,27 @@ public class VorbisInfo
     /// <summary>
     /// Gets the channels.
     /// </summary>
-public int Channels { get; }
+    public int Channels { get; }
 
     /// <summary>
     /// Gets the sample rate.
     /// </summary>
-public int SampleRate { get; }
+    public int SampleRate { get; }
 
     /// <summary>
     /// Gets the bit rate nominal.
     /// </summary>
-public int BitRateNominal { get; }
+    public int BitRateNominal { get; }
 
     /// <summary>
     /// Gets the codec setup.
     /// </summary>
-public CodecSetup CodecSetup { get; }
+    public CodecSetup CodecSetup { get; }
 
     /// <summary>
     /// Performs the init variable bit rate operation.
     /// </summary>
-public static VorbisInfo InitVariableBitRate(int channels, int sampleRate, float baseQuality)
+    public static VorbisInfo InitVariableBitRate(int channels, int sampleRate, float baseQuality)
     {
         var encodeSetup = GetEncodeSetup(channels, sampleRate, baseQuality);
         var codecSetup = new CodecSetup(encodeSetup);

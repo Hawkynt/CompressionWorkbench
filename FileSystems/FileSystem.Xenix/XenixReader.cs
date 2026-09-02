@@ -36,15 +36,15 @@ public sealed class XenixReader : IDisposable {
   /// <summary>
   /// Gets the entries.
   /// </summary>
-public IReadOnlyList<XenixEntry> Entries => this._entries;
+  public IReadOnlyList<XenixEntry> Entries => this._entries;
   /// <summary>
   /// Gets or sets the magic.
   /// </summary>
-public uint Magic { get; private set; }
+  public uint Magic { get; private set; }
   /// <summary>
   /// Gets or sets the block size.
   /// </summary>
-public int BlockSize { get; private set; } = 1024;
+  public int BlockSize { get; private set; } = 1024;
 
   internal const int SuperblockOffset = 1024;
   private const int InodeSize = 64;
@@ -59,7 +59,7 @@ public int BlockSize { get; private set; } = 1024;
   /// <summary>
   /// Initializes a new instance of <see cref="XenixReader"/>.
   /// </summary>
-public XenixReader(Stream stream) {
+  public XenixReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -384,7 +384,7 @@ public XenixReader(Stream stream) {
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-public byte[] Extract(XenixEntry entry) {
+  public byte[] Extract(XenixEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var inode = this.ReadInode((uint)entry.InodeNumber);
@@ -398,5 +398,5 @@ public byte[] Extract(XenixEntry entry) {
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
-public void Dispose() { }
+  public void Dispose() { }
 }

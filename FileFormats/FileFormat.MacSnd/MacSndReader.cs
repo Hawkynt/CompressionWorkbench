@@ -28,15 +28,15 @@ public sealed class MacSndReader {
   /// <summary>
   /// Defines the standard header constant value.
   /// </summary>
-public const byte StandardHeader = 0x00;
+  public const byte StandardHeader = 0x00;
   /// <summary>
   /// Defines the extended header constant value.
   /// </summary>
-public const byte ExtendedHeader = 0xFF;
+  public const byte ExtendedHeader = 0xFF;
   /// <summary>
   /// Defines the compressed header constant value.
   /// </summary>
-public const byte CompressedHeader = 0xFE;
+  public const byte CompressedHeader = 0xFE;
 
   // Sound Manager command numbers (the high bit flags a pointer/handle parameter).
   private const ushort SoundCmd = 0x8050;
@@ -46,20 +46,20 @@ public const byte CompressedHeader = 0xFE;
   /// <summary>
   /// Defines the compression mace 3 constant value.
   /// </summary>
-public const short CompressionMace3 = 3;
+  public const short CompressionMace3 = 3;
   /// <summary>
   /// Defines the compression mace 6 constant value.
   /// </summary>
-public const short CompressionMace6 = 4;
+  public const short CompressionMace6 = 4;
   /// <summary>
   /// Defines the compression not compressed constant value.
   /// </summary>
-public const short CompressionNotCompressed = 0; // also -1/-2 in the wild
+  public const short CompressionNotCompressed = 0; // also -1/-2 in the wild
 
   /// <summary>
   /// Represents a parsed snd.
   /// </summary>
-public sealed record ParsedSnd(
+  public sealed record ParsedSnd(
     int Format,
     byte Encode,
     int NumChannels,
@@ -72,7 +72,7 @@ public sealed record ParsedSnd(
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
-public ParsedSnd Read(ReadOnlySpan<byte> data) {
+  public ParsedSnd Read(ReadOnlySpan<byte> data) {
     if (data.Length < 6)
       throw new InvalidDataException("'snd ' resource too short for a header.");
 
