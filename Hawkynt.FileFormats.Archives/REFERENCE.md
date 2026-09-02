@@ -12147,12 +12147,12 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 #### `QuickLzStream`
 
-QuickLZ level-1 stream format by Lasse Mikkel Reinhold. Header layout (9-byte long form, always used here): byte 0 flags: 0x47 = compressed, 0x46 = stored (level 1, long header, bit6=1) uint32 LE compressed size (includes the 9-byte header) uint32 LE decompressed size Payload encoding (after header): Control words are 32-bit LE values written before each group of up to 31 tokens. Bit 31 is a sentinel (always 1). The remaining bits describe tokens from LSB upward: 0 = literal → 1 raw byte follows 1 = match → 2-byte LE offset + 1-byte (length - 3) follow; min match = 3 If compressed output >= original, the block is stored uncompressed (flag 0x46).
+Reads and writes non-streaming QuickLZ 1.5.0 level-1 packets.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` into QuickLZ format and writes to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a QuickLZ stream from `input` and writes to `output`. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses one packet using QuickLZ 1.5.0 level 1 without streaming state. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses one non-streaming QuickLZ 1.5.0 level-1 packet. |
 
 ### Namespace `FileFormat.Rar`
 
