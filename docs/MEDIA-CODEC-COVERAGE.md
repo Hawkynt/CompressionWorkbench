@@ -8,6 +8,8 @@ The detailed ledgers are now split accordingly:
 - [Audio codecs and WAVE/ACM identifiers](AUDIO-CODEC-COVERAGE.md)
 - [Video codecs, FourCC identifiers, and frame/GOP analysis](VIDEO-CODEC-COVERAGE.md)
 
+Those three record what is true today. The order the remaining rows should be closed in, and what closing one has to mean, is in [the GSpot parity roadmap](GSPOT-ROADMAP.md).
+
 ## Baseline catalogues
 
 The audit uses several independent historical/catalogue sources as coverage oracles:
