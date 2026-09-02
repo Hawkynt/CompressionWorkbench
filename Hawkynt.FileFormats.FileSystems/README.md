@@ -6,7 +6,12 @@
 [![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
 ![Target](https://img.shields.io/badge/target-net10.0-blue)
 
-> Pure-managed filesystem readers/writers and disk-image containers for modern, legacy, virtual-machine, optical, forensic, and retro-computing images without mounting them through the host OS.
+> Pure-managed filesystem handling for .NET, without mounting anything through the host OS. The
+> package claims the WHOLE domain — every filesystem and disk-image container, modern, legacy,
+> virtual-machine, optical, forensic and retro-computing alike — not a selection of it. Where a
+> filesystem is missing, read-only, or write-without-mutation that is a tracked gap, recorded in the
+> support matrix below and in
+> [`docs/FILESYSTEM-VERIFICATION.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FILESYSTEM-VERIFICATION.md).
 
 ## 📦 Installation
 

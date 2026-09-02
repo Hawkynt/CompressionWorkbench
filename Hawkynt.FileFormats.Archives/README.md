@@ -6,7 +6,11 @@
 [![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
 ![Target](https://img.shields.io/badge/target-net10.0-blue)
 
-> Pure-managed compression streams, archive containers, software packages, document bundles, installer payloads, and game archives behind one NuGet package on top of `Hawkynt.Compression.Core`.
+> Pure-managed archive handling for .NET, on top of `Hawkynt.Compression.Core`. The package claims the
+> WHOLE domain — every compression stream, archive container, software package, document bundle,
+> installer payload and game archive — not a selection of it. Where a format is missing or only
+> partly supported that is a tracked gap, recorded in the support matrix below and in
+> [`docs/OPERATION_COVERAGE.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/OPERATION_COVERAGE.md).
 
 ## 📦 Installation
 

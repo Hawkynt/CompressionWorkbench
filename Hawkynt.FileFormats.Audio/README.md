@@ -6,7 +6,11 @@
 [![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
 ![Target](https://img.shields.io/badge/target-net10.0-blue)
 
-> Pure-managed audio codecs, containers, tracker/chiptune readers, and game-audio formats bundled behind one NuGet package on top of `Hawkynt.Compression.Core`.
+> Pure-managed audio handling for .NET, on top of `Hawkynt.Compression.Core`. The package claims the
+> WHOLE domain — every codec, container, tracker/chiptune format and game-audio format — not a
+> selection of it. Where a format is missing or only partly supported that is a tracked gap,
+> recorded in the support matrix below and in
+> [`docs/AUDIO-CODEC-COVERAGE.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/AUDIO-CODEC-COVERAGE.md).
 
 ## 📦 Installation
 
