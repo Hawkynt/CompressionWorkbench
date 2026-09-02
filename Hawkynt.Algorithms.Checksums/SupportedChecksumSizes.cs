@@ -161,10 +161,8 @@ public static class CrcChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Crc128"/>.
 /// </summary>
 public static class Crc128ChecksumSizeExtensions {
-  extension(Crc128) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits128;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits128;
 }

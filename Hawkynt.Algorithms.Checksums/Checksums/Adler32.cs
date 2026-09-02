@@ -7,6 +7,11 @@ namespace Compression.Core.Checksums;
 /// </summary>
 public sealed class Adler32 : IChecksum {
   /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits32;
+
+  /// <summary>
   /// Initializes a new instance of <see cref="Adler32"/>.
   /// </summary>
   public Adler32() { }

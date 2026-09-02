@@ -6,12 +6,10 @@ namespace Compression.Core.Checksums;
 /// Provides supported checksum-output size metadata for <see cref="Adler32"/>.
 /// </summary>
 public static class Adler32ChecksumSizeExtensions {
-  extension(Adler32) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits32;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits32;
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Crc16"/>.
